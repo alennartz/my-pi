@@ -1,0 +1,101 @@
+---
+name: architecting
+description: "Make architectural decisions for a feature or change, grounded in the actual codebase. Use after brainstorming (or when the direction is already clear) and before creating a detailed implementation plan. Reads the codemap, investigates relevant code, and produces the architectural section of a plan."
+---
+
+# Architecting
+
+## Overview
+
+Turn a direction into a technical shape. Read the codemap, dive into the relevant code, and make architectural decisions through conversation with the user — one decision at a time, grounded in what the codebase actually looks like today.
+
+The output is the first half of `docs/plans/<topic>.md`. The implementation plan skill later completes it with concrete steps.
+
+Do NOT produce implementation steps, specific file changes, or ordered task sequences. The output is architectural decisions — which modules, which patterns, which interfaces, which technology — not a build plan.
+
+## Process
+
+### 0. Check for Context
+
+Before starting:
+
+1. **Read `codemap.md`** at the repo root. If it doesn't exist, ask the user to generate one first — architecting without codebase context leads to bad decisions.
+
+2. **Check for a brainstorm.** If the user links one, read it from `docs/brainstorms/<topic>.md`. If no brainstorm is linked and the user's description feels too vague or too large in scope, suggest they brainstorm first. If the direction is clear enough, proceed.
+
+### 1. Investigate
+
+Identify which modules from the codemap are likely impacted. Read into those modules — entry points, interfaces, key files — to understand the current reality. Don't read everything; read enough to make informed decisions.
+
+Share what you're finding as you go. The user should see your reasoning, not just your conclusions.
+
+### 2. Decide, One at a Time
+
+Walk through architectural decisions conversationally. Each decision should be grounded in what you found in the code. One decision at a time — don't dump a wall of choices.
+
+Typical decisions include:
+
+- **Module impact** — which existing modules are affected and how their responsibilities shift
+- **New modules** — whether new modules are needed, what they own, where they live
+- **Interfaces** — key contracts between modules, data shapes, API boundaries
+- **Patterns** — architectural patterns, state management, data flow
+- **Technology choices** — introducing new dependencies or replacing existing ones
+
+For **technology choices**, always present **2–3 genuinely different options** with trade-offs. These are high-stakes decisions — the user picks, not the agent.
+
+For other decisions, lead with your recommendation based on what you found in the code, but stay open to the user's input.
+
+### 3. Capture the Outcome
+
+Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact format below. Commit with message: `architect: <topic>`
+
+## Artifact Format
+
+```markdown
+# Plan: [Topic]
+
+## Context
+
+[What we're building and why. 2-3 sentences. Link to brainstorm if one exists.]
+
+## Architecture
+
+### Impacted Modules
+
+[For each affected module: what changes and why. Reference the codemap module names.]
+
+### New Modules
+
+[If any. Purpose, responsibilities, where they live. If none, omit this section.]
+
+### Interfaces
+
+[Key contracts between modules. Data shapes, API boundaries, communication patterns. Enough to understand how the pieces connect — not full API specs.]
+
+### Technology Choices
+
+[Any new tech being introduced or existing tech being replaced. What was chosen and why, what alternatives were considered.]
+
+### Codemap Implications
+
+[What will need to change in codemap.md after implementation. New modules, shifted responsibilities, new dependencies.]
+```
+
+### Format Rules
+
+- **Context** — brief. The brainstorm already covers the exploration; don't repeat it. Link to `docs/brainstorms/<topic>.md` if one exists.
+- **Impacted Modules** — use the codemap's module names. Focus on what changes about each module's responsibilities and dependencies, not file-level details.
+- **New Modules** — same level of detail as a codemap module entry: purpose, responsibilities, dependencies, approximate location. Not exact files.
+- **Interfaces** — the key contracts. Enough for someone to understand the boundaries and data flow. Pseudocode or type signatures are fine if they clarify; don't force them if prose is clearer.
+- **Technology Choices** — only present when new tech is introduced or existing tech is replaced. Include what was considered and why the choice was made. Omit this section if no technology decisions were needed.
+- **Codemap Implications** — a brief note for whoever updates the codemap after implementation. Omit if the codemap won't change.
+- **Omit empty sections.** If there are no new modules, no technology choices, or no codemap implications, leave those sections out entirely.
+
+## Key Principles
+
+- **Grounded in code** — every decision should be informed by what's actually in the codebase, not assumptions about it
+- **One decision at a time** — conversational, not a monologue. Check in with the user on each decision.
+- **Options for tech choices** — always 2-3 genuine alternatives with trade-offs for technology decisions. The user picks.
+- **Shape, not sequence** — decide what the architecture looks like, not the order to build it
+- **The codemap is the map** — use its module names, respect its boundaries, note when boundaries need to shift
+- **YAGNI** — don't architect what isn't needed. If a simple approach works, take it.
