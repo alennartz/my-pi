@@ -1,6 +1,6 @@
 ---
 name: architecting
-description: "Make architectural decisions for a feature or change, grounded in the actual codebase. Use after brainstorming (or when the direction is already clear) and before creating a detailed implementation plan. Reads the codemap, investigates relevant code, and produces the architectural section of a plan."
+description: "Make architectural decisions for a feature or change, grounded in the actual codebase. The first phase of an implementation plan — use after brainstorming or when the direction is already clear."
 ---
 
 # Architecting
@@ -9,9 +9,9 @@ description: "Make architectural decisions for a feature or change, grounded in 
 
 Turn a direction into a technical shape. Read the codemap, dive into the relevant code, and make architectural decisions through conversation with the user — one decision at a time, grounded in what the codebase actually looks like today.
 
-The output is the first half of `docs/plans/<topic>.md`. The implementation plan skill later completes it with concrete steps.
+The output is the first half of the implementation plan — `docs/plans/<topic>.md`. The execution plan skill later completes it with concrete steps.
 
-Do NOT produce implementation steps, specific file changes, or ordered task sequences. The output is architectural decisions — which modules, which patterns, which interfaces, which technology — not a build plan.
+Do NOT produce execution steps, specific file changes, or ordered task sequences. The output is architectural decisions — which modules, which patterns, which interfaces, which technology — not a step-by-step build plan.
 
 ## Process
 
@@ -19,7 +19,7 @@ Do NOT produce implementation steps, specific file changes, or ordered task sequ
 
 Before starting:
 
-1. **Read `codemap.md`** at the repo root. If it doesn't exist, ask the user to generate one first — architecting without codebase context leads to bad decisions.
+1. **Read `codemap.md`** at the repo root. If it doesn't exist, suggest to the user that one should be created and offer to generate it now using the codemap skill. If the user declines, fall back to an unguided exploration of the codebase — survey the directory structure, entry points, and key files to ground yourself before proceeding.
 
 2. **Check for a brainstorm.** If the user links one, read it from `docs/brainstorms/<topic>.md`. If no brainstorm is linked and the user's description feels too vague or too large in scope, suggest they brainstorm first. If the direction is clear enough, proceed.
 
@@ -33,6 +33,8 @@ Share what you're finding as you go. The user should see your reasoning, not jus
 
 Walk through architectural decisions conversationally. Each decision should be grounded in what you found in the code. One decision at a time — don't dump a wall of choices.
 
+Not every category below requires a decision every time. If the codebase already has well-established patterns for the type of work being done, align to them — don't ask the user to choose what's already settled. Only surface decisions where there's a genuine choice to make.
+
 Typical decisions include:
 
 - **Module impact** — which existing modules are affected and how their responsibilities shift
@@ -44,6 +46,8 @@ Typical decisions include:
 For **technology choices**, always present **2–3 genuinely different options** with trade-offs. These are high-stakes decisions — the user picks, not the agent.
 
 For other decisions, lead with your recommendation based on what you found in the code, but stay open to the user's input.
+
+**Capture the reasoning.** When the user makes a decision — about technology, interfaces, module boundaries, or anything else — make sure the *why* is captured, not just the *what*. If the reasoning isn't obvious and the user doesn't explain it, ask.
 
 ### 3. Capture the Outcome
 
@@ -70,15 +74,11 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 
 ### Interfaces
 
-[Key contracts between modules. Data shapes, API boundaries, communication patterns. Enough to understand how the pieces connect — not full API specs.]
+[Interfaces affected by the changes. Data shapes, API boundaries, communication patterns. Enough to understand how the pieces connect — not full API specs.]
 
 ### Technology Choices
 
 [Any new tech being introduced or existing tech being replaced. What was chosen and why, what alternatives were considered.]
-
-### Codemap Implications
-
-[What will need to change in codemap.md after implementation. New modules, shifted responsibilities, new dependencies.]
 ```
 
 ### Format Rules
@@ -86,10 +86,9 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 - **Context** — brief. The brainstorm already covers the exploration; don't repeat it. Link to `docs/brainstorms/<topic>.md` if one exists.
 - **Impacted Modules** — use the codemap's module names. Focus on what changes about each module's responsibilities and dependencies, not file-level details.
 - **New Modules** — same level of detail as a codemap module entry: purpose, responsibilities, dependencies, approximate location. Not exact files.
-- **Interfaces** — the key contracts. Enough for someone to understand the boundaries and data flow. Pseudocode or type signatures are fine if they clarify; don't force them if prose is clearer.
+- **Interfaces** — only interfaces affected by the changes. Enough for someone to understand the boundaries and data flow. Pseudocode or type signatures are fine if they clarify; don't force them if prose is clearer.
 - **Technology Choices** — only present when new tech is introduced or existing tech is replaced. Include what was considered and why the choice was made. Omit this section if no technology decisions were needed.
-- **Codemap Implications** — a brief note for whoever updates the codemap after implementation. Omit if the codemap won't change.
-- **Omit empty sections.** If there are no new modules, no technology choices, or no codemap implications, leave those sections out entirely.
+- **Omit empty sections.** If there are no new modules or no technology choices, leave those sections out entirely.
 
 ## Key Principles
 
