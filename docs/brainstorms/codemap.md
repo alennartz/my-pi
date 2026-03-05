@@ -147,9 +147,17 @@ User-installable extensions that hook into agent and TUI behavior.
 
 Build a codemap skill with generate and update operations. The artifact is markdown with embedded mermaid diagrams, structured by consistent conventions. Each module section is self-contained with purpose, responsibilities, dependencies, and file globs. The artifact is loaded whole by the agent as a codebase guide, enabling it to triage which modules to explore for any given task.
 
+### Artifact location: repo root
+- `codemap.md` at the root of the repository — simple, visible, conventional
+- Referenced from `agents.md` — the codemap is exactly the kind of artifact that `agents.md` should link to as an entry point for codebase context
+
+### Cross-skill referencing: known path convention
+- Skills that need the codemap just read `./codemap.md` — no invocation protocol needed
+
+### Updates are simple
+- The agent rereads the current codemap before updating, so it sees everything including human edits
+- No change detection machinery — agent reads the codemap, looks at the codebase, rewrites what needs rewriting
+
 ## Open Questions
 
-- **Artifact location** — `docs/codemap.md`? Project root?
-- **Change detection for updates** — git diff against last known state? Full re-scan? Targeted scan of changed files?
-- **How other skills reference it** — convention (known path)? Explicit cross-skill invocation?
-- **Preservation of human edits during update** — how does the agent distinguish user corrections from stale content?
+None — ready to build.
