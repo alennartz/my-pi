@@ -1,0 +1,8 @@
+{
+  "name": "azure-foundry-provider",
+  "version": "1.0.0",
+  "description": "Azure Foundry Anthropic provider with dynamic token refresh",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
