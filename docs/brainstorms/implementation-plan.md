@@ -11,10 +11,32 @@ A skill that takes the architectural decisions in `docs/plans/<topic>.md` and ad
 - Specific enough to act on without ambiguity — "Add a `getSession(id: string)` method to the `Store` interface in `src/auth/store.ts`", not "add a getter to the store interface"
 - The skill reads code (not just the architecture and codemap) to get to this level of specificity
 
-### Linear sequence with concurrency annotations
-- Steps are numbered sequentially — the default reading is "do these in order"
-- When steps can be done concurrently, a simple note says so (e.g., "Steps 3-4 can be done in parallel")
-- No dependency graphs or module-grouped plans — the architecture already organizes by module, the implementation plan organizes by sequence
+### Pure linear sequence
+- Steps are numbered sequentially and executed in order
+- No parallel annotations, no dependency graphs — the agent's job is to get the order right
+- Simple mental model: do step 1, then step 2, then step 3
+
+### The plan file is a living progress tracker
+- Each step has a `Status:` field that gets updated during implementation
+- Status values: `not started`, `in progress`, `done`, `blocked`
+- `blocked` means something unexpected or external is preventing the step — not that a prior step isn't finished (the linear sequence handles that)
+- The plan file serves as the single source of truth for what's been done and what's left
+
+### Step format
+
+```markdown
+### Step N: [Short title]
+
+[What to do, which files, what changes]
+
+**Verify:** [How to confirm it's done — test passes, command output, etc.]
+**Status:** not started
+```
+
+### Not conversational — generate and present
+- The agent generates the full plan and presents it for review
+- No step-by-step negotiation — the architectural decisions are already made
+- The agent only surfaces questions if it discovers that the architecture doesn't align with what it finds in the codebase during exploration
 
 ### Adds detail, not scope
 - The architecture is the ceiling — the implementation plan fills in the floor
@@ -35,9 +57,17 @@ A skill that takes the architectural decisions in `docs/plans/<topic>.md` and ad
 - Appends to `docs/plans/<topic>.md` below the architecture section
 - Single document captures both the shape and the sequence
 
+### Final step is always a codemap update
+- The last step in every plan is to update `codemap.md` to reflect the changes made during implementation
+- The codemap reflects reality, so it gets updated after the work is done, not before
+
+### No phases
+- Plans are a flat numbered list even when large
+- No grouping layer above individual steps
+
 ## Direction
 
-Build an implementation plan skill that reads the architecture section of `docs/plans/<topic>.md`, the codemap, and relevant source code, then appends concrete, ordered implementation steps to the same plan file. Steps are task-level (specific files and changes), numbered sequentially with concurrency noted where possible. TDD is the default approach where it makes sense, with verification criteria for each step. The skill adds detail but not scope — it realizes the architecture, it doesn't expand it.
+Build an implementation plan skill that reads the architecture section of `docs/plans/<topic>.md`, the codemap, and relevant source code, then appends concrete, ordered implementation steps to the same plan file. Steps are task-level (specific files and changes), numbered in a pure linear sequence. Each step has a status field so the plan doubles as a progress tracker during implementation. The agent generates the full plan without conversation, only surfacing questions if the architecture doesn't match codebase reality. TDD is the default approach where it makes sense, with verification criteria for each step. The final step is always a codemap update. The skill adds detail but not scope — it realizes the architecture, it doesn't expand it.
 
 ## Open Questions
 
