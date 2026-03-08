@@ -15,7 +15,7 @@ The plan was implemented faithfully across all five steps. The cleanup skill, pl
 - **Category:** plan deviation
 - **Severity:** nit
 - **Location:** `extensions/workflow/index.ts:77-95`, `extensions/workflow/index.ts:134-140`, `extensions/workflow/index.ts:196-197`, `extensions/workflow/index.ts:216-217`
-- **Status:** open
+- **Status:** dismissed
 
 The plan's Step 3 specified four changes to `index.ts`: add cleanup to maps, append to phase order, add to StringEnum, and change artifact validation. The implementation also refactored the phase transition mechanism — replacing `sendUserMessage` with `deliverAs: "steer"` with a `pendingTransition` state variable consumed by a new `agent_end` event handler that pre-fills the editor. This is a significant behavioral change (new module-level state, new event listener, new `STOP_TEXT` constant, updated comments on `/internal-workflow-next`). The code comment explains the motivation: `sendUserMessage()` skips command processing, so the steer approach couldn't trigger `/internal-workflow-next`. This reads as a bug fix for a pre-existing issue, is cleanly implemented, and doesn't interfere with the planned cleanup changes — but it wasn't in the plan.
 
