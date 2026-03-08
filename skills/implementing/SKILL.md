@@ -23,6 +23,16 @@ Before touching any code:
 
 3. **Find your starting point.** Scan the steps for the first one that isn't `done`. Start there. This makes the skill naturally resumable after interruptions or blocks.
 
+### 0.5. Stamp the Starting Commit
+
+If the plan file does not already have a `pre-implementation-commit` field, add one immediately after the `## Steps` heading:
+
+```
+**Pre-implementation commit:** `<current HEAD hash>`
+```
+
+Use the full 40-character hash. This marks the baseline for code review — everything after this commit is implementation work. Commit this change with the plan file on the first step's commit (don't create a separate commit just for the stamp).
+
 ### 1. Execute Each Step
 
 For each step, in order:
