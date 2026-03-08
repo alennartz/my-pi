@@ -141,33 +141,25 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			// 3. Confirm with user
-			const confirmed = await ctx.ui.confirm(
-				"Phase complete?",
-				`Move on from ${phase} for ${topic}?`,
-			);
-			if (!confirmed) {
-				return {
-					content: [
-						{ type: "text" as const, text: "User indicated this phase isn't complete yet. Continue working." },
-					],
-				};
-			}
-
-			// 4. Transition
+			// 3. Confirm transition with user (single prompt)
 			if (FLEXIBLE_TRANSITIONS.has(phase)) {
-				// Flexible: let user choose
-				const choice = await ctx.ui.select("Context for next phase:", [
-					"Continue in this context",
-					"Start fresh context",
-				]);
+				// Flexible: three options in one prompt
+				const choice = await ctx.ui.select(
+					`${phase} done for ${topic}. Move on to ${nextPhase}?`,
+					[
+						`Yes, in a new context`,
+						`Yes, in this context`,
+						`No, not done yet`,
+					],
+				);
 
-				if (choice === undefined) {
+				if (choice === undefined || choice === "No, not done yet") {
 					return {
-						content: [{ type: "text" as const, text: "Transition cancelled. Staying in the current phase." }],
+						content: [
+							{ type: "text" as const, text: "User indicated this phase isn't complete yet. Continue working." },
+						],
 					};
-				} else if (choice === "Continue in this context") {
-					pi.sendUserMessage(buildPhasePrompt(topic, nextPhase), { deliverAs: "followUp" });
+				} else if (choice === "Yes, in this context") {
 					return {
 						content: [{ type: "text" as const, text: `Phase complete. Continuing to ${nextPhase}.` }],
 					};
@@ -181,7 +173,23 @@ export default function (pi: ExtensionAPI) {
 					};
 				}
 			} else {
-				// Mandatory: always start fresh
+				// Mandatory fresh context: two options in one prompt
+				const choice = await ctx.ui.select(
+					`${phase} done for ${topic}. Move on to ${nextPhase}?`,
+					[
+						`Yes, start ${nextPhase}`,
+						`No, not done yet`,
+					],
+				);
+
+				if (choice === undefined || choice === "No, not done yet") {
+					return {
+						content: [
+							{ type: "text" as const, text: "User indicated this phase isn't complete yet. Continue working." },
+						],
+					};
+				}
+
 				pendingTransition = { topic, phase: nextPhase };
 				pi.sendUserMessage("/workflow", { deliverAs: "followUp" });
 				return {
