@@ -127,7 +127,7 @@ Create `.pi/extensions/workflow/prompt.md`. This is the entry-point prompt, read
 Does **not** include a phase-continuation variant — that prompt is short enough to construct inline in TypeScript.
 
 **Verify:** file exists, contains `${USER_INPUT}` and `${INVENTORY}` placeholders, references all six phases and their skill names
-**Status:** not started
+**Status:** done
 
 ### Step 4: Write extension entry point (`index.ts`)
 
