@@ -29,7 +29,15 @@ Identify which modules from the codemap are likely impacted. Read into those mod
 
 Share what you're finding as you go. The user should see your reasoning, not just your conclusions.
 
-### 2. Decide, One at a Time
+### 2. Check Decision Records
+
+Scan `docs/decisions/` for existing decision records. If the directory doesn't exist or is empty, move on.
+
+Read DRs that are relevant to the current work — you now have context from the codemap, any brainstorm, and your code investigation, so you can judge relevance. Skim titles and contexts first; read fully only the ones that touch on modules, patterns, or technology choices involved in this work.
+
+Relevant DRs become **settled context** for the decision conversation in the next step. Note which ones you found and what they cover — the user should see what prior decisions you're working with.
+
+### 3. Decide, One at a Time
 
 Walk through architectural decisions conversationally. Each decision should be grounded in what you found in the code. One decision at a time — don't dump a wall of choices.
 
@@ -51,7 +59,7 @@ For other decisions, lead with your recommendation based on what you found in th
 
 **Capture the reasoning.** When the user makes a decision — about technology, interfaces, module boundaries, or anything else — make sure the *why* is captured, not just the *what*. If the reasoning isn't obvious and the user doesn't explain it, ask.
 
-### 3. Capture the Outcome
+### 4. Capture the Outcome
 
 Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact format below. Commit with message: `architect: <topic>`
 

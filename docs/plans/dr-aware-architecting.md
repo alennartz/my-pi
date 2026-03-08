@@ -29,6 +29,8 @@ Omitted when no DRs are being superseded (same convention as other optional sect
 
 ## Steps
 
+**Pre-implementation commit:** `d3c6db921eb7fe3e9b5c12aa8fc345583d910899`
+
 ### Step 1: Add DR check sub-step to architecting skill
 
 Insert a new step `### 2. Check Decision Records` between the current step 1 (Investigate) and step 2 (Decide). This renumbers the old step 2 to step 3 and old step 3 to step 4. The new step instructs the agent to:
@@ -43,7 +45,7 @@ In `skills/architecting/SKILL.md`:
 - Renumber `### 3. Capture the Outcome` → `### 4. Capture the Outcome`
 
 **Verify:** The process section has steps 0, 1, 2, 3, 4 in order: Check for Context, Investigate, Check Decision Records, Decide, Capture the Outcome.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Add DR-awareness behavior to the decision step
 
