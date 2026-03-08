@@ -2,7 +2,7 @@
 
 ## Overview
 
-A personal [pi coding agent](https://github.com/badlogic/pi-mono) package providing custom workflow skills (brainstorming → architecting → planning → implementing → review) and a provider extension for Azure AI Foundry. Built as a pi package with TypeScript (extension) and Markdown (skills, docs).
+A personal [pi coding agent](https://github.com/badlogic/pi-mono) package providing custom workflow skills (brainstorming → architecting → planning → implementing → review → cleanup) and a provider extension for Azure AI Foundry. Built as a pi package with TypeScript (extension) and Markdown (skills, docs).
 
 ```mermaid
 graph LR
@@ -23,20 +23,22 @@ sequenceDiagram
   participant I as Skills/Implementing
   participant CR as Skills/CodeReview
   participant HR as Skills/HandleReview
+  participant CL as Skills/Cleanup
   B->>A: explored directions
   A->>P: architectural decisions
   P->>I: ordered implementation steps
   I->>CR: implemented code
   CR->>HR: review findings
+  HR->>CL: resolved code
 ```
 
 ## Modules
 
 ### Skills
 
-Agent workflow skills that guide the brainstorm → architect → plan → implement → review pipeline, plus standalone utilities (codemap, debugging).
+Agent workflow skills that guide the brainstorm → architect → plan → implement → review → cleanup pipeline, plus standalone utilities (codemap, debugging).
 
-**Responsibilities:** development workflow orchestration, brainstorming facilitation, architectural decision-making, implementation planning, step-by-step code execution, code review against plans, review finding resolution, codemap generation, structured debugging
+**Responsibilities:** development workflow orchestration, brainstorming facilitation, architectural decision-making, implementation planning, step-by-step code execution, code review against plans, review finding resolution, decision record extraction, codemap generation, documentation maintenance, structured debugging
 
 **Dependencies:** none (skills are loaded by the pi agent harness at runtime)
 
@@ -67,11 +69,12 @@ Pipeline orchestration extension that ties the skill pipeline into an automated 
 
 ### Docs
 
-Design brainstorm documents that record the reasoning and exploration behind each skill's design.
+Design brainstorm documents that record the reasoning and exploration behind each skill's design, plus decision records extracted from completed workflows.
 
-**Responsibilities:** skill design rationale, brainstorm records
+**Responsibilities:** skill design rationale, brainstorm records, decision records
 
 **Dependencies:** Skills (documents the design decisions behind each skill)
 
 **Files:**
 - `docs/brainstorms/**`
+- `docs/decisions/**`

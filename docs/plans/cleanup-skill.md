@@ -105,4 +105,4 @@ Add the cleanup skill to the available skills description in `AGENTS.md`, follow
 Update `codemap.md` to reflect: new cleanup skill in the Skills module responsibilities, updated pipeline flow (7 phases including cleanup), `docs/decisions` as a new artifact location in the Docs module, updated key flows diagram to include the cleanup phase.
 
 **Verify:** Codemap accurately reflects the current state of the codebase.
-**Status:** not started
+**Status:** done
