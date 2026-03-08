@@ -102,6 +102,8 @@ Apply YAGNI to the *solution*, not to the *exploration*. Cut unnecessary complex
 
 ### 5. Capture the Outcome
 
+Before writing the artifact, review the decisions that emerged during the conversation. If the reasoning behind any decision wasn't made explicit — it felt obvious in the moment but wouldn't be clear to someone reading the artifact cold — ask the user to clarify the why before capturing it.
+
 Write a brainstorming artifact that captures:
 
 - **The idea** — what we set out to explore
