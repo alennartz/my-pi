@@ -63,7 +63,7 @@ Pipeline orchestration extension that ties the skill pipeline into an automated 
 **Dependencies:** Skills (references skill names for phase routing)
 
 **Files:**
-- `.pi/extensions/workflow/**`
+- `extensions/workflow/**`
 
 ### Docs
 
