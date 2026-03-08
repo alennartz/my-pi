@@ -24,7 +24,7 @@ In the flexible transition branch, `ctx.ui.select()` returns `undefined` when th
 - **Category:** plan deviation
 - **Severity:** nit
 - **Location:** `skills/implementing/SKILL.md:66`
-- **Status:** open
+- **Status:** dismissed
 
 A new principle was appended to the implementing skill: "Read only what you need — the plan and codemap are your primary context..." This change isn't traced to any step in the plan. It's a reasonable addition, but it modifies a file outside the plan's scope.
 
