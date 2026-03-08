@@ -169,7 +169,7 @@ Registered via `pi.registerCommand("workflow-new-session", ...)`. Handler:
 3. Call `pi.sendUserMessage(buildPhasePrompt(topic, nextPhase))`
 
 **Verify:** extension loads without errors when pi starts from the project root. `/workflow` appears in command list. `workflow_phase_complete` appears in tool list. `/workflow test` sends a user message containing the pipeline description and artifact inventory.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Update codemap
 
