@@ -73,35 +73,42 @@ function getNextPhase(current: string): string | null {
 // =============================================================================
 
 export default function (pi: ExtensionAPI) {
-	// Pending fresh-session transition. Set by the tool, consumed by the next
-	// /workflow invocation. This is shared mutable state — a known compromise
-	// because newSession() is only available in command context, not tool context.
-	// The race window (user manually typing /workflow between tool return and
-	// follow-up delivery) is vanishingly small and harmless if hit.
-	let pendingTransition: { topic: string; phase: string } | null = null;
-
 	// ── /workflow command ──────────────────────────────────────────────────
 	pi.registerCommand("workflow", {
 		description: "Start or continue the development workflow pipeline",
 		handler: async (args, ctx) => {
-			// Handle pending internal transition (fresh session for next phase)
-			if (pendingTransition) {
-				const { topic, phase } = pendingTransition;
-				pendingTransition = null;
-
-				const result = await ctx.newSession();
-				if (result.cancelled) {
-					ctx.ui.notify("Session switch was cancelled.", "warn");
-					return;
-				}
-
-				pi.sendUserMessage(buildPhasePrompt(topic, phase));
-				return;
-			}
-
 			const inventory = getArtifactInventory();
 			const prompt = buildEntryPrompt(args, inventory);
 			pi.sendUserMessage(prompt);
+		},
+	});
+
+	// ── /internal-workflow-next command ────────────────────────────────────
+	// Dedicated command for fresh-session phase transitions.
+	// Called as a steer from the tool: /internal-workflow-next <topic> <phase>
+	// Has access to ExtensionCommandContext so newSession() works.
+	pi.registerCommand("internal-workflow-next", {
+		description: "Internal: start next workflow phase in a fresh session",
+		handler: async (args, ctx) => {
+			const parts = args.trim().split(/\s+/);
+			if (parts.length < 2) {
+				ctx.ui.notify("Usage: /internal-workflow-next <topic> <phase>", "error");
+				return;
+			}
+			const [topic, phase] = parts;
+
+			if (!PHASE_SKILL_MAP[phase]) {
+				ctx.ui.notify(`Unknown phase: ${phase}`, "error");
+				return;
+			}
+
+			const result = await ctx.newSession();
+			if (result.cancelled) {
+				ctx.ui.notify("Session switch was cancelled.", "warn");
+				return;
+			}
+
+			pi.sendUserMessage(buildPhasePrompt(topic, phase));
 		},
 	});
 
@@ -141,9 +148,8 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			// 3. Confirm transition with user (single prompt)
+			// 3. Confirm transition with user
 			if (FLEXIBLE_TRANSITIONS.has(phase)) {
-				// Flexible: three options in one prompt
 				const choice = await ctx.ui.select(
 					`${phase} done for ${topic}. Move on to ${nextPhase}?`,
 					[
@@ -164,16 +170,14 @@ export default function (pi: ExtensionAPI) {
 						content: [{ type: "text" as const, text: `Phase complete. Continuing to ${nextPhase}.` }],
 					};
 				} else {
-					pendingTransition = { topic, phase: nextPhase };
-					pi.sendUserMessage("/workflow", { deliverAs: "followUp" });
+					pi.sendUserMessage(`/internal-workflow-next ${topic} ${nextPhase}`, { deliverAs: "steer" });
 					return {
 						content: [
-							{ type: "text" as const, text: `Phase complete. Starting fresh context for ${nextPhase}.` },
+							{ type: "text" as const, text: `Phase complete. A new session is being started for ${nextPhase}. Stop here — do not continue.` },
 						],
 					};
 				}
 			} else {
-				// Mandatory fresh context: two options in one prompt
 				const choice = await ctx.ui.select(
 					`${phase} done for ${topic}. Move on to ${nextPhase}?`,
 					[
@@ -190,11 +194,10 @@ export default function (pi: ExtensionAPI) {
 					};
 				}
 
-				pendingTransition = { topic, phase: nextPhase };
-				pi.sendUserMessage("/workflow", { deliverAs: "followUp" });
+				pi.sendUserMessage(`/internal-workflow-next ${topic} ${nextPhase}`, { deliverAs: "steer" });
 				return {
 					content: [
-						{ type: "text" as const, text: `Phase complete. Starting fresh context for ${nextPhase}.` },
+						{ type: "text" as const, text: `Phase complete. A new session is being started for ${nextPhase}. Stop here — do not continue.` },
 					],
 				};
 			}
