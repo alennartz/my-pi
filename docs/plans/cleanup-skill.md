@@ -55,7 +55,7 @@ Create `skills/cleanup/SKILL.md` with YAML frontmatter (`name: cleanup`, descrip
 
 1. **Extract Decision Records** — Scan the working artifacts for decisions that clear the "would this matter six months from now" bar. For each candidate, propose it to the user with the title, context, and decision summary. User approves, edits, or rejects. For approved records: scan `docs/decisions/` for the highest existing `DR-NNN` number (create the directory if it doesn't exist), increment, write `docs/decisions/DR-NNN-<slug>.md` in the standard format (Title, Status, Context, Decision, Consequences). Commit each approved DR individually.
 
-2. **Codemap Refresh** — Do a scoped codemap update using directional scope: tell the codemap skill which modules were impacted by the workflow (pulled from the plan's architecture section), then let it verify the codemap still reflects reality for those areas. This is the sole codemap update point in the pipeline — it covers both implementation and review changes.
+2. **Codemap Refresh** — Do a scoped codemap update. Use the plan's `pre-implementation-commit` hash to diff against HEAD and identify what files changed across implementation and review. Combine that with the architecture section's impacted modules list for directional context. Tell the codemap skill what changed and let it verify the codemap still reflects reality for those areas. This is the sole codemap update point in the pipeline.
 
 3. **Documentation Pass** — Open-ended sweep of user-facing documentation in the repo. Discover what exists (READMEs, AGENTS.md, guides, etc. — no hardcoded list, use judgment), check whether anything shipped in this workflow makes them stale, update what needs updating. Commit updates.
 
