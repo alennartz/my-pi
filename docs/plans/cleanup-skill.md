@@ -8,7 +8,9 @@ A new "cleanup" skill to serve as the 7th and final phase of the workflow pipeli
 
 ### Impacted Modules
 
-**Skills** — gains a new `skills/cleanup/SKILL.md` file. No changes to existing skills. The skill reads working artifacts (`docs/brainstorms/<topic>.md`, `docs/plans/<topic>.md`, `docs/reviews/<topic>.md`), proposes decision records to the user one at a time, writes approved records to `docs/decisions/`, invokes the codemap skill for a scoped update, does an open-ended user-facing docs sweep, then deletes the working artifacts. Always runs in a clean context with no conversational history from prior phases.
+**Skills** — gains a new `skills/cleanup/SKILL.md` file. The skill reads working artifacts (`docs/brainstorms/<topic>.md`, `docs/plans/<topic>.md`, `docs/reviews/<topic>.md`), proposes decision records to the user one at a time, writes approved records to `docs/decisions/`, invokes the codemap skill for a scoped update, does an open-ended user-facing docs sweep, then deletes the working artifacts. Always runs in a clean context with no conversational history from prior phases.
+
+The planning skill (`skills/planning/SKILL.md`) is also updated: the convention that every plan's final step is a codemap update is removed. The cleanup skill now owns codemap maintenance as part of its pipeline-closing responsibilities.
 
 **Workflow Extension** — updated to include the cleanup phase:
 - `PHASE_ORDER`: append `"cleanup"`
@@ -53,7 +55,7 @@ Create `skills/cleanup/SKILL.md` with YAML frontmatter (`name: cleanup`, descrip
 
 1. **Extract Decision Records** — Scan the working artifacts for decisions that clear the "would this matter six months from now" bar. For each candidate, propose it to the user with the title, context, and decision summary. User approves, edits, or rejects. For approved records: scan `docs/decisions/` for the highest existing `DR-NNN` number (create the directory if it doesn't exist), increment, write `docs/decisions/DR-NNN-<slug>.md` in the standard format (Title, Status, Context, Decision, Consequences). Commit each approved DR individually.
 
-2. **Codemap Refresh** — Do a scoped codemap update using directional scope: tell the codemap skill that review changes were made for the topic and which modules were impacted (pulled from the plan's architecture section), then let it verify the codemap still reflects reality for those areas. Not a full rebuild — just a targeted check.
+2. **Codemap Refresh** — Do a scoped codemap update using directional scope: tell the codemap skill which modules were impacted by the workflow (pulled from the plan's architecture section), then let it verify the codemap still reflects reality for those areas. This is the sole codemap update point in the pipeline — it covers both implementation and review changes.
 
 3. **Documentation Pass** — Open-ended sweep of user-facing documentation in the repo. Discover what exists (READMEs, AGENTS.md, guides, etc. — no hardcoded list, use judgment), check whether anything shipped in this workflow makes them stale, update what needs updating. Commit updates.
 
@@ -62,7 +64,17 @@ Create `skills/cleanup/SKILL.md` with YAML frontmatter (`name: cleanup`, descrip
 **Verify:** File exists at `skills/cleanup/SKILL.md`, has valid YAML frontmatter, covers all four process steps with the details above.
 **Status:** not started
 
-### Step 2: Update workflow extension
+### Step 2: Remove codemap step convention from planning skill
+
+In `skills/planning/SKILL.md`, remove the convention that every plan's final step must be a codemap update. Three locations:
+- Process section (line 43): remove `The **final step is always a codemap update** — update \`codemap.md\` to reflect the changes made during the plan.`
+- Artifact format example (lines 74–79): remove the `### Step N: Update codemap` example step and its verify/status fields
+- Key principles (line 90): remove `- **The last step is always a codemap update.**`
+
+**Verify:** Read `skills/planning/SKILL.md` and confirm no references to a mandatory codemap update step remain. The skill should still reference reading the codemap in step 0 — that's unrelated.
+**Status:** not started
+
+### Step 3: Update workflow extension
 
 In `extensions/workflow/index.ts`:
 - Add `cleanup: "cleanup"` to `PHASE_SKILL_MAP` (line 13–19)
@@ -79,14 +91,14 @@ In `extensions/workflow/prompt.md`:
 **Verify:** Read all three files and confirm the changes are correct. No build step (raw TS, loaded at runtime).
 **Status:** not started
 
-### Step 3: Update AGENTS.md
+### Step 4: Update AGENTS.md
 
 Add the cleanup skill to the available skills description in `AGENTS.md`, following the same format as existing entries (name, description, location).
 
 **Verify:** The cleanup skill appears in AGENTS.md with correct name, description, and path.
 **Status:** not started
 
-### Step 4: Update codemap
+### Step 5: Update codemap
 
 Update `codemap.md` to reflect: new cleanup skill in the Skills module responsibilities, updated pipeline flow (7 phases including cleanup), `docs/decisions` as a new artifact location in the Docs module, updated key flows diagram to include the cleanup phase.
 
