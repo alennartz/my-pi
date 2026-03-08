@@ -43,6 +43,10 @@ Walk through architectural decisions conversationally. Each decision should be g
 
 **Don't relitigate brainstorm decisions.** If the brainstorm already decided something, don't re-ask about it — start from it. Only revisit a brainstorm decision if your code investigation contradicts the *reasoning* behind it. The brainstorm captures *why* each decision was made; that's your anchor. If the reasons still hold, the decision still holds. If you found something that undermines the why, explain what you found and why it matters before asking the user to reconsider.
 
+**Decision records are settled context.** Treat relevant DRs from step 2 the same way as brainstorm decisions — if a DR already covers a decision you'd otherwise ask about, don't re-ask. Mention that you're following it so the user has visibility. Only revisit if your code investigation contradicts the reasoning captured in the DR.
+
+**Superseding a DR is a mandatory conversation.** If a decision being made contradicts an existing DR, stop and surface the conflict explicitly: which DR, what it says, and what contradicts it. Let the user decide whether to supersede. Never silently override a DR. If the user agrees to supersede, capture it in the plan's `### DR Supersessions` section under Architecture (see artifact format).
+
 Not every category below requires a decision every time. If the codebase already has well-established patterns for the type of work being done, align to them — don't ask the user to choose what's already settled. Only surface decisions where there's a genuine choice to make.
 
 Typical decisions include:

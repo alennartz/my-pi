@@ -55,7 +55,7 @@ In the renamed step 3 (Decide, One at a Time), add a paragraph after the existin
 2. **Supersession is a mandatory conversation** — if a decision being made contradicts an existing DR, the agent must stop, surface the conflict explicitly (which DR, what it says, what contradicts it), and let the user decide. Never silently override. If the user agrees to supersede, capture it in the plan's DR Supersessions section.
 
 **Verify:** Step 3 contains both the existing brainstorm relitigation guidance and the new DR-awareness guidance as distinct paragraphs.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Add DR Supersessions to the artifact format
 
