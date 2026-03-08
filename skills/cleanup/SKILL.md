@@ -25,6 +25,22 @@ This skill always runs in a clean context with no conversational history from pr
 
 ### 1. Extract Decision Records
 
+#### Handle Supersessions
+
+Before extracting new DRs, check the plan for a `### DR Supersessions` section under Architecture. If it exists, process each supersession entry:
+
+1. **Capture the old DR's last commit hash** using `git log -1 --format=%H -- docs/decisions/DR-NNN-<slug>.md`
+2. **Delete the old DR file.**
+3. **Commit the deletion** with message: `decision: delete DR-NNN <title> (superseded)`
+
+After processing all supersessions, proceed with normal DR extraction below. When writing a new DR that replaces a superseded one, include a provenance line in the Context section:
+
+> Supersedes DR-NNN (<title>), deleted at commit `<hash>`.
+
+This connects the new record to the history it replaced. If a superseded DR has no direct replacement among the new records (e.g., the decision was simply retired), the deletion commit is sufficient — no replacement DR is needed.
+
+#### Extract New Records
+
 Scan the working artifacts (brainstorm, plan, review) for decisions worth preserving. The bar is: **would this matter to someone working in this codebase six months from now?** Trivial or mechanical choices don't qualify. Look for decisions where alternatives were considered and a choice was made for substantive reasons — architectural trade-offs, scope decisions, technology choices, pattern selections, rejected approaches with instructive reasoning.
 
 For each candidate decision record:

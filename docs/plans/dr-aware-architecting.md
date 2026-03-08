@@ -84,4 +84,4 @@ In `skills/cleanup/SKILL.md`, extend step 1 (Extract Decision Records) to handle
 2. Then proceed with normal DR extraction from working artifacts. When writing a new DR that replaces a superseded one, include a provenance line in the Context section: `Supersedes DR-NNN (<title>), deleted at commit \`abc123\`.`
 
 **Verify:** Cleanup skill's step 1 describes the full supersession flow: read plan for supersessions, capture hash, delete old DR, commit, then write replacement with provenance during normal extraction.
-**Status:** not started
+**Status:** done
