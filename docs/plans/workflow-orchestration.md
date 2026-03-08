@@ -109,7 +109,7 @@ docs/reviews/: (none)
 ```
 
 **Verify:** importing and calling `getArtifactInventory()` from a script in the project root returns a listing that includes existing brainstorm files and shows `(none)` for missing directories
-**Status:** not started
+**Status:** done
 
 ### Step 3: Write workflow prompt template (`prompt.md`)
 
