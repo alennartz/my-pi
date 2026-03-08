@@ -140,7 +140,11 @@ export default function (pi: ExtensionAPI) {
 					"Start fresh context",
 				]);
 
-				if (choice === "Continue in this context") {
+				if (choice === undefined) {
+					return {
+						content: [{ type: "text" as const, text: "Transition cancelled. Staying in the current phase." }],
+					};
+				} else if (choice === "Continue in this context") {
 					pi.sendUserMessage(buildPhasePrompt(topic, nextPhase), { deliverAs: "followUp" });
 					return {
 						content: [{ type: "text" as const, text: `Phase complete. Continuing to ${nextPhase}.` }],

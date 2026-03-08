@@ -15,7 +15,7 @@ The plan was faithfully implemented across all five steps. The extension structu
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `.pi/extensions/workflow/index.ts:139-149`
-- **Status:** open
+- **Status:** resolved
 
 In the flexible transition branch, `ctx.ui.select()` returns `undefined` when the user cancels (ESC) or on timeout. The current code checks `if (choice === "Continue in this context") { ... } else { ... }`, so `undefined` falls into the `else` branch, which triggers `/workflow-new-session` — clearing the context. A user who cancels the dialog (intending "never mind, don't transition yet") would silently get a context-clearing session switch instead. The `undefined` case should be handled explicitly, likely by returning a "Transition cancelled" message to the LLM without sending any follow-up.
 
