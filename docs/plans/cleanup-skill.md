@@ -74,7 +74,7 @@ In `skills/planning/SKILL.md`, remove the convention that every plan's final ste
 - Key principles (line 90): remove `- **The last step is always a codemap update.**`
 
 **Verify:** Read `skills/planning/SKILL.md` and confirm no references to a mandatory codemap update step remain. The skill should still reference reading the codemap in step 0 — that's unrelated.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Update workflow extension
 

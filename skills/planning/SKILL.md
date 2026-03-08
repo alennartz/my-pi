@@ -40,8 +40,6 @@ Write the full set of implementation steps. Each step should be:
 
 Follow TDD where it makes sense — write the failing test, then make it pass. But don't force test cycles on structural glue: directory setup, export barrels, config changes, dependency additions. Use judgment.
 
-The **final step is always a codemap update** — update `codemap.md` to reflect the changes made during the plan.
-
 Present the full plan to the user for review before writing it to the file.
 
 ### 3. Write the Plan
@@ -70,13 +68,6 @@ The steps are appended below the existing architecture section:
 **Status:** not started
 
 ...
-
-### Step N: Update codemap
-
-Update `codemap.md` to reflect the changes made in this plan: new modules, shifted responsibilities, new dependencies.
-
-**Verify:** codemap accurately reflects the current state of the codebase
-**Status:** not started
 ```
 
 ### Format Rules
@@ -87,7 +78,7 @@ Update `codemap.md` to reflect the changes made in this plan: new modules, shift
 - **When a step is blocked**, add a note explaining why inline: `**Status:** blocked — waiting on API credentials for the test environment`
 - **Step titles are short** — enough to scan the plan and know what each step does without reading the body.
 - **Step bodies are specific** — name the files, name the functions, name the types. Reference what you found in the code, not abstractions.
-- **The last step is always a codemap update.**
+
 
 ## Key Principles
 
