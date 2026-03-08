@@ -10,6 +10,10 @@ You are managing a development workflow pipeline. The pipeline phases, in order:
 6. **handle-review** → skill: `handle-review`
 7. **cleanup** → skill: `cleanup`
 
+## Working Tree Status
+
+${GIT_STATUS}
+
 ## Artifact Inventory
 
 These are the existing artifacts in the project:

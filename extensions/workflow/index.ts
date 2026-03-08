@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
-import { getArtifactInventory } from "./phases.ts";
+import { getArtifactInventory, getGitStatus } from "./phases.ts";
 
 // =============================================================================
 // Constants
@@ -40,27 +40,34 @@ const PHASE_ARTIFACTS: Record<string, (topic: string) => string> = {
 
 const promptTemplate = readFileSync(join(__dirname, "prompt.md"), "utf-8");
 
-function buildEntryPrompt(userInput: string, inventory: string): string {
+function buildEntryPrompt(userInput: string, inventory: string, gitStatus: string): string {
 	return promptTemplate
 		.replace("${USER_INPUT}", userInput || "(no input — pick up where we left off or ask)")
-		.replace("${INVENTORY}", inventory);
+		.replace("${INVENTORY}", inventory)
+		.replace("${GIT_STATUS}", gitStatus);
 }
 
 function buildPhasePrompt(topic: string, phase: string): string {
 	const skill = PHASE_SKILL_MAP[phase];
-	return [
+	const gitStatus = getGitStatus();
+	const lines = [
 		`# Workflow: Continue Pipeline`,
 		``,
 		`**Topic:** \`${topic}\``,
 		`**Phase:** \`${phase}\``,
 		`**Skill:** \`${skill}\``,
 		``,
+		`## Working Tree Status`,
+		``,
+		gitStatus,
+		``,
 		`Load and follow the \`${skill}\` skill for the topic \`${topic}\`.`,
 		``,
 		`When the skill's work is done, call \`workflow_phase_complete\` with topic \`${topic}\` and phase \`${phase}\`.`,
 		``,
 		`Follow the skill's instructions for what to read. If you're uncertain about intent or context during a phase, you may consult earlier artifacts (brainstorm, plan) before asking the user — but don't read them by default.`,
-	].join("\n");
+	];
+	return lines.join("\n");
 }
 
 function getNextPhase(current: string): string | null {
@@ -96,7 +103,8 @@ export default function (pi: ExtensionAPI) {
 		description: "Start or continue the development workflow pipeline",
 		handler: async (args, ctx) => {
 			const inventory = getArtifactInventory();
-			const prompt = buildEntryPrompt(args, inventory);
+			const gitStatus = getGitStatus();
+			const prompt = buildEntryPrompt(args, inventory, gitStatus);
 			pi.sendUserMessage(prompt);
 		},
 	});
