@@ -77,6 +77,7 @@ Commit with message: `review: <topic>`
 - **Category:** plan deviation | code correctness
 - **Severity:** critical | warning | nit
 - **Location:** `path/to/file.ts:42-58`
+- **Status:** open
 
 [What's wrong and why it matters. Be specific — reference the plan step if it's a deviation, describe the actual risk if it's a correctness issue. Keep it concise.]
 
@@ -95,7 +96,8 @@ Commit with message: `review: <topic>`
 
 - **Summary first** — the reader should know the overall verdict before diving into findings.
 - **Findings are numbered sequentially.** Order by severity (critical first), then by category (plan deviations before correctness).
-- **Every finding has all four fields** — category, severity, location, description. No exceptions.
+- **Every finding has all five fields** — category, severity, location, status, description. No exceptions.
+- **Status is always `open`** when the review is first written. The handle-review skill updates it later to `resolved` or `dismissed`.
 - **Severity meanings:**
   - `critical` — likely bug, security issue, or major plan deviation that changes behavior
   - `warning` — potential problem that may cause issues under certain conditions, or meaningful incomplete work
