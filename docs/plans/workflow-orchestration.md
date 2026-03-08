@@ -83,12 +83,14 @@ The prompt does not duplicate which artifacts each skill reads — the skills ow
 
 ## Steps
 
+**Pre-implementation commit:** `acb8cef82e9f270f2a867afffd7b5120aff83a98`
+
 ### Step 1: Create extension directory and package.json
 
 Create `.pi/extensions/workflow/` with a `package.json` that declares the extension entry point via the `pi.extensions` field (same pattern as `extensions/azure-foundry/package.json`). No npm dependencies — `@mariozechner/pi-coding-agent`, `@sinclair/typebox`, and `@mariozechner/pi-ai` are resolved by pi's module system, and `node:fs`/`node:path` are built-ins.
 
 **Verify:** `.pi/extensions/workflow/package.json` exists with `pi.extensions` pointing to `./index.ts`
-**Status:** not started
+**Status:** done
 
 ### Step 2: Write artifact inventory helper (`phases.ts`)
 

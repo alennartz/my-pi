@@ -63,3 +63,4 @@ When in doubt: if you're changing *what* gets done, stop and talk to the user. I
 - **Resumable** — start from the first step that isn't done. Interruptions are cheap.
 - **Best effort on errors** — try to fix problems. Stop when stuck, not after a fixed retry count.
 - **Don't expand scope** — execute what the plan says. No bonus features, no "while I'm here" refactors.
+- **Read only what you need** — the plan and codemap are your primary context. Don't speculatively read files for background or "while I'm here" exploration. If a step references a file or pattern, read it. If you discover mid-step that you're missing information, read then. Unnecessary reads bloat context and waste tokens.
