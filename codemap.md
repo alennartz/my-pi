@@ -69,12 +69,14 @@ Pipeline orchestration extension that ties the skill pipeline into an automated 
 
 ### Docs
 
-Design brainstorm documents that record the reasoning and exploration behind each skill's design, plus decision records extracted from completed workflows.
+Working artifacts for in-progress workflows (brainstorms, plans, reviews) and permanent decision records extracted during cleanup.
 
-**Responsibilities:** skill design rationale, brainstorm records, decision records
+**Responsibilities:** workflow working artifacts, decision records (DR-NNN format)
 
-**Dependencies:** Skills (documents the design decisions behind each skill)
+**Dependencies:** Skills (artifacts are produced and consumed by pipeline skills)
 
 **Files:**
 - `docs/brainstorms/**`
+- `docs/plans/**`
+- `docs/reviews/**`
 - `docs/decisions/**`
