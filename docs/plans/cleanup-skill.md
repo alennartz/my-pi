@@ -47,6 +47,8 @@ Accepted
 
 ## Steps
 
+**Pre-implementation commit:** `8eaed29b593d20bb747e7df6842c3009372322af`
+
 ### Step 1: Create the cleanup skill
 
 Create `skills/cleanup/SKILL.md` with YAML frontmatter (`name: cleanup`, description) and structured sections following the same pattern as existing skills. The skill's process:
@@ -62,7 +64,7 @@ Create `skills/cleanup/SKILL.md` with YAML frontmatter (`name: cleanup`, descrip
 4. **Delete Working Artifacts** — Remove `docs/brainstorms/<topic>.md`, `docs/plans/<topic>.md`, `docs/reviews/<topic>.md`. Only delete files that exist. Commit the deletion.
 
 **Verify:** File exists at `skills/cleanup/SKILL.md`, has valid YAML frontmatter, covers all four process steps with the details above.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Remove codemap step convention from planning skill
 
