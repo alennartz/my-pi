@@ -98,7 +98,7 @@ In `extensions/workflow/prompt.md`:
 Add the cleanup skill to the available skills description in `AGENTS.md`, following the same format as existing entries (name, description, location).
 
 **Verify:** The cleanup skill appears in AGENTS.md with correct name, description, and path.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Update codemap
 

@@ -11,6 +11,7 @@ This is a [pi coding agent](https://github.com/badlogic/pi-mono) package. It con
 - **`skills/`** — Custom workflow skills loaded by the pi agent harness. Each skill is a `SKILL.md` file with structured instructions.
 - **`extensions/`** — Provider extensions (TypeScript). Currently: Azure AI Foundry provider.
 - **`docs/brainstorms/`** — Design rationale documents behind each skill.
+- **`docs/decisions/`** — Decision records extracted from completed workflows (DR-NNN format).
 - **`prompts/`** — Custom prompt templates (currently empty).
 - **`themes/`** — Custom themes (currently empty).
 
