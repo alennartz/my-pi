@@ -183,4 +183,4 @@ Add a **Workflow Extension** module to `codemap.md`:
 Update the overview diagram to include the Workflow Extension module and its relationship to Skills.
 
 **Verify:** codemap accurately reflects the new module and its relationships
-**Status:** not started
+**Status:** done

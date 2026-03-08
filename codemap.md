@@ -8,6 +8,7 @@ A personal [pi coding agent](https://github.com/badlogic/pi-mono) package provid
 graph LR
   Skills --> Docs
   Extension
+  Workflow -->|references skill names| Skills
 ```
 
 ### Key Flows
@@ -52,6 +53,17 @@ Azure AI Foundry provider extension that auto-discovers model deployments and re
 
 **Files:**
 - `extensions/azure-foundry/**`
+
+### Workflow Extension
+
+Pipeline orchestration extension that ties the skill pipeline into an automated workflow with artifact-driven handoffs.
+
+**Responsibilities:** pipeline orchestration, artifact inventory scanning, phase transition management (flexible vs mandatory context boundaries), `/workflow` entry point command, `workflow_phase_complete` tool, session lifecycle for context clearing
+
+**Dependencies:** Skills (references skill names for phase routing)
+
+**Files:**
+- `.pi/extensions/workflow/**`
 
 ### Docs
 
