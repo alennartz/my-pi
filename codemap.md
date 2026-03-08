@@ -38,7 +38,7 @@ sequenceDiagram
 
 Agent workflow skills that guide the brainstorm → architect → plan → implement → review → cleanup pipeline, plus standalone utilities (codemap, debugging).
 
-**Responsibilities:** development workflow orchestration, brainstorming facilitation, architectural decision-making, implementation planning, step-by-step code execution, code review against plans, review finding resolution, decision record extraction, codemap generation, documentation maintenance, structured debugging
+**Responsibilities:** development workflow orchestration, brainstorming facilitation, architectural decision-making (with DR-awareness and supersession handling), implementation planning, step-by-step code execution, code review against plans, review finding resolution, decision record extraction (including supersession lifecycle), codemap generation, documentation maintenance, structured debugging
 
 **Dependencies:** none (skills are loaded by the pi agent harness at runtime)
 
@@ -71,7 +71,7 @@ Pipeline orchestration extension that ties the skill pipeline into an automated 
 
 Working artifacts for in-progress workflows (brainstorms, plans, reviews) and permanent decision records extracted during cleanup.
 
-**Responsibilities:** workflow working artifacts, decision records (DR-NNN format)
+**Responsibilities:** workflow working artifacts, decision records (DR-NNN format, consumed by architecting as settled context, produced/deleted by cleanup including supersession lifecycle)
 
 **Dependencies:** Skills (artifacts are produced and consumed by pipeline skills)
 
