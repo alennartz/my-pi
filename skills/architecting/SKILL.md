@@ -21,7 +21,7 @@ Before starting:
 
 1. **Read `codemap.md`** at the repo root. If it doesn't exist, suggest to the user that one should be created and offer to generate it now using the codemap skill. If the user declines, fall back to an unguided exploration of the codebase — survey the directory structure, entry points, and key files to ground yourself before proceeding.
 
-2. **Check for a brainstorm.** If the user links one, read it from `docs/brainstorms/<topic>.md`. If no brainstorm is linked and the user's description feels too vague or too large in scope, suggest they brainstorm first. If the direction is clear enough, proceed.
+2. **Check for a brainstorm.** If the user links one, read it from `docs/brainstorms/<topic>.md`. If no brainstorm is linked and the user's description feels too vague or too large in scope, suggest they brainstorm first. If the direction is clear enough, proceed. When a brainstorm exists, pay attention to its structure: **key decisions** (with reasoning) are settled starting points, **open questions** are fair game for discussion. Don't treat them the same.
 
 ### 1. Investigate
 
@@ -32,6 +32,8 @@ Share what you're finding as you go. The user should see your reasoning, not jus
 ### 2. Decide, One at a Time
 
 Walk through architectural decisions conversationally. Each decision should be grounded in what you found in the code. One decision at a time — don't dump a wall of choices.
+
+**Don't relitigate brainstorm decisions.** If the brainstorm already decided something, don't re-ask about it — start from it. Only revisit a brainstorm decision if your code investigation contradicts the *reasoning* behind it. The brainstorm captures *why* each decision was made; that's your anchor. If the reasons still hold, the decision still holds. If you found something that undermines the why, explain what you found and why it matters before asking the user to reconsider.
 
 Not every category below requires a decision every time. If the codebase already has well-established patterns for the type of work being done, align to them — don't ask the user to choose what's already settled. Only surface decisions where there's a genuine choice to make.
 
