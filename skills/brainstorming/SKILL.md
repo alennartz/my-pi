@@ -105,7 +105,7 @@ Apply YAGNI to the *solution*, not to the *exploration*. Cut unnecessary complex
 Write a brainstorming artifact that captures:
 
 - **The idea** — what we set out to explore
-- **Key decisions** — what was considered and what was chosen, with reasoning
+- **Key decisions** — what was considered and what was chosen. For each decision, capture the *why* — the reasoning and constraints that led to the choice. Downstream phases use this reasoning to judge whether a decision still holds; without it, decided things get relitigated for no reason.
 - **Direction** — the agreed-upon approach
 - **Open questions** — anything unresolved that needs future attention
 
