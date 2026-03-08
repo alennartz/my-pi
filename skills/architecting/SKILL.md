@@ -93,6 +93,10 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 ### Technology Choices
 
 [Any new tech being introduced or existing tech being replaced. What was chosen and why, what alternatives were considered.]
+
+### DR Supersessions
+
+- **DR-NNN** (<title>) — superseded because [reason]. New decision: [summary of what replaces it].
 ```
 
 ### Format Rules
@@ -102,7 +106,8 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 - **New Modules** — same level of detail as a codemap module entry: purpose, responsibilities, dependencies, approximate location. Not exact files.
 - **Interfaces** — only interfaces affected by the changes. Enough for someone to understand the boundaries and data flow. Pseudocode or type signatures are fine if they clarify; don't force them if prose is clearer.
 - **Technology Choices** — only present when new tech is introduced or existing tech is replaced. Include what was considered and why the choice was made. Omit this section if no technology decisions were needed.
-- **Omit empty sections.** If there are no new modules or no technology choices, leave those sections out entirely.
+- **DR Supersessions** — only present when the architecture supersedes one or more existing decision records. List each superseded DR with its number, title, reason for supersession, and a summary of the replacement decision. Cleanup uses this section to delete old DRs and write replacements with provenance.
+- **Omit empty sections.** If there are no new modules, no technology choices, or no DR supersessions, leave those sections out entirely.
 
 ## Key Principles
 

@@ -62,7 +62,7 @@ In the renamed step 3 (Decide, One at a Time), add a paragraph after the existin
 In the artifact format template in `skills/architecting/SKILL.md`, add an optional `### DR Supersessions` subsection under `## Architecture`. Add a corresponding format rule explaining: list each superseded DR with its number, title, reason for supersession, and summary of the replacement decision. Omit when no DRs are being superseded.
 
 **Verify:** The artifact format template includes `### DR Supersessions` and a format rule describes its usage and optional nature.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Add DR-awareness key principle
 
