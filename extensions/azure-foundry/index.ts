@@ -49,9 +49,10 @@ const SUBSCRIPTION = process.env.AZURE_FOUNDRY_SUBSCRIPTION; // optional
 // Azure AD Token Cache
 // =============================================================================
 
-const TOKEN_TTL_MS = 50 * 60 * 1000; // 50 min (Azure tokens last ~60 min)
+const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000; // try to refresh 5 min before expiry
+const TOKEN_HARD_MARGIN_MS = 30 * 1000; // absolute minimum — never use a token closer than 30s to expiry
 const AZ_TOKEN_CMD =
-	"az account get-access-token --resource https://cognitiveservices.azure.com --query accessToken -o tsv";
+	"az account get-access-token --resource https://cognitiveservices.azure.com -o json";
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
@@ -61,12 +62,29 @@ function getAzureToken(): string {
 		return cachedToken.value;
 	}
 
-	const token = execSync(AZ_TOKEN_CMD, { encoding: "utf-8", timeout: 15_000 }).trim();
-	if (!token) {
-		throw new Error("azure-foundry: az CLI returned empty token. Is `az login` still valid?");
+	const raw = execSync(AZ_TOKEN_CMD, { encoding: "utf-8", timeout: 15_000 }).trim();
+	if (!raw) {
+		throw new Error("azure-foundry: az CLI returned empty response. Is `az login` still valid?");
 	}
 
-	cachedToken = { value: token, expiresAt: now + TOKEN_TTL_MS };
+	const parsed = JSON.parse(raw) as { accessToken: string; expiresOn: string };
+	const token = parsed.accessToken;
+	if (!token) {
+		throw new Error("azure-foundry: az CLI returned no accessToken. Is `az login` still valid?");
+	}
+
+	// expiresOn is like "2026-03-07 22:28:00.000000" (local time) or an ISO string
+	const expiresAt = new Date(parsed.expiresOn).getTime();
+	if (Number.isNaN(expiresAt)) {
+		throw new Error(`azure-foundry: could not parse expiresOn: "${parsed.expiresOn}"`);
+	}
+
+	// Prefer refreshing 5 min early, but if az CLI returned a token that's already
+	// inside that window (because az CLI caches aggressively), don't discard it —
+	// use it until 30s before actual expiry to avoid hammering az on every request.
+	const softExpiry = expiresAt - TOKEN_REFRESH_MARGIN_MS;
+	const hardExpiry = expiresAt - TOKEN_HARD_MARGIN_MS;
+	cachedToken = { value: token, expiresAt: Math.max(softExpiry, Math.min(hardExpiry, now + TOKEN_HARD_MARGIN_MS)) };
 	return token;
 }
 
