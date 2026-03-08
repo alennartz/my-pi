@@ -91,7 +91,7 @@ In `extensions/workflow/prompt.md`:
 - Add `7. **cleanup** → skill: \`cleanup\`` to the phase list after handle-review
 
 **Verify:** Read all three files and confirm the changes are correct. No build step (raw TS, loaded at runtime).
-**Status:** not started
+**Status:** done
 
 ### Step 4: Update AGENTS.md
 

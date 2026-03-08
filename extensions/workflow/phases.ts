@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const ARTIFACT_DIRS = ["docs/brainstorms", "docs/plans", "docs/reviews"];
+const ARTIFACT_DIRS = ["docs/brainstorms", "docs/plans", "docs/reviews", "docs/decisions"];
 
 /**
  * Scan artifact directories and return a formatted inventory string.

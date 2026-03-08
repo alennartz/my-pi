@@ -16,9 +16,10 @@ const PHASE_SKILL_MAP: Record<string, string> = {
 	implement: "implementing",
 	review: "code-review",
 	"handle-review": "handle-review",
+	cleanup: "cleanup",
 };
 
-const PHASE_ORDER = ["brainstorm", "architect", "plan", "implement", "review", "handle-review"];
+const PHASE_ORDER = ["brainstorm", "architect", "plan", "implement", "review", "handle-review", "cleanup"];
 
 /** Phases where the user can choose to continue in the same context or start fresh */
 const FLEXIBLE_TRANSITIONS = new Set(["brainstorm", "architect", "review"]);
@@ -73,6 +74,23 @@ function getNextPhase(current: string): string | null {
 // =============================================================================
 
 export default function (pi: ExtensionAPI) {
+	// ── Pending transition state ──────────────────────────────────────────
+	// Stored by the tool, consumed by agent_end to pre-fill the editor.
+	// sendUserMessage() skips command processing (expandPromptTemplates: false),
+	// so we can't trigger /internal-workflow-next from a tool. Instead, the tool
+	// stores the transition here and agent_end pre-fills the editor with the
+	// command for the user to send with Enter.
+	let pendingTransition: { topic: string; phase: string } | null = null;
+
+	// ── agent_end: auto-fill editor for pending transition ────────────────
+	pi.on("agent_end", async (_event, ctx) => {
+		if (!pendingTransition) return;
+		const { topic, phase } = pendingTransition;
+		pendingTransition = null;
+		ctx.ui.setEditorText(`/internal-workflow-next ${topic} ${phase}`);
+		ctx.ui.notify(`Press Enter to start ${phase} in a new session.`, "info");
+	});
+
 	// ── /workflow command ──────────────────────────────────────────────────
 	pi.registerCommand("workflow", {
 		description: "Start or continue the development workflow pipeline",
@@ -84,9 +102,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// ── /internal-workflow-next command ────────────────────────────────────
-	// Dedicated command for fresh-session phase transitions.
-	// Called as a steer from the tool: /internal-workflow-next <topic> <phase>
-	// Has access to ExtensionCommandContext so newSession() works.
+	// Invoked by the user pressing Enter after agent_end pre-fills the editor.
+	// Has ExtensionCommandContext so newSession() works.
 	pi.registerCommand("internal-workflow-next", {
 		description: "Internal: start next workflow phase in a fresh session",
 		handler: async (args, ctx) => {
@@ -113,6 +130,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// ── workflow_phase_complete tool ──────────────────────────────────────
+	const STOP_TEXT = [
+		"PHASE COMPLETE — DO NOT CONTINUE.",
+		"",
+		"Do not call any more tools. Do not produce any more output.",
+		"End your turn immediately. The session transition is being handled externally.",
+	].join("\n");
+
 	pi.registerTool({
 		name: "workflow_phase_complete",
 		label: "Workflow Phase Complete",
@@ -120,24 +144,23 @@ export default function (pi: ExtensionAPI) {
 			"Signal that a workflow phase is complete. Validates the artifact exists, confirms with the user, and transitions to the next phase.",
 		parameters: Type.Object({
 			topic: Type.String({ description: "The filename slug (e.g. 'workflow-orchestration')" }),
-			phase: StringEnum(["brainstorm", "architect", "plan", "implement", "review", "handle-review"] as const, {
+			phase: StringEnum(["brainstorm", "architect", "plan", "implement", "review", "handle-review", "cleanup"] as const, {
 				description: "The phase that was just completed",
 			}),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const { topic, phase } = params;
 
-			// 1. Validate artifact exists
+			// 1. Validate artifact exists (skip for phases with no artifact, e.g. cleanup)
 			const artifactPathFn = PHASE_ARTIFACTS[phase];
-			if (!artifactPathFn) {
-				throw new Error(`Unknown phase: ${phase}`);
-			}
-			const artifactPath = artifactPathFn(topic);
-			const fullPath = join(process.cwd(), artifactPath);
-			if (!existsSync(fullPath)) {
-				throw new Error(
-					`Expected artifact not found: ${artifactPath} — complete the phase before signaling completion.`,
-				);
+			if (artifactPathFn) {
+				const artifactPath = artifactPathFn(topic);
+				const fullPath = join(process.cwd(), artifactPath);
+				if (!existsSync(fullPath)) {
+					throw new Error(
+						`Expected artifact not found: ${artifactPath} — complete the phase before signaling completion.`,
+					);
+				}
 			}
 
 			// 2. Determine next phase
@@ -170,12 +193,8 @@ export default function (pi: ExtensionAPI) {
 						content: [{ type: "text" as const, text: `Phase complete. Continuing to ${nextPhase}.` }],
 					};
 				} else {
-					pi.sendUserMessage(`/internal-workflow-next ${topic} ${nextPhase}`, { deliverAs: "steer" });
-					return {
-						content: [
-							{ type: "text" as const, text: `Phase complete. A new session is being started for ${nextPhase}. Stop here — do not continue.` },
-						],
-					};
+					pendingTransition = { topic, phase: nextPhase };
+					return { content: [{ type: "text" as const, text: STOP_TEXT }] };
 				}
 			} else {
 				const choice = await ctx.ui.select(
@@ -194,12 +213,8 @@ export default function (pi: ExtensionAPI) {
 					};
 				}
 
-				pi.sendUserMessage(`/internal-workflow-next ${topic} ${nextPhase}`, { deliverAs: "steer" });
-				return {
-					content: [
-						{ type: "text" as const, text: `Phase complete. A new session is being started for ${nextPhase}. Stop here — do not continue.` },
-					],
-				};
+				pendingTransition = { topic, phase: nextPhase };
+				return { content: [{ type: "text" as const, text: STOP_TEXT }] };
 			}
 		},
 	});

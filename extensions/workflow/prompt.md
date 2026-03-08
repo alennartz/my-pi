@@ -8,6 +8,7 @@ You are managing a development workflow pipeline. The pipeline phases, in order:
 4. **implement** → skill: `implementing`
 5. **review** → skill: `code-review`
 6. **handle-review** → skill: `handle-review`
+7. **cleanup** → skill: `cleanup`
 
 ## Artifact Inventory
 
