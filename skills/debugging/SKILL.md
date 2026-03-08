@@ -1,6 +1,6 @@
 ---
 name: debugging
-description: "Use when encountering any bug, test failure, or unexpected behavior. Enforces root cause investigation before attempting fixes."
+description: "Use when encountering any bug, test failure, or unexpected behavior — whether observed directly or reported by the user. Enforces root cause investigation before attempting fixes. Triggers include: the user reporting something is broken, wrong, or not working; the user describing unexpected behavior or a regression; build/compile errors; runtime exceptions; stack traces; test failures; type errors; assertion failures; crashes; hangs; wrong output; error messages in logs; a previous fix attempt that didn't work; or any situation where code isn't behaving as expected. Also use when stuck in a fix loop — multiple failed attempts at the same problem."
 ---
 
 # Systematic Debugging
