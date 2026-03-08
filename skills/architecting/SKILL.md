@@ -117,3 +117,4 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 - **Shape, not sequence** — decide what the architecture looks like, not the order to build it
 - **The codemap is the map** — use its module names, respect its boundaries, note when boundaries need to shift
 - **YAGNI** — don't architect what isn't needed. If a simple approach works, take it.
+- **Decision records are settled context** — check `docs/decisions/` before making decisions. Follow existing DRs; superseding one is always a conversation with the user.

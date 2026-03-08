@@ -71,7 +71,7 @@ Add a new bullet to the Key Principles section of `skills/architecting/SKILL.md`
 - **Decision records are settled context** — check `docs/decisions/` before making decisions. Follow existing DRs; superseding one is always a conversation with the user.
 
 **Verify:** Key Principles section contains the new bullet.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Add supersession handling to cleanup skill
 
