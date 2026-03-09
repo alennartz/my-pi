@@ -37,4 +37,4 @@ In `skills/planning/SKILL.md`, add a paragraph to the end of **section 2 ("Gener
 In `skills/planning/SKILL.md`, add a new bullet to the **Key Principles** section reinforcing the same guideline. Shorter than the process section guidance — a principle-level summary.
 
 **Verify:** The Key Principles section in `skills/planning/SKILL.md` contains a new bullet about code snippets.
-**Status:** not started
+**Status:** done
