@@ -45,6 +45,8 @@ async function showNumberedSelect(
 
 ## Steps
 
+**Pre-implementation commit:** `d2164fa95b19cc96e5b5aa923458448ada3e46bb`
+
 ### Step 1: Create `lib/components/numbered-select.ts` — the component
 
 Create `lib/components/numbered-select.ts` with the `showNumberedSelect` function. This is the bulk of the work:
@@ -56,7 +58,7 @@ Create `lib/components/numbered-select.ts` with the `showNumberedSelect` functio
 - **Text mode input:** all keys route to `Input.handleInput()`. Enter calls `done()` with the highlighted option + `Input.getValue()` as annotation (trimmed, `undefined` if empty). Escape clears input and exits text mode. Up/down clear input, exit text mode, move highlight.
 
 **Verify:** File exists at `lib/components/numbered-select.ts`, exports the function and types. Manual test: import from a scratch extension, call `showNumberedSelect` with 3 options, verify number keys submit instantly, arrow+tab+type+enter submits with annotation, escape cancels.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Integrate into `workflow_phase_complete` — replace `ctx.ui.select()` calls
 
