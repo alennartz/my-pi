@@ -41,7 +41,7 @@ export function getGitStatus(): string {
 			output,
 			"```",
 			"",
-			"Recommend to the user that these be dealt with before proceeding (committed, stashed, or discarded) so the workflow starts from a clean slate.",
+			"Stop and ask the user how they want to handle these before proceeding. Present options (e.g. commit, stash, ignore) and wait for their choice.",
 		].join("\n");
 	} catch {
 		return "Could not determine git status (not a git repo or git not available).";
