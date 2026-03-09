@@ -180,6 +180,9 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// 3. Confirm transition with user
+			const NOT_DONE_TEXT =
+				"User indicated this phase isn't complete yet. Stop and ask the user what remains to be done or what they want changed. Do not call workflow_phase_complete again until the user confirms the phase is ready.";
+
 			if (FLEXIBLE_TRANSITIONS.has(phase)) {
 				const choice = await ctx.ui.select(
 					`${phase} done for ${topic}. Move on to ${nextPhase}?`,
@@ -193,7 +196,7 @@ export default function (pi: ExtensionAPI) {
 				if (choice === undefined || choice === "No, not done yet") {
 					return {
 						content: [
-							{ type: "text" as const, text: "User indicated this phase isn't complete yet. Continue working." },
+							{ type: "text" as const, text: NOT_DONE_TEXT },
 						],
 					};
 				} else if (choice === "Yes, in this context") {
@@ -216,7 +219,7 @@ export default function (pi: ExtensionAPI) {
 				if (choice === undefined || choice === "No, not done yet") {
 					return {
 						content: [
-							{ type: "text" as const, text: "User indicated this phase isn't complete yet. Continue working." },
+							{ type: "text" as const, text: NOT_DONE_TEXT },
 						],
 					};
 				}
