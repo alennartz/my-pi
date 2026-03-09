@@ -30,7 +30,7 @@ In `skills/architecting/SKILL.md`, add a new bullet to the **Key Principles** se
 In `skills/planning/SKILL.md`, add a paragraph to the end of **section 2 ("Generate the Plan")**, after the existing TDD paragraph. The paragraph should explain when code snippets are appropriate in plan steps (interfaces, data structures, important signatures) vs. not (implementations, function bodies), and why — the TDD pre-emption concern.
 
 **Verify:** The "Generate the Plan" section in `skills/planning/SKILL.md` contains new guidance about code snippets after the TDD paragraph.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Add code-snippets principle to planning skill
 

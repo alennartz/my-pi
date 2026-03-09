@@ -40,6 +40,8 @@ Write the full set of implementation steps. Each step should be:
 
 Follow TDD where it makes sense — write the failing test, then make it pass. But don't force test cycles on structural glue: directory setup, export barrels, config changes, dependency additions. Use judgment.
 
+**Code snippets in steps** — use code when it communicates shape more clearly than prose: interfaces, type signatures, data structures, important function signatures. These help the implementer understand boundaries and contracts without ambiguity. Avoid implementation snippets — function bodies, algorithms, control flow — because they pre-empt TDD and over-constrain how the implementer solves the problem. The step should describe *what* the code needs to look like at its boundaries, not *how* it works internally. When prose is equally clear, prefer prose.
+
 Present the full plan to the user for review before writing it to the file.
 
 ### 3. Write the Plan
