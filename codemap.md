@@ -9,6 +9,8 @@ graph LR
   Skills --> Docs
   Extension
   Workflow -->|references skill names| Skills
+  Workflow -->|imports| Components
+  Components
 ```
 
 ### Key Flows
@@ -56,13 +58,24 @@ Azure AI Foundry provider extension that auto-discovers model deployments and re
 **Files:**
 - `extensions/azure-foundry/**`
 
+### Components
+
+Reusable TUI components shared across extensions. Built on `@mariozechner/pi-tui` primitives and exposed as async functions that take an `ExtensionContext`.
+
+**Responsibilities:** numbered select dialog with keyboard shortcuts and optional inline text annotation
+
+**Dependencies:** none (standalone library consumed by extensions)
+
+**Files:**
+- `lib/components/**`
+
 ### Workflow Extension
 
 Pipeline orchestration extension that ties the skill pipeline into an automated workflow with artifact-driven handoffs.
 
-**Responsibilities:** pipeline orchestration, artifact inventory scanning, phase transition management (flexible vs mandatory context boundaries), `/workflow` entry point command, `workflow_phase_complete` tool, session lifecycle for context clearing
+**Responsibilities:** pipeline orchestration, artifact inventory scanning, phase transition management (flexible vs mandatory context boundaries, with numbered select UI for phase transition dialogs), `/workflow` entry point command, `workflow_phase_complete` tool, session lifecycle for context clearing
 
-**Dependencies:** Skills (references skill names for phase routing)
+**Dependencies:** Skills (references skill names for phase routing), Components (numbered select for phase transition dialogs)
 
 **Files:**
 - `extensions/workflow/**`
