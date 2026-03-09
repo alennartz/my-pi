@@ -16,12 +16,14 @@ The planning and architecting agents avoid code snippets in plan artifacts even 
 
 ## Steps
 
+**Pre-implementation commit:** `d2c44ad6686d1ed10ac06665daef6aa9ac985048`
+
 ### Step 1: Add code-snippets principle to architecting skill
 
 In `skills/architecting/SKILL.md`, add a new bullet to the **Key Principles** section (after the existing bullets). The principle should explain the TDD reasoning and the "prefer prose, use code for shape" guideline.
 
 **Verify:** The Key Principles section in `skills/architecting/SKILL.md` contains a new bullet about code snippets with TDD reasoning.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Add code-snippets guidance to planning skill's "Generate the Plan" section
 

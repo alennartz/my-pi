@@ -118,3 +118,4 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 - **The codemap is the map** — use its module names, respect its boundaries, note when boundaries need to shift
 - **YAGNI** — don't architect what isn't needed. If a simple approach works, take it.
 - **Decision records are settled context** — check `docs/decisions/` before making decisions. Follow existing DRs; superseding one is always a conversation with the user.
+- **Code snippets for shape, not implementation** — use code in the plan when it communicates shape more clearly than prose: interfaces, type signatures, data structures, module boundaries. Avoid implementation snippets (function bodies, algorithms, logic) — those pre-empt TDD and constrain the implementer unnecessarily. When prose is equally clear, prefer prose.
