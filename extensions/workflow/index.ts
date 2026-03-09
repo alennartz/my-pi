@@ -200,8 +200,16 @@ export default function (pi: ExtensionAPI) {
 						],
 					};
 				} else if (choice === "Yes, in this context") {
+					const nextSkill = PHASE_SKILL_MAP[nextPhase];
+					const lines = [
+						`Phase "${phase}" is complete for topic "${topic}". The user indicated you should continue with the **${nextSkill}** skill.`,
+						``,
+						`Load and follow the \`${nextSkill}\` skill for the topic \`${topic}\`.`,
+						``,
+						`When the skill's work is done, call \`workflow_phase_complete\` with topic \`${topic}\` and phase \`${nextPhase}\`.`,
+					];
 					return {
-						content: [{ type: "text" as const, text: `Phase complete. Continuing to ${nextPhase}.` }],
+						content: [{ type: "text" as const, text: lines.join("\n") }],
 					};
 				} else {
 					pendingTransition = { topic, phase: nextPhase };

@@ -9,7 +9,7 @@
  * request time instead of at model-parse time.
  *
  * Required env vars:
- *   AZURE_FOUNDRY_ENDPOINT       - e.g. https://aif-itsec-csi-01.services.ai.azure.com
+ *   AZURE_FOUNDRY_ENDPOINT       - e.g. https://my-foundry.services.ai.azure.com
  *   AZURE_FOUNDRY_ACCOUNT        - Cognitive Services account name
  *   AZURE_FOUNDRY_RESOURCE_GROUP - Azure resource group
  *

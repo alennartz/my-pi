@@ -31,7 +31,6 @@ Before extracting new DRs, check the plan for a `### DR Supersessions` section u
 
 1. **Capture the old DR's last commit hash** using `git log -1 --format=%H -- docs/decisions/DR-NNN-<slug>.md`
 2. **Delete the old DR file.**
-3. **Commit the deletion** with message: `decision: delete DR-NNN <title> (superseded)`
 
 After processing all supersessions, proceed with normal DR extraction below. When writing a new DR that replaces a superseded one, include a provenance line in the Context section:
 
@@ -42,6 +41,8 @@ This connects the new record to the history it replaced. If a superseded DR has 
 #### Extract New Records
 
 Scan the working artifacts (brainstorm, plan, review) for decisions worth preserving. The bar is: **would this matter to someone working in this codebase six months from now?** Trivial or mechanical choices don't qualify. Look for decisions where alternatives were considered and a choice was made for substantive reasons — architectural trade-offs, scope decisions, technology choices, pattern selections, rejected approaches with instructive reasoning.
+
+**Zero is a valid answer.** Many workflows — bug fixes, small features, routine refactors — don't produce decisions that clear the bar. If nothing qualifies, tell the user you found no candidates worth extracting and move on. Don't manufacture a DR just to have one.
 
 For each candidate decision record:
 
@@ -67,17 +68,13 @@ Accepted
 <What follows from this decision — benefits, trade-offs, things to watch for.>
 ```
 
-Commit each approved decision record individually with message: `decision: DR-NNN <title>`
-
-If the user rejects all proposed records, that's fine — proceed to the next step. The user had their chance to preserve what mattered.
-
 ### 2. Codemap Refresh
 
 Update the codemap to reflect changes made during the workflow. This is the sole codemap update point in the pipeline — it covers implementation and review changes together.
 
 1. **Get the diff scope.** Use the plan's `pre-implementation-commit` hash to run `git diff --name-only <hash>..HEAD`. This tells you what files changed.
 2. **Combine with the architecture.** The plan's impacted modules list tells you which codemap modules to focus on.
-3. **Do a scoped codemap update.** Follow the codemap skill's scoped update operation: read the current codemap, examine the changes, update affected sections, preserve everything else. Commit with message: `codemap: update`
+3. **Do a scoped codemap update.** Follow the codemap skill's scoped update operation: read the current codemap, examine the changes, update affected sections, preserve everything else.
 
 ### 3. Documentation Pass
 
@@ -89,7 +86,7 @@ For each document found, check whether anything shipped in this workflow makes i
 - Outdated examples or instructions
 - Structural descriptions that don't reflect current organization
 
-Update what needs updating. Don't rewrite docs that are still accurate. Commit documentation updates with a descriptive message.
+Update what needs updating. Don't rewrite docs that are still accurate.
 
 ### 4. Delete Working Artifacts
 
@@ -98,7 +95,13 @@ Remove the working artifacts for this topic:
 - `docs/plans/<topic>.md`
 - `docs/reviews/<topic>.md`
 
-Only delete files that actually exist. Commit the deletion with message: `cleanup: remove working artifacts for <topic>`
+Only delete files that actually exist.
+
+### 5. Commit
+
+Stage and commit all changes from this cleanup phase in a single commit with message: `cleanup: <topic> - <short description of what the commit contains>`
+
+The description should briefly summarize what's in the commit — e.g., "decision records, codemap update, artifact removal" or "codemap and docs update, artifact removal". Keep it concise.
 
 ## Key Principles
 

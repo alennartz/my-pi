@@ -39,7 +39,31 @@ When this phase is complete, you should be able to articulate clearly what the r
 
 **Say when you don't know.** If you don't understand something, say so. Research it, gather more evidence, ask for help. Pretending to understand is the fastest path to a bad fix.
 
-### Phase 3: Fix
+### Phase 3: Decide — Fix or Consult
+
+Before touching any code, decide whether you should fix autonomously or present your findings to the user first.
+
+**Fix autonomously** when all of these are true:
+- The root cause is clear — one obvious explanation, not competing theories
+- The fix is small and mechanical — a typo, a wrong variable, a missing null check, an off-by-one
+- There is only one reasonable way to fix it
+- The fix does not change intended behavior, APIs, or semantics
+- You fully understand the code you're changing
+
+**Stop and consult the user first** if any of these are true:
+- Multiple plausible root causes — you're not sure which one is right
+- The fix changes behavior or semantics, not just correcting a clear mistake
+- There's a judgment call about intent — it's unclear whether the current behavior is a bug or was deliberate
+- The fix touches code you don't fully understand
+- The fix has side effects beyond the immediate bug
+- The fix would require changes across multiple modules or files
+- The problem is architectural — a symptom of a deeper design issue
+
+When consulting, present: what you found, why you believe it's the root cause, what the fix would be, and why you want confirmation before proceeding. Be specific.
+
+### Phase 4: Fix
+
+Only reached if Phase 3 determined you should fix autonomously, or the user confirmed you should proceed.
 
 **Write a failing test first.** Capture the bug in the simplest possible test case — one that fails now and will pass when the root cause is addressed. This proves the fix actually fixes the problem and prevents regression.
 
@@ -47,9 +71,15 @@ When this phase is complete, you should be able to articulate clearly what the r
 
 **Verify thoroughly.** The new test passes. Existing tests still pass. The original bug is actually resolved. If verification fails, return to Phase 2 — don't stack more changes.
 
-## Escalation
+### Phase 5: Recap
 
-If investigation reveals the problem is architectural — the bug is a symptom of a deeper design issue, or the fix would require large-scale refactoring across module boundaries — stop and bring this to the user. Explain what you've found, why you believe the issue is structural, and what the options are. Autonomous fixes should not result in massive refactors. This is a conversation, not a unilateral decision.
+After the fix is verified (or after presenting findings if you consulted instead of fixing), give a brief summary:
+
+- **Root cause:** One or two sentences — what was actually wrong and where.
+- **Fix applied:** What you changed and why it addresses the root cause.
+- **Verification:** What you checked to confirm the fix works.
+
+Keep it short. This is a recap, not a report. The user should be able to glance at it and understand what happened.
 
 ## Key Principles
 
@@ -57,4 +87,5 @@ If investigation reveals the problem is architectural — the bug is a symptom o
 - **One variable at a time** — change one thing, observe the result. Isolate cause and effect.
 - **Trace to the source** — fix where the problem originates, not where it manifests.
 - **Back out failed attempts** — don't layer fix on top of fix. Each attempt starts clean.
-- **Escalate architectural problems** — if the fix is bigger than a bug fix, involve the human.
+- **Consult when uncertain** — if there's ambiguity about cause, intent, or approach, present findings before fixing. Autonomous fixes are for clear-cut cases only.
+- **Always recap** — after fixing, summarize root cause, fix, and verification. No silent fixes.
