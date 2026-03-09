@@ -46,7 +46,7 @@ class NumberedSelectComponent implements Component, Focusable {
 
 	constructor(
 		tui: TUI,
-		theme: any,
+		theme: Theme,
 		title: string,
 		options: NumberedSelectOption[],
 		done: (result: NumberedSelectResult | undefined) => void,

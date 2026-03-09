@@ -15,7 +15,7 @@ The plan was implemented faithfully across both steps. The `showNumberedSelect` 
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `lib/components/numbered-select.ts:53`
-- **Status:** open
+- **Status:** resolved
 
 The `NumberedSelectComponent` constructor declares `theme: any` while the class field is `private theme: Theme`. The `ctx.ui.custom()` callback provides a properly typed `Theme` instance, so there's no reason for `any` here — it silently bypasses type checking on the theme argument. Should be `theme: Theme` to match the field type and the callback signature.
 
