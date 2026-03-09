@@ -70,4 +70,4 @@ In `extensions/workflow/index.ts`:
 - When `result.annotation` is present, append `" User's note: <annotation>"` to the tool result text for all paths. For the `NOT_DONE_TEXT` path this means the agent immediately knows what's unfinished. For the "yes" paths, the annotation carries forward as context for the next phase.
 
 **Verify:** Run a workflow through a phase transition. Verify: number key instant-selects work, arrow+enter works without annotation, tab+type+enter includes the annotation in the tool result the LLM sees, escape cancels. Check both flexible (brainstorm→architect) and mandatory (plan→implement) transitions.
-**Status:** not started
+**Status:** done

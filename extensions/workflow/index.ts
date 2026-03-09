@@ -4,6 +4,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { getArtifactInventory, getGitStatus } from "./phases.ts";
+import { showNumberedSelect } from "../../lib/components/numbered-select.ts";
 
 // =============================================================================
 // Constants
@@ -183,23 +184,27 @@ export default function (pi: ExtensionAPI) {
 			const NOT_DONE_TEXT =
 				"User indicated this phase isn't complete yet. Stop and ask the user what remains to be done or what they want changed. Do not call workflow_phase_complete again until the user confirms the phase is ready.";
 
+			const appendAnnotation = (text: string, annotation?: string): string =>
+				annotation ? `${text} User's note: ${annotation}` : text;
+
 			if (FLEXIBLE_TRANSITIONS.has(phase)) {
-				const choice = await ctx.ui.select(
+				const result = await showNumberedSelect(
+					ctx,
 					`${phase} done for ${topic}. Move on to ${nextPhase}?`,
 					[
-						`Yes, in a new context`,
-						`Yes, in this context`,
-						`No, not done yet`,
+						{ label: "Yes, in a new context" },
+						{ label: "Yes, in this context" },
+						{ label: "No, not done yet" },
 					],
 				);
 
-				if (choice === undefined || choice === "No, not done yet") {
+				if (result === undefined || result.label === "No, not done yet") {
 					return {
 						content: [
-							{ type: "text" as const, text: NOT_DONE_TEXT },
+							{ type: "text" as const, text: appendAnnotation(NOT_DONE_TEXT, result?.annotation) },
 						],
 					};
-				} else if (choice === "Yes, in this context") {
+				} else if (result.label === "Yes, in this context") {
 					const nextSkill = PHASE_SKILL_MAP[nextPhase];
 					const lines = [
 						`Phase "${phase}" is complete for topic "${topic}". The user indicated you should continue with the **${nextSkill}** skill.`,
@@ -209,31 +214,32 @@ export default function (pi: ExtensionAPI) {
 						`When the skill's work is done, call \`workflow_phase_complete\` with topic \`${topic}\` and phase \`${nextPhase}\`.`,
 					];
 					return {
-						content: [{ type: "text" as const, text: lines.join("\n") }],
+						content: [{ type: "text" as const, text: appendAnnotation(lines.join("\n"), result.annotation) }],
 					};
 				} else {
 					pendingTransition = { topic, phase: nextPhase };
-					return { content: [{ type: "text" as const, text: STOP_TEXT }] };
+					return { content: [{ type: "text" as const, text: appendAnnotation(STOP_TEXT, result.annotation) }] };
 				}
 			} else {
-				const choice = await ctx.ui.select(
+				const result = await showNumberedSelect(
+					ctx,
 					`${phase} done for ${topic}. Move on to ${nextPhase}?`,
 					[
-						`Yes, start ${nextPhase}`,
-						`No, not done yet`,
+						{ label: `Yes, start ${nextPhase}` },
+						{ label: "No, not done yet" },
 					],
 				);
 
-				if (choice === undefined || choice === "No, not done yet") {
+				if (result === undefined || result.label === "No, not done yet") {
 					return {
 						content: [
-							{ type: "text" as const, text: NOT_DONE_TEXT },
+							{ type: "text" as const, text: appendAnnotation(NOT_DONE_TEXT, result?.annotation) },
 						],
 					};
 				}
 
 				pendingTransition = { topic, phase: nextPhase };
-				return { content: [{ type: "text" as const, text: STOP_TEXT }] };
+				return { content: [{ type: "text" as const, text: appendAnnotation(STOP_TEXT, result.annotation) }] };
 			}
 		},
 	});
