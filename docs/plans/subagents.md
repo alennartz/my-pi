@@ -516,7 +516,7 @@ class GroupManager {
 **`destroy()`:** Stop all RpcChild processes, stop broker.
 
 **Verify:** File exists, `GroupManager` class exported. Types align with all dependencies.
-**Status:** not started
+**Status:** done
 
 ### Step 9: `widget.ts` — TUI widget rendering
 
