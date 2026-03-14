@@ -21,6 +21,8 @@ This package needs a personal behavioral convention file (`SYSTEM.md`) and an on
 
 ## Steps
 
+**Pre-implementation commit:** `538e0389c8c572afacdcc54c4256cc0f89f9ed97`
+
 ### Step 1: Create `SYSTEM.md` at the package root
 
 Create `SYSTEM.md` containing one behavioral convention: pause at the explore→act boundary. Tone should be direct and imperative — this is system prompt content. Flat list format (one rule under a heading, more can be added later). The convention must cover:
@@ -32,7 +34,7 @@ Create `SYSTEM.md` containing one behavioral convention: pause at the explore→
 - **Scope:** applies across all contexts — workflow skill transitions, debugging fix proposals, mid-task course changes. The boundary between "building understanding" and "doing things" always deserves a pause.
 
 **Verify:** `SYSTEM.md` exists at the repo root. Content covers the trigger, behavior, chunk sizing, feedback gate, and cross-context scope.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Create `prompts/onboard.md`
 
