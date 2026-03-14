@@ -340,7 +340,7 @@ type BrokerResponse =
 Export all types and functions.
 
 **Verify:** File exists, exports typed serialization functions. Read the code and confirm XML output matches the formats in the Architecture section.
-**Status:** not started
+**Status:** done
 
 ### Step 3: `channels.ts` — Topology validation
 
