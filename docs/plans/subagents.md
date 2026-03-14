@@ -373,7 +373,7 @@ class DeadlockGraph {
 `wouldCauseCycle` does NOT add the edge — caller adds after validation. `removeAllEdgesTo` used when agent dies (broker cleanup).
 
 **Verify:** Trace: edges A→B, B→C. `wouldCauseCycle("C", "A")` → true (would create A→B→C→A). `wouldCauseCycle("C", "D")` → false.
-**Status:** not started
+**Status:** done
 
 ### Step 5: `rpc-child.ts` — RPC protocol wrapper
 
