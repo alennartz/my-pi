@@ -1,52 +1,48 @@
 # Review: Subagents
 
 **Plan:** `docs/plans/subagents.md`
-**Diff range:** `5102910..86caf54`
+**Diff range:** `5102910..c0d28d5`
 **Date:** 2026-03-14
 
 ## Summary
 
-The plan was faithfully implemented across all 11 steps, and the prior review's critical/warning findings have been resolved. One critical correctness issue remains: the BrokerClient dispatches blocking-send responses by FIFO position rather than by correlation ID, so concurrent blocking sends (the scatter-gather pattern explicitly promoted in promptGuidelines) will cross-deliver responses to the wrong callers. One nit for inconsistent XML escaping.
+The plan was implemented faithfully across all 11 steps. The multi-file extension architecture matches the plan's module decomposition, all five tools are registered with correct parameters and guidelines, and the broker/group/widget lifecycle operates as designed. One correctness issue found: stale deadlock graph edges when a sender agent dies, which can cause false positive deadlock detection in later sends.
 
 ## Findings
 
-### 1. Concurrent blocking sends cross-deliver responses via FIFO dispatch
+### 1. Stale deadlock graph edges when sender agent dies
 
 - **Category:** code correctness
-- **Severity:** critical
-- **Location:** `extensions/subagents/index.ts:419-431`, `extensions/subagents/index.ts:457-469`
-- **Status:** resolved
+- **Severity:** warning
+- **Location:** `extensions/subagents/broker.ts:101-107`
+- **Status:** open
 
-When a parent or child agent makes two concurrent blocking sends (e.g., `send(to=A, expectResponse=true)` and `send(to=B, expectResponse=true)` in the same LLM turn), both call `sendAndWait()` then `waitForNext()` on the same `BrokerClient`. The waiter queue is pure FIFO — when a `response` arrives, the first waiter gets it regardless of which `correlationId` it carries.
+In `agentDied()`, the second cleanup loop removes pending correlations where the dead agent was the *sender*, but doesn't clean up the corresponding deadlock graph edges or `correlationTargets` entries:
 
-Trace for concurrent sends to A and B where B responds first:
+```typescript
+// Also clean up correlations where the dead agent was the sender
+for (const [corrId, pending] of this.pendingCorrelations) {
+    if (pending.from === agentId) {
+        this.pendingCorrelations.delete(corrId);
+    }
+}
+```
 
-1. Call A: `sendAndWait` → waiter1. Call B: `sendAndWait` → waiter2.
-2. Both receive `send_ack` in order → waiter1 and waiter2 resolve.
-3. Call A: `waitForNext` → waiter3. Call B: `waitForNext` → waiter4.
-4. B's response arrives → dispatched to waiter3 (Call A's waiter). Call A returns B's response. ✗
-5. A's response arrives → dispatched to waiter4 (Call B's waiter). Call B returns A's response. ✗
+If agent A had a pending blocking send to agent B and agent A dies, the edge `A → B` remains in the deadlock graph and the `correlationTargets` entry leaks. The stale edge can cause false positive cycle detection: if a later `wouldCauseCycle(X, Y)` DFS traverses through the dead agent's outgoing edge, it may spuriously detect a cycle and reject a valid send.
 
-The `BrokerResponse` type already includes `correlationId` on response messages — the information needed to match correctly is present but unused. The fix is to match `response` (and `error` with `correlationId`) messages to their caller by correlation ID rather than by queue position, similar to how `RpcChild` matches responses by request `id`.
+Fix: look up each correlation's target via `correlationTargets`, call `removeEdge(agentId, target)`, and delete the `correlationTargets` entry — mirroring the cleanup pattern in the first loop.
 
-This is critical because scatter-gather is explicitly promoted in the `send` tool's `promptGuidelines` ("For scatter-gather: call send(expectResponse=true) to multiple agents in the same turn") and in the architecture's Interfaces section. Any LLM following those guidelines will hit this bug.
-
-### 2. Unescaped output in `serializeAgentComplete`
+### 2. BrokerClient has no post-connection socket error handling
 
 - **Category:** code correctness
 - **Severity:** nit
-- **Location:** `extensions/subagents/messages.ts:79`
-- **Status:** resolved
+- **Location:** `extensions/subagents/index.ts:77-130`
+- **Status:** open
 
-`serializeAgentForXml` does not XML-escape the agent's `output` for idle agents:
+After the initial connection/registration succeeds, the `BrokerClient` has no `close` or `error` event handler on the socket. If the unix socket drops unexpectedly after connection, any promises held by `waiters` or `correlationWaiters` hang forever — the `send` or `respond` tool call never resolves.
 
-```typescript
-const output = agent.output ?? "(no output)";
-return `<agent_complete ...>\n${output}\n</agent_complete>`;
-```
-
-Meanwhile, `serializeGroupIdle` (line 90) and `serializeGroupComplete` (line 111) both call `escapeXml(out)` on the same data. If an agent's last assistant message contains `</agent_complete>` or similar XML-like content, the `<agent_complete>` block steered to the parent could confuse the LLM about where the block ends. Low risk since these are LLM-consumed, not machine-parsed, but the inconsistency suggests the escaping was intended and missed here.
+In practice this is mitigated by the managed lifecycle: the parent destroys children before stopping the broker, and child processes are killed during teardown. The risk is limited to unusual crash scenarios (e.g., broker socket file deleted externally). Noting it because the fix is straightforward (reject pending waiters on socket close) and would make the extension more robust against unexpected failures.
 
 ## No Issues
 
-Plan adherence: no significant deviations found. All 11 steps were implemented as specified. The prior review's four findings (missing `send_ack` for blocking sends, FIFO waiter consuming wrong message types, unreachable waiting state, unused import) are all resolved — the broker now sends `send_ack` for both send types, the BrokerClient routes `message`-type responses directly to the message handler bypassing waiters, waiting state is driven by broker callbacks (`onBlockingSendStart`/`onBlockingSendEnd`), and the unused import is removed.
+Plan adherence: no significant deviations found. All 11 steps are implemented as specified, including topology validation, deadlock detection, channel enforcement, agent discovery with skills, the TUI widget, and the full tool suite. Minor adaptations (broker callbacks for waiting state, `ThemeFg` function signature, `getBroker()` accessor) are reasonable implementation choices that serve the architecture's intent.
