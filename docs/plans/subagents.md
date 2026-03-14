@@ -401,7 +401,7 @@ class RpcChild {
 **JSONL framing:** Write `JSON.stringify({ id, type, ... }) + "\n"` to stdin. Read stdout by buffering chunks, splitting on `"\n"`, parsing each line. Lines with `type: "response"` matched to pending requests by `id`. All others dispatched to event listeners.
 
 **Verify:** File exists, class exported. Full integration deferred to step 11.
-**Status:** not started
+**Status:** done
 
 ### Step 6: `agents.ts` — Agent discovery with skills
 
