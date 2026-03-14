@@ -30,8 +30,10 @@ ${USER_INPUT}
 
 Determine the **topic** and **current phase** by interpreting the inventory and user request:
 
+- **Check conversational context first** — if the user references "this," "that," or "what we were discussing," look at the conversation that preceded the `/workflow` command to identify the topic. Conversational context takes priority over artifact matching.
+- **Honor explicit phase requests** — if the user names a phase (e.g., "let's brainstorm," "review this," "start planning"), use that phase regardless of what artifacts exist. The user can jump to any phase intentionally.
 - **Fuzzy-match** the user's description against existing artifact filenames to identify the topic.
-- **Infer the next phase** from what artifacts already exist. For example: if a brainstorm exists but no plan, the next phase is `architect`. If a plan exists with all steps done, the next phase is `review`.
+- **Infer the next phase** from what artifacts already exist when the user doesn't specify one. For example: if a brainstorm exists but no plan, the next phase is `architect`. If a plan exists with all steps done, the next phase is `review`.
 - **Disambiguate** with the user if multiple topic candidates match.
 - **Start fresh** at `brainstorm` if nothing matches or the user is describing something new.
 - If no user input was provided, either pick up the obvious in-progress topic or ask the user which one to continue.
