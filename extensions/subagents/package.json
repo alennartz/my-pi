@@ -1,0 +1,6 @@
+{
+  "name": "subagents",
+  "version": "1.0.0",
+  "description": "Group-based subagent orchestration with channel-based inter-agent communication",
+  "pi": { "extensions": ["./index.ts"] }
+}

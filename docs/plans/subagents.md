@@ -307,7 +307,7 @@ Create `extensions/subagents/` with `package.json` and a no-op `index.ts`.
 `index.ts`: no-op default export (`export default function (pi: ExtensionAPI) {}`).
 
 **Verify:** `pi -e extensions/subagents/index.ts --mode json -p "hello" 2>&1 | head -5` starts without extension load errors.
-**Status:** not started
+**Status:** done
 
 ### Step 2: `messages.ts` — Structured message format
 
@@ -598,4 +598,6 @@ Test the full flow manually:
 Fix any issues found.
 
 **Verify:** A 2-agent group completes with at least one inter-agent message exchange. Full lifecycle: spawn → communicate → idle notification → teardown → completion report.
+**Status:** not started
+→ idle notification → teardown → completion report.
 **Status:** not started
