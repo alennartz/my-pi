@@ -583,7 +583,7 @@ Replace the no-op `index.ts` with the full entry point. This is the largest step
 - The `send`/`respond` execute functions write to this socket and await responses.
 
 **Verify:** `pi -e extensions/subagents/index.ts --mode json -p "what tools do you have" 2>&1` shows all five tools (`subagent`, `send`, `respond`, `check_status`, `teardown_group`). No extension load errors.
-**Status:** not started
+**Status:** done
 
 ### Step 11: Integration smoke test
 
