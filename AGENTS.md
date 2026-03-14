@@ -15,7 +15,8 @@ This is a [pi coding agent](https://github.com/badlogic/pi-mono) package. It con
 - **`docs/plans/`** — Ephemeral plan artifacts for in-progress workflows (architecture + implementation steps).
 - **`docs/reviews/`** — Ephemeral review artifacts for in-progress workflows.
 - **`docs/decisions/`** — Permanent decision records extracted during cleanup (DR-NNN format).
-- **`prompts/`** — Custom prompt templates (currently empty).
+- **`SYSTEM.md`** — Behavioral conventions for the agent (user-copy-in model; not auto-loaded by pi).
+- **`prompts/`** — Custom prompt templates. Currently: `/onboard` (package feature tour and setup walkthrough).
 - **`themes/`** — Custom themes (currently empty).
 
 ## Conventions

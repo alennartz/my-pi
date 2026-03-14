@@ -82,9 +82,9 @@ Pipeline orchestration extension that ties the skill pipeline into an automated 
 
 ### Docs
 
-Working artifacts for in-progress workflows (brainstorms, plans, reviews) and permanent decision records extracted during cleanup.
+Working artifacts for in-progress workflows (brainstorms, plans, reviews), permanent decision records extracted during cleanup, behavioral conventions, and onboarding.
 
-**Responsibilities:** workflow working artifacts, decision records (DR-NNN format, consumed by architecting as settled context, produced/deleted by cleanup including supersession lifecycle)
+**Responsibilities:** workflow working artifacts, decision records (DR-NNN format, consumed by architecting as settled context, produced/deleted by cleanup including supersession lifecycle), behavioral conventions for the agent (`SYSTEM.md` — user-copy-in model, not auto-loaded), onboarding prompt template (`/onboard` — package feature tour and `SYSTEM.md` install walkthrough)
 
 **Dependencies:** Skills (artifacts are produced and consumed by pipeline skills)
 
@@ -93,3 +93,5 @@ Working artifacts for in-progress workflows (brainstorms, plans, reviews) and pe
 - `docs/plans/**`
 - `docs/reviews/**`
 - `docs/decisions/**`
+- `SYSTEM.md`
+- `prompts/onboard.md`
