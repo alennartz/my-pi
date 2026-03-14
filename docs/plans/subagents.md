@@ -418,7 +418,7 @@ Changes from the example:
 Keep existing `discoverAgents`, `AgentScope`, `AgentDiscoveryResult`, `formatAgentList` unchanged.
 
 **Verify:** File exists. `AgentConfig` has `skills` field. `resolveSkillPaths` and `buildAgentArgs` exported.
-**Status:** not started
+**Status:** done
 
 ### Step 7: `broker.ts` — Unix socket message broker
 
