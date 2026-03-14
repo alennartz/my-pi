@@ -54,4 +54,4 @@ Create the `/onboard` prompt template at `prompts/onboard.md` with a `descriptio
 Delete `prompts/.gitkeep` — the directory now has a real file.
 
 **Verify:** `.gitkeep` is gone; `prompts/` contains only `onboard.md`.
-**Status:** not started
+**Status:** done
