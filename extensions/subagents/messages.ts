@@ -68,7 +68,7 @@ function serializeAgentForXml(agent: AgentCompleteData): string {
 		return `<agent_complete id="${escapeXml(agent.id)}" status="failed">${errorContent}</agent_complete>`;
 	}
 	const output = agent.output ?? "(no output)";
-	return `<agent_complete id="${escapeXml(agent.id)}" status="idle">\n${output}\n</agent_complete>`;
+	return `<agent_complete id="${escapeXml(agent.id)}" status="idle">\n${escapeXml(output)}\n</agent_complete>`;
 }
 
 export function serializeAgentComplete(data: AgentCompleteData): string {

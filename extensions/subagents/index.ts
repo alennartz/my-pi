@@ -61,6 +61,7 @@ class BrokerClient {
 	private buffer = "";
 	private decoder = new StringDecoder("utf8");
 	private waiters: Array<(msg: BrokerResponse) => void> = [];
+	private correlationWaiters = new Map<string, (msg: BrokerResponse) => void>();
 	private messageHandler: ((msg: BrokerResponse) => void) | null = null;
 
 	async connect(socketPath: string, agentId: string): Promise<void> {
@@ -101,6 +102,16 @@ class BrokerClient {
 						continue;
 					}
 
+					// Correlation-based dispatch for response/error with correlationId
+					if ((parsed.type === "response" || parsed.type === "error") && parsed.correlationId) {
+						const waiter = this.correlationWaiters.get(parsed.correlationId);
+						if (waiter) {
+							this.correlationWaiters.delete(parsed.correlationId);
+							waiter(parsed);
+							continue;
+						}
+					}
+
 					// Check waiters for solicited responses
 					if (this.waiters.length > 0) {
 						const waiter = this.waiters.shift()!;
@@ -134,6 +145,12 @@ class BrokerClient {
 	waitForNext(): Promise<BrokerResponse> {
 		return new Promise((resolve) => {
 			this.waiters.push(resolve);
+		});
+	}
+
+	waitForResponse(correlationId: string): Promise<BrokerResponse> {
+		return new Promise((resolve) => {
+			this.correlationWaiters.set(correlationId, resolve);
 		});
 	}
 
@@ -417,8 +434,8 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				if (params.expectResponse && correlationId) {
-					// Wait for the response
-					const responseMsg = await parentBrokerClient.waitForNext();
+					// Wait for the response matched by correlation ID
+					const responseMsg = await parentBrokerClient.waitForResponse(correlationId);
 					if (responseMsg.type === "response") {
 						return {
 							content: [{ type: "text", text: responseMsg.message }],
@@ -455,8 +472,8 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (params.expectResponse && correlationId) {
-				// Wait for the response
-				const responseMsg = await brokerClient.waitForNext();
+				// Wait for the response matched by correlation ID
+				const responseMsg = await brokerClient.waitForResponse(correlationId);
 
 				if (responseMsg.type === "response") {
 					return {

@@ -15,7 +15,7 @@ The plan was faithfully implemented across all 11 steps, and the prior review's 
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/subagents/index.ts:419-431`, `extensions/subagents/index.ts:457-469`
-- **Status:** open
+- **Status:** resolved
 
 When a parent or child agent makes two concurrent blocking sends (e.g., `send(to=A, expectResponse=true)` and `send(to=B, expectResponse=true)` in the same LLM turn), both call `sendAndWait()` then `waitForNext()` on the same `BrokerClient`. The waiter queue is pure FIFO — when a `response` arrives, the first waiter gets it regardless of which `correlationId` it carries.
 
@@ -36,7 +36,7 @@ This is critical because scatter-gather is explicitly promoted in the `send` too
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/messages.ts:79`
-- **Status:** open
+- **Status:** resolved
 
 `serializeAgentForXml` does not XML-escape the agent's `output` for idle agents:
 
