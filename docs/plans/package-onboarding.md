@@ -47,7 +47,7 @@ Create the `/onboard` prompt template at `prompts/onboard.md` with a `descriptio
 5. Offer to install it — ask the user whether to append it to the project's `AGENTS.md` or the global `~/.pi/agent/AGENTS.md`
 
 **Verify:** `prompts/onboard.md` exists, has YAML frontmatter with `description`, and covers all five content areas above.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Remove `prompts/.gitkeep`
 
