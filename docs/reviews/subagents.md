@@ -1,61 +1,52 @@
 # Review: Subagents
 
 **Plan:** `docs/plans/subagents.md`
-**Diff range:** `5102910..6778a9d`
+**Diff range:** `5102910..86caf54`
 **Date:** 2026-03-14
 
 ## Summary
 
-The plan was faithfully implemented — all 11 steps are complete and the architecture is intact. Two correctness issues stand out: the broker's blocking-send protocol doesn't match what the BrokerClient expects (missing acknowledgment causes a hung `waitForNext`), and the BrokerClient's FIFO waiter dispatch can consume unrelated messages, desynchronizing the protocol. There's also a dead code path where the "waiting" agent state is never set because the relevant calls live in a branch that's unreachable for normal child agents.
+The plan was faithfully implemented across all 11 steps, and the prior review's critical/warning findings have been resolved. One critical correctness issue remains: the BrokerClient dispatches blocking-send responses by FIFO position rather than by correlation ID, so concurrent blocking sends (the scatter-gather pattern explicitly promoted in promptGuidelines) will cross-deliver responses to the wrong callers. One nit for inconsistent XML escaping.
 
 ## Findings
 
-### 1. Missing send_ack for blocking sends causes hung tool calls
+### 1. Concurrent blocking sends cross-deliver responses via FIFO dispatch
 
 - **Category:** code correctness
 - **Severity:** critical
-- **Location:** `extensions/subagents/broker.ts:226-228`, `extensions/subagents/index.ts:318-337`
-- **Status:** resolved
+- **Location:** `extensions/subagents/index.ts:419-431`, `extensions/subagents/index.ts:457-469`
+- **Status:** open
 
-The broker only sends `send_ack` for fire-and-forget sends (`if (!expectResponse)`). For blocking sends, no acknowledgment is sent — the next message the sender receives will be the `response` (when the target eventually calls `respond`).
+When a parent or child agent makes two concurrent blocking sends (e.g., `send(to=A, expectResponse=true)` and `send(to=B, expectResponse=true)` in the same LLM turn), both call `sendAndWait()` then `waitForNext()` on the same `BrokerClient`. The waiter queue is pure FIFO — when a `response` arrives, the first waiter gets it regardless of which `correlationId` it carries.
 
-But the client code in `index.ts` expects two messages for a blocking send: first an ack from `sendAndWait()`, then the actual response from `waitForNext()`. When the `response` arrives as the first message, `sendAndWait` consumes it. Then `waitForNext()` hangs indefinitely waiting for a second message that will never arrive.
+Trace for concurrent sends to A and B where B responds first:
 
-The fix is either: (a) have the broker send `send_ack` for blocking sends too (before the response arrives), or (b) restructure the client to use a single `waitForNext` for blocking sends instead of the two-step pattern.
+1. Call A: `sendAndWait` → waiter1. Call B: `sendAndWait` → waiter2.
+2. Both receive `send_ack` in order → waiter1 and waiter2 resolve.
+3. Call A: `waitForNext` → waiter3. Call B: `waitForNext` → waiter4.
+4. B's response arrives → dispatched to waiter3 (Call A's waiter). Call A returns B's response. ✗
+5. A's response arrives → dispatched to waiter4 (Call B's waiter). Call B returns A's response. ✗
 
-### 2. BrokerClient waiter queue doesn't discriminate by message type
+The `BrokerResponse` type already includes `correlationId` on response messages — the information needed to match correctly is present but unused. The fix is to match `response` (and `error` with `correlationId`) messages to their caller by correlation ID rather than by queue position, similar to how `RpcChild` matches responses by request `id`.
 
-- **Category:** code correctness
-- **Severity:** warning
-- **Location:** `extensions/subagents/index.ts:89-96`
-- **Status:** resolved
+This is critical because scatter-gather is explicitly promoted in the `send` tool's `promptGuidelines` ("For scatter-gather: call send(expectResponse=true) to multiple agents in the same turn") and in the architecture's Interfaces section. Any LLM following those guidelines will hit this bug.
 
-`BrokerClient.waitForNext()` pushes a callback onto a FIFO waiter queue. When any message arrives on the socket, the first waiter gets it regardless of type. If the broker forwards an unrelated `message` (from another agent) between the client sending a request and receiving the expected `send_ack` or `response`, the waiter consumes the wrong message. The actual ack/response then gets dispatched to the `messageHandler` instead.
-
-This could cause: (a) a fire-and-forget send's `sendAndWait` to receive an agent message instead of `send_ack`, throwing or returning unexpected results; (b) an incoming agent message to be silently dropped (consumed by a waiter that ignores it). The risk scales with group activity — more concurrent inter-agent messages increase the chance of interleaving.
-
-A correlation-based dispatch (matching responses by a request ID or by expected type) would be more robust than positional FIFO.
-
-### 3. Agent "waiting" state is never set for non-recursive children
-
-- **Category:** code correctness
-- **Severity:** warning
-- **Location:** `extensions/subagents/index.ts:354-356`, `extensions/subagents/group.ts:329-346`
-- **Status:** resolved
-
-`setAgentWaiting` and `clearAgentWaiting` are only called in the child's send-tool path, guarded by `childIdentity && activeGroup`. For a normal child agent (not one that spawned its own sub-group), `activeGroup` is always null — it's only set in the root process when a group is spawned. The root's send-tool path (parent sending to agents) doesn't call these methods either.
-
-Result: the `⏸ waiting` state in the widget never displays. `AgentStatus.state` never transitions to `"waiting"`, and `pendingCorrelations` is always empty. The `waiting` state in the architecture (running→waiting on blocking send, waiting→running on response) is defined but unreachable.
-
-### 4. Unused import in group.ts
+### 2. Unescaped output in `serializeAgentComplete`
 
 - **Category:** code correctness
 - **Severity:** nit
-- **Location:** `extensions/subagents/group.ts:5`
-- **Status:** resolved
+- **Location:** `extensions/subagents/messages.ts:79`
+- **Status:** open
 
-`buildTopology` is imported from `./channels.js` but never used — the topology is passed in via `GroupManagerOptions`. Dead import.
+`serializeAgentForXml` does not XML-escape the agent's `output` for idle agents:
+
+```typescript
+const output = agent.output ?? "(no output)";
+return `<agent_complete ...>\n${output}\n</agent_complete>`;
+```
+
+Meanwhile, `serializeGroupIdle` (line 90) and `serializeGroupComplete` (line 111) both call `escapeXml(out)` on the same data. If an agent's last assistant message contains `</agent_complete>` or similar XML-like content, the `<agent_complete>` block steered to the parent could confuse the LLM about where the block ends. Low risk since these are LLM-consumed, not machine-parsed, but the inconsistency suggests the escaping was intended and missed here.
 
 ## No Issues
 
-Plan adherence: no significant deviations found. All 11 steps were implemented as specified. Minor adaptations (widget function taking `fg` instead of full `Theme`, `collectEvents()` omitted from RpcChild since unused, `teardown_group` using `followUp` instead of `steer` for the completion report) are reasonable implementation-time choices that don't change behavior or intent.
+Plan adherence: no significant deviations found. All 11 steps were implemented as specified. The prior review's four findings (missing `send_ack` for blocking sends, FIFO waiter consuming wrong message types, unreachable waiting state, unused import) are all resolved — the broker now sends `send_ack` for both send types, the BrokerClient routes `message`-type responses directly to the message handler bypassing waiters, waiting state is driven by broker callbacks (`onBlockingSendStart`/`onBlockingSendEnd`), and the unused import is removed.
