@@ -355,7 +355,7 @@ type Topology = Map<string, Set<string>>;  // agentId → set of allowed targets
 - `canSend(topology: Topology, from: string, to: string): boolean` — Runtime check used by broker.
 
 **Verify:** Read the code. Trace: agent with `channels=["peer1"]` → allowed targets `{"peer1", "parent"}`. Parent → can send to any agent. Invalid reference → error string.
-**Status:** not started
+**Status:** done
 
 ### Step 4: `deadlock.ts` — Cycle detection graph
 
