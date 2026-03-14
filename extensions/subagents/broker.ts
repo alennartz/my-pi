@@ -18,6 +18,8 @@ import type { BrokerRequest, BrokerResponse } from "./messages.js";
 export interface BrokerOptions {
 	topology: Topology;
 	onParentMessage: (msg: BrokerResponse) => void;
+	onBlockingSendStart?: (from: string, to: string, correlationId: string) => void;
+	onBlockingSendEnd?: (from: string, correlationId: string) => void;
 }
 
 interface PendingCorrelation {
@@ -36,9 +38,14 @@ export class Broker {
 	private topology: Topology;
 	private onParentMessage: (msg: BrokerResponse) => void;
 
+	private onBlockingSendStart?: (from: string, to: string, correlationId: string) => void;
+	private onBlockingSendEnd?: (from: string, correlationId: string) => void;
+
 	constructor(opts: BrokerOptions) {
 		this.topology = opts.topology;
 		this.onParentMessage = opts.onParentMessage;
+		this.onBlockingSendStart = opts.onBlockingSendStart;
+		this.onBlockingSendEnd = opts.onBlockingSendEnd;
 		this.socketPath = path.join(os.tmpdir(), `pi-broker-${crypto.randomUUID()}.sock`);
 	}
 
@@ -85,6 +92,7 @@ export class Broker {
 					error: `Agent "${agentId}" died while waiting for response`,
 				});
 				this.pendingCorrelations.delete(corrId);
+				this.onBlockingSendEnd?.(pending.from, corrId);
 			}
 		}
 
@@ -225,6 +233,7 @@ export class Broker {
 				fromSocket: senderSocket,
 			});
 			this.correlationTargets.set(correlationId, to);
+			this.onBlockingSendStart?.(senderId, to, correlationId);
 		}
 
 		// Route message
@@ -299,6 +308,7 @@ export class Broker {
 		});
 
 		this.pendingCorrelations.delete(correlationId);
+		this.onBlockingSendEnd?.(pending.from, correlationId);
 
 		// Ack the responder
 		this.writeTo(responderSocket, { type: "send_ack" });

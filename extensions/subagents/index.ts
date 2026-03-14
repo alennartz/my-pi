@@ -441,10 +441,6 @@ export default function (pi: ExtensionAPI) {
 				throw new Error("Not connected to broker");
 			}
 
-			if (params.expectResponse && correlationId && childIdentity && activeGroup) {
-				activeGroup.setAgentWaiting(childIdentity.id, correlationId);
-			}
-
 			const resp = await brokerClient.sendAndWait({
 				type: "send",
 				from,
@@ -455,19 +451,12 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			if (resp.type === "error") {
-				if (params.expectResponse && correlationId && childIdentity && activeGroup) {
-					activeGroup.clearAgentWaiting(childIdentity.id, correlationId);
-				}
 				throw new Error(resp.error);
 			}
 
 			if (params.expectResponse && correlationId) {
 				// Wait for the response
 				const responseMsg = await brokerClient.waitForNext();
-
-				if (childIdentity && activeGroup) {
-					activeGroup.clearAgentWaiting(childIdentity.id, correlationId);
-				}
 
 				if (responseMsg.type === "response") {
 					return {

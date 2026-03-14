@@ -41,7 +41,7 @@ A correlation-based dispatch (matching responses by a request ID or by expected 
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/index.ts:354-356`, `extensions/subagents/group.ts:329-346`
-- **Status:** open
+- **Status:** resolved
 
 `setAgentWaiting` and `clearAgentWaiting` are only called in the child's send-tool path, guarded by `childIdentity && activeGroup`. For a normal child agent (not one that spawned its own sub-group), `activeGroup` is always null — it's only set in the root process when a group is spawned. The root's send-tool path (parent sending to agents) doesn't call these methods either.
 

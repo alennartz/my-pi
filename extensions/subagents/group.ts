@@ -100,6 +100,8 @@ export class GroupManager {
 		this.broker = new Broker({
 			topology,
 			onParentMessage: (msg) => this.handleParentMessage(msg),
+			onBlockingSendStart: (from, _to, correlationId) => this.setAgentWaiting(from, correlationId),
+			onBlockingSendEnd: (from, correlationId) => this.clearAgentWaiting(from, correlationId),
 		});
 		await this.broker.start();
 
@@ -345,8 +347,8 @@ export class GroupManager {
 		return { input, output, cost };
 	}
 
-	/** Set an agent's state to "waiting" (used by send tool for blocking sends) */
-	setAgentWaiting(agentId: string, correlationId: string): void {
+	/** Set an agent's state to "waiting" (called by broker on blocking send start) */
+	private setAgentWaiting(agentId: string, correlationId: string): void {
 		const entry = this.entries.find((e) => e.id === agentId);
 		if (entry && entry.status.state !== "failed") {
 			entry.status.state = "waiting";
@@ -355,8 +357,8 @@ export class GroupManager {
 		}
 	}
 
-	/** Clear waiting state when response arrives */
-	clearAgentWaiting(agentId: string, correlationId: string): void {
+	/** Clear waiting state when response arrives (called by broker on blocking send end) */
+	private clearAgentWaiting(agentId: string, correlationId: string): void {
 		const entry = this.entries.find((e) => e.id === agentId);
 		if (entry) {
 			entry.status.pendingCorrelations = entry.status.pendingCorrelations.filter(
