@@ -107,9 +107,13 @@ The widget updates in real-time from RPC event streams and clears when the group
 
 ### Extension Role Detection
 
-The same extension runs at every level. It detects its role via `ctx.hasUI`:
-- **TUI root (`ctx.hasUI === true`)**: registers `subagent` tool with rendering, manages widgets, handles user confirmation for project-local agents
-- **Headless child (`ctx.hasUI === false`)**: registers communication tools (`send`, `respond`), connects to parent via RPC stdin/stdout, appends system prompt explaining multi-agent context and available channels
+The same extension runs at every level. It detects its role via the `PI_SUBAGENT` environment variable, set by the parent when spawning a child process. The variable carries a JSON payload with the child's identity: agent id, channel list, and task description. This gives the extension code programmatic access to the topology for channel enforcement — not just the LLM via `--append-system-prompt`.
+
+**Why not `ctx.hasUI`:** `ctx.hasUI` is `true` in RPC mode (children are spawned as `pi --mode rpc`), so it can't distinguish parent from child.
+
+Role behavior:
+- **Root (no `PI_SUBAGENT`)**: registers `subagent` tool with rendering, manages widgets, handles user confirmation for project-local agents
+- **Child (`PI_SUBAGENT` present)**: parses the JSON payload for identity/channels, registers communication tools (`send`, `respond`) with channel enforcement using the parsed config
 
 All levels register: `subagent` (for recursive spawning), `send`, `respond`, `check_status`, deadlock detection, channel enforcement.
 
