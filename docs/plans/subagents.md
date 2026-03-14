@@ -598,6 +598,6 @@ Test the full flow manually:
 Fix any issues found.
 
 **Verify:** A 2-agent group completes with at least one inter-agent message exchange. Full lifecycle: spawn → communicate → idle notification → teardown → completion report.
-**Status:** not started
+**Status:** done
 → idle notification → teardown → completion report.
 **Status:** not started

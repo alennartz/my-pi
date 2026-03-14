@@ -84,12 +84,6 @@ export class RpcChild {
 						continue;
 					}
 
-					// First session event signals startup complete
-					if (!started && parsed.type === "session") {
-						started = true;
-						resolve();
-					}
-
 					// Dispatch to event listeners
 					for (const listener of this.listeners) {
 						try {
@@ -128,7 +122,16 @@ export class RpcChild {
 					pending.reject(new Error(`RPC child exited with code ${this._exitCode}`));
 				}
 				this.pendingRequests.clear();
-				if (!started) reject(new Error(`pi exited with code ${this._exitCode} before session started`));
+				if (!started) reject(new Error(`pi exited with code ${this._exitCode} before ready`));
+			});
+
+			// RPC mode is ready as soon as the process spawns successfully.
+			// Verify readiness by sending a get_state command.
+			this.proc.on("spawn", () => {
+				started = true;
+				this.sendCommand({ type: "get_state" })
+					.then(() => resolve())
+					.catch(reject);
 			});
 		});
 	}
