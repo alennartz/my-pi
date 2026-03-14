@@ -15,7 +15,7 @@ The plan was faithfully implemented — all 11 steps are complete and the archit
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/subagents/broker.ts:226-228`, `extensions/subagents/index.ts:318-337`
-- **Status:** open
+- **Status:** resolved
 
 The broker only sends `send_ack` for fire-and-forget sends (`if (!expectResponse)`). For blocking sends, no acknowledgment is sent — the next message the sender receives will be the `response` (when the target eventually calls `respond`).
 
@@ -28,7 +28,7 @@ The fix is either: (a) have the broker send `send_ack` for blocking sends too (b
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/index.ts:89-96`
-- **Status:** open
+- **Status:** resolved
 
 `BrokerClient.waitForNext()` pushes a callback onto a FIFO waiter queue. When any message arrives on the socket, the first waiter gets it regardless of type. If the broker forwards an unrelated `message` (from another agent) between the client sending a request and receiving the expected `send_ack` or `response`, the waiter consumes the wrong message. The actual ack/response then gets dispatched to the `messageHandler` instead.
 
@@ -52,7 +52,7 @@ Result: the `⏸ waiting` state in the widget never displays. `AgentStatus.state
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/group.ts:5`
-- **Status:** open
+- **Status:** resolved
 
 `buildTopology` is imported from `./channels.js` but never used — the topology is passed in via `GroupManagerOptions`. Dead import.
 

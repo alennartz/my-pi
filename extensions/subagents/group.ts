@@ -10,7 +10,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { RpcChild } from "./rpc-child.js";
 import { Broker } from "./broker.js";
 import { type AgentConfig, buildAgentArgs } from "./agents.js";
-import { type Topology, buildTopology } from "./channels.js";
+import type { Topology } from "./channels.js";
 import {
 	serializeSubagentIdentity,
 	serializeAgentMessage,

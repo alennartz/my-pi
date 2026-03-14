@@ -236,10 +236,8 @@ export class Broker {
 				correlationId,
 				responseExpected: expectResponse,
 			});
-			// For fire-and-forget, ack immediately
-			if (!expectResponse) {
-				this.writeTo(senderSocket, { type: "send_ack" });
-			}
+			// Ack the send (for both fire-and-forget and blocking)
+			this.writeTo(senderSocket, { type: "send_ack" });
 		} else {
 			const targetSocket = this.connections.get(to);
 			if (!targetSocket) {
@@ -265,10 +263,8 @@ export class Broker {
 				responseExpected: expectResponse,
 			});
 
-			// For fire-and-forget, ack immediately
-			if (!expectResponse) {
-				this.writeTo(senderSocket, { type: "send_ack" });
-			}
+			// Ack the send (for both fire-and-forget and blocking)
+			this.writeTo(senderSocket, { type: "send_ack" });
 		}
 	}
 

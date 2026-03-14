@@ -91,14 +91,24 @@ class BrokerClient {
 						continue;
 					}
 
-					// Check waiters first
+					// Unsolicited agent messages always go to the message handler,
+					// bypassing the waiter queue. Only solicited responses (send_ack,
+					// response, error, registered) are dispatched to waiters.
+					if (parsed.type === "message") {
+						if (this.messageHandler) {
+							this.messageHandler(parsed);
+						}
+						continue;
+					}
+
+					// Check waiters for solicited responses
 					if (this.waiters.length > 0) {
 						const waiter = this.waiters.shift()!;
 						waiter(parsed);
 						continue;
 					}
 
-					// Dispatch to message handler
+					// Fallback: dispatch to message handler
 					if (this.messageHandler) {
 						this.messageHandler(parsed);
 					}
