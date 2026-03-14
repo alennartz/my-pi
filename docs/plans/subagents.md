@@ -537,7 +537,7 @@ function renderGroupWidget(statuses: AgentStatus[], theme: Theme): string[];
 Status icons: `⏳` running, `✓` idle, `✗` failed, `⏸` waiting. Activity column: formatted last tool call for running (same `formatToolCall` pattern as example extension), "waiting for response from X" for waiting, "idle"/"failed" for terminal-ish states. Usage: compact `↑input ↓output $cost`. Aggregate line: counts by state + total usage. Style with `theme.fg(...)`.
 
 **Verify:** File exists, function exported. Output format matches layout spec.
-**Status:** not started
+**Status:** done
 
 ### Step 10: `index.ts` — Entry point, tools, and protocol content
 
