@@ -461,7 +461,7 @@ class Broker {
 **`isQuiet()`:** Returns true when no pending correlations exist and no messages are buffered. Used by group.ts to detect group-idle state.
 
 **Verify:** File exists, `Broker` class exported. Types align with imports from channels.ts, deadlock.ts, messages.ts.
-**Status:** not started
+**Status:** done
 
 ### Step 8: `group.ts` — Group lifecycle management
 
