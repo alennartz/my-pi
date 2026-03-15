@@ -39,9 +39,9 @@ sequenceDiagram
 
 ### Skills
 
-Agent workflow skills that guide the brainstorm → architect → plan → implement → review → cleanup pipeline, plus standalone utilities (codemap, debugging).
+Agent workflow skills that guide the brainstorm → architect → plan → implement → review → cleanup pipeline, plus standalone utilities (codemap, debugging, orchestrating-agents, specialist-design).
 
-**Responsibilities:** development workflow orchestration, brainstorming facilitation, architectural decision-making (with DR-awareness and supersession handling), implementation planning, step-by-step code execution, code review against plans, review finding resolution, decision record extraction (including supersession lifecycle), codemap generation, documentation maintenance, structured debugging
+**Responsibilities:** development workflow orchestration, brainstorming facilitation, architectural decision-making (with DR-awareness and supersession handling), implementation planning, step-by-step code execution, code review against plans, review finding resolution, decision record extraction (including supersession lifecycle), codemap generation, documentation maintenance, structured debugging, subagent orchestration guidance (task decomposition, patterns, topology design, communication modes), specialist agent definition authoring (format reference, scoping, craft principles, description/prompt/task triad)
 
 **Dependencies:** none (skills are loaded by the pi agent harness at runtime)
 
@@ -85,17 +85,17 @@ Pipeline orchestration extension that ties the skill pipeline into an automated 
 
 Group-based subagent orchestration extension that spawns and manages groups of child `pi --mode rpc` processes with channel-based inter-agent communication.
 
-**Responsibilities:** group lifecycle management (spawn, idle detection, teardown), RPC child process spawning and event streaming, channel-based topology validation and runtime enforcement, unix socket message broker (hub-and-spoke routing, blocking send correlation, synthetic error responses), deadlock detection (directed graph cycle detection via DFS), structured XML message serialization (inter-agent messages, completion notifications, group reports, identity blocks), agent discovery with skill filtering, TUI widget rendering (per-agent status, usage, activity), five-tool suite (`subagent`, `send`, `respond`, `check_status`, `teardown_group`), role detection (root vs child via `PI_SUBAGENT` env var), recursive subagent support
+**Responsibilities:** group lifecycle management (spawn, idle detection, teardown), RPC child process spawning and event streaming, channel-based topology validation and runtime enforcement, unix socket message broker (hub-and-spoke routing, blocking send correlation, synthetic error responses), deadlock detection (directed graph cycle detection via DFS), structured XML message serialization (inter-agent messages, completion notifications, group reports, identity blocks), agent discovery with skill filtering and system prompt injection (before_agent_start hook surfaces available definitions when subagent tool is active), TUI widget rendering (per-agent status, usage, activity), five-tool suite (`subagent`, `send`, `respond`, `check_status`, `teardown_group`) with notification-driven flow guidelines, notification queue (batched delivery with debounced flush, source-tagged entries for selective draining on recursive teardown, busy-state tracking via agent_start/agent_end), correlation origin tracking (routes respond calls to the correct broker in recursive setups), role detection via `PI_PARENT_LINK` env var (symmetric — any agent can be both parent and child), recursive subagent support with dual broker client management (uplink to parent + local for own sub-group)
 
 **Dependencies:** `@mariozechner/pi-coding-agent` (ExtensionAPI, tool registration, widget API, promptGuidelines), `@mariozechner/pi-ai` (StringEnum)
 
 **Files:**
-- `extensions/subagents/index.ts` — entry point, role detection, tool registration, broker client (child role)
-- `extensions/subagents/agents.ts` — agent `.md` discovery with skills field, CLI arg building
+- `extensions/subagents/index.ts` — entry point, role detection (PI_PARENT_LINK), tool registration, notification queue (batched delivery with source tagging), agent definition injection (before_agent_start), correlation origin tracking, dual broker client management (uplink + local)
+- `extensions/subagents/agents.ts` — agent `.md` discovery with skills field, CLI arg building, system prompt extraction
 - `extensions/subagents/broker.ts` — unix socket message broker, channel enforcement, correlation tracking
 - `extensions/subagents/channels.ts` — topology building, validation, and runtime send checks
 - `extensions/subagents/deadlock.ts` — directed graph with cycle detection for blocking sends
-- `extensions/subagents/group.ts` — group lifecycle, RPC child management, state tracking, idle detection
+- `extensions/subagents/group.ts` — group lifecycle, RPC child management, state tracking, idle detection, parent message callback delegation
 - `extensions/subagents/messages.ts` — XML serializers and broker wire protocol types
 - `extensions/subagents/rpc-child.ts` — lightweight JSONL protocol wrapper around `pi --mode rpc`
 - `extensions/subagents/widget.ts` — TUI widget rendering for live group status
