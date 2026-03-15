@@ -233,4 +233,4 @@ resolveContextWindow: (modelId: string) => {
 **E) Update teardown cleanup.** In the `teardown_group` tool's execute method, the existing `ctx.ui.setWidget("subagents", undefined as any)` line correctly clears the factory-created widget. No change needed there.
 
 **Verify:** `index.ts` no longer imports `renderGroupWidget`. The `setWidget` call uses the `(tui, theme) => Component` factory overload. The `onUpdate` callback calls `dashboard.update()` + `tui.requestRender()`. The `resolveContextWindow` callback resolves against `ctx.modelRegistry.getAll()`. When `parentLink` is set, no widget code runs.
-**Status:** not started
+**Status:** done

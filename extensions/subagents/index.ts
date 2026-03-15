@@ -23,8 +23,9 @@ import {
 	formatAgentList,
 } from "./agents.js";
 import { buildTopology, validateTopology } from "./channels.js";
+import type { TUI } from "@mariozechner/pi-tui";
 import { GroupManager } from "./group.js";
-import { renderGroupWidget } from "./widget.js";
+import { SubagentDashboard } from "./widget.js";
 import {
 	serializeAgentComplete,
 	serializeGroupIdle,
@@ -438,6 +439,18 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
+			// Widget setup — only for root agents (not RPC children)
+			let dashboard: SubagentDashboard | null = null;
+			let tuiRef: TUI | null = null;
+
+			if (!parentLink) {
+				ctx.ui.setWidget("subagents", (tui, theme) => {
+					tuiRef = tui;
+					dashboard = new SubagentDashboard(theme);
+					return dashboard;
+				});
+			}
+
 			// Create and start group
 			const group = new GroupManager({
 				pi,
@@ -446,10 +459,16 @@ export default function (pi: ExtensionAPI) {
 				topology,
 				skillPaths: skillPathsMap,
 				cwd: ctx.cwd,
+				resolveContextWindow: (modelId: string) => {
+					const all = ctx.modelRegistry.getAll();
+					const found = all.find((m: any) => m.id === modelId);
+					return found?.contextWindow;
+				},
 				onUpdate: () => {
-					const statuses = group.getAgentStatuses();
-					const lines = renderGroupWidget(statuses, ctx.ui.theme.fg.bind(ctx.ui.theme));
-					ctx.ui.setWidget("subagents", lines);
+					if (dashboard && tuiRef) {
+						dashboard.update(group.getAgentStatuses());
+						tuiRef.requestRender();
+					}
 				},
 				onGroupIdle: () => {
 					const statuses = group.getAgentStatuses();
