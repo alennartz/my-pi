@@ -65,6 +65,8 @@ Craft guide for creating persistent, reusable agent definitions (`.md` files). L
 
 ## Steps
 
+**Pre-implementation commit:** `bbf87409b18abf5b2c6bc912fbf0d5575f5499be`
+
 ### Step 1: Create the orchestrating-agents skill
 
 Create `skills/orchestrating-agents/SKILL.md` with frontmatter (`name: orchestrating-agents`, description targeting when the agent is about to design or spawn subagent groups) and body covering five sections:
@@ -95,7 +97,7 @@ Cross-reference the specialist-design skill for persistent agent definitions.
 
 **Verify:** File exists at `skills/orchestrating-agents/SKILL.md`. Frontmatter has `name` and `description`. All five architecture sections present. Tool parameters, notification formats, and topology behaviors match the extension code.
 
-**Status:** not started
+**Status:** done
 
 ### Step 2: Create the specialist-design skill
 
@@ -123,7 +125,7 @@ Cross-reference the orchestrating-agents skill for orchestration patterns and ta
 
 **Verify:** File exists at `skills/specialist-design/SKILL.md`. Frontmatter has `name` and `description`. All four architecture sections present. Frontmatter field names, file locations, and scope behavior match `agents.ts` and `index.ts`.
 
-**Status:** not started
+**Status:** done
 
 ### Step 3: Commit
 
@@ -131,4 +133,4 @@ Stage both new skill files and commit with message: `feat: subagent companion sk
 
 **Verify:** Clean working tree. Commit contains exactly the two new SKILL.md files.
 
-**Status:** not started
+**Status:** done
