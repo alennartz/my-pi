@@ -139,7 +139,7 @@ onBlockingSendStart: (from, to, correlationId) => this.setAgentWaiting(from, cor
 **D) Update `clearAgentWaiting`** to look up the target via `this.correlationToTarget.get(correlationId)`, filter it from `entry.status.waitingFor`, and delete the correlation from the map.
 
 **Verify:** `setAgentWaiting` populates both `pendingCorrelations` and `waitingFor`. `clearAgentWaiting` removes from both, using the correlation-to-target map for lookup. The broker callback passes `to` through.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Rewrite `widget.ts` as `SubagentDashboard` component
 

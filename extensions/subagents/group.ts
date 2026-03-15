@@ -66,6 +66,7 @@ export class GroupManager {
 	private broker: Broker | null = null;
 	private opts: GroupManagerOptions;
 	private destroyed = false;
+	private correlationToTarget = new Map<string, string>();
 
 	constructor(opts: GroupManagerOptions) {
 		this.opts = opts;
@@ -106,7 +107,7 @@ export class GroupManager {
 		this.broker = new Broker({
 			topology,
 			onParentMessage: (msg) => this.handleParentMessage(msg),
-			onBlockingSendStart: (from, _to, correlationId) => this.setAgentWaiting(from, correlationId),
+			onBlockingSendStart: (from, to, correlationId) => this.setAgentWaiting(from, correlationId, to),
 			onBlockingSendEnd: (from, correlationId) => this.clearAgentWaiting(from, correlationId),
 		});
 		await this.broker.start();
@@ -366,11 +367,13 @@ export class GroupManager {
 	}
 
 	/** Set an agent's state to "waiting" (called by broker on blocking send start) */
-	private setAgentWaiting(agentId: string, correlationId: string): void {
+	private setAgentWaiting(agentId: string, correlationId: string, targetId: string): void {
 		const entry = this.entries.find((e) => e.id === agentId);
 		if (entry && entry.status.state !== "failed") {
 			entry.status.state = "waiting";
 			entry.status.pendingCorrelations.push(correlationId);
+			this.correlationToTarget.set(correlationId, targetId);
+			entry.status.waitingFor.push(targetId);
 			this.opts.onUpdate();
 		}
 	}
@@ -382,6 +385,11 @@ export class GroupManager {
 			entry.status.pendingCorrelations = entry.status.pendingCorrelations.filter(
 				(c) => c !== correlationId,
 			);
+			const target = this.correlationToTarget.get(correlationId);
+			if (target) {
+				entry.status.waitingFor = entry.status.waitingFor.filter((t) => t !== target);
+				this.correlationToTarget.delete(correlationId);
+			}
 			if (entry.status.pendingCorrelations.length === 0 && entry.status.state === "waiting") {
 				entry.status.state = "running";
 			}
