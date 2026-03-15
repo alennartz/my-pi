@@ -116,7 +116,7 @@ Three additions to the `handleRpcEvent` method in `extensions/subagents/group.ts
 **C) `hasSubgroup` tracking.** In the existing `tool_execution_start` handler (around line 182), add: when `event.toolName === "subagent"`, set `entry.status.hasSubgroup = true`. When `event.toolName === "teardown_group"`, set `entry.status.hasSubgroup = false`. The existing handler already sets `lastActivity` and calls `onUpdate()`, so the `hasSubgroup` assignment goes in the same `if` block.
 
 **Verify:** In the `message_end` block, `lastTurnInput` is assigned from `usage.input`, and `contextWindow` is resolved on first model sighting. In the `tool_execution_start` block, `hasSubgroup` flips on `subagent`/`teardown_group` tool names.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Track `waitingFor` targets in `group.ts`
 

@@ -244,6 +244,8 @@ export class GroupManager {
 
 		if (event.type === "tool_execution_start") {
 			entry.status.lastActivity = `${event.toolName}(${summarizeArgs(event.args)})`;
+			if (event.toolName === "subagent") entry.status.hasSubgroup = true;
+			if (event.toolName === "teardown_group") entry.status.hasSubgroup = false;
 			this.opts.onUpdate();
 		}
 
@@ -260,6 +262,14 @@ export class GroupManager {
 					entry.status.usage.cost += usage.cost?.total || 0;
 				}
 				if (msg.model) entry.status.model = msg.model;
+
+				// Per-turn input (represents current context fill)
+				entry.status.lastTurnInput = usage?.input || 0;
+
+				// Resolve context window on first model sighting
+				if (entry.status.contextWindow === undefined && msg.model && this.opts.resolveContextWindow) {
+					entry.status.contextWindow = this.opts.resolveContextWindow(msg.model);
+				}
 
 				// Capture last assistant text
 				for (const part of msg.content ?? []) {
