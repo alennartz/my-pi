@@ -53,7 +53,7 @@ export interface GroupManagerOptions {
 	onUpdate: () => void;
 	onGroupIdle: () => void;
 	onAgentComplete: (agentId: string) => void;
-	onParentMessage: (xml: string) => void;
+	onParentMessage: (xml: string, meta: { correlationId?: string; responseExpected: boolean }) => void;
 }
 
 export class GroupManager {
@@ -143,7 +143,7 @@ export class GroupManager {
 			const baseArgs = buildAgentArgs(agentConfig, agentSkillPaths);
 			const args = [...baseArgs, "--append-system-prompt", identityXml];
 
-			// PI_SUBAGENT env var with identity
+			// PI_PARENT_LINK env var with identity
 			const envPayload = JSON.stringify({
 				id: agentSpec.id,
 				channels: allChannels,
@@ -153,7 +153,7 @@ export class GroupManager {
 
 			const rpc = new RpcChild({
 				cwd,
-				env: { PI_SUBAGENT: envPayload },
+				env: { PI_PARENT_LINK: envPayload },
 				args,
 			});
 
@@ -324,7 +324,10 @@ export class GroupManager {
 				responseExpected: msg.responseExpected ?? false,
 			});
 
-			this.opts.onParentMessage(xml);
+			this.opts.onParentMessage(xml, {
+				correlationId: msg.correlationId,
+				responseExpected: msg.responseExpected ?? false,
+			});
 		}
 	}
 

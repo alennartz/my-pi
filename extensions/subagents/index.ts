@@ -1,12 +1,12 @@
 /**
  * Subagents Extension — Entry point.
  *
- * Detects role via PI_SUBAGENT env var:
+ * Detects role via PI_PARENT_LINK env var:
  * - Absent: root agent. Starts broker, registers all tools.
- * - Present: child agent. Connects to parent's broker, registers all tools.
+ * - Present: has a parent. Connects to parent's broker, registers all tools.
  *
  * Both roles register the same five tools: subagent, send, respond,
- * check_status, teardown_group. Children can spawn sub-groups (recursive).
+ * check_status, teardown_group. Any agent can spawn sub-groups (recursive).
  */
 
 import * as net from "node:net";
@@ -37,15 +37,15 @@ import {
 
 // ─── Child identity from env var ─────────────────────────────────────────────
 
-interface ChildIdentity {
+interface ParentLink {
 	id: string;
 	channels: string[];
 	task: string;
 	brokerSocket: string;
 }
 
-function getChildIdentity(): ChildIdentity | null {
-	const raw = process.env.PI_SUBAGENT;
+function getParentLink(): ParentLink | null {
+	const raw = process.env.PI_PARENT_LINK;
 	if (!raw) return null;
 	try {
 		return JSON.parse(raw);
@@ -184,13 +184,13 @@ class BrokerClient {
 // ─── Main extension ──────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
-	const childIdentity = getChildIdentity();
+	const parentLink = getParentLink();
 
 	// Shared state
 	let activeGroup: GroupManager | null = null;
 	let brokerClient: BrokerClient | null = null;
 
-	// ─── Notification queue (root agent only) ────────────────────────────
+	// ─── Notification queue ─────────────────────────────────────────────
 	//
 	// Instead of delivering each agent notification immediately via
 	// pi.sendMessage(), we accumulate them in an internal queue and flush
@@ -199,21 +199,26 @@ export default function (pi: ExtensionAPI) {
 	//   - Stale stragglers draining after teardown
 	//   - Preemption of parent tool calls
 	//
-	// Flush happens on agent_end (parent finished its turn) or via a
-	// debounce timer when the parent is idle.
+	// Used by both root and recursive agents. Flush happens on agent_end
+	// (this agent finished its turn) or via a debounce timer when idle.
 
-	const notificationQueue: string[] = [];
+	interface QueuedNotification {
+		xml: string;
+		source: "local" | "uplink";
+	}
+
+	const notificationQueue: QueuedNotification[] = [];
 	let parentBusy = false;
 	let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-	function queueNotification(xml: string): void {
-		notificationQueue.push(xml);
+	function queueNotification(xml: string, source: "local" | "uplink"): void {
+		notificationQueue.push({ xml, source });
 		if (!parentBusy) {
-			// Parent is idle — debounce briefly to batch rapid-fire notifications
+			// Agent is idle — debounce briefly to batch rapid-fire notifications
 			if (flushTimer) clearTimeout(flushTimer);
 			flushTimer = setTimeout(flushNotifications, 100);
 		}
-		// If parent is busy, flush will happen on agent_end
+		// If agent is busy, flush will happen on agent_end
 	}
 
 	function flushNotifications(): void {
@@ -223,11 +228,20 @@ export default function (pi: ExtensionAPI) {
 		}
 		if (notificationQueue.length === 0) return;
 
-		const combined = notificationQueue.splice(0).join("\n");
+		const combined = notificationQueue.splice(0).map((n) => n.xml).join("\n");
 		pi.sendMessage(
 			{ customType: "subagents", content: combined, display: true },
 			{ triggerTurn: true },
 		);
+	}
+
+	/** Remove local (sub-group) entries, preserve uplink entries. */
+	function drainLocalNotifications(): void {
+		for (let i = notificationQueue.length - 1; i >= 0; i--) {
+			if (notificationQueue[i].source === "local") {
+				notificationQueue.splice(i, 1);
+			}
+		}
 	}
 
 	function clearNotificationQueue(): void {
@@ -238,49 +252,52 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	if (!childIdentity) {
-		pi.on("agent_start", async () => {
-			parentBusy = true;
-		});
+	pi.on("agent_start", async () => {
+		parentBusy = true;
+	});
 
-		pi.on("agent_end", async () => {
-			parentBusy = false;
-			flushNotifications();
-		});
-	}
+	pi.on("agent_end", async () => {
+		parentBusy = false;
+		flushNotifications();
+	});
 
-	// ─── Child setup ─────────────────────────────────────────────────────
+	// ─── Correlation origin tracking ────────────────────────────────────
+	//
+	// When a blocking message arrives (responseExpected=true), we record
+	// which broker it came from so the respond tool can route the reply
+	// to the correct broker. "uplink" = parent's broker, "local" = our
+	// own broker (from a sub-agent).
 
-	if (childIdentity) {
+	const correlationOrigin = new Map<string, "uplink" | "local">();
+
+	// ─── Uplink setup (agents that have a parent) ──────────────────────
+
+	if (parentLink) {
 		brokerClient = new BrokerClient();
 
 		// Connect to parent's broker on session start
 		pi.on("session_start", async (_event, _ctx) => {
 			try {
-				await brokerClient!.connect(childIdentity.brokerSocket, childIdentity.id);
+				await brokerClient!.connect(parentLink.brokerSocket, parentLink.id);
 
-				// Handle incoming messages from broker
+				// Handle incoming messages from parent's broker
 				brokerClient!.onMessage((msg) => {
 					if (msg.type === "message") {
+						if (msg.responseExpected && msg.correlationId) {
+							correlationOrigin.set(msg.correlationId, "uplink");
+						}
 						const xml = serializeAgentMessage({
 							from: msg.from,
 							content: msg.message,
 							correlationId: msg.correlationId,
 							responseExpected: msg.responseExpected ?? false,
 						});
-						pi.sendMessage(
-							{
-								customType: "subagents",
-								content: xml,
-								display: true,
-							},
-							{ deliverAs: "followUp", triggerTurn: true },
-						);
+						queueNotification(xml, "uplink");
 					}
 				});
 			} catch (err) {
 				// Broker connection failed — agent can still function but can't communicate
-				console.error(`[subagent:${childIdentity.id}] Failed to connect to broker: ${err}`);
+				console.error(`[subagent:${parentLink.id}] Failed to connect to broker: ${err}`);
 			}
 		});
 	}
@@ -420,7 +437,7 @@ export default function (pi: ExtensionAPI) {
 					}));
 					const usage = aggregateUsage(statuses);
 					const xml = serializeGroupIdle({ agents, usage });
-					queueNotification(xml);
+					queueNotification(xml, "local");
 				},
 				onAgentComplete: (agentId) => {
 					const status = group.getAgentStatus(agentId);
@@ -432,10 +449,13 @@ export default function (pi: ExtensionAPI) {
 						error: status.state === "failed" ? "Process crashed" : undefined,
 					};
 					const xml = serializeAgentComplete(data);
-					queueNotification(xml);
+					queueNotification(xml, "local");
 				},
-				onParentMessage: (xml) => {
-					queueNotification(xml);
+				onParentMessage: (xml, meta) => {
+					if (meta.responseExpected && meta.correlationId) {
+						correlationOrigin.set(meta.correlationId, "local");
+					}
+					queueNotification(xml, "local");
 				},
 			});
 
@@ -478,58 +498,29 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			const from = childIdentity?.id ?? "parent";
-			const client = childIdentity ? brokerClient : activeGroup?.getBroker() ? getParentBrokerClient() : null;
+			// Route to the correct broker:
+			// - Target is in our own sub-group → parentBrokerClient (our local broker)
+			// - Otherwise → brokerClient (uplink to parent's broker)
+			let client: BrokerClient | null;
+			let from: string;
 
-			if (!client && !activeGroup) {
+			const isLocalAgent = activeGroup?.getAgentStatus(params.to) !== undefined;
+
+			if (isLocalAgent) {
+				if (!parentBrokerClient) throw new Error("Broker client not connected");
+				client = parentBrokerClient;
+				from = "parent";
+			} else if (parentLink) {
+				if (!brokerClient) throw new Error("Not connected to parent broker");
+				client = brokerClient;
+				from = parentLink.id;
+			} else {
 				throw new Error("No active group. Spawn a group first with the subagent tool.");
 			}
 
 			const correlationId = params.expectResponse ? crypto.randomUUID() : undefined;
 
-			// For parent sending to agents, write directly to broker
-			if (!childIdentity && activeGroup) {
-				if (!parentBrokerClient) throw new Error("Broker client not connected");
-
-				const resp = await parentBrokerClient.sendAndWait({
-					type: "send",
-					from: "parent",
-					to: params.to,
-					message: params.message,
-					correlationId,
-					expectResponse: params.expectResponse,
-				});
-
-				if (resp.type === "error") {
-					throw new Error(resp.error);
-				}
-
-				if (params.expectResponse && correlationId) {
-					// Wait for the response matched by correlation ID
-					const responseMsg = await parentBrokerClient.waitForResponse(correlationId);
-					if (responseMsg.type === "response") {
-						return {
-							content: [{ type: "text", text: responseMsg.message }],
-						};
-					} else if (responseMsg.type === "error") {
-						throw new Error(responseMsg.error);
-					}
-					return {
-						content: [{ type: "text", text: `Unexpected response type: ${responseMsg.type}` }],
-					};
-				}
-
-				return {
-					content: [{ type: "text", text: `Message sent to ${params.to}.` }],
-				};
-			}
-
-			// Child path: use brokerClient
-			if (!brokerClient) {
-				throw new Error("Not connected to broker");
-			}
-
-			const resp = await brokerClient.sendAndWait({
+			const resp = await client.sendAndWait({
 				type: "send",
 				from,
 				to: params.to,
@@ -543,9 +534,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (params.expectResponse && correlationId) {
-				// Wait for the response matched by correlation ID
-				const responseMsg = await brokerClient.waitForResponse(correlationId);
-
+				const responseMsg = await client.waitForResponse(correlationId);
 				if (responseMsg.type === "response") {
 					return {
 						content: [{ type: "text", text: responseMsg.message }],
@@ -580,8 +569,24 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			const from = childIdentity?.id ?? "parent";
-			const client = childIdentity ? brokerClient : parentBrokerClient;
+			// Route response to the broker that originated the correlation
+			const origin = correlationOrigin.get(params.correlationId);
+			correlationOrigin.delete(params.correlationId);
+
+			let client: BrokerClient | null;
+			let from: string;
+
+			if (origin === "local") {
+				client = parentBrokerClient;
+				from = "parent";
+			} else if (origin === "uplink") {
+				client = brokerClient;
+				from = parentLink?.id ?? "parent";
+			} else {
+				// Fallback: no origin tracked — use current behavior
+				client = parentLink ? brokerClient : parentBrokerClient;
+				from = parentLink?.id ?? "parent";
+			}
 
 			if (!client) {
 				throw new Error("Not connected to broker");
@@ -668,7 +673,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			activeGroup = null;
-			clearNotificationQueue();
+			drainLocalNotifications();
 			ctx.ui.setWidget("subagents", undefined as any);
 
 			return {
