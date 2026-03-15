@@ -144,7 +144,6 @@ export class SubagentDashboard implements Component {
 		const activityColor = this.activityColor(s);
 		// Split into two lines if needed
 		const act1 = truncateToWidth(activityText, innerWidth);
-		const act1vis = visibleWidth(act1);
 		const hasOverflow = visibleWidth(activityText) > innerWidth;
 		const act2 = hasOverflow ? truncateToWidth(activityText.slice(act1.length > activityText.length ? activityText.length : this.findSplitPoint(activityText, innerWidth)), innerWidth) : "";
 
@@ -283,12 +282,12 @@ export class SubagentDashboard implements Component {
 		// Cost
 		if (totalCost > 0) parts.push(`$${totalCost.toFixed(2)}`);
 
-		const inner = parts.join(t.fg("muted", " │ "));
+		const inner = parts.map((p) => t.fg("dim", p)).join(t.fg("muted", " │ "));
 		const innerVis = visibleWidth(inner);
 		const dash = t.fg("muted", "─");
 		const sideFill = Math.max(1, Math.floor((width - innerVis - 2) / 2));
 		const rightFill = Math.max(1, width - innerVis - 2 - sideFill);
-		const line = dash.repeat(sideFill) + " " + t.fg("dim", inner) + " " + dash.repeat(rightFill);
+		const line = dash.repeat(sideFill) + " " + inner + " " + dash.repeat(rightFill);
 		return truncateToWidth(line, width);
 	}
 

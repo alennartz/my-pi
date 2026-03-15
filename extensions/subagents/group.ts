@@ -387,7 +387,8 @@ export class GroupManager {
 			);
 			const target = this.correlationToTarget.get(correlationId);
 			if (target) {
-				entry.status.waitingFor = entry.status.waitingFor.filter((t) => t !== target);
+				const idx = entry.status.waitingFor.indexOf(target);
+				if (idx !== -1) entry.status.waitingFor.splice(idx, 1);
 				this.correlationToTarget.delete(correlationId);
 			}
 			if (entry.status.pendingCorrelations.length === 0 && entry.status.state === "waiting") {
