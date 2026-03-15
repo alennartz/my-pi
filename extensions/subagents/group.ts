@@ -58,6 +58,7 @@ export interface GroupManagerOptions {
 	onGroupIdle: () => void;
 	onAgentComplete: (agentId: string) => void;
 	onParentMessage: (xml: string, meta: { correlationId?: string; responseExpected: boolean }) => void;
+	resolveContextWindow?: (modelId: string) => number | undefined;
 }
 
 export class GroupManager {

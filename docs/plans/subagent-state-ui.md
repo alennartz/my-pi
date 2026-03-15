@@ -103,7 +103,7 @@ interface GroupManagerOptions {
 No other changes needed — the callback is consumed in Step 3.
 
 **Verify:** `GroupManagerOptions` has the new optional field. No callers break (the field is optional).
-**Status:** not started
+**Status:** done
 
 ### Step 3: Update `handleRpcEvent` in `group.ts` — per-turn input, context window, and `hasSubgroup`
 
