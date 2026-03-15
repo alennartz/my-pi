@@ -141,7 +141,11 @@ export class GroupManager {
 			// Build args
 			const agentSkillPaths = skillPaths.get(agentSpec.id) ?? [];
 			const baseArgs = buildAgentArgs(agentConfig, agentSkillPaths);
-			const args = [...baseArgs, "--append-system-prompt", identityXml];
+			const args = [...baseArgs];
+			if (agentConfig) {
+				args.push("--append-system-prompt", agentConfig.systemPrompt);
+			}
+			args.push("--append-system-prompt", identityXml);
 
 			// PI_PARENT_LINK env var with identity
 			const envPayload = JSON.stringify({

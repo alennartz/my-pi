@@ -261,6 +261,30 @@ export default function (pi: ExtensionAPI) {
 		flushNotifications();
 	});
 
+	// ─── Inject available agent definitions into system prompt ───────────
+
+	pi.on("before_agent_start", async (event, _ctx) => {
+		// Only inject when the subagent tool is active for this agent
+		const activeTools = pi.getActiveTools();
+		if (!activeTools.includes("subagent")) return;
+
+		const agents = discoverAgents(process.cwd(), "both").agents;
+		if (agents.length === 0) return;
+
+		const lines = [
+			"",
+			"## Available Agent Definitions",
+			"",
+			"The following agent definitions can be referenced in the subagent tool's `agent` field:",
+			"",
+		];
+		for (const a of agents) {
+			lines.push(`- **${a.name}** (${a.source}): ${a.description}`);
+		}
+
+		return { systemPrompt: event.systemPrompt + "\n" + lines.join("\n") + "\n" };
+	});
+
 	// ─── Correlation origin tracking ────────────────────────────────────
 	//
 	// When a blocking message arrives (responseExpected=true), we record
@@ -328,7 +352,7 @@ export default function (pi: ExtensionAPI) {
 			"Spawns a group of agents that run in parallel with isolated contexts. Non-blocking — returns immediately with an acknowledgment. Live status shown in the widget.",
 			"One active group at a time. Each agent gets its own pi process. Agents communicate via the send/respond tools using channels declared at spawn time.",
 			"Parent (you) is auto-injected into every agent's channel list. The channels field governs agent-to-agent peer communication only.",
-			"Monitor progress via check_status. When all agents are done, you'll receive a <group_idle> notification. Call teardown_group to end the group.",
+			"Notifications arrive automatically: <agent_complete> when each agent finishes, <group_idle> when all are done. No need to poll — continue other work or wait. Call teardown_group to end the group when ready.",
 		],
 		parameters: Type.Object({
 			agents: Type.Array(AgentItem, { description: "Agents to spawn in this group" }),
@@ -616,7 +640,8 @@ export default function (pi: ExtensionAPI) {
 		label: "Check Status",
 		description: "Query agent status. Omit agent for group summary.",
 		promptGuidelines: [
-			"Returns current state, activity, usage stats, and pending correlations for one or all agents.",
+			"Prefer waiting for automatic notifications (<agent_complete>, <group_idle>) over calling this tool. Notifications arrive without polling.",
+			"Use only when you have a specific reason: diagnosing a suspected stall, answering a user question about progress, or checking usage mid-run.",
 		],
 		parameters: Type.Object({
 			agent: Type.Optional(Type.String({ description: "Agent id to query. Omit for group summary." })),
@@ -652,7 +677,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Teardown Group",
 		description: "End the current agent group. Kills all agent processes and delivers a final summary.",
 		promptGuidelines: [
-			"Call teardown_group to end the current agent group. Kills all agent processes and delivers a final summary with per-agent output and usage.",
+			"Call when the group no longer serves a purpose. Idle groups remain fully functional — you can send new messages to restart work or use agents as persistent specialists. Teardown kills all processes and returns a <group_complete> report with final output and aggregate usage.",
 		],
 		parameters: Type.Object({}),
 
