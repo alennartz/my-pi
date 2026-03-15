@@ -101,11 +101,23 @@ Group-based subagent orchestration extension that spawns and manages groups of c
 - `extensions/subagents/widget.ts` — TUI widget rendering for live group status
 - `extensions/subagents/package.json` — package manifest
 
+### Onboarding
+
+Package onboarding prompt template and the behavioral conventions it installs. The `/onboard` command walks the user through the package's features and offers to copy `SYSTEM.md` into their `AGENTS.md`.
+
+**Responsibilities:** package feature tour, `SYSTEM.md` install walkthrough, behavioral conventions payload (user-copy-in model, not auto-loaded by pi)
+
+**Dependencies:** none
+
+**Files:**
+- `prompts/onboard.md` — `/onboard` prompt template
+- `SYSTEM.md` — behavioral conventions installed by the onboard template
+
 ### Docs
 
-Working artifacts for in-progress workflows (brainstorms, plans, reviews), permanent decision records extracted during cleanup, behavioral conventions, and onboarding.
+Working artifacts for in-progress workflows and permanent decision records extracted during cleanup.
 
-**Responsibilities:** workflow working artifacts, decision records (DR-NNN format, consumed by architecting as settled context, produced/deleted by cleanup including supersession lifecycle), behavioral conventions for the agent (`SYSTEM.md` — user-copy-in model, not auto-loaded), onboarding prompt template (`/onboard` — package feature tour and `SYSTEM.md` install walkthrough)
+**Responsibilities:** workflow working artifacts (brainstorms, plans, reviews — ephemeral, produced and consumed by pipeline skills), decision records (DR-NNN format, consumed by architecting as settled context, produced/deleted by cleanup including supersession lifecycle)
 
 **Dependencies:** Skills (artifacts are produced and consumed by pipeline skills)
 
@@ -114,5 +126,3 @@ Working artifacts for in-progress workflows (brainstorms, plans, reviews), perma
 - `docs/plans/**`
 - `docs/reviews/**`
 - `docs/decisions/**`
-- `SYSTEM.md`
-- `prompts/onboard.md`
