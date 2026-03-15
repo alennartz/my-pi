@@ -15,7 +15,7 @@ Both skills faithfully implement the plan — all sections, cross-references, an
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `skills/specialist-design/SKILL.md:34`
-- **Status:** open
+- **Status:** resolved
 
 The skill states: "Omit to inherit the parent's model." In `buildAgentArgs` (`agents.ts`), omitting the `model` field means no `--model` flag is passed to the child process. The child uses pi's configured default model — not the parent's current model. If the parent was started with `--model claude-opus-4` or switched models mid-session, children spawned without an explicit `model` field will use whatever pi's default is, not `claude-opus-4`. Should say "use pi's configured default model" instead of "inherit the parent's model."
 

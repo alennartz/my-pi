@@ -31,7 +31,7 @@ model: claude-sonnet
 - **`description`** (required, string) — What this agent does. Read by the orchestrator at group-design time to decide whether to use this specialist. Files without a `description` are silently skipped during discovery.
 - **`tools`** (optional, comma-separated) — Filters available tools. Only the listed tools are visible to the agent. Omit to give the agent all available tools.
 - **`skills`** (optional, comma-separated) — Skill names to make available. Resolved to filesystem paths via `resolveSkillPaths` at spawn time. When specified, the agent starts with `--no-skills` and only the listed skills are loaded (via `--skill` flags).
-- **`model`** (optional, string) — Pins the agent to a specific model. Omit to inherit the parent's model.
+- **`model`** (optional, string) — Pins the agent to a specific model. Omit to use pi's configured default model.
 
 **Body** — everything below the frontmatter is the system prompt, injected via `--append-system-prompt`. This is the agent's persistent identity: role, boundaries, behavioral rules. Write it as direct instructions to the agent.
 
