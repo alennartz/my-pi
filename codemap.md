@@ -11,6 +11,7 @@ graph LR
   Workflow -->|references skill names| Skills
   Workflow -->|imports| Components
   Components
+  Subagents
 ```
 
 ### Key Flows
@@ -79,6 +80,26 @@ Pipeline orchestration extension that ties the skill pipeline into an automated 
 
 **Files:**
 - `extensions/workflow/**`
+
+### Subagents Extension
+
+Group-based subagent orchestration extension that spawns and manages groups of child `pi --mode rpc` processes with channel-based inter-agent communication.
+
+**Responsibilities:** group lifecycle management (spawn, idle detection, teardown), RPC child process spawning and event streaming, channel-based topology validation and runtime enforcement, unix socket message broker (hub-and-spoke routing, blocking send correlation, synthetic error responses), deadlock detection (directed graph cycle detection via DFS), structured XML message serialization (inter-agent messages, completion notifications, group reports, identity blocks), agent discovery with skill filtering, TUI widget rendering (per-agent status, usage, activity), five-tool suite (`subagent`, `send`, `respond`, `check_status`, `teardown_group`), role detection (root vs child via `PI_SUBAGENT` env var), recursive subagent support
+
+**Dependencies:** `@mariozechner/pi-coding-agent` (ExtensionAPI, tool registration, widget API, promptGuidelines), `@mariozechner/pi-ai` (StringEnum)
+
+**Files:**
+- `extensions/subagents/index.ts` — entry point, role detection, tool registration, broker client (child role)
+- `extensions/subagents/agents.ts` — agent `.md` discovery with skills field, CLI arg building
+- `extensions/subagents/broker.ts` — unix socket message broker, channel enforcement, correlation tracking
+- `extensions/subagents/channels.ts` — topology building, validation, and runtime send checks
+- `extensions/subagents/deadlock.ts` — directed graph with cycle detection for blocking sends
+- `extensions/subagents/group.ts` — group lifecycle, RPC child management, state tracking, idle detection
+- `extensions/subagents/messages.ts` — XML serializers and broker wire protocol types
+- `extensions/subagents/rpc-child.ts` — lightweight JSONL protocol wrapper around `pi --mode rpc`
+- `extensions/subagents/widget.ts` — TUI widget rendering for live group status
+- `extensions/subagents/package.json` — package manifest
 
 ### Docs
 

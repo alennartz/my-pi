@@ -9,7 +9,7 @@ See [codemap.md](./codemap.md) for a full map of modules, responsibilities, depe
 This is a [pi coding agent](https://github.com/badlogic/pi-mono) package. It contains:
 
 - **`skills/`** — Custom workflow skills loaded by the pi agent harness. Each skill is a `SKILL.md` file with structured instructions.
-- **`extensions/`** — TypeScript extensions loaded by pi at runtime. Currently: Azure AI Foundry provider, workflow pipeline orchestration.
+- **`extensions/`** — TypeScript extensions loaded by pi at runtime. Currently: Azure AI Foundry provider, workflow pipeline orchestration, group-based subagent orchestration.
 - **`lib/components/`** — Reusable TUI components shared across extensions (TypeScript).
 - **`docs/brainstorms/`** — Ephemeral brainstorm artifacts for in-progress workflows.
 - **`docs/plans/`** — Ephemeral plan artifacts for in-progress workflows (architecture + implementation steps).
