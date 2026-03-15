@@ -188,7 +188,7 @@ export class SubagentDashboard implements Component {
 **Width handling:** every line produced by `render()` is guaranteed ≤ `width` using `truncateToWidth` from `@mariozechner/pi-tui`. The caching pattern (check `cachedWidth === width` and statuses reference identity) avoids redundant computation; `update()` calls `invalidate()` to bust the cache.
 
 **Verify:** `widget.ts` exports `SubagentDashboard` class with `update()`, `render(width)`, and `invalidate()` methods. No remnant of the old `renderGroupWidget` function. The render output is 6 lines per row of boxes plus 1 footer line.
-**Status:** not started
+**Status:** done
 
 ### Step 6: Update `index.ts` — factory widget, `parentLink` gate, and resolver wiring
 
