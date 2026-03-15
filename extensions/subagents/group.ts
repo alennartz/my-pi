@@ -53,6 +53,7 @@ export interface GroupManagerOptions {
 	onUpdate: () => void;
 	onGroupIdle: () => void;
 	onAgentComplete: (agentId: string) => void;
+	onParentMessage: (xml: string) => void;
 }
 
 export class GroupManager {
@@ -316,7 +317,6 @@ export class GroupManager {
 
 	private handleParentMessage(msg: BrokerResponse): void {
 		if (msg.type === "message") {
-			// Deliver to parent's conversation via sendMessage
 			const xml = serializeAgentMessage({
 				from: msg.from,
 				content: msg.message,
@@ -324,14 +324,7 @@ export class GroupManager {
 				responseExpected: msg.responseExpected ?? false,
 			});
 
-			this.opts.pi.sendMessage(
-				{
-					customType: "subagents",
-					content: xml,
-					display: true,
-				},
-				{ deliverAs: "steer", triggerTurn: true },
-			);
+			this.opts.onParentMessage(xml);
 		}
 	}
 

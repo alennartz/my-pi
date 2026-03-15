@@ -190,6 +190,65 @@ export default function (pi: ExtensionAPI) {
 	let activeGroup: GroupManager | null = null;
 	let brokerClient: BrokerClient | null = null;
 
+	// ─── Notification queue (root agent only) ────────────────────────────
+	//
+	// Instead of delivering each agent notification immediately via
+	// pi.sendMessage(), we accumulate them in an internal queue and flush
+	// as a single combined message. This avoids:
+	//   - Consecutive user messages (out-of-distribution for most LLMs)
+	//   - Stale stragglers draining after teardown
+	//   - Preemption of parent tool calls
+	//
+	// Flush happens on agent_end (parent finished its turn) or via a
+	// debounce timer when the parent is idle.
+
+	const notificationQueue: string[] = [];
+	let parentBusy = false;
+	let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function queueNotification(xml: string): void {
+		notificationQueue.push(xml);
+		if (!parentBusy) {
+			// Parent is idle — debounce briefly to batch rapid-fire notifications
+			if (flushTimer) clearTimeout(flushTimer);
+			flushTimer = setTimeout(flushNotifications, 100);
+		}
+		// If parent is busy, flush will happen on agent_end
+	}
+
+	function flushNotifications(): void {
+		if (flushTimer) {
+			clearTimeout(flushTimer);
+			flushTimer = null;
+		}
+		if (notificationQueue.length === 0) return;
+
+		const combined = notificationQueue.splice(0).join("\n");
+		pi.sendMessage(
+			{ customType: "subagents", content: combined, display: true },
+			{ triggerTurn: true },
+		);
+	}
+
+	function clearNotificationQueue(): void {
+		notificationQueue.length = 0;
+		if (flushTimer) {
+			clearTimeout(flushTimer);
+			flushTimer = null;
+		}
+	}
+
+	if (!childIdentity) {
+		pi.on("agent_start", async () => {
+			parentBusy = true;
+		});
+
+		pi.on("agent_end", async () => {
+			parentBusy = false;
+			flushNotifications();
+		});
+	}
+
 	// ─── Child setup ─────────────────────────────────────────────────────
 
 	if (childIdentity) {
@@ -215,7 +274,7 @@ export default function (pi: ExtensionAPI) {
 								content: xml,
 								display: true,
 							},
-							{ deliverAs: "steer", triggerTurn: true },
+							{ deliverAs: "followUp", triggerTurn: true },
 						);
 					}
 				});
@@ -361,10 +420,7 @@ export default function (pi: ExtensionAPI) {
 					}));
 					const usage = aggregateUsage(statuses);
 					const xml = serializeGroupIdle({ agents, usage });
-					pi.sendMessage(
-						{ customType: "subagents", content: xml, display: true },
-						{ deliverAs: "steer", triggerTurn: true },
-					);
+					queueNotification(xml);
 				},
 				onAgentComplete: (agentId) => {
 					const status = group.getAgentStatus(agentId);
@@ -376,15 +432,24 @@ export default function (pi: ExtensionAPI) {
 						error: status.state === "failed" ? "Process crashed" : undefined,
 					};
 					const xml = serializeAgentComplete(data);
-					pi.sendMessage(
-						{ customType: "subagents", content: xml, display: true },
-						{ deliverAs: "steer", triggerTurn: true },
-					);
+					queueNotification(xml);
+				},
+				onParentMessage: (xml) => {
+					queueNotification(xml);
 				},
 			});
 
 			activeGroup = group;
 			const ack = await group.start();
+
+			// Connect parent's broker client eagerly — the broker is running
+			// now, so we can connect immediately. This avoids a lazy-init race
+			// when multiple send tool calls execute concurrently.
+			const broker = group.getBroker();
+			if (broker) {
+				parentBrokerClient = new BrokerClient();
+				await parentBrokerClient.connect(broker.socketPath, "parent");
+			}
 
 			return {
 				content: [{ type: "text", text: ack }],
@@ -424,14 +489,7 @@ export default function (pi: ExtensionAPI) {
 
 			// For parent sending to agents, write directly to broker
 			if (!childIdentity && activeGroup) {
-				const broker = activeGroup.getBroker();
-				if (!broker) throw new Error("Broker not running");
-
-				// Parent uses a BrokerClient connected to its own broker
-				if (!parentBrokerClient) {
-					parentBrokerClient = new BrokerClient();
-					await parentBrokerClient.connect(broker.socketPath, "parent");
-				}
+				if (!parentBrokerClient) throw new Error("Broker client not connected");
 
 				const resp = await parentBrokerClient.sendAndWait({
 					type: "send",
@@ -610,16 +668,11 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			activeGroup = null;
+			clearNotificationQueue();
 			ctx.ui.setWidget("subagents", undefined as any);
 
-			// Steer the completion report
-			pi.sendMessage(
-				{ customType: "subagents", content: xml, display: true },
-				{ deliverAs: "followUp", triggerTurn: true },
-			);
-
 			return {
-				content: [{ type: "text", text: "Group terminated. Final report delivered." }],
+				content: [{ type: "text", text: `Group terminated.\n\n${xml}` }],
 			};
 		},
 	});
@@ -635,6 +688,7 @@ export default function (pi: ExtensionAPI) {
 	// ─── Cleanup on shutdown ─────────────────────────────────────────────
 
 	pi.on("session_shutdown", async () => {
+		clearNotificationQueue();
 		if (activeGroup) {
 			await activeGroup.destroy();
 			activeGroup = null;
