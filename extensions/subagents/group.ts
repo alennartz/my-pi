@@ -32,6 +32,10 @@ export interface AgentStatus {
 	model?: string;
 	lastOutput?: string;
 	pendingCorrelations: string[];
+	lastTurnInput: number;
+	contextWindow?: number;
+	hasSubgroup: boolean;
+	waitingFor: string[];
 }
 
 interface AgentEntry {
@@ -169,6 +173,9 @@ export class GroupManager {
 				channels: allChannels,
 				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
 				pendingCorrelations: [],
+				lastTurnInput: 0,
+				hasSubgroup: false,
+				waitingFor: [],
 			};
 
 			const entry: AgentEntry = {

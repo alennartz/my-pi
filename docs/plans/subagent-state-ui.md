@@ -64,6 +64,8 @@ interface AgentStatus {
 
 ## Steps
 
+**Pre-implementation commit:** `d8472f01e83e49522288a16fc0a748b3278d20aa`
+
 ### Step 1: Extend `AgentStatus` interface and initialization in `group.ts`
 
 Add four new fields to the `AgentStatus` interface in `extensions/subagents/group.ts`:
@@ -85,7 +87,7 @@ Initialize them in the status creation block inside `start()` (the `const status
 - (`contextWindow` is omitted — starts as `undefined`)
 
 **Verify:** The `AgentStatus` interface has all four new fields. The status literal in `start()` initializes `lastTurnInput`, `hasSubgroup`, and `waitingFor` with their zero-values.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Add `resolveContextWindow` to `GroupManagerOptions` in `group.ts`
 
