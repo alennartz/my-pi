@@ -15,7 +15,7 @@ The plan was implemented faithfully across all 11 steps. The multi-file extensio
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/broker.ts:101-107`
-- **Status:** open
+- **Status:** resolved
 
 In `agentDied()`, the second cleanup loop removes pending correlations where the dead agent was the *sender*, but doesn't clean up the corresponding deadlock graph edges or `correlationTargets` entries:
 
@@ -37,7 +37,7 @@ Fix: look up each correlation's target via `correlationTargets`, call `removeEdg
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/index.ts:77-130`
-- **Status:** open
+- **Status:** resolved
 
 After the initial connection/registration succeeds, the `BrokerClient` has no `close` or `error` event handler on the socket. If the unix socket drops unexpectedly after connection, any promises held by `waiters` or `correlationWaiters` hang forever — the `send` or `respond` tool call never resolves.
 

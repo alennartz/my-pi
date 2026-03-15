@@ -99,7 +99,13 @@ export class Broker {
 		// Also clean up correlations where the dead agent was the sender
 		for (const [corrId, pending] of this.pendingCorrelations) {
 			if (pending.from === agentId) {
+				const target = this.correlationTargets.get(corrId);
+				if (target) {
+					this.deadlockGraph.removeEdge(agentId, target);
+					this.correlationTargets.delete(corrId);
+				}
 				this.pendingCorrelations.delete(corrId);
+				this.onBlockingSendEnd?.(agentId, corrId);
 			}
 		}
 

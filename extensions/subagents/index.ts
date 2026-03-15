@@ -129,6 +129,19 @@ class BrokerClient {
 			this.socket.on("error", (err) => {
 				reject(err);
 			});
+
+			this.socket.on("close", () => {
+				// Reject all pending waiters on unexpected disconnect
+				const error: BrokerResponse = { type: "error", error: "Broker connection lost" };
+				for (const waiter of this.waiters) {
+					waiter(error);
+				}
+				this.waiters = [];
+				for (const [, waiter] of this.correlationWaiters) {
+					waiter(error);
+				}
+				this.correlationWaiters.clear();
+			});
 		});
 	}
 
