@@ -13,10 +13,8 @@ import * as net from "node:net";
 import * as crypto from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import {
-	type AgentScope,
 	type AgentConfig,
 	discoverAgents,
 	resolveSkillPaths,
@@ -269,7 +267,7 @@ export default function (pi: ExtensionAPI) {
 		const activeTools = pi.getActiveTools();
 		if (!activeTools.includes("subagent")) return;
 
-		const agents = discoverAgents(process.cwd(), "both").agents;
+		const agents = discoverAgents(process.cwd()).agents;
 		if (agents.length === 0) return;
 
 		const lines = [
@@ -340,11 +338,6 @@ export default function (pi: ExtensionAPI) {
 		),
 	});
 
-	const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
-		description: 'Where to discover agent .md files. Default: "user".',
-		default: "user",
-	});
-
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent Group",
@@ -357,10 +350,6 @@ export default function (pi: ExtensionAPI) {
 		],
 		parameters: Type.Object({
 			agents: Type.Array(AgentItem, { description: "Agents to spawn in this group" }),
-			agentScope: Type.Optional(AgentScopeSchema),
-			confirmProjectAgents: Type.Optional(
-				Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true }),
-			),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -368,8 +357,7 @@ export default function (pi: ExtensionAPI) {
 				throw new Error("A group is already active. Call teardown_group first.");
 			}
 
-			const agentScope: AgentScope = params.agentScope ?? "user";
-			const discovery = discoverAgents(ctx.cwd, agentScope);
+			const discovery = discoverAgents(ctx.cwd);
 			const allAgentConfigs = discovery.agents;
 
 			// Validate agent definitions exist
@@ -416,7 +404,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Confirm project agents if needed
-			if ((agentScope === "project" || agentScope === "both") && (params.confirmProjectAgents ?? true) && ctx.hasUI) {
+			if (ctx.hasUI) {
 				const projectAgentNames = new Set<string>();
 				for (const a of params.agents) {
 					if (a.agent) {

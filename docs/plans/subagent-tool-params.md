@@ -16,12 +16,14 @@ Remove two LLM-facing tool parameters (`agentScope`, `confirmProjectAgents`) tha
 
 ## Steps
 
+**Pre-implementation commit:** `0ba52cacbe74b998b573b5c590d4088821ad639e`
+
 ### Step 1: Simplify `discoverAgents` in `agents.ts`
 
 Remove the `AgentScope` type export. Remove the `scope` parameter from `discoverAgents` so the signature becomes `discoverAgents(cwd: string): AgentDiscoveryResult`. Collapse the internal branching to always load both user and project agents (the current `"both"` path): load `userAgents` unconditionally, load `projectAgents` when `projectAgentsDir` exists, merge with project overriding user on name collision.
 
 **Verify:** `grep -n "AgentScope" extensions/subagents/agents.ts` returns nothing. The function signature has one parameter.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Update call sites and remove schema in `index.ts`
 
@@ -32,7 +34,7 @@ Three changes in `index.ts`:
 3. **`before_agent_start` hook** — Change `discoverAgents(process.cwd(), "both")` to `discoverAgents(process.cwd())`.
 
 **Verify:** `grep -n "AgentScope\|AgentScopeSchema\|agentScope" extensions/subagents/index.ts` returns nothing.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Strip parameters and simplify execute in the `subagent` tool
 
@@ -42,4 +44,4 @@ In the `subagent` tool registration in `index.ts`:
 2. **Execute body** — Remove `const agentScope: AgentScope = params.agentScope ?? "user";`. Replace `discoverAgents(ctx.cwd, agentScope)` with `discoverAgents(ctx.cwd)`. Simplify the confirmation conditional from `(agentScope === "project" || agentScope === "both") && (params.confirmProjectAgents ?? true) && ctx.hasUI` to just `ctx.hasUI` (always confirm when there's a UI and project agents are present).
 
 **Verify:** `grep -n "confirmProjectAgents\|agentScope\|params\.agentScope" extensions/subagents/index.ts` returns nothing. The tool's parameter schema only contains `agents`.
-**Status:** not started
+**Status:** done
