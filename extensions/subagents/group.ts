@@ -244,7 +244,7 @@ export class GroupManager {
 		if (this.destroyed) return;
 
 		if (event.type === "tool_execution_start") {
-			entry.status.lastActivity = `${event.toolName}(${summarizeArgs(event.args)})`;
+			entry.status.lastActivity = `${event.toolName}(${summarizeArgs(event.args)})`.replace(/[\r\n]+/g, " ");
 			if (event.toolName === "subagent") entry.status.hasSubgroup = true;
 			if (event.toolName === "teardown_group") entry.status.hasSubgroup = false;
 			this.opts.onUpdate();
@@ -402,7 +402,7 @@ export class GroupManager {
 function summarizeArgs(args: Record<string, any>): string {
 	if (!args) return "";
 	if (args.command) {
-		const cmd = String(args.command);
+		const cmd = String(args.command).replace(/[\r\n\t]+/g, " ").replace(/  +/g, " ").trim();
 		return cmd.length > 40 ? cmd.slice(0, 40) + "…" : cmd;
 	}
 	if (args.path) return String(args.path);

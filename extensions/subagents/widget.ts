@@ -93,13 +93,12 @@ export class SubagentDashboard implements Component {
 	}
 
 	/**
-	 * Render a single agent box — exactly 6 lines tall.
+	 * Render a single agent box — exactly 5 lines tall.
 	 *  Line 0: top border
 	 *  Line 1: identity (agent def + model)
-	 *  Line 2: activity line 1
-	 *  Line 3: activity line 2 (overflow)
-	 *  Line 4: channels
-	 *  Line 5: bottom border with stats
+	 *  Line 2: activity (truncated to one line)
+	 *  Line 3: channels
+	 *  Line 4: bottom border with stats
 	 */
 	private renderBox(s: AgentStatus, boxWidth: number): string[] {
 		const t = this.theme;
@@ -139,17 +138,11 @@ export class SubagentDashboard implements Component {
 		const identityColor = dimmed ? "dim" : "muted";
 		const line1 = this.interiorLine(t.fg(identityColor, truncateToWidth(identityRaw, innerWidth)), innerWidth, bc, hFill === "═");
 
-		// ── Lines 2-3: activity ──
+		// ── Line 2: activity ──
 		const activityText = this.activityText(s);
 		const activityColor = this.activityColor(s);
-		// Split into two lines if needed
-		const act1 = truncateToWidth(activityText, innerWidth);
-		const hasOverflow = visibleWidth(activityText) > innerWidth;
-		const act2 = hasOverflow ? truncateToWidth(activityText.slice(act1.length > activityText.length ? activityText.length : this.findSplitPoint(activityText, innerWidth)), innerWidth) : "";
-
 		const actColor = dimmed ? "dim" : activityColor;
-		const line2 = this.interiorLine(t.fg(actColor, act1), innerWidth, bc, failed);
-		const line3 = this.interiorLine(act2 ? t.fg(actColor, act2) : "", innerWidth, bc, failed);
+		const line2 = this.interiorLine(t.fg(actColor, truncateToWidth(activityText, innerWidth)), innerWidth, bc, failed);
 
 		// ── Line 4: channels ──
 		const channelText = this.formatChannels(s, dimmed);
@@ -158,7 +151,7 @@ export class SubagentDashboard implements Component {
 		// ── Bottom border ──
 		const bottomLine = this.renderBottomBorder(s, boxWidth, bc, tl === "╔");
 
-		return [topLine, line1, line2, line3, line4, bottomLine];
+		return [topLine, line1, line2, line4, bottomLine];
 	}
 
 	/** Wrap interior content in border chars, padded to innerWidth. */
@@ -167,23 +160,6 @@ export class SubagentDashboard implements Component {
 		const contentVis = visibleWidth(content);
 		const pad = Math.max(0, innerWidth - contentVis);
 		return bc(vBar) + content + " ".repeat(pad) + bc(vBar);
-	}
-
-	/** Approximate character index where visible width exceeds limit. */
-	private findSplitPoint(text: string, maxWidth: number): number {
-		// Walk characters and track visible width
-		let vis = 0;
-		for (let i = 0; i < text.length; i++) {
-			const ch = text.charCodeAt(i);
-			// Skip ANSI sequences
-			if (ch === 0x1b) {
-				const m = text.slice(i).match(/^\x1b\[[0-9;]*m/);
-				if (m) { i += m[0].length - 1; continue; }
-			}
-			vis++;
-			if (vis >= maxWidth) return i + 1;
-		}
-		return text.length;
 	}
 
 	private renderBottomBorder(s: AgentStatus, boxWidth: number, bc: (s: string) => string, doubleBorder: boolean): string {
@@ -229,7 +205,7 @@ export class SubagentDashboard implements Component {
 
 	/** Stitch boxes side by side with gap. */
 	private stitchRow(boxes: string[][], boxWidth: number, gap: number): string[] {
-		const BOX_HEIGHT = 6;
+		const BOX_HEIGHT = 5;
 		const lines: string[] = [];
 		for (let lineIdx = 0; lineIdx < BOX_HEIGHT; lineIdx++) {
 			let row = "";
