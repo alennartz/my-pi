@@ -163,7 +163,7 @@ In `extensions/subagents/index.ts`:
 4. Update the subagent tool's `promptGuidelines` to add a line: `"Use subagent when the work needs multiple coordinated agents, specialized personas, or a clean slate. Use fork when you want a copy of yourself with your full context to explore something."`.
 
 **Verify:** The subagent tool constructs `RegularAgentSpec` objects with `kind: "agent"`. The `GroupManager` receives properly typed `AgentSpec[]`. Subagent prompt guidelines mention fork as an alternative.
-**Status:** not started
+**Status:** done
 
 ### Step 6: Register the fork tool
 

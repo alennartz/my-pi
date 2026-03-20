@@ -16,6 +16,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import {
 	type AgentConfig,
+	type RegularAgentSpec,
+	type AgentSpec,
 	discoverAgents,
 	resolveSkillPaths,
 	formatAgentList,
@@ -347,6 +349,7 @@ export default function (pi: ExtensionAPI) {
 			"One active group at a time. Each agent gets its own pi process. Agents communicate via the send/respond tools using channels declared at spawn time.",
 			"Parent (you) is auto-injected into every agent's channel list. The channels field governs agent-to-agent peer communication only.",
 			"Notifications arrive automatically: <agent_complete> when each agent finishes, <group_idle> when all are done. No need to poll — continue other work or wait. Call teardown_group to end the group when ready.",
+			"Use subagent when the work needs multiple coordinated agents, specialized personas, or a clean slate. Use fork when you want a copy of yourself with your full context to explore something.",
 		],
 		parameters: Type.Object({
 			agents: Type.Array(AgentItem, { description: "Agents to spawn in this group" }),
@@ -439,10 +442,16 @@ export default function (pi: ExtensionAPI) {
 				});
 			}
 
+			// Map params to RegularAgentSpec[]
+			const agentSpecs: RegularAgentSpec[] = params.agents.map(a => ({
+				kind: "agent" as const,
+				...a,
+			}));
+
 			// Create and start group
 			const group = new GroupManager({
 				pi,
-				agents: params.agents,
+				agents: agentSpecs,
 				agentConfigs: allAgentConfigs,
 				topology,
 				skillPaths: skillPathsMap,
