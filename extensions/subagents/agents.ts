@@ -189,3 +189,26 @@ export function buildAgentArgs(agent: AgentConfig | undefined, skillPaths: strin
 	}
 	return args;
 }
+
+/**
+ * Build CLI args for spawning a forked pi child process.
+ * The fork branches from the parent's session file and inherits
+ * its tool restrictions, skills, and thinking level.
+ */
+export function buildForkArgs(spec: ForkAgentSpec, sessionDir: string): string[] {
+	const args: string[] = [
+		"--fork", spec.sessionFile,
+		"--session-dir", sessionDir,
+		"--thinking", spec.thinkingLevel,
+	];
+	if (spec.tools.length > 0) {
+		args.push("--tools", spec.tools.join(","));
+	}
+	if (spec.skillPaths.length > 0) {
+		args.push("--no-skills");
+		for (const p of spec.skillPaths) {
+			args.push("--skill", p);
+		}
+	}
+	return args;
+}

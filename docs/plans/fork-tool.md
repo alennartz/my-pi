@@ -125,7 +125,7 @@ Add and export `buildForkArgs(spec: ForkAgentSpec, sessionDir: string): string[]
 - `--no-skills` plus `--skill <path>` per entry in `spec.skillPaths` — same pattern as `buildAgentArgs()`. If `skillPaths` is empty, omit both flags.
 
 **Verify:** `buildForkArgs` is exported. A spec with `tools: ["read", "bash"]`, `skillPaths: ["/path/to/skill"]`, `thinkingLevel: "high"` produces args including `--fork`, `--session-dir`, `--thinking high`, `--tools read,bash`, `--no-skills`, `--skill /path/to/skill`. Empty `tools` array omits `--tools`. Empty `skillPaths` omits `--no-skills` and `--skill`.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Update `GroupManager` for temp dir lifecycle and fork-aware spawning
 
