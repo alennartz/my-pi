@@ -11,6 +11,26 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDir, parseFrontmatter } from "@mariozechner/pi-coding-agent";
 
+export interface RegularAgentSpec {
+	kind: "agent";
+	id: string;
+	agent?: string;
+	task: string;
+	channels?: string[];
+}
+
+export interface ForkAgentSpec {
+	kind: "fork";
+	id: string;
+	task: string;
+	sessionFile: string;
+	tools: string[];
+	skillPaths: string[];
+	thinkingLevel: string;
+}
+
+export type AgentSpec = RegularAgentSpec | ForkAgentSpec;
+
 export interface AgentConfig {
 	name: string;
 	description: string;

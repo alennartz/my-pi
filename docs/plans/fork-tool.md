@@ -72,6 +72,8 @@ Builds CLI args for a forked child: `--fork <sessionFile>`, `--session-dir <sess
 
 ## Steps
 
+**Pre-implementation commit:** `793ea33276da804b3c8fe64225b628c7ed7bcc55`
+
 ### Step 1: Define `AgentSpec` discriminated union in `agents.ts`
 
 Add and export `RegularAgentSpec`, `ForkAgentSpec`, and `AgentSpec` types below the existing `AgentConfig` interface in `extensions/subagents/agents.ts`:
@@ -101,7 +103,7 @@ export type AgentSpec = RegularAgentSpec | ForkAgentSpec;
 `RegularAgentSpec` mirrors the existing inline type used in `GroupManagerOptions.agents`. `ForkAgentSpec` carries everything needed to spawn a forked child.
 
 **Verify:** All three types are exported from `agents.ts`. `RegularAgentSpec` fields match the shape currently used in `GroupManagerOptions`.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Update `buildAgentArgs()` to accept `sessionDir`
 
