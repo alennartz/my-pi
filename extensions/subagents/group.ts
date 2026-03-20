@@ -6,10 +6,13 @@
  * broker startup/teardown.
  */
 
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { RpcChild } from "./rpc-child.js";
 import { Broker } from "./broker.js";
-import { type AgentConfig, buildAgentArgs } from "./agents.js";
+import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs } from "./agents.js";
 import type { Topology } from "./channels.js";
 import {
 	serializeSubagentIdentity,
@@ -49,7 +52,7 @@ interface AgentEntry {
 
 export interface GroupManagerOptions {
 	pi: ExtensionAPI;
-	agents: Array<{ id: string; agent?: string; task: string; channels?: string[] }>;
+	agents: AgentSpec[];
 	agentConfigs: AgentConfig[];
 	topology: Topology;
 	skillPaths: Map<string, string[]>;
@@ -67,6 +70,7 @@ export class GroupManager {
 	private opts: GroupManagerOptions;
 	private destroyed = false;
 	private correlationToTarget = new Map<string, string>();
+	private sessionDir: string | null = null;
 
 	constructor(opts: GroupManagerOptions) {
 		this.opts = opts;
@@ -103,6 +107,9 @@ export class GroupManager {
 	async start(): Promise<string> {
 		const { pi, agents, agentConfigs, topology, skillPaths, cwd } = this.opts;
 
+		// Create shared temp directory for session files
+		this.sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-"));
+
 		// Start broker
 		this.broker = new Broker({
 			topology,
@@ -114,8 +121,7 @@ export class GroupManager {
 
 		// Build and spawn each agent
 		for (const agentSpec of agents) {
-			const agentConfig = agentSpec.agent ? agentConfigs.find((a) => a.name === agentSpec.agent) : undefined;
-			const channels = agentSpec.channels ?? [];
+			const channels = agentSpec.kind === "agent" ? (agentSpec.channels ?? []) : [];
 			const allChannels = [...channels, "parent"];
 
 			// Build identity XML for system prompt
@@ -123,11 +129,13 @@ export class GroupManager {
 				.filter((a) => a.id !== agentSpec.id)
 				.filter((a) => allChannels.includes(a.id) || agentSpec.id === "parent")
 				.map((a) => {
-					const peerConfig = a.agent ? agentConfigs.find((c) => c.name === a.agent) : undefined;
+					const peerConfig = a.kind === "agent" && a.agent
+						? agentConfigs.find((c) => c.name === a.agent)
+						: undefined;
 					return {
 						id: a.id,
 						description: peerConfig?.description,
-						isDefault: !a.agent,
+						isDefault: a.kind === "agent" ? !a.agent : false,
 					};
 				});
 
@@ -144,13 +152,22 @@ export class GroupManager {
 				peers,
 			});
 
-			// Build args
-			const agentSkillPaths = skillPaths.get(agentSpec.id) ?? [];
-			const baseArgs = buildAgentArgs(agentConfig, agentSkillPaths);
-			const args = [...baseArgs];
-			if (agentConfig) {
-				args.push("--append-system-prompt", agentConfig.systemPrompt);
+			// Build args — branch on spec kind
+			let args: string[];
+			let agentConfig: AgentConfig | undefined;
+
+			if (agentSpec.kind === "fork") {
+				args = buildForkArgs(agentSpec, this.sessionDir);
+				// Fork inherits system prompt from session — no agentConfig append
+			} else {
+				agentConfig = agentSpec.agent ? agentConfigs.find((a) => a.name === agentSpec.agent) : undefined;
+				const agentSkillPaths = skillPaths.get(agentSpec.id) ?? [];
+				args = buildAgentArgs(agentConfig, agentSkillPaths, this.sessionDir);
+				if (agentConfig) {
+					args.push("--append-system-prompt", agentConfig.systemPrompt);
+				}
 			}
+
 			args.push("--append-system-prompt", identityXml);
 
 			// PI_PARENT_LINK env var with identity
@@ -170,7 +187,7 @@ export class GroupManager {
 			const status: AgentStatus = {
 				id: agentSpec.id,
 				state: "running",
-				agentDef: agentSpec.agent,
+				agentDef: agentSpec.kind === "agent" ? agentSpec.agent : undefined,
 				task: agentSpec.task,
 				channels: allChannels,
 				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
@@ -182,7 +199,7 @@ export class GroupManager {
 
 			const entry: AgentEntry = {
 				id: agentSpec.id,
-				agentDef: agentSpec.agent,
+				agentDef: agentSpec.kind === "agent" ? agentSpec.agent : undefined,
 				task: agentSpec.task,
 				channels: allChannels,
 				rpc,
@@ -213,7 +230,7 @@ export class GroupManager {
 		// Build acknowledgment
 		const lines = [`Group spawned: ${agents.length} agents`];
 		for (const a of agents) {
-			const ch = a.channels?.length ? a.channels.join(", ") : "(none)";
+			const ch = a.kind === "agent" && a.channels?.length ? a.channels.join(", ") : "(none)";
 			lines.push(`- ${a.id}: task="${a.task}", channels=[${ch}, parent]`);
 		}
 		lines.push("Use check_status to monitor progress. Send messages to any agent via send.");
@@ -231,6 +248,16 @@ export class GroupManager {
 		if (this.broker) {
 			await this.broker.stop();
 			this.broker = null;
+		}
+
+		// Clean up shared session temp directory
+		if (this.sessionDir) {
+			try {
+				fs.rmSync(this.sessionDir, { recursive: true, force: true });
+			} catch {
+				// Best effort — may already be gone
+			}
+			this.sessionDir = null;
 		}
 	}
 

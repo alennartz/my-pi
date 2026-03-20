@@ -145,7 +145,7 @@ Four changes in `extensions/subagents/group.ts`:
 The `agentDef` field on `AgentStatus` is left undefined for forks. The `task` and `id` are read from the spec directly (both spec kinds have these fields).
 
 **Verify:** `GroupManager` creates a temp directory in `start()` and passes it to arg-building functions. `destroy()` cleans up the temp directory. A `ForkAgentSpec` results in `buildForkArgs()` being called with no agent config system prompt appended. A `RegularAgentSpec` results in `buildAgentArgs()` being called. No `--no-session` appears anywhere.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Update subagent tool to use `RegularAgentSpec`
 
