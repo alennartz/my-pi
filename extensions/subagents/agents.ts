@@ -177,8 +177,8 @@ export function resolveSkillPaths(
 /**
  * Build CLI args for spawning a pi child process for this agent.
  */
-export function buildAgentArgs(agent: AgentConfig | undefined, skillPaths: string[]): string[] {
-	const args: string[] = ["--no-session"];
+export function buildAgentArgs(agent: AgentConfig | undefined, skillPaths: string[], sessionDir: string): string[] {
+	const args: string[] = ["--session-dir", sessionDir];
 	if (agent?.model) args.push("--model", agent.model);
 	if (agent?.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 	if (skillPaths.length > 0) {

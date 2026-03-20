@@ -112,7 +112,7 @@ In `extensions/subagents/agents.ts`, change the signature of `buildAgentArgs()` 
 The only caller is `GroupManager.start()` in `group.ts`, which will pass the temp dir (Step 4).
 
 **Verify:** `buildAgentArgs()` no longer emits `--no-session`. It emits `["--session-dir", sessionDir]` as its first args. The function signature includes the new third parameter `sessionDir: string`.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Add `buildForkArgs()` in `agents.ts`
 
