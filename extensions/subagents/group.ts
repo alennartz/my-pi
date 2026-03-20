@@ -272,7 +272,7 @@ export class GroupManager {
 
 		if (event.type === "tool_execution_start") {
 			entry.status.lastActivity = `${event.toolName}(${summarizeArgs(event.args)})`.replace(/[\r\n]+/g, " ");
-			if (event.toolName === "subagent") entry.status.hasSubgroup = true;
+			if (event.toolName === "subagent" || event.toolName === "fork") entry.status.hasSubgroup = true;
 			if (event.toolName === "teardown_group") entry.status.hasSubgroup = false;
 			this.opts.onUpdate();
 		}

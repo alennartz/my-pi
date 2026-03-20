@@ -191,4 +191,4 @@ Prompt guidelines for fork:
 Factor out the shared group-creation logic (widget setup, GroupManager callbacks, broker client connection) into a helper function to avoid duplicating it between the subagent and fork tools.
 
 **Verify:** The fork tool is registered with name `"fork"`, label `"Fork"`, a single `task` parameter, and prompt guidelines. It gathers session file, tools, skills, and thinking level from the parent's live state. It constructs a `ForkAgentSpec`, creates a single-agent group via `GroupManager`, and returns an acknowledgment. Error thrown when no session file or group already active.
-**Status:** not started
+**Status:** done

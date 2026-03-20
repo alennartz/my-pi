@@ -17,6 +17,7 @@ import { Type } from "@sinclair/typebox";
 import {
 	type AgentConfig,
 	type RegularAgentSpec,
+	type ForkAgentSpec,
 	type AgentSpec,
 	discoverAgents,
 	resolveSkillPaths,
@@ -327,6 +328,95 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
+	// ─── Shared group creation helper ────────────────────────────────────
+
+	interface StartGroupOpts {
+		agents: AgentSpec[];
+		agentConfigs: AgentConfig[];
+		topology: import("./channels.js").Topology;
+		skillPaths: Map<string, string[]>;
+		ctx: Parameters<Parameters<typeof pi.registerTool>[0]["execute"]>[4];
+	}
+
+	async function startGroup(opts: StartGroupOpts): Promise<string> {
+		const { agents, agentConfigs, topology, skillPaths, ctx } = opts;
+
+		// Widget setup — only for root agents (not RPC children)
+		let dashboard: SubagentDashboard | null = null;
+		let tuiRef: TUI | null = null;
+
+		if (!parentLink) {
+			ctx.ui.setWidget("subagents", (tui, theme) => {
+				tuiRef = tui;
+				dashboard = new SubagentDashboard(theme);
+				return dashboard;
+			});
+		}
+
+		// Create and start group
+		const group = new GroupManager({
+			pi,
+			agents,
+			agentConfigs,
+			topology,
+			skillPaths,
+			cwd: ctx.cwd,
+			resolveContextWindow: (modelId: string) => {
+				const all = ctx.modelRegistry.getAll();
+				const found = all.find((m: any) => m.id === modelId);
+				return found?.contextWindow;
+			},
+			onUpdate: () => {
+				if (dashboard && tuiRef) {
+					dashboard.update(group.getAgentStatuses());
+					tuiRef.requestRender();
+				}
+			},
+			onGroupIdle: () => {
+				const statuses = group.getAgentStatuses();
+				const agents: AgentCompleteData[] = statuses.map((s) => ({
+					id: s.id,
+					status: s.state === "failed" ? "failed" : "idle",
+					output: s.lastOutput,
+					error: s.state === "failed" ? "Process crashed" : undefined,
+				}));
+				const usage = aggregateUsage(statuses);
+				const xml = serializeGroupIdle({ agents, usage });
+				queueNotification(xml, "local");
+			},
+			onAgentComplete: (agentId) => {
+				const status = group.getAgentStatus(agentId);
+				if (!status) return;
+				const data: AgentCompleteData = {
+					id: agentId,
+					status: status.state === "failed" ? "failed" : "idle",
+					output: status.lastOutput,
+					error: status.state === "failed" ? "Process crashed" : undefined,
+				};
+				const xml = serializeAgentComplete(data);
+				queueNotification(xml, "local");
+			},
+			onParentMessage: (xml, meta) => {
+				if (meta.responseExpected && meta.correlationId) {
+					correlationOrigin.set(meta.correlationId, "local");
+				}
+				queueNotification(xml, "local");
+			},
+		});
+
+		activeGroup = group;
+		const ack = await group.start();
+
+		// Connect parent's broker client eagerly
+		const broker = group.getBroker();
+		if (broker) {
+			parentBrokerClient = new BrokerClient();
+			await parentBrokerClient.connect(broker.socketPath, "parent");
+		}
+
+		return ack;
+	}
+
 	// ─── Tool: subagent ──────────────────────────────────────────────────
 
 	const AgentItem = Type.Object({
@@ -430,86 +520,90 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Widget setup — only for root agents (not RPC children)
-			let dashboard: SubagentDashboard | null = null;
-			let tuiRef: TUI | null = null;
-
-			if (!parentLink) {
-				ctx.ui.setWidget("subagents", (tui, theme) => {
-					tuiRef = tui;
-					dashboard = new SubagentDashboard(theme);
-					return dashboard;
-				});
-			}
-
 			// Map params to RegularAgentSpec[]
 			const agentSpecs: RegularAgentSpec[] = params.agents.map(a => ({
 				kind: "agent" as const,
 				...a,
 			}));
 
-			// Create and start group
-			const group = new GroupManager({
-				pi,
+			const ack = await startGroup({
 				agents: agentSpecs,
 				agentConfigs: allAgentConfigs,
 				topology,
 				skillPaths: skillPathsMap,
-				cwd: ctx.cwd,
-				resolveContextWindow: (modelId: string) => {
-					const all = ctx.modelRegistry.getAll();
-					const found = all.find((m: any) => m.id === modelId);
-					return found?.contextWindow;
-				},
-				onUpdate: () => {
-					if (dashboard && tuiRef) {
-						dashboard.update(group.getAgentStatuses());
-						tuiRef.requestRender();
-					}
-				},
-				onGroupIdle: () => {
-					const statuses = group.getAgentStatuses();
-					const agents: AgentCompleteData[] = statuses.map((s) => ({
-						id: s.id,
-						status: s.state === "failed" ? "failed" : "idle",
-						output: s.lastOutput,
-						error: s.state === "failed" ? "Process crashed" : undefined,
-					}));
-					const usage = aggregateUsage(statuses);
-					const xml = serializeGroupIdle({ agents, usage });
-					queueNotification(xml, "local");
-				},
-				onAgentComplete: (agentId) => {
-					const status = group.getAgentStatus(agentId);
-					if (!status) return;
-					const data: AgentCompleteData = {
-						id: agentId,
-						status: status.state === "failed" ? "failed" : "idle",
-						output: status.lastOutput,
-						error: status.state === "failed" ? "Process crashed" : undefined,
-					};
-					const xml = serializeAgentComplete(data);
-					queueNotification(xml, "local");
-				},
-				onParentMessage: (xml, meta) => {
-					if (meta.responseExpected && meta.correlationId) {
-						correlationOrigin.set(meta.correlationId, "local");
-					}
-					queueNotification(xml, "local");
-				},
+				ctx,
 			});
 
-			activeGroup = group;
-			const ack = await group.start();
+			return {
+				content: [{ type: "text", text: ack }],
+			};
+		},
+	});
 
-			// Connect parent's broker client eagerly — the broker is running
-			// now, so we can connect immediately. This avoids a lazy-init race
-			// when multiple send tool calls execute concurrently.
-			const broker = group.getBroker();
-			if (broker) {
-				parentBrokerClient = new BrokerClient();
-				await parentBrokerClient.connect(broker.socketPath, "parent");
+	// ─── Tool: fork ──────────────────────────────────────────────────────
+
+	const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+
+	pi.registerTool({
+		name: "fork",
+		label: "Fork",
+		description: "Clone yourself into a sub-agent with your full conversation history.",
+		promptGuidelines: [
+			"Clones yourself into a sub-agent with your full conversation history. The clone explores independently while you continue working — use for divergent exploration without committing context.",
+			"One parameter: task. Use fork when you want a copy of yourself with full context to explore an alternative path. Use subagent for multiple agents, specialized personas, or a clean slate.",
+			"One active group at a time. Fork creates a single-agent group — send, respond, check_status, and teardown_group all work normally. Notifications arrive the same way (<agent_complete>, <group_idle>).",
+		],
+		parameters: Type.Object({
+			task: Type.String({ description: "Task description for the forked clone" }),
+		}),
+
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (activeGroup) {
+				throw new Error("A group is already active. Call teardown_group first.");
 			}
+
+			// Gather parent state
+			const sessionFile = ctx.sessionManager.getSessionFile();
+			if (!sessionFile) {
+				throw new Error("Cannot fork: no active session file");
+			}
+
+			// Tools: intersect active tools with built-in set
+			const activeTools = pi.getActiveTools();
+			const filteredTools = BUILTIN_TOOLS.filter((t) => activeTools.includes(t));
+			// If all built-ins are active, pass empty array (omit --tools flag)
+			const tools = filteredTools.length === BUILTIN_TOOLS.length ? [] : filteredTools;
+
+			// Skills: gather paths from active skill commands
+			const commands = pi.getCommands();
+			const skillPaths = commands
+				.filter((cmd: any) => cmd.source === "skill" && cmd.path)
+				.map((cmd: any) => cmd.path!);
+
+			// Thinking level
+			const thinkingLevel = pi.getThinkingLevel() as string;
+
+			// Build spec
+			const forkSpec: ForkAgentSpec = {
+				kind: "fork",
+				id: "fork",
+				task: params.task,
+				sessionFile,
+				tools,
+				skillPaths,
+				thinkingLevel,
+			};
+
+			// Single-agent topology
+			const topology = buildTopology([{ id: "fork", channels: [] }]);
+
+			const ack = await startGroup({
+				agents: [forkSpec],
+				agentConfigs: [],
+				topology,
+				skillPaths: new Map(),
+				ctx,
+			});
 
 			return {
 				content: [{ type: "text", text: ack }],
