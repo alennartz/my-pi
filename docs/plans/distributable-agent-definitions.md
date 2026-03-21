@@ -53,12 +53,14 @@ source: "user" | "project" | "package:user" | "package:project"
 
 ## Steps
 
+**Pre-implementation commit:** `31cb80612cfc295a45e966f4b153ab64309b37d4`
+
 ### Step 1: Widen `AgentConfig.source` type
 
 In `extensions/subagents/agents.ts`, change the `source` field in the `AgentConfig` interface from `"user" | "project"` to `"user" | "project" | "package:user" | "package:project"`. Also widen the `source` parameter of `loadAgentsFromDir()` to accept the full union. These are pure type changes — no runtime behavior changes yet.
 
 **Verify:** The file saves without syntax errors. The existing `discoverAgents()` function still works since `"user"` and `"project"` are valid values of the wider union.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Add `discoverPackageAgents()` to `agents.ts`
 
@@ -77,7 +79,7 @@ Implementation:
 - Return `{ user: [...package:user agents], project: [...package:project agents] }`.
 
 **Verify:** Function exists and is exported. No callers yet — that's Step 4.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Update `discoverAgents()` signature and merge logic
 
@@ -93,7 +95,7 @@ function discoverAgents(
 Change the merge order to four-tier: `package:user` → `user-dir` → `package:project` → `project-dir`. Each layer's `map.set` overwrites earlier layers, so more-local wins. When `packageAgents` is `undefined`, the behavior is identical to today (only user-dir and project-dir).
 
 **Verify:** Without the second argument, `discoverAgents(cwd)` produces the same result as before. With package agents, they appear in the returned array with the correct `source` values, and local agents override package agents of the same name.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Add `cachedPackageAgents` and `session_start` handler in `index.ts`
 

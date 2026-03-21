@@ -9,7 +9,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getAgentDir, parseFrontmatter } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager } from "@mariozechner/pi-coding-agent";
 
 export interface RegularAgentSpec {
 	kind: "agent";
@@ -38,7 +38,7 @@ export interface AgentConfig {
 	skills?: string[];
 	model?: string;
 	systemPrompt: string;
-	source: "user" | "project";
+	source: "user" | "project" | "package:user" | "package:project";
 	filePath: string;
 }
 
@@ -47,7 +47,7 @@ export interface AgentDiscoveryResult {
 	projectAgentsDir: string | null;
 }
 
-function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig[] {
+function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
 	if (!fs.existsSync(dir)) return agents;
@@ -120,15 +120,83 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 	}
 }
 
-export function discoverAgents(cwd: string): AgentDiscoveryResult {
+export async function discoverPackageAgents(cwd: string): Promise<{ user: AgentConfig[], project: AgentConfig[] }> {
+	const settingsManager = SettingsManager.create(cwd, getAgentDir());
+	const pm = new DefaultPackageManager({ cwd, agentDir: getAgentDir(), settingsManager });
+
+	let resolved;
+	try {
+		resolved = await pm.resolve();
+	} catch {
+		return { user: [], project: [] };
+	}
+
+	// Collect unique baseDirs from package-origin resources, tracking scope
+	const baseDirScope = new Map<string, "user" | "project">();
+	for (const resources of [resolved.extensions, resolved.skills, resolved.prompts, resolved.themes]) {
+		for (const r of resources) {
+			if (r.metadata.origin === "package" && r.metadata.baseDir) {
+				// project scope wins over user if the same baseDir appears in both
+				const existing = baseDirScope.get(r.metadata.baseDir);
+				if (!existing || r.metadata.scope === "project") {
+					baseDirScope.set(r.metadata.baseDir, r.metadata.scope as "user" | "project");
+				}
+			}
+		}
+	}
+
+	const userAgents: AgentConfig[] = [];
+	const projectAgents: AgentConfig[] = [];
+
+	for (const [baseDir, scope] of baseDirScope) {
+		// Read package.json for pi.agents
+		const pkgJsonPath = path.join(baseDir, "package.json");
+		let pkgJson: any;
+		try {
+			pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+		} catch {
+			continue;
+		}
+
+		const agentDirs: string[] = pkgJson?.pi?.agents;
+		if (!Array.isArray(agentDirs) || agentDirs.length === 0) continue;
+
+		const source: AgentConfig["source"] = scope === "project" ? "package:project" : "package:user";
+
+		for (const relDir of agentDirs) {
+			const absDir = path.resolve(baseDir, relDir);
+			const agents = loadAgentsFromDir(absDir, source);
+			if (scope === "project") {
+				projectAgents.push(...agents);
+			} else {
+				userAgents.push(...agents);
+			}
+		}
+	}
+
+	return { user: userAgents, project: projectAgents };
+}
+
+export function discoverAgents(
+	cwd: string,
+	packageAgents?: { user: AgentConfig[], project: AgentConfig[] },
+): AgentDiscoveryResult {
 	const userDir = path.join(getAgentDir(), "agents");
 	const projectAgentsDir = findNearestProjectAgentsDir(cwd);
 
 	const userAgents = loadAgentsFromDir(userDir, "user");
 	const projectAgents = projectAgentsDir ? loadAgentsFromDir(projectAgentsDir, "project") : [];
 
+	// Four-tier merge: package:user → user-dir → package:project → project-dir
+	// Each layer's map.set overwrites earlier layers, so more-local wins.
 	const agentMap = new Map<string, AgentConfig>();
+	if (packageAgents) {
+		for (const agent of packageAgents.user) agentMap.set(agent.name, agent);
+	}
 	for (const agent of userAgents) agentMap.set(agent.name, agent);
+	if (packageAgents) {
+		for (const agent of packageAgents.project) agentMap.set(agent.name, agent);
+	}
 	for (const agent of projectAgents) agentMap.set(agent.name, agent);
 
 	return { agents: Array.from(agentMap.values()), projectAgentsDir };
