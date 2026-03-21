@@ -58,4 +58,4 @@ In `skills/implementing/SKILL.md`, add a new bullet to the Key Principles sectio
 - **Pure functions by default** — default to pure functions with explicit argument passing. Shared immutable state is fine. If you're introducing shared mutable state the plan didn't call for, surface it to the user before proceeding.
 
 **Verify:** Read the Key Principles section; the new bullet is present and consistent with the process guidance from Step 3.
-**Status:** not started
+**Status:** done
