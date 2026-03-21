@@ -38,7 +38,7 @@ In `skills/planning/SKILL.md`, add a new bullet to the Key Principles section:
 - **Pure functions by default** — design data flow through explicit argument passing and pure functions. Shared immutable state is fine. Shared *mutable* state requires surfacing the decision to the user with reasoning before writing it into a step.
 
 **Verify:** Read the Key Principles section; the new bullet is present and consistent with the process paragraph from Step 1.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Add pure-function guidance to the implementing skill's "Do the work" substep
 

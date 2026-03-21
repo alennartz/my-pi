@@ -94,3 +94,4 @@ The steps are appended below the existing architecture section:
 - **The plan is a living document** — status fields turn it into a progress tracker during implementation. One artifact from architecture through completion.
 - **YAGNI** — don't add steps for things the architecture doesn't call for.
 - **Code snippets for shape, not implementation** — use code in steps when it clarifies interfaces, types, or signatures better than prose. Avoid implementation snippets that pre-empt TDD or over-constrain the implementer.
+- **Pure functions by default** — design data flow through explicit argument passing and pure functions. Shared immutable state is fine. Shared *mutable* state requires surfacing the decision to the user with reasoning before writing it into a step.
