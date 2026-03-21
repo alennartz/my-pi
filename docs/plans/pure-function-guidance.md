@@ -17,3 +17,41 @@ Embed design guidance into the planning and implementing skills to counteract LL
 **Key design constraint:** Shared *immutable* state (config loaded once, constants, frozen data structures) is fine and requires no checkpoint. Only shared *mutable* state triggers the user-approval requirement.
 
 **Not impacted:** The architecting skill is excluded — its existing conversational decision-making process already surfaces structural choices to the user one at a time.
+
+## Steps
+
+### Step 1: Add pure-function guidance to the planning skill's "Generate the Plan" section
+
+In `skills/planning/SKILL.md`, after the "Code snippets in steps" paragraph and before "Present the full plan to the user for review," insert a new paragraph covering:
+- Default to designing data flow through explicit argument passing and pure functions
+- Shared immutable state is fine (config, constants, frozen structures)
+- If a step's design requires shared mutable state, surface it to the user with reasoning before writing the step
+
+**Verify:** Read the file; the new paragraph sits between "Code snippets in steps" and "Present the full plan." It reads naturally in the flow of Step 2 guidance.
+**Status:** not started
+
+### Step 2: Add pure-function principle to the planning skill's Key Principles
+
+In `skills/planning/SKILL.md`, add a new bullet to the Key Principles section:
+- **Pure functions by default** — design data flow through explicit argument passing and pure functions. Shared immutable state is fine. Shared *mutable* state requires surfacing the decision to the user with reasoning before writing it into a step.
+
+**Verify:** Read the Key Principles section; the new bullet is present and consistent with the process paragraph from Step 1.
+**Status:** not started
+
+### Step 3: Add pure-function guidance to the implementing skill's "Do the work" substep
+
+In `skills/implementing/SKILL.md`, after substep 2 ("Do the work.") in the Execute Each Step list, insert guidance:
+- Default to pure functions with explicit argument passing when writing code
+- Shared immutable state is fine
+- If introducing shared mutable state — even for micro-design decisions the plan didn't address — flag it to the user before proceeding
+
+**Verify:** Read the file; the guidance is naturally integrated into the "Do the work" substep.
+**Status:** not started
+
+### Step 4: Add pure-function principle to the implementing skill's Key Principles
+
+In `skills/implementing/SKILL.md`, add a new bullet to the Key Principles section — the execution-time version:
+- **Pure functions by default** — default to pure functions with explicit argument passing. Shared immutable state is fine. If you're introducing shared mutable state the plan didn't call for, surface it to the user before proceeding.
+
+**Verify:** Read the Key Principles section; the new bullet is present and consistent with the process guidance from Step 3.
+**Status:** not started
