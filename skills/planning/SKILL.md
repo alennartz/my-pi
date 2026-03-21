@@ -42,6 +42,8 @@ Follow TDD where it makes sense — write the failing test, then make it pass. B
 
 **Code snippets in steps** — use code when it communicates shape more clearly than prose: interfaces, type signatures, data structures, important function signatures. These help the implementer understand boundaries and contracts without ambiguity. Avoid implementation snippets — function bodies, algorithms, control flow — because they pre-empt TDD and over-constrain how the implementer solves the problem. The step should describe *what* the code needs to look like at its boundaries, not *how* it works internally. When prose is equally clear, prefer prose.
 
+**Pure functions by default** — design data flow through explicit argument passing and pure functions. Shared immutable state (config loaded once, constants, frozen data structures) is fine and needs no special treatment. If a step's design requires shared *mutable* state, surface the decision to the user with reasoning before writing it into the step.
+
 Present the full plan to the user for review before writing it to the file.
 
 ### 3. Write the Plan

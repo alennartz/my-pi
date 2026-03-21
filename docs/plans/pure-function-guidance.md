@@ -20,6 +20,8 @@ Embed design guidance into the planning and implementing skills to counteract LL
 
 ## Steps
 
+**Pre-implementation commit:** `b0a5e3974251b02b3657bd7e19d30edeebf26fd0`
+
 ### Step 1: Add pure-function guidance to the planning skill's "Generate the Plan" section
 
 In `skills/planning/SKILL.md`, after the "Code snippets in steps" paragraph and before "Present the full plan to the user for review," insert a new paragraph covering:
@@ -28,7 +30,7 @@ In `skills/planning/SKILL.md`, after the "Code snippets in steps" paragraph and 
 - If a step's design requires shared mutable state, surface it to the user with reasoning before writing the step
 
 **Verify:** Read the file; the new paragraph sits between "Code snippets in steps" and "Present the full plan." It reads naturally in the flow of Step 2 guidance.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Add pure-function principle to the planning skill's Key Principles
 
