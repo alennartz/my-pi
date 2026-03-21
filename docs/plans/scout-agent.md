@@ -46,16 +46,18 @@ Scout's system prompt covers:
 
 ## Steps
 
+**Pre-implementation commit:** `08353326a62de58333c1def44cb202e17921d82b`
+
 ### Step 1: Create `agents/scout.md`
 
 Create the `agents/` directory at the repo root and add `scout.md` with frontmatter (`name: scout`, `description`, `tools: read, bash, send`, `model: genitsec-haiku-4-5`) and a system prompt covering: codemap-first orientation, exploration approach using `bash` and `read`, prose + file references output with line ranges, `send` for clarification only, and read-only stance.
 
 **Verify:** File exists at `agents/scout.md`, frontmatter parses correctly (has all required fields), body contains the system prompt.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Register agents directory in `package.json`
 
 Add `"agents": ["./agents"]` to the `pi` section of `package.json`.
 
 **Verify:** `pi.agents` key is present in `package.json` and points to `./agents`. Scout is discoverable when the subagents extension runs `discoverPackageAgents`.
-**Status:** not started
+**Status:** done
