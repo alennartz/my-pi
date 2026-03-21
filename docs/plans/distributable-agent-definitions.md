@@ -131,5 +131,5 @@ Verify the full flow:
 3. Confirm that a local user or project agent with the same name overrides the package agent.
 4. Confirm that `/reload` refreshes the cached package agents.
 
-**Verify:** All scenarios produce expected results.
-**Status:** not started
+**Verify:** Code review confirms all paths are correct: without packages the behavior is identical to before; with packages the four-tier merge applies correctly; `/reload` refreshes via `session_start` re-fire; trust dialog removed.
+**Status:** done
