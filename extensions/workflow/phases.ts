@@ -9,6 +9,9 @@ const ARTIFACT_DIRS = ["docs/brainstorms", "docs/plans", "docs/reviews", "docs/d
  * Lists .md files found in each directory, grouped by directory.
  * Missing directories produce "(none)" rather than errors.
  */
+/** Directories where we only care about the count, not individual filenames */
+const COUNT_ONLY_DIRS = new Set(["docs/decisions"]);
+
 export function getArtifactInventory(): string {
 	return ARTIFACT_DIRS.map((dir: string) => {
 		const fullPath = join(process.cwd(), dir);
@@ -18,7 +21,14 @@ export function getArtifactInventory(): string {
 		} catch {
 			files = [];
 		}
-		const listing = files.length > 0 ? files.join(", ") : "(none)";
+		let listing: string;
+		if (files.length === 0) {
+			listing = "(none)";
+		} else if (COUNT_ONLY_DIRS.has(dir)) {
+			listing = `${files.length} decision record${files.length === 1 ? "" : "s"}`;
+		} else {
+			listing = files.join(", ");
+		}
 		return `${dir}/: ${listing}`;
 	}).join("\n");
 }
