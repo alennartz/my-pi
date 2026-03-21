@@ -39,9 +39,9 @@ sequenceDiagram
 
 ### Skills
 
-Agent workflow skills that guide the brainstorm → architect → plan → implement → review → cleanup pipeline, plus standalone utilities (codemap, debugging, orchestrating-agents, specialist-design).
+Agent workflow skills that guide the brainstorm → architect → plan → implement → review → cleanup pipeline, plus standalone utilities (codemap, debugging, decision-records, orchestrating-agents, specialist-design).
 
-**Responsibilities:** development workflow orchestration, brainstorming facilitation, architectural decision-making (with DR-awareness and supersession handling), implementation planning, step-by-step code execution, code review against plans, review finding resolution, decision record extraction (including supersession lifecycle), codemap generation, documentation maintenance, structured debugging, subagent orchestration guidance (task decomposition, patterns, topology design, communication modes), specialist agent definition authoring (format reference, scoping, craft principles, description/prompt/task triad)
+**Responsibilities:** development workflow orchestration, brainstorming facilitation, architectural decision-making (with DR-awareness and supersession handling), implementation planning, step-by-step code execution, code review against plans, review finding resolution, decision record management (format, quality bar, numbering, supersession mechanics, file conventions — standalone or delegated from cleanup), codemap generation, documentation maintenance, structured debugging, subagent orchestration guidance (task decomposition, patterns, topology design, communication modes), specialist agent definition authoring (format reference, scoping, craft principles, description/prompt/task triad)
 
 **Dependencies:** none (skills are loaded by the pi agent harness at runtime)
 
@@ -117,7 +117,7 @@ Package onboarding prompt template and the behavioral conventions it installs. T
 
 Working artifacts for in-progress workflows and permanent decision records extracted during cleanup.
 
-**Responsibilities:** workflow working artifacts (brainstorms, plans, reviews — ephemeral, produced and consumed by pipeline skills), decision records (DR-NNN format, consumed by architecting as settled context, produced/deleted by cleanup including supersession lifecycle)
+**Responsibilities:** workflow working artifacts (brainstorms, plans, reviews — ephemeral, produced and consumed by pipeline skills), decision records (DR-NNN format, managed by decision-records skill, consumed by architecting as settled context)
 
 **Dependencies:** Skills (artifacts are produced and consumed by pipeline skills)
 

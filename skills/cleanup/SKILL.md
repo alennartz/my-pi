@@ -27,46 +27,11 @@ This skill always runs in a clean context with no conversational history from pr
 
 #### Handle Supersessions
 
-Before extracting new DRs, check the plan for a `### DR Supersessions` section under Architecture. If it exists, process each supersession entry:
-
-1. **Capture the old DR's last commit hash** using `git log -1 --format=%H -- docs/decisions/DR-NNN-<slug>.md`
-2. **Delete the old DR file.**
-
-After processing all supersessions, proceed with normal DR extraction below. When writing a new DR that replaces a superseded one, include a provenance line in the Context section:
-
-> Supersedes DR-NNN (<title>), deleted at commit `<hash>`.
-
-This connects the new record to the history it replaced. If a superseded DR has no direct replacement among the new records (e.g., the decision was simply retired), the deletion commit is sufficient — no replacement DR is needed.
+Before extracting new DRs, check the plan for a `### DR Supersessions` section under Architecture. If it exists, process supersessions following the decision-records skill's supersession procedure.
 
 #### Extract New Records
 
-Scan the working artifacts (brainstorm, plan, review) for decisions worth preserving. The bar is: **would this matter to someone working in this codebase six months from now?** Trivial or mechanical choices don't qualify. Look for decisions where alternatives were considered and a choice was made for substantive reasons — architectural trade-offs, scope decisions, technology choices, pattern selections, rejected approaches with instructive reasoning.
-
-**Zero is a valid answer.** Many workflows — bug fixes, small features, routine refactors — don't produce decisions that clear the bar. If nothing qualifies, tell the user you found no candidates worth extracting and move on. Don't manufacture a DR just to have one.
-
-For each candidate decision record:
-
-1. **Propose it to the user.** Present the title, a brief summary of the context, and what was decided. One at a time — don't batch them.
-2. **The user approves, edits, or rejects.** If they edit, incorporate their changes. If they reject, move on.
-3. **For approved records:** determine the next DR number by scanning `docs/decisions/` for the highest existing `DR-NNN` prefix. If the directory doesn't exist, create it and start at `DR-001`. Write the record to `docs/decisions/DR-NNN-<slug>.md` where `<slug>` is a kebab-case summary of the decision (not the topic slug — multiple DRs can come from one workflow).
-
-Each decision record follows this format:
-
-```markdown
-# DR-NNN: <Title>
-
-## Status
-Accepted
-
-## Context
-<Why this decision was needed — the forces at play, what prompted it.>
-
-## Decision
-<What was decided and why.>
-
-## Consequences
-<What follows from this decision — benefits, trade-offs, things to watch for.>
-```
+Scan the working artifacts (brainstorm, plan, review) for decisions worth preserving. Follow the decision-records skill for quality criteria, format, file conventions, and proposal flow.
 
 ### 2. Codemap Refresh
 
@@ -106,8 +71,7 @@ The description should briefly summarize what's in the commit — e.g., "decisio
 ## Key Principles
 
 - **Clean context** — this skill always starts fresh. Reconstruct everything from artifacts on disk.
-- **Higher bar for decision records** — only extract decisions that would matter six months from now. When in doubt, propose it and let the user decide.
-- **One decision at a time** — don't batch decision record proposals. The user reviews each individually.
+- **Decision record quality** — follow the decision-records skill for quality bar and proposal flow.
 - **Scoped codemap update** — use the pre-implementation baseline and architecture to focus the update. Not a full rebuild.
 - **Open-ended doc sweep** — discover what exists, don't assume a fixed set of files.
 - **Extract before delete** — decision records are captured before working artifacts are removed.

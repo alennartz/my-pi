@@ -4,21 +4,6 @@
 
 See [codemap.md](./codemap.md) for a full map of modules, responsibilities, dependencies, and file ownership.
 
-## Project Structure
-
-This is a [pi coding agent](https://github.com/badlogic/pi-mono) package. It contains:
-
-- **`skills/`** — Custom workflow skills loaded by the pi agent harness. Each skill is a `SKILL.md` file with structured instructions.
-- **`extensions/`** — TypeScript extensions loaded by pi at runtime. Currently: Azure AI Foundry provider, workflow pipeline orchestration, group-based subagent orchestration.
-- **`lib/components/`** — Reusable TUI components shared across extensions (TypeScript).
-- **`docs/brainstorms/`** — Ephemeral brainstorm artifacts for in-progress workflows.
-- **`docs/plans/`** — Ephemeral plan artifacts for in-progress workflows (architecture + implementation steps).
-- **`docs/reviews/`** — Ephemeral review artifacts for in-progress workflows.
-- **`docs/decisions/`** — Permanent decision records extracted during cleanup (DR-NNN format).
-- **`SYSTEM.md`** — Behavioral conventions for the agent (user-copy-in model; not auto-loaded by pi).
-- **`prompts/`** — Custom prompt templates. Currently: `/onboard` (package feature tour and setup walkthrough).
-- **`themes/`** — Custom themes (currently empty).
-
 ## Conventions
 
 - Skills are Markdown files following the pi skill format (YAML frontmatter + structured sections).
