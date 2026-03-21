@@ -1,7 +1,22 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Theme } from "@mariozechner/pi-coding-agent";
-import { Input, matchesKey, Key, truncateToWidth } from "@mariozechner/pi-tui";
+import { Input, matchesKey, Key, truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import type { Component, Focusable, TUI } from "@mariozechner/pi-tui";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Wrap styled content with a prefix on the first line and spaces on
+ * continuation lines. Returns one or more ready-to-render lines.
+ */
+function wrapWithIndent(prefix: string, content: string, width: number, prefixWidth: number): string[] {
+	const contentWidth = Math.max(1, width - prefixWidth);
+	const wrapped = wrapTextWithAnsi(content, contentWidth);
+	const indent = " ".repeat(prefixWidth);
+	return wrapped.map((line, i) => (i === 0 ? prefix + line : indent + line));
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -159,29 +174,33 @@ class NumberedSelectComponent implements Component, Focusable {
 		// Top border
 		lines.push(t.fg("accent", "─".repeat(width)));
 
-		// Title
-		lines.push(truncateToWidth(" " + t.fg("accent", t.bold(this.title)), width));
+		// Title (wrapped)
+		lines.push(...wrapWithIndent(" ", t.fg("accent", t.bold(this.title)), width, 1));
 		lines.push(""); // blank line after title
 
-		// Options
+		// Options (wrapped)
+		const prefixWidth = 7; // "  > N. " or "    N. " — always 7 visible columns
 		for (let i = 0; i < this.options.length; i++) {
 			const isHighlighted = i === this.highlight;
 			const num = `${i + 1}`;
 			const label = this.options[i]!.label;
 			const desc = this.options[i]!.description;
 
-			let line: string;
+			let prefix: string;
+			let content: string;
 			if (isHighlighted) {
-				line = t.fg("accent", `  > ${num}. ${label}`);
+				prefix = t.fg("accent", `  > ${num}. `);
+				content = t.fg("accent", label);
 			} else {
-				line = t.fg("dim", `    ${num}.`) + ` ${label}`;
+				prefix = t.fg("dim", `    ${num}.`) + " ";
+				content = label;
 			}
 
 			if (desc) {
-				line += " " + t.fg("muted", desc);
+				content += " " + t.fg("muted", desc);
 			}
 
-			lines.push(truncateToWidth(line, width));
+			lines.push(...wrapWithIndent(prefix, content, width, prefixWidth));
 
 			// Render input inline below highlighted option in text mode
 			if (isHighlighted && this.mode === "text") {
