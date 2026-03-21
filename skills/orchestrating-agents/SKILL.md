@@ -1,24 +1,41 @@
 ---
 name: orchestrating-agents
-description: "Design-time reference for planning and spawning subagent groups. Use when about to decompose work into parallel agents, design a group topology, or choose an orchestration pattern. Not a runtime guide — once the group is running, tool descriptions and notifications carry you from there."
+description: "Delegate work to subagents to preserve primary agent context, parallelize independent tasks, or coordinate specialists. Use when the work ahead is context-heavy (many file reads, large implementations, multi-step investigations), naturally parallelizable, benefits from specialist coordination, or the user asks for agent-based execution. Covers task decomposition, orchestration patterns, topology design, communication modes, and specialist coordination."
 ---
 
 # Orchestrating Agents
 
 ## Overview
 
-A design-time reference for subagent orchestration. Load this when you're about to plan and spawn a group — deciding what agents to create, how they communicate, and what pattern fits the work. Once the group is running, the tool descriptions, `<agent_message>` notifications, `<agent_complete>` events, and `<group_idle>` signals provide everything you need. This skill covers the thinking that happens *before* you call `subagent`.
+Subagents let you delegate work to separate agent processes, each with its own context window. The primary benefit is **context efficiency** — a subagent absorbs all the heavy tool use (file reads, edits, test runs, investigations) and returns a compact result. Your context stays clean, letting you handle more total work across a session.
+
+Beyond context management, subagents enable parallel execution, specialist coordination, and rich inter-agent communication. This skill covers the thinking that happens *before* you call `subagent` — task decomposition, pattern selection, topology design. Once the group is running, the tool descriptions, notifications (`<agent_complete>`, `<group_idle>`, `<agent_message>`), and communication tools carry you from there.
 
 ## When to Use Subagents
 
-Reach for subagents when the work has these characteristics:
+### Context preservation — the primary reason
 
-- **Parallelizable independent tasks.** Multiple pieces of work that don't depend on each other's intermediate results. File-per-file migrations, independent test suites, parallel investigations.
-- **Isolated contexts.** Work that benefits from separate conversation histories. Each agent starts fresh — no bleed-through from unrelated context.
-- **Specialist knowledge.** Tasks that benefit from focused system prompts and tool sets. A security reviewer doesn't need the same tools or framing as a documentation writer.
-- **User-mediated conversations.** The user wants to interact with multiple focused agents through a coordinator (you).
+Every tool call you make (reading files, running commands, editing code) adds to your context. Large tasks — implementing a feature across several files, investigating a complex bug, processing many files — can consume most of your context window, leaving little room for the user's next request. Subagents solve this: delegate the heavy work, get a summary back, and continue with a clean context.
 
-**When not to use subagents:**
+**Think about subagents when:**
+- The task involves reading or editing many files
+- An implementation will require dozens of tool calls
+- You're partway through a session and need to preserve remaining context for future work
+- The work is investigative — exploring, diagnosing, gathering information — and the intermediate steps matter less than the conclusion
+
+### Parallelizable independent tasks
+
+Multiple pieces of work that don't depend on each other's intermediate results. File-per-file migrations, independent test suites, parallel investigations. Each agent works in isolation and reports back.
+
+### Specialist coordination
+
+Tasks that benefit from focused roles, tool sets, and inter-agent communication. A reviewer and implementer working together via channels. A research agent gathering context while a coding agent builds. When specialist agent definitions are available, they bring domain-specific system prompts and tool scoping that generic agents lack.
+
+### User request
+
+The user explicitly asks for parallel execution, delegation, or agent-based workflows.
+
+### When not to use subagents
 
 - **Sequential work with heavy shared context.** If step 2 depends on step 1's full reasoning — not just its output — do it yourself. Agents can pass messages, but they can't share conversation history.
 - **Simple tasks.** If the work takes fewer than a few tool calls, the overhead of spawning a process, connecting to a broker, and tearing down isn't worth it.

@@ -786,6 +786,7 @@ export default function (pi: ExtensionAPI) {
 		name: "teardown_group",
 		label: "Teardown Group",
 		description: "End the current agent group. Kills all agent processes and delivers a final summary.",
+		promptSnippet: "End the current agent group. Kills all agent processes and delivers a final summary.",
 		promptGuidelines: [
 			"Call when the group no longer serves a purpose. Idle groups remain fully functional — you can send new messages to restart work or use agents as persistent specialists. Teardown kills all processes and returns a <group_complete> report with final output and aggregate usage.",
 		],

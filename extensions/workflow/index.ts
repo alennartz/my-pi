@@ -151,6 +151,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Workflow Phase Complete",
 		description:
 			"Signal that a workflow phase is complete. Validates the artifact exists, confirms with the user, and transitions to the next phase.",
+		promptSnippet: "Signal that a workflow phase is complete. Validates the artifact exists, confirms with the user, and transitions to the next phase.",
 		parameters: Type.Object({
 			topic: Type.String({ description: "The filename slug (e.g. 'workflow-orchestration')" }),
 			phase: StringEnum(["brainstorm", "architect", "plan", "implement", "review", "handle-review", "cleanup"] as const, {
