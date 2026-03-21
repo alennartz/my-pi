@@ -20,6 +20,7 @@ import {
 	type ForkAgentSpec,
 	type AgentSpec,
 	discoverAgents,
+	discoverPackageAgents,
 	resolveSkillPaths,
 	formatAgentList,
 } from "./agents.js";
@@ -263,6 +264,22 @@ export default function (pi: ExtensionAPI) {
 		flushNotifications();
 	});
 
+	// ─── Package agent cache ─────────────────────────────────────────────
+	//
+	// Populated at session_start (which also re-fires on /reload).
+	// Passed to discoverAgents() so package-sourced agents participate in
+	// the four-tier merge.
+
+	let cachedPackageAgents: { user: AgentConfig[], project: AgentConfig[] } | null = null;
+
+	pi.on("session_start", async (_event, _ctx) => {
+		try {
+			cachedPackageAgents = await discoverPackageAgents(process.cwd());
+		} catch {
+			cachedPackageAgents = null;
+		}
+	});
+
 	// ─── Inject available agent definitions into system prompt ───────────
 
 	pi.on("before_agent_start", async (event, _ctx) => {
@@ -270,7 +287,7 @@ export default function (pi: ExtensionAPI) {
 		const activeTools = pi.getActiveTools();
 		if (!activeTools.includes("subagent")) return;
 
-		const agents = discoverAgents(process.cwd()).agents;
+		const agents = discoverAgents(process.cwd(), cachedPackageAgents ?? undefined).agents;
 		if (agents.length === 0) return;
 
 		const lines = [
@@ -450,7 +467,7 @@ export default function (pi: ExtensionAPI) {
 				throw new Error("A group is already active. Call teardown_group first.");
 			}
 
-			const discovery = discoverAgents(ctx.cwd);
+			const discovery = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined);
 			const allAgentConfigs = discovery.agents;
 
 			// Validate agent definitions exist

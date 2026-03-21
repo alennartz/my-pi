@@ -104,7 +104,7 @@ In `extensions/subagents/index.ts`, add a module-level variable `let cachedPacka
 Import `discoverPackageAgents` from `./agents.js`.
 
 **Verify:** On session start, `cachedPackageAgents` is populated. On `/reload`, it refreshes.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Pass `cachedPackageAgents` to both `discoverAgents()` call sites
 
@@ -114,7 +114,7 @@ Two call sites in `extensions/subagents/index.ts` need updating:
 2. **`subagent` tool `execute`** (~line 475): Change `discoverAgents(ctx.cwd)` to `discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined)`.
 
 **Verify:** Both call sites pass the cached package agents. Package-sourced agents appear in the discovery results when packages declare `pi.agents`.
-**Status:** not started
+**Status:** done
 
 ### Step 6: Remove the project-agent trust confirmation dialog
 
