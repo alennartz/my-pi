@@ -47,8 +47,10 @@ In `skills/implementing/SKILL.md`, after substep 2 ("Do the work.") in the Execu
 - Shared immutable state is fine
 - If introducing shared mutable state — even for micro-design decisions the plan didn't address — flag it to the user before proceeding
 
+Also soften the "One shot" Key Principle to make room for discovery-based interrupts.
+
 **Verify:** Read the file; the guidance is naturally integrated into the "Do the work" substep.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Add pure-function principle to the implementing skill's Key Principles
 

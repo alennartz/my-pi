@@ -7,7 +7,7 @@ description: "Execute a plan by working through its steps sequentially — writi
 
 ## Overview
 
-Take a fully planned `docs/plans/<topic>.md` and execute it. Work through the steps sequentially, writing code, running verifications, committing per step, and updating status fields as you go. One shot — no human checkpoints.
+Take a fully planned `docs/plans/<topic>.md` and execute it. Work through the steps sequentially, writing code, running verifications, committing per step, and updating status fields as you go. One shot — no scheduled reviews, but interrupt for unanticipated decisions.
 
 The plan is the source of truth. The architecture section is inviolable. The steps define the scope. Your job is faithful execution with enough judgment to handle the messy reality of code without changing what the plan set out to do.
 
@@ -38,7 +38,7 @@ Use the full 40-character hash. This marks the baseline for code review — ever
 For each step, in order:
 
 1. **Mark the step `in progress`** in the plan file.
-2. **Do the work.** Write code, create files, make the changes the step describes.
+2. **Do the work.** Write code, create files, make the changes the step describes. Default to pure functions with explicit argument passing. Shared immutable state (config, constants, frozen structures) is fine. If you're about to introduce shared mutable state — even for a micro-design decision the plan didn't address — flag it to the user before proceeding.
 3. **Verify.** Run the step's verify check. Layer on cheap smoke checks (compilation, type checking, specific unit tests) as you see fit. Save expensive checks (full test suite, integration tests) for natural breakpoints or the final step.
 4. **If verification fails,** try to fix it. Adapt, debug, iterate. If you resolve it, carry on. If you can't — you're going in circles or genuinely stuck — mark the step `blocked` with an explanation, commit that state, and stop.
 5. **Mark the step `done`.**
@@ -56,7 +56,7 @@ When in doubt: if you're changing *what* gets done, stop and talk to the user. I
 
 ## Key Principles
 
-- **One shot** — execute the full plan without human checkpoints. If the plan isn't good enough for that, the plan is the problem.
+- **One shot** — drive through the full plan without stopping for scheduled reviews. Interrupt when you discover something the plan didn't decide — an architecture conflict, a scope change, a design choice that wasn't anticipated. If the plan needs frequent interrupts, the plan is the problem.
 - **Architecture is inviolable** — the architecture section is a hard contract. Steps flex; architecture doesn't.
 - **Verify early and often** — cheap checks after every step. Expensive checks batched. The plan's verify field is the floor, not the ceiling.
 - **Commit per step** — every step gets its own commit with code changes and status update. Real commit messages.
