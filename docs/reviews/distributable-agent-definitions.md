@@ -15,7 +15,7 @@ The plan was faithfully implemented across all seven steps with no meaningful de
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/agents.ts:136-148`
-- **Status:** open
+- **Status:** dismissed
 
 `discoverPackageAgents()` discovers package baseDirs by iterating over `resolved.extensions`, `resolved.skills`, `resolved.prompts`, and `resolved.themes` — collecting baseDirs from entries where `origin === "package"`. If a package declares `pi.agents` but none of the other four resource types, it produces zero resource metadata entries, so its baseDir is never collected and its agents are silently skipped.
 
