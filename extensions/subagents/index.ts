@@ -513,30 +513,6 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Confirm project agents if needed
-			if (ctx.hasUI) {
-				const projectAgentNames = new Set<string>();
-				for (const a of params.agents) {
-					if (a.agent) {
-						const config = allAgentConfigs.find((c) => c.name === a.agent);
-						if (config?.source === "project") projectAgentNames.add(config.name);
-					}
-				}
-				if (projectAgentNames.size > 0) {
-					const names = Array.from(projectAgentNames).join(", ");
-					const dir = discovery.projectAgentsDir ?? "(unknown)";
-					const ok = await ctx.ui.confirm(
-						"Run project-local agents?",
-						`Agents: ${names}\nSource: ${dir}\n\nProject agents are repo-controlled. Only continue for trusted repositories.`,
-					);
-					if (!ok) {
-						return {
-							content: [{ type: "text", text: "Canceled: project-local agents not approved." }],
-						};
-					}
-				}
-			}
-
 			// Map params to RegularAgentSpec[]
 			const agentSpecs: RegularAgentSpec[] = params.agents.map(a => ({
 				kind: "agent" as const,

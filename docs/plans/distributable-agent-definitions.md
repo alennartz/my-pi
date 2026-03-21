@@ -121,7 +121,7 @@ Two call sites in `extensions/subagents/index.ts` need updating:
 Delete the entire block in the `subagent` tool's `execute` method in `extensions/subagents/index.ts` (~lines 499–520) that checks for project agents and shows the `ctx.ui.confirm()` dialog. The architecture specifies removing trust prompts for all sources.
 
 **Verify:** No `confirm` call remains in the subagent tool's execute method. Project-local and package-sourced agents are used without prompting.
-**Status:** not started
+**Status:** done
 
 ### Step 7: Manual integration test
 
