@@ -25,7 +25,7 @@ Before anything else:
 
 ### 1. Investigate
 
-Dive into the code that the architecture references — the impacted modules, the interfaces that will change, the files where work will happen. You need to see the actual code to write steps specific enough to act on. You can't name exact methods, types, and files without looking at what's there.
+Scout the code that the architecture references — the impacted modules, the interfaces that will change, the files where work will happen. Spawn a scout agent to explore broadly, then work from its prose summary plus surgical reads of the specific references you need to pin down exact methods, types, and files.
 
 As you investigate, watch for **misalignment** between the architecture and the codebase. If you find something that contradicts an architectural decision — a module that doesn't exist, an interface shaped differently than assumed, a pattern that conflicts — surface it to the user before proceeding. Don't silently adapt.
 
@@ -76,7 +76,7 @@ The steps are appended below the existing architecture section:
 
 ### Format Rules
 
-- **Steps are numbered sequentially.** Pure linear order — no parallel annotations, no dependency graphs.
+- **Steps are numbered sequentially.** Numbering reflects natural authoring and build order, not a concurrency constraint. The implementer decides how to batch and parallelize at runtime.
 - **Each step has a Verify and Status field.** Always. No exceptions.
 - **Status values:** `not started`, `in progress`, `done`, `blocked`. Blocked means something unexpected or external is preventing the step — not that a prior step isn't finished.
 - **When a step is blocked**, add a note explaining why inline: `**Status:** blocked — waiting on API credentials for the test environment`
@@ -89,7 +89,7 @@ The steps are appended below the existing architecture section:
 - **Grounded in code** — steps reference real files, real interfaces, real types found during investigation. Not assumptions.
 - **Adds detail, not scope** — the architecture decides what to build. This skill decides the sequence and the specifics. Don't expand beyond the architecture.
 - **Generate, don't negotiate** — present the full plan, don't walk through it conversationally. Only surface questions when the architecture doesn't match the code.
-- **Get the order right** — since steps are purely linear, the sequence is the dependency graph. A step should never reference something a later step creates.
+- **Get the order right** — earlier steps should lay foundations for later steps. This is good authoring practice and gives the implementer a natural build sequence, but it's not a strict concurrency constraint — the implementer may parallelize steps that touch independent modules.
 - **TDD where it fits** — test-first for behavior, not for wiring. Use judgment. Prefer black-box tests that verify observable behavior over white-box tests that couple to implementation details.
 - **The plan is a living document** — status fields turn it into a progress tracker during implementation. One artifact from architecture through completion.
 - **YAGNI** — don't add steps for things the architecture doesn't call for.

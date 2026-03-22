@@ -23,6 +23,12 @@ The output is a findings file — not a conversation, not a fix. The review runs
 
 4. **Read the changed files in full.** The diff tells you what changed, but review requires understanding context. Read the full current version of files with non-trivial changes. Don't read every file touched — use judgment about which files need full context (e.g., a file with 2 lines changed in a 500-line module probably needs the full read; a new file is already fully visible in the diff).
 
+### 0.5. Run Passes in Parallel
+
+Sections 1 and 2 are independent — they both operate on the same plan and diff but neither needs the other's output. Spawn two subagents as a fan-out: one for the plan adherence pass, one for the code correctness pass. Give each the plan content, the diff, and the full file reads from step 0. No inter-agent channels needed.
+
+When both complete, merge their findings into the final review document (section 3). Deduplicate if both flagged the same issue; preserve the more detailed write-up.
+
 ### 1. Plan Adherence Pass
 
 Compare the plan against the diff. For each step in the plan, check:

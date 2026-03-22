@@ -23,7 +23,17 @@ This skill always runs in a clean context with no conversational history from pr
 
 4. **Read `docs/reviews/<topic>.md`** — the review. If it doesn't exist, skip it.
 
-### 1. Extract Decision Records
+### 1. Spawn Background Agents
+
+Before starting DR extraction, spawn two subagents as a fan-out — no inter-agent channels needed:
+
+- **Codemap refresh agent** — give it the current codemap, the plan's `pre-implementation-commit` hash, and the architecture's impacted modules list. It runs the scoped codemap update: `git diff --name-only <hash>..HEAD` to find changed files, examines the changes, updates affected codemap sections, preserves everything else. Follows the codemap skill's scoped update operation.
+
+- **Documentation pass agent** — give it the plan summary and the diff scope. It sweeps user-facing documentation in the repo (READMEs, AGENTS.md, contributing guides, API docs — whatever exists, no hardcoded list). For each document, checks whether anything shipped in this workflow makes it stale: descriptions that no longer match reality, missing references to new features, outdated examples, structural descriptions that don't reflect current organization. Updates what needs updating, leaves accurate docs alone.
+
+These run in the background while you work on DR extraction.
+
+### 2. Extract Decision Records
 
 #### Handle Supersessions
 
@@ -33,25 +43,9 @@ Before extracting new DRs, check the plan for a `### DR Supersessions` section u
 
 Scan the working artifacts (brainstorm, plan, review) for decisions worth preserving. Follow the decision-records skill for quality criteria, format, file conventions, and proposal flow.
 
-### 2. Codemap Refresh
+### 3. Wait for Background Agents
 
-Update the codemap to reflect changes made during the workflow. This is the sole codemap update point in the pipeline — it covers implementation and review changes together.
-
-1. **Get the diff scope.** Use the plan's `pre-implementation-commit` hash to run `git diff --name-only <hash>..HEAD`. This tells you what files changed.
-2. **Combine with the architecture.** The plan's impacted modules list tells you which codemap modules to focus on.
-3. **Do a scoped codemap update.** Follow the codemap skill's scoped update operation: read the current codemap, examine the changes, update affected sections, preserve everything else.
-
-### 3. Documentation Pass
-
-Sweep user-facing documentation in the repo. Discover what exists — READMEs, AGENTS.md, contributing guides, API docs, whatever the repo has. No hardcoded list; use judgment about what's user-facing.
-
-For each document found, check whether anything shipped in this workflow makes it stale. Look for:
-- Descriptions that no longer match reality
-- Missing references to new features, modules, or capabilities
-- Outdated examples or instructions
-- Structural descriptions that don't reflect current organization
-
-Update what needs updating. Don't rewrite docs that are still accurate.
+When DR extraction is complete, wait for `<group_idle>` if the background agents haven't finished yet. Review their output for sanity — the codemap should reflect the implementation changes, and docs should be accurate.
 
 ### 4. Delete Working Artifacts
 
@@ -71,8 +65,10 @@ The description should briefly summarize what's in the commit — e.g., "decisio
 ## Key Principles
 
 - **Clean context** — this skill always starts fresh. Reconstruct everything from artifacts on disk.
+- **Background delegation** — codemap and docs run as subagents while the primary handles DRs. DR extraction is conversational (needs user input); codemap and docs are mechanical.
 - **Decision record quality** — follow the decision-records skill for quality bar and proposal flow.
 - **Scoped codemap update** — use the pre-implementation baseline and architecture to focus the update. Not a full rebuild.
 - **Open-ended doc sweep** — discover what exists, don't assume a fixed set of files.
 - **Extract before delete** — decision records are captured before working artifacts are removed.
+- **Wait before committing** — don't delete artifacts or commit until background agents have finished and their output is reviewed.
 - **Pipeline cap** — this skill only runs after a complete pipeline (brainstorm → architect → plan → implement → review → handle-review).

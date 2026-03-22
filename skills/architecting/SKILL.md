@@ -25,7 +25,7 @@ Before starting:
 
 ### 1. Investigate
 
-Identify which modules from the codemap are likely impacted. Read into those modules — entry points, interfaces, key files — to understand the current reality. Don't read everything; read enough to make informed decisions.
+Identify which modules from the codemap are likely impacted. Scout those modules — spawn a scout agent to explore entry points, interfaces, and key files, then work from its prose summary plus surgical reads of specific references you need to see firsthand. Don't read everything yourself; scout broadly, then read narrowly where it matters.
 
 Share what you're finding as you go. The user should see your reasoning, not just your conclusions.
 
