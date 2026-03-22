@@ -11,7 +11,8 @@ graph LR
   Workflow -->|references skill names| Skills
   Workflow -->|imports| Components
   Components
-  Subagents
+  Subagents -->|discovers| Agents
+  Agents
 ```
 
 ### Key Flows
@@ -112,6 +113,17 @@ Package onboarding prompt template and the behavioral conventions it installs. T
 **Files:**
 - `prompts/onboard.md` — `/onboard` prompt template
 - `SYSTEM.md` — behavioral conventions installed by the onboard template
+
+### Agents
+
+Package-distributed agent definitions — reusable specialist agents discovered by the subagents extension via the `pi.agents` manifest key.
+
+**Responsibilities:** read-only codebase exploration (scout)
+
+**Dependencies:** Subagents (discovered and spawned by the subagents extension's agent discovery pipeline)
+
+**Files:**
+- `agents/*.md`
 
 ### Docs
 

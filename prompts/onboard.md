@@ -12,6 +12,7 @@ This is **alenna-pi**, a personal [pi coding agent](https://github.com/badlogic/
 - **Azure AI Foundry provider** — auto-discovers model deployments from Azure AI Foundry and registers them as pi models with dynamic Azure AD token refresh.
 - **Standalone skills** — `codemap` (generate/refresh a codebase map) and `debugging` (structured root-cause investigation).
 - **Subagent orchestration** — spawn groups of specialized agents with channel-based inter-agent communication. Agents run as isolated `pi --mode rpc` processes with topology enforcement, deadlock detection, and a live TUI widget. Tools: `subagent`, `send`, `respond`, `check_status`, `teardown_group`.
+- **Agent definitions** — reusable specialist agents distributed with the package. Currently includes `scout` — a read-only codebase exploration agent that runs on a cheap model to save parent tokens, returning prose with file references so the parent reads only what matters.
 - **TUI components** — reusable UI primitives like `numbered-select` (keyboard-driven select dialog with inline annotation).
 
 ## Behavioral Conventions (`SYSTEM.md`)
