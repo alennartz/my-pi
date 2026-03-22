@@ -132,6 +132,12 @@ export function serializeSubagentIdentity(data: SubagentIdentityData): string {
 	lines.push("");
 	lines.push('    If response_expected="true", you MUST call the respond tool with that correlation_id.');
 	lines.push('    If response_expected="false", the message is informational — no response needed.');
+	lines.push("");
+	lines.push("    Completion: your final output (last message before going idle) is automatically");
+	lines.push("    delivered to parent via <agent_complete>. Do NOT call send to parent just to report");
+	lines.push("    results — simply produce your final output and stop. Use send to parent only for");
+	lines.push("    mid-task clarification or questions you need answered before you can continue.");
+	lines.push("    Peer-to-peer communication with other agents still goes through send as normal.");
 	lines.push("  </protocol>");
 	lines.push("</subagent_identity>");
 	return lines.join("\n");

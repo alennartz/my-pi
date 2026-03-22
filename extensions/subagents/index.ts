@@ -336,6 +336,8 @@ export default function (pi: ExtensionAPI) {
 		for (const a of agents) {
 			lines.push(`- **${a.name}** (${a.source}): ${a.description}`);
 		}
+		lines.push("");
+		lines.push("Omitting the `agent` field spawns a **default general-purpose agent** — use this unless the task specifically matches a specialist's description above. Specialized agents are for use cases matching their descriptions; when in doubt, use default.");
 
 		return { systemPrompt: event.systemPrompt + "\n" + lines.join("\n") + "\n" };
 	});
