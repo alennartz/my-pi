@@ -213,8 +213,17 @@ export default function (pi: ExtensionAPI) {
 	//   - Stale stragglers draining after teardown
 	//   - Preemption of parent tool calls
 	//
-	// Used by both root and recursive agents. Flush happens on agent_end
-	// (this agent finished its turn) or via a debounce timer when idle.
+	// Used by both root and recursive agents. When the parent is idle,
+	// notifications flush immediately. When busy, they accumulate and
+	// flush on agent_end.
+	//
+	// On flush we set parentBusy = true synchronously, before the
+	// sendMessage call returns. This closes a race that would otherwise
+	// exist: sendMessage with triggerTurn starts the turn asynchronously,
+	// so agent_start hasn't fired yet when the next notification arrives.
+	// Without the synchronous state transition, that notification would
+	// see idle state and trigger a second flush — producing consecutive
+	// messages (out-of-distribution for most LLMs).
 
 	interface QueuedNotification {
 		xml: string;
@@ -223,30 +232,22 @@ export default function (pi: ExtensionAPI) {
 
 	const notificationQueue: QueuedNotification[] = [];
 	let parentBusy = false;
-	let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function queueNotification(xml: string, source: "local" | "uplink"): void {
 		notificationQueue.push({ xml, source });
 		if (!parentBusy) {
-			// Agent is idle — debounce briefly to batch rapid-fire notifications
-			if (flushTimer) clearTimeout(flushTimer);
-			flushTimer = setTimeout(flushNotifications, 100);
+			flushNotifications();
 		}
-		// If agent is busy, flush will happen on agent_end
+		// If parent is busy, notifications accumulate and flush on agent_end.
 	}
 
 	function flushNotifications(): void {
-		if (flushTimer) {
-			clearTimeout(flushTimer);
-			flushTimer = null;
-		}
 		if (notificationQueue.length === 0) return;
-
-		// Don't flush while the parent is busy — the agent_end handler will
-		// flush again when the turn finishes. Without this guard the debounce
-		// timer can fire mid-turn, causing sendMessage to steer instead of
-		// prompt (race between the timer and the async agent_start event).
 		if (parentBusy) return;
+
+		// Mark busy before sendMessage so any notification arriving between
+		// now and the async agent_start event sees the correct state.
+		parentBusy = true;
 
 		const combined = notificationQueue.splice(0).map((n) => n.xml).join("\n");
 		pi.sendMessage(
@@ -266,10 +267,6 @@ export default function (pi: ExtensionAPI) {
 
 	function clearNotificationQueue(): void {
 		notificationQueue.length = 0;
-		if (flushTimer) {
-			clearTimeout(flushTimer);
-			flushTimer = null;
-		}
 	}
 
 	pi.on("agent_start", async () => {
