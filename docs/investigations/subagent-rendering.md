@@ -99,6 +99,13 @@ Added `if (parentBusy) return;` at the top of `flushNotifications()`. This preve
 - Pi's `messages.js` — `convertToLlm` (~line 75) converts custom messages to user role for LLM
 - Pi's `interactive-mode.js` — event handling (~line 1751), `addMessageToChat` (~line 2035), `CustomMessageComponent` rendering
 
+### Repro session
+
+Session file with a fresh reproduction of the slow-streaming/raw-text symptom (2026-03-22):
+`/home/alenna/.pi/agent/sessions/--home-alenna-repos-my-pi--/2026-03-22T16-16-35-352Z_af5e88eb-eb74-491f-8a6b-de2339011863.jsonl`
+
+Context: spawned 7 scout agents to read skill files. On completion, the `<agent_complete>` notifications streamed out as slow white text instead of rendering through the custom message component.
+
 ### Next steps to try
 
 - Reproduce with a minimal scenario that isolates notification delivery (e.g. two fast agents + one slow agent) and capture exact event ordering around `message_start(custom)` vs `message_start/message_update(assistant)`.

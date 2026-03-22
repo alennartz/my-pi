@@ -8,7 +8,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Ask User",
 		description:
 			"Ask the user to choose from a set of options (up to 9). The user can also annotate their choice with a free-text note. Returns the selected option and optional annotation, or indicates cancellation.",
-		promptSnippet: "Ask the user to choose from a set of options (up to 9), with optional free-text annotation",
+		promptSnippet: "Present the user with a structured choice of up to 9 options. Use when there are discrete alternatives to choose between — disambiguation, confirming a direction, or selecting from a generated list. Supports optional free-text annotation on the selection.",
 		parameters: Type.Object({
 			title: Type.String({ description: "The prompt or question to display" }),
 			options: Type.Array(

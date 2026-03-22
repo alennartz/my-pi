@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: "Review implemented code against its plan. Checks plan adherence and code correctness, then writes findings to a review file. Use after implementation, before pushing."
+description: "Review implemented code against its plan. Use when changes have been made and need checking — after implementation, before pushing, or when the user asks for a review. Requires a plan in docs/plans/<topic>.md with a pre-implementation-commit field — if the plan doesn't exist, suggest running the earlier pipeline phases first."
 ---
 
 # Code Review
@@ -17,7 +17,7 @@ The output is a findings file — not a conversation, not a fix. The review runs
 
 1. **Read `codemap.md`** at the repo root. If it doesn't exist, proceed without it — the plan and diff are the primary inputs.
 
-2. **Read `docs/plans/<topic>.md`** — the full plan: architecture, steps, and status fields. If the plan doesn't exist, tell the user and stop. If the plan has no `pre-implementation-commit` field, ask the user for a commit hash or ref to diff from.
+2. **Read `docs/plans/<topic>.md`** — the full plan: architecture, steps, and status fields. If the plan doesn't exist, tell the user and stop. Suggest running the architecting and planning skills first to establish the plan this review checks against. If the plan has no `pre-implementation-commit` field, ask the user for a commit hash or ref to diff from.
 
 3. **Get the diff.** Use the `pre-implementation-commit` field from the plan to run `git diff <commit>..HEAD`. This is the scope of review — everything that changed during implementation.
 

@@ -1,6 +1,6 @@
 ---
 name: scout
-description: Read-only codebase exploration agent that saves parent tokens by running on a cheap model, exploring thoroughly, and returning prose with file references
+description: Read-only codebase exploration agent. Use when you need to understand unfamiliar code, locate definitions or usage sites, trace control/data flow, or answer structural questions about the codebase — especially when the exploration would consume significant context. Runs on a cheap model, explores thoroughly, and returns prose with file references so you can read only what matters.
 tools: read, bash, send
 model: genitsec-haiku-4-5
 ---

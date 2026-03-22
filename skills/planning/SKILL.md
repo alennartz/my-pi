@@ -1,6 +1,6 @@
 ---
 name: planning
-description: "Turn architectural decisions into concrete, ordered implementation steps. The final phase of the brainstorm → architect → plan pipeline. Appends to the plan the architect started."
+description: "Turn a direction into concrete, ordered implementation steps grounded in the codebase. Use when the user wants a step-by-step plan for building something. Requires architectural decisions in docs/plans/<topic>.md — if those don't exist, suggest the architecting skill first."
 ---
 
 # Planning
@@ -19,7 +19,7 @@ Do NOT make new architectural decisions. The architecture is the ceiling — thi
 
 Before anything else:
 
-1. **Read `docs/plans/<topic>.md`** — the architecture section written by the architecting skill. This is your scope. If the plan file doesn't exist or has no architecture section, stop and tell the user.
+1. **Read `docs/plans/<topic>.md`** — the architecture section written by the architecting skill. This is your scope. If the plan file doesn't exist or has no architecture section, stop and tell the user. Suggest running the architecting skill first to establish the architectural decisions this skill builds on.
 
 2. **Read `codemap.md`** at the repo root. If it doesn't exist, suggest the user create one using the codemap skill. If they decline, fall back to exploring the codebase directly.
 

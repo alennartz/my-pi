@@ -1,6 +1,6 @@
 ---
 name: handle-review
-description: "Act on code review findings — fix what's clearly correct, escalate what's ambiguous. Use after the code-review skill has produced a review file."
+description: "Resolve code review findings — fix what's clearly correct, escalate what's ambiguous. Use when a review file exists in docs/reviews/ with open findings that need to be addressed. If no review file exists, suggest running the code-review skill first."
 ---
 
 # Handle Review
@@ -17,7 +17,7 @@ This is not a planning skill. Review findings are small and surgical — add mis
 
 1. **Read `codemap.md`** at the repo root. If it doesn't exist, proceed without it.
 
-2. **Read `docs/reviews/<topic>.md`** — the review file. If it doesn't exist, tell the user and stop.
+2. **Read `docs/reviews/<topic>.md`** — the review file. If it doesn't exist, tell the user and stop. Suggest running the code-review skill first to produce a review file.
 
 3. **Read `docs/plans/<topic>.md`** — the plan that produced the reviewed code. This gives you the original intent behind each finding.
 

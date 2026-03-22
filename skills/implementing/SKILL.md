@@ -1,6 +1,6 @@
 ---
 name: implementing
-description: "Execute a plan — directly for small plans, or as an orchestrator spawning module-aligned workers for larger ones. The final phase of the brainstorm → architect → plan → implement pipeline."
+description: "Execute an implementation plan — directly for small plans, or by orchestrating module-aligned workers for larger ones. Use when there's a plan ready to build. Requires a plan with steps in docs/plans/<topic>.md — if the plan doesn't exist or has no steps, suggest the planning skill first."
 ---
 
 # Implementing
@@ -19,7 +19,7 @@ Before touching any code:
 
 1. **Read `codemap.md`** at the repo root. This gives you broad context beyond what the plan references directly.
 
-2. **Read `docs/plans/<topic>.md`** — the full plan: architecture section and steps. If the plan file doesn't exist or has no steps, stop and tell the user.
+2. **Read `docs/plans/<topic>.md`** — the full plan: architecture section and steps. If the plan file doesn't exist or has no steps, stop and tell the user. Suggest running the planning skill first (or the architecting skill if no plan file exists at all).
 
 3. **Find your starting point.** Scan the steps for the first one that isn't `done`. Start there. This makes the skill naturally resumable after interruptions or blocks.
 

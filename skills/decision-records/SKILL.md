@@ -1,6 +1,6 @@
 ---
 name: decision-records
-description: "Write and manage decision records (DRs). Owns the format, quality bar, numbering, supersession mechanics, and file conventions. Use standalone to capture a decision, or as a delegate from cleanup during pipeline extraction."
+description: "Write and manage decision records (DRs). Use when a significant technical or design decision has been made and its rationale should be preserved, or when the user asks to record, update, or supersede a decision. Also invoked as a delegate from cleanup. Owns format, quality bar, numbering, supersession mechanics, and file conventions."
 ---
 
 # Decision Records
