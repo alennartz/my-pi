@@ -62,9 +62,9 @@ With `"one-at-a-time"`, pi delivers one queued message, waits for the agent to r
 | Agent idle, no trigger | `appendMessage()` | `appendMessage()` | Stash silently |
 | Triggers a turn? | Yes (when delivered) | Yes (when delivered) | Never on its own |
 
-## Gotcha: `triggerTurn` + Streaming
+## Note: `triggerTurn` + Streaming
 
-When `sendCustomMessage` is called with `triggerTurn: true` while the agent is already streaming, the `triggerTurn` flag is effectively **ignored**. The message is routed through the steer/followUp branch based on `deliverAs`, not through the `prompt()` path. This is a semantic mismatch — the caller asked for a triggered turn but gets queued delivery instead. See `docs/investigations/subagent-rendering.md` for downstream effects this causes.
+When `sendCustomMessage` is called with `triggerTurn: true` while the agent is already streaming, the message is routed through the steer/followUp branch based on `deliverAs`, not through the `prompt()` path. The `triggerTurn` flag is **redundant** in this case, not ignored — the agent loop's `runLoop()` (agent-loop.js) drains both steering and follow-up queues and triggers a new `streamAssistantResponse()` for each drained message. The turn happens regardless; it's just deferred until the appropriate drain point (between tool-call rounds for steer, after the loop completes for followUp).
 
 ## Relevant Code Locations
 

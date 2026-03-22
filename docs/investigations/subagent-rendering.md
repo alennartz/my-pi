@@ -14,7 +14,7 @@ Two user-reported symptoms:
 
 **Location:** extensions/subagents/index.ts, ~line 445 (after `const ack = await group.start();`)
 
-## Issue 2: Slow notification text (NOT RESOLVED)
+## Issue 2: Slow notification text (ROOT CAUSE FOUND)
 
 ### What we know about the rendering pipeline
 
@@ -44,8 +44,8 @@ For the idle+trigger case, the loop does:
 3. Streams assistant response as white text (`AssistantMessageComponent`)
 
 Important nuance discovered:
-- If `sendCustomMessage` is called while `isStreaming === true`, the `triggerTurn` option is effectively bypassed and message is queued via steer/followUp branch. This is a semantic mismatch/footgun and can change timing.
-- This should delay purple in some races, but does **not** by itself explain permanent "purple missing" reports.
+- If `sendCustomMessage` is called while `isStreaming === true`, the message is queued via steer/followUp rather than going through the `prompt()` path. However, this is **not** a semantic mismatch — the agent loop's `runLoop()` drains both steering and follow-up queues and triggers a new `streamAssistantResponse()` for each, so the turn happens regardless. The `triggerTurn` flag is simply redundant when the message is queued; the loop handles turn triggering inherently.
+- Queuing can change *timing* (the turn is deferred until the drain point), but does **not** by itself explain permanent "purple missing" reports.
 
 ### Additional observations from recent testing
 
@@ -65,11 +65,11 @@ Provisional ranking based on current evidence (highest likelihood first):
 3. **Large notification payload echo cost**
    Large `<agent_complete>` payloads increase both model latency and UI rendering cost.
 
-4. **Streaming-state branch mismatch in `sendCustomMessage`**
-   When `isStreaming === true`, `triggerTurn` is effectively bypassed in favor of steer/followUp queueing. This likely contributes timing variance but is unlikely to fully explain persistent "purple missing" by itself.
-
-5. **Core rendering bug dropping custom-message display**
+4. **Core rendering bug dropping custom-message display**
    Still plausible (fits "white appears, purple missing"), but unproven without hard event-vs-render evidence.
+
+~~5. **Streaming-state branch mismatch in `sendCustomMessage`** — RULED OUT.
+   Previously hypothesized that `triggerTurn` being "bypassed" during streaming was a semantic mismatch. Verified in agent-loop.js `runLoop()` that both steer and followUp queues drain into new `streamAssistantResponse()` calls — the turn happens regardless. The `triggerTurn` flag is redundant when queued, not ignored. Timing differences from deferred delivery remain possible but are covered by hypothesis #1.~~
 
 ### What we don't know
 
@@ -106,10 +106,27 @@ Session file with a fresh reproduction of the slow-streaming/raw-text symptom (2
 
 Context: spawned 7 scout agents to read skill files. On completion, the `<agent_complete>` notifications streamed out as slow white text instead of rendering through the custom message component.
 
-### Next steps to try
+### Root cause: LLM hallucination (2026-03-22)
 
-- Reproduce with a minimal scenario that isolates notification delivery (e.g. two fast agents + one slow agent) and capture exact event ordering around `message_start(custom)` vs `message_start/message_update(assistant)`.
-- Verify whether "purple missing" runs have missing custom events or only missing custom rendering.
-- Check whether slow white text correlates with large `lastOutput` payloads in `<agent_complete>`.
-- Check whether multiple notification-triggered turns happen in rapid succession (small batches vs one coalesced batch).
-- If reproducible, re-introduce short-lived file-based tracing (not TUI console output) at `sendCustomMessage` and interactive `handleEvent`.
+Transcript analysis of the repro session revealed the "slow white text" is **not** a rendering or notification delivery bug. The LLM is **hallucinating agent responses**.
+
+**What happens:**
+1. LLM spawns agents (e.g. 7 scouts to read files)
+2. Tool result returns "Group spawned: 7 agents"
+3. Instead of waiting for real notifications, the LLM generates fake `<agent_complete>` blocks — 23K chars / 5730 output tokens of fabricated file content wrapped in notification XML
+4. This streams out as slow white assistant text (~190 seconds)
+5. Real notifications arrive later as proper `custom_message` entries (purple boxes) with the correct content
+
+**Evidence the content is hallucinated, not echoed:**
+- With `USE_STEER_DELIVERY=false`, notifications cannot reach the LLM during streaming (parentBusy guard blocks flush; flush only on agent_end)
+- Diff of assistant text vs real notification for the same agent (read-decision-records) shows substantially different content: different section structure, missing headings, simplified text — the LLM reconstructed a plausible but wrong version from partial earlier context
+- The hallucinated `<agent_complete>` blocks lack proper XML attributes (`id`, `status`) and use prose prefixes like "Agent read-planning completed:" instead
+- The LLM later received the real notifications and noted "The scout returned a stale version" — attributing the differences to the scout rather than recognizing its own hallucination
+
+**Fix applied:** Added two `promptGuidelines` to the `subagent` tool (extensions/subagents/index.ts):
+1. Never fabricate/predict/simulate agent output — `<agent_complete>` and `<group_idle>` are system-delivered
+2. Never echo/reproduce notification content — it's already visible to the user; respond with analysis and next actions instead
+
+### Previous hypotheses (largely moot)
+
+The hypotheses below were exploring notification delivery and rendering pipeline issues. With the root cause identified as LLM hallucination, most are no longer relevant to this specific symptom. They may still be worth investigating if separate notification rendering issues are observed.

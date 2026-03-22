@@ -234,7 +234,9 @@ export class GroupManager {
 			const ch = a.kind === "agent" && a.channels?.length ? a.channels.join(", ") : "(none)";
 			lines.push(`- ${a.id}: task="${a.task}", channels=[${ch}, parent]`);
 		}
-		lines.push("Use check_status to monitor progress. Send messages to any agent via send.");
+		lines.push("Continue your conversation with the user while waiting for agents to complete.");
+		lines.push("Do NOT predict or write out agent results — <agent_complete> notifications will be delivered by the system when each agent finishes.");
+		lines.push("Use check_status to monitor progress or send to message agents if needed.");
 		return lines.join("\n");
 	}
 

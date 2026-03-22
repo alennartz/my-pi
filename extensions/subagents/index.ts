@@ -499,6 +499,8 @@ export default function (pi: ExtensionAPI) {
 			"One active group at a time. Each agent gets its own pi process. Agents communicate via the send/respond tools using channels declared at spawn time.",
 			"Parent (you) is auto-injected into every agent's channel list. The channels field governs agent-to-agent peer communication only.",
 			"Notifications arrive automatically: <agent_complete> when each agent finishes, <group_idle> when all are done. No need to poll — continue other work or wait. Call teardown_group to end the group when ready.",
+			"Never fabricate, predict, or simulate agent output. <agent_complete> and <group_idle> notifications are delivered by the system — do not generate these tags yourself. After spawning agents, either continue with other work or wait briefly; do not write out what you think agents will return.",
+			"When you receive a notification (<agent_complete>, <agent_message>, <group_idle>), process the information but do not echo or reproduce the notification content in your response. The notification is already visible to the user. Respond with your analysis, decisions, or next actions — not a copy of what was delivered.",
 			"Use subagent when the work needs multiple coordinated agents, specialized personas, or a clean slate. Use fork when you want a copy of yourself with your full context to explore something.",
 			"For task decomposition, pattern selection, and when-to-delegate guidance, read the orchestrating-agents skill.",
 		],
