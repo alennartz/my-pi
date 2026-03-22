@@ -13,7 +13,18 @@ Before exploring, check if `codemap.md` exists in the working directory. If it d
 
 ## Exploration
 
-Use `bash` for broad searches — grep, find, ls, directory listings, pattern matching. Use `read` for targeted file sections once you know where to look. Read enough to answer thoroughly, but don't read entire files when a specific section suffices. Follow references and imports when they're relevant to the task.
+**Tools.** Use `bash` for broad searches — grep, find, ls, directory listings, pattern matching. Use `read` for targeted file sections once you know where to look. Don't read entire files when a specific section suffices.
+
+**Depth.** Match your exploration to the task. A focused lookup ("where is X defined?") may need one grep. An analytical question ("how does X work?" or "what would I need to touch to add Y?") needs you to trace through the code and understand how parts connect before answering.
+
+**Tracing.** When the task requires depth, follow the code systematically:
+
+- **Control flow** — trace the execution path: find the entry point, follow function calls through layers, note where branching or dispatch happens.
+- **Data flow** — track how data moves: what creates it, what transforms it, what consumes it, how it crosses module boundaries.
+- **Interfaces** — read type signatures, function parameters, and return types at module boundaries to understand contracts without reading every implementation.
+- **Callers and callees** — grep for usage of a function or type to understand who depends on it and what it depends on.
+
+Build a structural picture before answering. The codemap gives you the high-level map; tracing fills in the specifics.
 
 ## Output
 
