@@ -16,6 +16,8 @@ The brainstorming skill sometimes asks the user factual/context questions it cou
 
 ## Steps
 
+**Pre-implementation commit:** `e470b2bf6f0bd2d0b77c03dfb90330895e4b1967`
+
 ### Step 1: Add "Asking Answerable Questions" anti-pattern
 
 In `skills/brainstorming/SKILL.md`, add a new `### Asking Answerable Questions` subsection in the Anti-Patterns section, after "Question Dumping" and before "Monologuing". Match the concise style of the existing anti-patterns. The content should:
@@ -25,4 +27,4 @@ In `skills/brainstorming/SKILL.md`, add a new `### Asking Answerable Questions` 
 - Mention tools generically (read files, run commands, search online) without naming specific skills
 
 **Verify:** Read the skill file, confirm the new anti-pattern is present between Question Dumping and Monologuing, reads naturally alongside its siblings, and doesn't reference any specific skill names.
-**Status:** not started
+**Status:** done
