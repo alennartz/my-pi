@@ -305,7 +305,8 @@ export default function (pi: ExtensionAPI) {
 			"",
 			"## Available Agent Definitions",
 			"",
-			"The following agent definitions can be referenced in the subagent tool's `agent` field:",
+			"The following agent definitions can be referenced in the subagent tool's `agent` field.",
+			"Each is self-contained — it carries its own system prompt, model, and tool restrictions. The description below is all you need to choose and deploy them; do not read their definition files before using them. Just pass the name in the `agent` field with a task string.",
 			"",
 		];
 		for (const a of agents) {
@@ -468,6 +469,7 @@ export default function (pi: ExtensionAPI) {
 			"Parent (you) is auto-injected into every agent's channel list. The channels field governs agent-to-agent peer communication only.",
 			"Notifications arrive automatically: <agent_complete> when each agent finishes, <group_idle> when all are done. No need to poll — continue other work or wait. Call teardown_group to end the group when ready.",
 			"Use subagent when the work needs multiple coordinated agents, specialized personas, or a clean slate. Use fork when you want a copy of yourself with your full context to explore something.",
+			"For task decomposition, pattern selection, and when-to-delegate guidance, read the orchestrating-agents skill.",
 		],
 		parameters: Type.Object({
 			agents: Type.Array(AgentItem, { description: "Agents to spawn in this group" }),
