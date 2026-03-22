@@ -242,6 +242,12 @@ export default function (pi: ExtensionAPI) {
 		}
 		if (notificationQueue.length === 0) return;
 
+		// Don't flush while the parent is busy — the agent_end handler will
+		// flush again when the turn finishes. Without this guard the debounce
+		// timer can fire mid-turn, causing sendMessage to steer instead of
+		// prompt (race between the timer and the async agent_start event).
+		if (parentBusy) return;
+
 		const combined = notificationQueue.splice(0).map((n) => n.xml).join("\n");
 		pi.sendMessage(
 			{ customType: "subagents", content: combined, display: true },
@@ -435,6 +441,13 @@ export default function (pi: ExtensionAPI) {
 
 		activeGroup = group;
 		const ack = await group.start();
+
+		// Push initial statuses so the widget renders immediately
+		// (before any RPC child emits its first event).
+		if (dashboard && tuiRef) {
+			dashboard.update(group.getAgentStatuses());
+			tuiRef.requestRender();
+		}
 
 		// Connect parent's broker client eagerly
 		const broker = group.getBroker();
