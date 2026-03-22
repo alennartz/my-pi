@@ -860,7 +860,8 @@ function formatAgentStatusDetail(s: import("./group.js").AgentStatus): string {
 		const preview = s.lastOutput.length > 200 ? s.lastOutput.slice(0, 200) + "..." : s.lastOutput;
 		lines.push(`Last output: ${preview}`);
 	}
-	lines.push(`Usage: ↑${s.usage.input} ↓${s.usage.output} $${s.usage.cost.toFixed(4)} (${s.usage.turns} turns)`);
+	const totalInput = s.usage.input + s.usage.cacheRead + s.usage.cacheWrite;
+	lines.push(`Usage: ↑${totalInput} ↓${s.usage.output} $${s.usage.cost.toFixed(4)} (${s.usage.turns} turns)`);
 	if (s.pendingCorrelations.length > 0) {
 		lines.push(`Pending correlations: ${s.pendingCorrelations.join(", ")}`);
 	}
@@ -872,7 +873,7 @@ function aggregateUsage(statuses: import("./group.js").AgentStatus[]): import(".
 	let output = 0;
 	let cost = 0;
 	for (const s of statuses) {
-		input += s.usage.input;
+		input += s.usage.input + s.usage.cacheRead + s.usage.cacheWrite;
 		output += s.usage.output;
 		cost += s.usage.cost;
 	}

@@ -181,7 +181,8 @@ export class SubagentDashboard implements Component {
 
 		// Cumulative tokens
 		const tokParts: string[] = [];
-		if (s.usage.input > 0) tokParts.push(`↑${fmtTokens(s.usage.input)}`);
+		const totalInput = s.usage.input + s.usage.cacheRead + s.usage.cacheWrite;
+		if (totalInput > 0) tokParts.push(`↑${fmtTokens(totalInput)}`);
 		if (s.usage.output > 0) tokParts.push(`↓${fmtTokens(s.usage.output)}`);
 		if (tokParts.length > 0) parts.push(tokParts.join(" "));
 

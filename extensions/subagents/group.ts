@@ -386,7 +386,7 @@ export class GroupManager {
 		let output = 0;
 		let cost = 0;
 		for (const e of this.entries) {
-			input += e.status.usage.input;
+			input += e.status.usage.input + e.status.usage.cacheRead + e.status.usage.cacheWrite;
 			output += e.status.usage.output;
 			cost += e.status.usage.cost;
 		}
