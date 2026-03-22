@@ -45,6 +45,7 @@ interface ParentLink {
 	channels: string[];
 	task: string;
 	brokerSocket: string;
+	tools?: string[];
 }
 
 function getParentLink(): ParentLink | null {
@@ -188,6 +189,16 @@ class BrokerClient {
 
 export default function (pi: ExtensionAPI) {
 	const parentLink = getParentLink();
+
+	// Tool gating: when a child agent has a tools restriction, only register
+	// tools that appear in the allowed list. `respond` is always allowed
+	// (infrastructure — any agent may need to answer blocking sends).
+	const allowedTools = parentLink?.tools ? new Set(parentLink.tools) : null;
+	function shouldRegisterTool(name: string): boolean {
+		if (!allowedTools) return true; // no restriction
+		if (name === "respond") return true; // always allowed
+		return allowedTools.has(name);
+	}
 
 	// Shared state
 	let activeGroup: GroupManager | null = null;
@@ -447,7 +458,7 @@ export default function (pi: ExtensionAPI) {
 		),
 	});
 
-	pi.registerTool({
+	if (shouldRegisterTool("subagent")) pi.registerTool({
 		name: "subagent",
 		label: "Subagent Group",
 		description: "Spawn a group of specialized subagents with channel-based inter-agent communication.",
@@ -537,7 +548,7 @@ export default function (pi: ExtensionAPI) {
 
 	const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
-	pi.registerTool({
+	if (shouldRegisterTool("fork")) pi.registerTool({
 		name: "fork",
 		label: "Fork",
 		description: "Clone yourself into a sub-agent with your full conversation history.",
@@ -606,7 +617,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ─── Tool: send ──────────────────────────────────────────────────────
 
-	pi.registerTool({
+	if (shouldRegisterTool("send")) pi.registerTool({
 		name: "send",
 		label: "Send Message",
 		description: "Send a message to another agent in the group.",
@@ -682,7 +693,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ─── Tool: respond ───────────────────────────────────────────────────
 
-	pi.registerTool({
+	if (shouldRegisterTool("respond")) pi.registerTool({
 		name: "respond",
 		label: "Respond",
 		description: "Respond to a blocking message from another agent.",
@@ -738,7 +749,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ─── Tool: check_status ──────────────────────────────────────────────
 
-	pi.registerTool({
+	if (shouldRegisterTool("check_status")) pi.registerTool({
 		name: "check_status",
 		label: "Check Status",
 		description: "Query agent status. Omit agent for group summary.",
@@ -775,7 +786,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ─── Tool: teardown_group ────────────────────────────────────────────
 
-	pi.registerTool({
+	if (shouldRegisterTool("teardown_group")) pi.registerTool({
 		name: "teardown_group",
 		label: "Teardown Group",
 		description: "End the current agent group. Kills all agent processes and delivers a final summary.",

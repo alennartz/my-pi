@@ -176,6 +176,7 @@ export class GroupManager {
 				channels: allChannels,
 				task: agentSpec.task,
 				brokerSocket: this.broker.socketPath,
+				...(agentConfig?.tools ? { tools: agentConfig.tools } : {}),
 			});
 
 			const rpc = new RpcChild({
