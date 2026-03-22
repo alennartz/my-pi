@@ -38,6 +38,21 @@ import {
 	type AgentCompleteData,
 } from "./messages.js";
 
+// ─── Delivery mode flag ──────────────────────────────────────────────────────
+//
+// When true, notifications are delivered with steering semantics: flushed
+// immediately via sendMessage even while the agent is busy, letting pi
+// inject them between tool-call rounds. An additional tool_execution_end
+// trigger flushes accumulated notifications mid-turn. agent_end remains
+// as a fallback for notifications that arrive while the LLM is streaming
+// (no tool calls to trigger a flush).
+//
+// When false, the original behavior: notifications accumulate while the
+// agent is busy and flush as a single batch on agent_end (follow-up
+// semantics).
+
+const USE_STEER_DELIVERY = true;
+
 // ─── Child identity from env var ─────────────────────────────────────────────
 
 interface ParentLink {
@@ -235,15 +250,15 @@ export default function (pi: ExtensionAPI) {
 
 	function queueNotification(xml: string, source: "local" | "uplink"): void {
 		notificationQueue.push({ xml, source });
-		if (!parentBusy) {
+		if (!parentBusy || USE_STEER_DELIVERY) {
 			flushNotifications();
 		}
-		// If parent is busy, notifications accumulate and flush on agent_end.
+		// If parent is busy (and not steer mode), notifications accumulate and flush on agent_end.
 	}
 
 	function flushNotifications(): void {
 		if (notificationQueue.length === 0) return;
-		if (parentBusy) return;
+		if (parentBusy && !USE_STEER_DELIVERY) return;
 
 		// Mark busy before sendMessage so any notification arriving between
 		// now and the async agent_start event sees the correct state.
@@ -277,6 +292,12 @@ export default function (pi: ExtensionAPI) {
 		parentBusy = false;
 		flushNotifications();
 	});
+
+	if (USE_STEER_DELIVERY) {
+		pi.on("tool_execution_end", async () => {
+			flushNotifications();
+		});
+	}
 
 	// ─── Package agent cache ─────────────────────────────────────────────
 	//

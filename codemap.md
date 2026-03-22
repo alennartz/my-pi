@@ -138,3 +138,14 @@ Working artifacts for in-progress workflows and permanent decision records extra
 - `docs/plans/**`
 - `docs/reviews/**`
 - `docs/decisions/**`
+
+### Pi Internals
+
+Reference documentation for pi's internal behaviors discovered through source exploration. Not upstream docs — these are our own annotations of how pi actually works under the hood, with code locations pinned to specific versions.
+
+**Responsibilities:** documenting pi internal mechanics (message delivery modes, queue semantics, event pipelines) for reuse across future conversations and design decisions
+
+**Dependencies:** none (reference-only, consumed by humans and agents)
+
+**Files:**
+- `docs/pi-internals/**`
