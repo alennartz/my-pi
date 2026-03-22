@@ -78,13 +78,7 @@ export function serializeAgentComplete(data: AgentCompleteData): string {
 export function serializeGroupIdle(data: GroupIdleData): string {
 	const lines: string[] = ["<group_idle>"];
 	for (const agent of data.agents) {
-		if (agent.status === "failed") {
-			const err = agent.error ? escapeXml(agent.error) : "unknown error";
-			lines.push(`  <agent id="${escapeXml(agent.id)}" status="failed">${err}</agent>`);
-		} else {
-			const out = agent.output ?? "(no output)";
-			lines.push(`  <agent id="${escapeXml(agent.id)}" status="idle">${escapeXml(out)}</agent>`);
-		}
+		lines.push(`  <agent id="${escapeXml(agent.id)}" status="${agent.status}" />`);
 	}
 	lines.push(`  <usage input="${escapeXml(data.usage.input)}" output="${escapeXml(data.usage.output)}" cost="${escapeXml(data.usage.cost)}" />`);
 	lines.push("  All agents have finished. Send messages to continue work or call teardown_group when done.");
@@ -106,15 +100,7 @@ export function serializeGroupComplete(data: GroupCompleteData): string {
 	const lines: string[] = ["<group_complete>"];
 	lines.push(`  <summary>${escapeXml(summary)}</summary>`);
 	for (const agent of data.agents) {
-		if (agent.status === "failed") {
-			const err = agent.error ? `\n    <error>${escapeXml(agent.error)}</error>\n  ` : "";
-			lines.push(`  <agent id="${escapeXml(agent.id)}" status="failed">${err}</agent>`);
-		} else {
-			const out = agent.output ?? "(no output)";
-			lines.push(`  <agent id="${escapeXml(agent.id)}" status="idle">`);
-			lines.push(`    <output>${escapeXml(out)}</output>`);
-			lines.push("  </agent>");
-		}
+		lines.push(`  <agent id="${escapeXml(agent.id)}" status="${agent.status}" />`);
 	}
 	lines.push(`  <usage input="${escapeXml(data.usage.input)}" output="${escapeXml(data.usage.output)}" cost="${escapeXml(data.usage.cost)}" />`);
 	lines.push("</group_complete>");
