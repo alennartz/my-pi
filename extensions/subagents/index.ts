@@ -186,6 +186,11 @@ class BrokerClient {
 		});
 	}
 
+	/** Remove a pending correlation waiter without resolving it. */
+	cancelWaitForResponse(correlationId: string): void {
+		this.correlationWaiters.delete(correlationId);
+	}
+
 	/**
 	 * Send a request and wait for the next response (send_ack, response, or error).
 	 */
@@ -520,8 +525,8 @@ export default function (pi: ExtensionAPI) {
 			"One active group at a time. Each agent gets its own pi process. Agents communicate via the send/respond tools using channels declared at spawn time.",
 			"Parent (you) is auto-injected into every agent's channel list. The channels field governs agent-to-agent peer communication only.",
 			"Notifications arrive automatically: <agent_complete> when each agent finishes, <group_idle> when all are done. No need to poll — continue other work or wait. Call teardown_group to end the group when ready.",
-			"Never fabricate, predict, or simulate agent output. <agent_complete> and <group_idle> notifications are delivered by the system — do not generate these tags yourself. After spawning agents, either continue with other work or wait briefly; do not write out what you think agents will return.",
-			"When you receive a notification (<agent_complete>, <agent_message>, <group_idle>), process the information but do not echo or reproduce the notification content in your response. The notification is already visible to the user. Respond with your analysis, decisions, or next actions — not a copy of what was delivered.",
+			"**CRITICAL: NEVER fabricate, predict, or simulate agent output.** You have ZERO information about agent results until <agent_complete> and <group_idle> notifications are delivered by the system. Do NOT generate these tags yourself. Do NOT write out what you think agents will return. Do NOT summarize results you have not received. Making up agent output and presenting it as real is a critical violation — it delivers false information to the user. After spawning agents, either continue with other work or wait. You know NOTHING about their results until the system tells you.",
+			"**IMPORTANT:** When you receive a notification (<agent_complete>, <agent_message>, <group_idle>), process the information but do NOT echo or reproduce the notification content in your response. The notification is already visible to the user. Respond with your analysis, decisions, or next actions — not a copy of what was delivered.",
 			"Use subagent when the work needs multiple coordinated agents, specialized personas, or a clean slate. Use fork when you want a copy of yourself with your full context to explore something.",
 			"For task decomposition, pattern selection, and when-to-delegate guidance, read the orchestrating-agents skill.",
 		],
@@ -612,6 +617,7 @@ export default function (pi: ExtensionAPI) {
 			"Clones yourself into a sub-agent with your full conversation history. The clone explores independently while you continue working — use for divergent exploration without committing context.",
 			"One parameter: task. Use fork when you want a copy of yourself with full context to explore an alternative path. Use subagent for multiple agents, specialized personas, or a clean slate.",
 			"One active group at a time. Fork creates a single-agent group — send, respond, check_status, and teardown_group all work normally. Notifications arrive the same way (<agent_complete>, <group_idle>).",
+			"**CRITICAL: NEVER fabricate, predict, or simulate forked agent output.** You have ZERO information about what the fork produces until the <agent_complete> notification is delivered by the system. Do NOT make up results. Do NOT write out what you think the fork will return. Wait for the actual notification.",
 		],
 		parameters: Type.Object({
 			task: Type.String({ description: "Task description for the forked clone" }),
@@ -691,7 +697,9 @@ export default function (pi: ExtensionAPI) {
 			),
 		}),
 
-		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+			if (signal?.aborted) throw new Error("Cancelled");
+
 			// Route to the correct broker:
 			// - Target is in our own sub-group → parentBrokerClient (our local broker)
 			// - Otherwise → brokerClient (uplink to parent's broker)
@@ -728,7 +736,27 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (params.expectResponse && correlationId) {
-				const responseMsg = await client.waitForResponse(correlationId);
+				// Race the blocking wait against the abort signal so Escape
+				// (or any other cancellation) can unblock the tool call.
+				const responseMsg = await new Promise<BrokerResponse>((resolve, reject) => {
+					if (signal?.aborted) {
+						client!.cancelWaitForResponse(correlationId!);
+						reject(new Error("Cancelled"));
+						return;
+					}
+
+					const onAbort = () => {
+						client!.cancelWaitForResponse(correlationId!);
+						reject(new Error("Cancelled"));
+					};
+					signal?.addEventListener("abort", onAbort, { once: true });
+
+					client!.waitForResponse(correlationId!).then((msg) => {
+						signal?.removeEventListener("abort", onAbort);
+						resolve(msg);
+					});
+				});
+
 				if (responseMsg.type === "response") {
 					return {
 						content: [{ type: "text", text: responseMsg.message }],
