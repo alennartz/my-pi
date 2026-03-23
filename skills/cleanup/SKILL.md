@@ -65,7 +65,7 @@ The description should briefly summarize what's in the commit — e.g., "decisio
 ## Key Principles
 
 - **Clean context** — this skill always starts fresh. Reconstruct everything from artifacts on disk.
-- **Background delegation** — codemap and docs run as subagents while the primary handles DRs. DR extraction is conversational (needs user input); codemap and docs are mechanical.
+- **Background delegation** — codemap and docs run as subagents while the primary handles DRs.
 - **Decision record quality** — follow the decision-records skill for quality bar and proposal flow.
 - **Scoped codemap update** — use the pre-implementation baseline and architecture to focus the update. Not a full rebuild.
 - **Open-ended doc sweep** — discover what exists, don't assume a fixed set of files.

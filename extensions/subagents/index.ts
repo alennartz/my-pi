@@ -221,16 +221,17 @@ export default function (pi: ExtensionAPI) {
 
 	// ─── Notification queue ─────────────────────────────────────────────
 	//
-	// Instead of delivering each agent notification immediately via
-	// pi.sendMessage(), we accumulate them in an internal queue and flush
-	// as a single combined message. This avoids:
-	//   - Consecutive user messages (out-of-distribution for most LLMs)
-	//   - Stale stragglers draining after teardown
-	//   - Preemption of parent tool calls
+	// Notifications accumulate in an internal queue and flush as a single
+	// combined message at the right boundary:
 	//
-	// Used by both root and recursive agents. When the parent is idle,
-	// notifications flush immediately. When busy, they accumulate and
-	// flush on agent_end.
+	// - Agent idle: flush immediately (prompt() path).
+	// - Agent busy, USE_STEER_DELIVERY off: accumulate, flush on agent_end.
+	//   (DR-019 — avoids cascading steer interrupts.)
+	// - Agent busy, USE_STEER_DELIVERY on, tools running: accumulate,
+	//   flush when the last in-flight tool call ends. Tool calls are
+	//   paired by toolCallId (start/end) so we know the exact boundary.
+	// - Agent busy, USE_STEER_DELIVERY on, LLM streaming (no tools):
+	//   flush immediately — no batching opportunity.
 	//
 	// On flush we set parentBusy = true synchronously, before the
 	// sendMessage call returns. This closes a race that would otherwise
@@ -248,12 +249,22 @@ export default function (pi: ExtensionAPI) {
 	const notificationQueue: QueuedNotification[] = [];
 	let parentBusy = false;
 
+	// Track in-flight tool calls by id so we can flush notifications
+	// when the last tool in a round completes, rather than per-tool.
+	const pendingToolCalls = new Set<string>();
+
 	function queueNotification(xml: string, source: "local" | "uplink"): void {
 		notificationQueue.push({ xml, source });
-		if (!parentBusy || USE_STEER_DELIVERY) {
+		if (!parentBusy) {
+			// Agent is idle — flush immediately (goes through prompt() path).
+			flushNotifications();
+		} else if (USE_STEER_DELIVERY && pendingToolCalls.size === 0) {
+			// Agent is busy but LLM is streaming (no tools running) —
+			// no batching opportunity, flush immediately as steer.
 			flushNotifications();
 		}
-		// If parent is busy (and not steer mode), notifications accumulate and flush on agent_end.
+		// Otherwise: tools are running — accumulate and flush when last tool ends.
+		// Or: !USE_STEER_DELIVERY — accumulate and flush on agent_end (DR-019).
 	}
 
 	function flushNotifications(): void {
@@ -289,13 +300,21 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async () => {
+		pendingToolCalls.clear();
 		parentBusy = false;
 		flushNotifications();
 	});
 
 	if (USE_STEER_DELIVERY) {
-		pi.on("tool_execution_end", async () => {
-			flushNotifications();
+		pi.on("tool_execution_start", async (event) => {
+			pendingToolCalls.add(event.toolCallId);
+		});
+
+		pi.on("tool_execution_end", async (event) => {
+			pendingToolCalls.delete(event.toolCallId);
+			if (pendingToolCalls.size === 0) {
+				flushNotifications();
+			}
 		});
 	}
 

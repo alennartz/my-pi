@@ -155,7 +155,7 @@ Start minimal. Only declare peer channels where agents genuinely need lateral co
 - **Collaborative team** needs selective connections based on expertise overlap. Don't mesh everything — only connect agents that actually consult each other.
 - **More channels = more noise.** An agent that can talk to everyone will be tempted to. Constrain topology to the communication you actually want.
 
-All channel references are validated at spawn time — referencing a non-existent agent id in `channels` is an error (`validateTopology` checks that every referenced id exists in the group).
+All channel references are validated at spawn time — referencing a non-existent agent id in `channels` is an error.
 
 ### Fire-and-Forget (Default)
 
@@ -185,9 +185,7 @@ Avoid designs where agents form blocking rings. If A blocks on B, B must not blo
 
 Any agent — including a child agent — can spawn its own sub-group using the same `subagent` tool. The child has the full tool suite (`subagent`, `send`, `respond`, `check_status`, `teardown_group`).
 
-**The lead agent pattern:** Parent spawns a single lead agent with a broad mandate. The lead decomposes the work further and spawns its own worker group. The parent sees the lead as a single agent — the lead's sub-group is invisible to the parent. The lead reports back to parent when its workers are done.
-
-When to use: hierarchical decomposition where the top-level parent shouldn't manage every worker directly. The lead agent absorbs coordination complexity at its level.
+Normally, the primary agent (with the TUI) is the lead — it decomposes work and spawns workers directly. But if a worker's task is large enough to warrant further decomposition, that worker can spawn its own sub-group. The primary sees only the worker; the worker's sub-group is invisible above it. This enables hierarchical decomposition without the primary managing every leaf agent.
 
 ## Key Principles
 

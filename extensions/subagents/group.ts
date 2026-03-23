@@ -236,7 +236,7 @@ export class GroupManager {
 		}
 		lines.push("Continue your conversation with the user while waiting for agents to complete.");
 		lines.push("Do NOT predict or write out agent results — <agent_complete> notifications will be delivered by the system when each agent finishes.");
-		lines.push("Use check_status to monitor progress or send to message agents if needed.");
+		lines.push("Notifications (<agent_complete>, <group_idle>) arrive automatically — no need to poll.");
 		return lines.join("\n");
 	}
 

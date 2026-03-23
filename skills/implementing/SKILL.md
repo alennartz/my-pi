@@ -59,9 +59,9 @@ For larger plans. The primary orchestrates; workers write code.
 
 2. **Spawn a collaborative team.** Create module-aligned workers with channels reflecting dependencies. Each worker gets: its assigned step(s), the relevant file references from the plan, and clear scope boundaries. Workers that depend on each other's outputs get mutual channels so they can share interfaces and types directly.
 
-3. **Workers execute.** Each worker writes code, runs its step's verify check, and sends a completion message to the parent when done. Workers communicate laterally via channels to share interfaces, types, or contracts that unblock peer dependencies. Workers do not edit the plan file or commit. If a worker fails verification or gets stuck, it escalates to the primary via `send`. The primary decides whether to intervene, mark the step `blocked`, or tear down the group — same judgment as the direct path: try to fix it, stop when stuck.
+3. **Workers execute.** Each worker writes code, runs its step's verify check, and finishes. Workers communicate laterally via channels to share interfaces, types, or contracts that unblock peer dependencies. Workers do not edit the plan file or commit. If a worker fails verification or gets stuck, it escalates to the primary via `send`. The primary decides whether to intervene, mark the step `blocked`, or tear down the group — same judgment as the direct path: try to fix it, stop when stuck.
 
-4. **Track progress.** As workers report completions, update plan status fields — mark steps done as they finish. If a worker reports failure and the primary can't resolve it, mark the step `blocked` with an explanation, tear down the group, commit the current state, and stop.
+4. **Track progress.** As `<agent_complete>` notifications arrive, update plan status fields — mark steps done as they finish. If a worker reports failure and the primary can't resolve it, mark the step `blocked` with an explanation, tear down the group, commit the current state, and stop.
 
 5. **Commit at idle.** When `<group_idle>` fires, the phase is complete. Review the state, run any cross-cutting verification, commit all changes (code + plan updates) together, and decide the next phase.
 
@@ -81,7 +81,7 @@ When in doubt: if you're changing *what* gets done, stop and talk to the user. I
 
 - **Small plans, direct execution** — if it's ≤ 5 files and under ~300 lines, just do it yourself. Don't over-orchestrate.
 - **Large plans, orchestrate** — the primary never reads source files or writes code. Workers do the work; the primary manages flow, plan status, and commits.
-- **Workers don't edit the plan or commit** — the primary owns the plan file and the git history. Workers report; the primary records.
+- **Workers don't edit the plan or commit** — the primary owns the plan file and the git history. Workers finish (their final output is delivered automatically via `<agent_complete>`); the primary records progress.
 - **Channels resolve dependencies, phases are for control** — inter-step dependencies are handled by worker-to-worker communication. The primary slices work into phases for its own ability to review, commit, and course-correct.
 - **One shot** — drive through the full plan without stopping for scheduled reviews. Interrupt when you discover something the plan didn't decide — an architecture conflict, a scope change, a design choice that wasn't anticipated. If the plan needs frequent interrupts, the plan is the problem.
 - **Architecture is inviolable** — the architecture section is a hard contract. Steps flex; architecture doesn't.
