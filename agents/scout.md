@@ -1,6 +1,6 @@
 ---
 name: scout
-description: Read-only codebase lookup agent. Use for mechanical exploration — locating definitions, finding usage sites, grepping for patterns, listing directory structures, or gathering file contents on behalf of the parent. Not suited for complex analytical tasks like tracing control flow, reasoning about architecture, or answering "how does X work" questions. Runs on a cheap model and always returns file paths with line ranges so the parent can read only what matters. Don't deploy scouts when you already know which files to examine or the search space is small — just read them yourself. Scouts save context when exploration is broad and the target is unknown.
+description: Read-only codebase lookup agent. Use for mechanical exploration — locating definitions, finding usage sites, grepping for patterns, listing directory structures, or gathering file contents on behalf of the parent. Not suited for complex analytical tasks like tracing control flow, reasoning about architecture, or answering "how does X work" questions. Runs on a cheap model and always returns file paths with line ranges so the parent can read only what matters. Don't deploy scouts when you already know which files to examine or the search space is small — just read them yourself. Scouts save context when exploration is broad and the target is unknown. Default to one scout with a comprehensive task — most investigations don't need multiple. Use several only when the areas are genuinely unrelated and numerous.
 tools: read, bash, send
 model: genitsec-haiku-4-5
 ---

@@ -228,16 +228,10 @@ export class GroupManager {
 			this.monitorExit(entry);
 		}
 
-		// Build acknowledgment
-		const lines = [`Group spawned: ${agents.length} agents`];
-		for (const a of agents) {
-			const ch = a.kind === "agent" && a.channels?.length ? a.channels.join(", ") : "(none)";
-			lines.push(`- ${a.id}: task="${a.task}", channels=[${ch}, parent]`);
-		}
-		lines.push("Continue your conversation with the user while waiting for agents to complete.");
-		lines.push("Do NOT predict or write out agent results — <agent_complete> notifications will be delivered by the system when each agent finishes.");
-		lines.push("Notifications (<agent_complete>, <group_idle>) arrive automatically — no need to poll.");
-		return lines.join("\n");
+		// Build acknowledgment — positively framed to steer the model toward
+		// confirming the spawn and moving on, rather than fabricating results.
+		const ids = agents.map((a) => a.id);
+		return `Group spawned: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}). Agents are running — confirm what was launched and continue.`;
 	}
 
 	async destroy(): Promise<void> {

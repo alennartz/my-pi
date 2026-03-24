@@ -25,7 +25,7 @@ Before anything else:
 
 ### 1. Investigate
 
-Scout the code that the architecture references — the impacted modules, the interfaces that will change, the files where work will happen. Spawn a scout agent to explore broadly, then work from its prose summary plus surgical reads of the specific references you need to pin down exact methods, types, and files.
+Scout the code that the architecture references — the impacted modules, the interfaces that will change, the files where work will happen.
 
 As you investigate, watch for **misalignment** between the architecture and the codebase. If you find something that contradicts an architectural decision — a module that doesn't exist, an interface shaped differently than assumed, a pattern that conflicts — surface it to the user before proceeding. Don't silently adapt.
 

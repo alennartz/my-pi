@@ -524,9 +524,8 @@ export default function (pi: ExtensionAPI) {
 			"Spawns a group of agents that run in parallel with isolated contexts. Non-blocking — returns immediately with an acknowledgment. Live status shown in the widget.",
 			"One active group at a time. Each agent gets its own pi process. Agents communicate via the send/respond tools using channels declared at spawn time.",
 			"Parent (you) is auto-injected into every agent's channel list. The channels field governs agent-to-agent peer communication only.",
-			"Notifications arrive automatically: <agent_complete> when each agent finishes, <group_idle> when all are done. No need to poll — continue other work or wait. Call teardown_group to end the group when ready.",
-			"**CRITICAL: NEVER fabricate, predict, or simulate agent output.** You have ZERO information about agent results until <agent_complete> and <group_idle> notifications are delivered by the system. Do NOT generate these tags yourself. Do NOT write out what you think agents will return. Do NOT summarize results you have not received. Making up agent output and presenting it as real is a critical violation — it delivers false information to the user. After spawning agents, either continue with other work or wait. You know NOTHING about their results until the system tells you.",
-			"**IMPORTANT:** When you receive a notification (<agent_complete>, <agent_message>, <group_idle>), process the information but do NOT echo or reproduce the notification content in your response. The notification is already visible to the user. Respond with your analysis, decisions, or next actions — not a copy of what was delivered.",
+			"Spawning is non-blocking — results arrive later as system notifications. After spawning, briefly confirm what was launched, then either continue with independent work or end your turn.",
+			"When system notifications arrive, respond with your analysis and next actions. The notification content is already visible to the user — summarize your takeaway, not the raw content.",
 			"Use subagent when the work needs multiple coordinated agents, specialized personas, or a clean slate. Use fork when you want a copy of yourself with your full context to explore something.",
 			"For task decomposition, pattern selection, and when-to-delegate guidance, read the orchestrating-agents skill.",
 		],
@@ -616,8 +615,8 @@ export default function (pi: ExtensionAPI) {
 		promptGuidelines: [
 			"Clones yourself into a sub-agent with your full conversation history. The clone explores independently while you continue working — use for divergent exploration without committing context.",
 			"One parameter: task. Use fork when you want a copy of yourself with full context to explore an alternative path. Use subagent for multiple agents, specialized personas, or a clean slate.",
-			"One active group at a time. Fork creates a single-agent group — send, respond, check_status, and teardown_group all work normally. Notifications arrive the same way (<agent_complete>, <group_idle>).",
-			"**CRITICAL: NEVER fabricate, predict, or simulate forked agent output.** You have ZERO information about what the fork produces until the <agent_complete> notification is delivered by the system. Do NOT make up results. Do NOT write out what you think the fork will return. Wait for the actual notification.",
+			"One active group at a time. Fork creates a single-agent group — send, respond, check_status, and teardown_group all work normally. Notifications arrive the same way as subagent groups.",
+			"Forking is non-blocking — results arrive later as a system notification. After forking, briefly confirm what was launched, then either continue with independent work or end your turn.",
 		],
 		parameters: Type.Object({
 			task: Type.String({ description: "Task description for the forked clone" }),
