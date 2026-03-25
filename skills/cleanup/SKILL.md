@@ -45,7 +45,7 @@ Scan the working artifacts (brainstorm, plan, review) for decisions worth preser
 
 ### 3. Wait for Background Agents
 
-When DR extraction is complete, wait for `<group_idle>` if the background agents haven't finished yet. Review their output for sanity — the codemap should reflect the implementation changes, and docs should be accurate. If a background agent failed or produced incorrect output, redo that work yourself before proceeding.
+When DR extraction is complete, wait for the background agents' `<agent_complete>` notifications if they haven't finished yet. Review their output for sanity — the codemap should reflect the implementation changes, and docs should be accurate. If a background agent failed or produced incorrect output, redo that work yourself before proceeding.
 
 ### 4. Delete Working Artifacts
 

@@ -63,7 +63,7 @@ For larger plans. The primary orchestrates; workers write code.
 
 4. **Track progress.** As `<agent_complete>` notifications arrive, update plan status fields — mark steps done as they finish. If a worker reports failure and the primary can't resolve it, mark the step `blocked` with an explanation, tear down the group, commit the current state, and stop.
 
-5. **Commit at idle.** When `<group_idle>` fires, the phase is complete. Review the state, run any cross-cutting verification, commit all changes (code + plan updates) together, and decide the next phase.
+5. **Commit when workers finish.** When all workers' `<agent_complete>` notifications have arrived, the phase is complete. Review the state, run any cross-cutting verification, commit all changes (code + plan updates) together, and decide the next phase.
 
 6. **Slice into phases for control.** On larger plans, don't try to run everything in one group. Slice the work into phases — groups of steps that form a natural unit. After each phase: review, commit, course-correct, engage the user if needed. Phases exist for your own control, not for dependency management (channels handle that).
 
@@ -86,7 +86,7 @@ When in doubt: if you're changing *what* gets done, stop and talk to the user. I
 - **One shot** — drive through the full plan without stopping for scheduled reviews. Interrupt when you discover something the plan didn't decide — an architecture conflict, a scope change, a design choice that wasn't anticipated. If the plan needs frequent interrupts, the plan is the problem.
 - **Architecture is inviolable** — the architecture section is a hard contract. Steps flex; architecture doesn't.
 - **Verify early and often** — cheap checks after every step. Expensive checks batched. The plan's verify field is the floor, not the ceiling.
-- **Commit per phase** — in direct mode, commit per step. In orchestrated mode, commit when the group goes idle and the phase is complete. Real commit messages.
+- **Commit per phase** — in direct mode, commit per step. In orchestrated mode, commit when all workers have finished and the phase is complete. Real commit messages.
 - **Resumable** — start from the first step that isn't done. Interruptions are cheap.
 - **Best effort on errors** — try to fix problems. Stop when stuck, not after a fixed retry count.
 - **Don't expand scope** — execute what the plan says. No bonus features, no "while I'm here" refactors.

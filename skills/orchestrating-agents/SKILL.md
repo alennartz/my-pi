@@ -9,7 +9,7 @@ description: "Delegate work to subagents to preserve primary agent context, para
 
 Subagents let you delegate work to separate agent processes, each with its own context window. The primary benefit is **context efficiency** — a subagent absorbs all the heavy tool use (file reads, edits, test runs, investigations) and returns a compact result. Your context stays clean, letting you handle more total work across a session.
 
-Beyond context management, subagents enable parallel execution, specialist coordination, and rich inter-agent communication. This skill covers the thinking that happens *before* you call `subagent` — task decomposition, pattern selection, topology design. Once the group is running, the tool descriptions, notifications (`<agent_complete>`, `<group_idle>`, `<agent_message>`), and communication tools carry you from there.
+Beyond context management, subagents enable parallel execution, specialist coordination, and rich inter-agent communication. This skill covers the thinking that happens *before* you call `subagent` — task decomposition, pattern selection, topology design. Once agents are running, the tool descriptions, notifications (`<agent_complete>`, `<agent_message>`), and communication tools carry you from there.
 
 ## When to Use Subagents
 
@@ -58,7 +58,7 @@ Each agent should produce a **coherent, independently verifiable deliverable**. 
 
 ### Fan-out / Fan-in
 
-Independent parallel tasks. No peer communication needed. Parent spawns agents, waits for `<group_idle>`, gathers results.
+Independent parallel tasks. No peer communication needed. Parent spawns agents, waits for `<agent_complete>` notifications, gathers results.
 
 ```
 agents: [a, b, c]  — no channels
@@ -183,17 +183,17 @@ Avoid designs where agents form blocking rings. If A blocks on B, B must not blo
 
 ## Recursive Subagents
 
-Any agent — including a child agent — can spawn its own sub-group using the same `subagent` tool. The child has the full tool suite (`subagent`, `send`, `respond`, `check_status`, `teardown_group`).
+Any agent — including a child agent — can spawn its own subagents using the same `subagent` tool. The child has the full tool suite (`subagent`, `fork`, `send`, `respond`, `check_status`, `teardown`).
 
-Normally, the primary agent (with the TUI) is the lead — it decomposes work and spawns workers directly. But if a worker's task is large enough to warrant further decomposition, that worker can spawn its own sub-group. The primary sees only the worker; the worker's sub-group is invisible above it. This enables hierarchical decomposition without the primary managing every leaf agent.
+Normally, the primary agent (with the TUI) is the lead — it decomposes work and spawns workers directly. But if a worker's task is large enough to warrant further decomposition, that worker can spawn its own subagents. The primary sees only the worker; the worker's subagents are invisible above it. This enables hierarchical decomposition without the primary managing every leaf agent.
 
 ## Key Principles
 
-- **Design before spawning** — think through decomposition, pattern, and topology before calling `subagent`. Restructuring a running group means tearing down and respawning.
+- **Design before spawning** — think through decomposition, pattern, and topology before calling `subagent`. You can add agents incrementally, but thoughtful upfront design is still cheaper than ad-hoc restructuring.
 - **Task strings are the whole brief** — for default agents, the task string is all they get. Make it complete: identity, mission, scope, output expectations.
 - **Minimal topology** — only connect agents that need to talk. Parent is always there; peer channels are for lateral communication only.
 - **Default to fire-and-forget** — use blocking sends only when the sender genuinely can't continue without a response.
-- **One group at a time** — the `subagent` tool enforces this. Tear down before spawning a new group.
-- **Let notifications drive you** — `<agent_complete>` and `<group_idle>` arrive automatically. Don't poll with `check_status` unless you have a specific reason.
+- **Incremental growth** — agents can be added to the running set by calling `subagent` again. Individual agents can be removed with `teardown(agent)`, or all agents torn down at once with `teardown()`.
+- **Let notifications drive you** — `<agent_complete>` arrives automatically when each agent finishes. Don't poll with `check_status` unless you have a specific reason.
 
 For creating persistent, reusable agent definitions (the `.md` files referenced by the `agent` field), see the **specialist-design** skill.
