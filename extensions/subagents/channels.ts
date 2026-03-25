@@ -87,8 +87,11 @@ export function addToTopology(
 	// Add new agents' entries
 	for (const agent of agents) {
 		if (forkIds.has(agent.id)) {
-			// Fork agents get parent-equivalent access: all existing IDs + parent
+			// Fork agents get parent-equivalent access: all existing + same-batch IDs + parent
 			const targets = new Set<string>(existingIds);
+			for (const id of newIds) {
+				if (id !== agent.id) targets.add(id);
+			}
 			targets.add("parent");
 			topology.set(agent.id, targets);
 		} else {

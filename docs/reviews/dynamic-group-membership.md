@@ -37,9 +37,11 @@ The subagent tool calls `validateTopology(params.agents)` before `manager.start(
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/channels.ts:89-93`
-- **Status:** open
+- **Status:** resolved
 
 When `addToTopology` processes a fork agent, it sets targets to `existingIds` + "parent", excluding other new agents in the same batch. Meanwhile, `group.ts:155-160` builds the fork's `allChannels` from `this.entries`, which includes same-batch agents pushed in earlier loop iterations. The system prompt advertises those agents as reachable peers, but the broker's topology prevents sending to them. Currently unreachable through the tool interface (fork adds a single agent, subagent creates only regular agents), but the function's contract promises "parent-equivalent access" for forks, which would break if `start()` were ever called with a mixed batch containing forks.
+
+**Resolution:** Added same-batch `newIds` (excluding self) to fork targets in `addToTopology`, making the function's "parent-equivalent access" contract honest for mixed batches.
 
 ### 4. Dead `formatTokenCount` in index.ts
 
