@@ -27,11 +27,6 @@ export interface UsageData {
 	cost: string;
 }
 
-export interface GroupIdleData {
-	agents: AgentCompleteData[];
-	usage: UsageData;
-}
-
 export interface GroupCompleteData {
 	agents: AgentCompleteData[];
 	usage: UsageData;
@@ -73,17 +68,6 @@ function serializeAgentForXml(agent: AgentCompleteData): string {
 
 export function serializeAgentComplete(data: AgentCompleteData): string {
 	return serializeAgentForXml(data);
-}
-
-export function serializeGroupIdle(data: GroupIdleData): string {
-	const lines: string[] = ["<group_idle>"];
-	for (const agent of data.agents) {
-		lines.push(`  <agent id="${escapeXml(agent.id)}" status="${agent.status}" />`);
-	}
-	lines.push(`  <usage input="${escapeXml(data.usage.input)}" output="${escapeXml(data.usage.output)}" cost="${escapeXml(data.usage.cost)}" />`);
-	lines.push("  All agents have finished. Send messages to continue work or call teardown_group when done.");
-	lines.push("</group_idle>");
-	return lines.join("\n");
 }
 
 export function serializeGroupComplete(data: GroupCompleteData): string {

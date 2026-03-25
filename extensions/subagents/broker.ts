@@ -34,7 +34,7 @@ export class Broker {
 	private connections = new Map<string, net.Socket>();
 	private deadlockGraph = new DeadlockGraph();
 	private pendingCorrelations = new Map<string, PendingCorrelation>();
-	private failedAgents = new Set<string>();
+	private removedAgents = new Map<string, "crashed" | "removed">();
 	private topology: Topology;
 	private onParentMessage: (msg: BrokerResponse) => void;
 
@@ -79,8 +79,16 @@ export class Broker {
 		} catch {}
 	}
 
-	agentDied(agentId: string): void {
-		this.failedAgents.add(agentId);
+	agentCrashed(agentId: string): void {
+		this.cleanupAgent(agentId, "crashed", `Agent "${agentId}" has crashed and cannot receive messages`);
+	}
+
+	agentRemoved(agentId: string): void {
+		this.cleanupAgent(agentId, "removed", `Agent "${agentId}" was removed`);
+	}
+
+	private cleanupAgent(agentId: string, reason: "crashed" | "removed", errorMessage: string): void {
+		this.removedAgents.set(agentId, reason);
 
 		// Send synthetic error responses to all blocked senders waiting on this agent
 		for (const [corrId, pending] of this.pendingCorrelations) {
@@ -89,14 +97,14 @@ export class Broker {
 				this.writeTo(pending.fromSocket, {
 					type: "error",
 					correlationId: corrId,
-					error: `Agent "${agentId}" died while waiting for response`,
+					error: errorMessage,
 				});
 				this.pendingCorrelations.delete(corrId);
 				this.onBlockingSendEnd?.(pending.from, corrId);
 			}
 		}
 
-		// Also clean up correlations where the dead agent was the sender
+		// Also clean up correlations where the agent was the sender
 		for (const [corrId, pending] of this.pendingCorrelations) {
 			if (pending.from === agentId) {
 				const target = this.correlationTargets.get(corrId);
@@ -212,12 +220,16 @@ export class Broker {
 			return;
 		}
 
-		// Dead agent check
-		if (this.failedAgents.has(to)) {
+		// Dead/removed agent check
+		const removedReason = this.removedAgents.get(to);
+		if (removedReason !== undefined) {
+			const error = removedReason === "crashed"
+				? `Agent "${to}" has crashed and cannot receive messages`
+				: `Agent "${to}" was removed`;
 			this.writeTo(senderSocket, {
 				type: "error",
 				correlationId,
-				error: `Agent "${to}" has failed and cannot receive messages`,
+				error,
 			});
 			return;
 		}

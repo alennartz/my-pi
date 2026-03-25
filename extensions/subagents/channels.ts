@@ -56,6 +56,71 @@ export function validateTopology(agents: AgentChannelSpec[]): string | null {
 }
 
 /**
+ * Add new agents to an existing topology in place.
+ *
+ * For each new agent: if its id is in `forkIds`, set targets to all
+ * `existingIds` + "parent" (parent-equivalent access); otherwise, set
+ * targets to declared channels + "parent" (same logic as buildTopology).
+ * All new agent IDs are added to parent's target set.
+ *
+ * Validates that declared channels reference either existing IDs or other
+ * new IDs in the batch. Throws on violation.
+ */
+export function addToTopology(
+	topology: Topology,
+	agents: AgentChannelSpec[],
+	existingIds: Set<string>,
+	forkIds: Set<string>,
+): void {
+	const newIds = new Set(agents.map((a) => a.id));
+
+	// Validate: declared channels must reference existing or new-batch IDs
+	for (const agent of agents) {
+		if (!agent.channels) continue;
+		for (const target of agent.channels) {
+			if (!existingIds.has(target) && !newIds.has(target)) {
+				throw new Error(`Agent "${agent.id}" references unknown peer "${target}"`);
+			}
+		}
+	}
+
+	// Add new agents' entries
+	for (const agent of agents) {
+		if (forkIds.has(agent.id)) {
+			// Fork agents get parent-equivalent access: all existing IDs + parent
+			const targets = new Set<string>(existingIds);
+			targets.add("parent");
+			topology.set(agent.id, targets);
+		} else {
+			const targets = new Set<string>(agent.channels ?? []);
+			targets.add("parent");
+			topology.set(agent.id, targets);
+		}
+	}
+
+	// Add all new IDs to parent's target set
+	const parentTargets = topology.get("parent");
+	if (parentTargets) {
+		for (const id of newIds) {
+			parentTargets.add(id);
+		}
+	}
+}
+
+/**
+ * Remove an agent from the topology.
+ *
+ * Deletes the agent's entry and removes it from all remaining agents'
+ * target sets (including parent's).
+ */
+export function removeFromTopology(topology: Topology, agentId: string): void {
+	topology.delete(agentId);
+	for (const [, targets] of topology) {
+		targets.delete(agentId);
+	}
+}
+
+/**
  * Runtime check: can `from` send to `to`?
  */
 export function canSend(topology: Topology, from: string, to: string): boolean {

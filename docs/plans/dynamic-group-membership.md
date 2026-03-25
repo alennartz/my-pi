@@ -70,6 +70,8 @@ parameters: {
 
 ## Steps
 
+**Pre-implementation commit:** `3e1b8cce8d9e3ff78517793cff203735121aea33`
+
 ### Step 1: Add topology mutation functions to channels.ts
 
 Add two new exported functions to `extensions/subagents/channels.ts`:
@@ -81,7 +83,7 @@ Validate before mutating: new agents' declared channels must reference either ex
 **`removeFromTopology(topology: Topology, agentId: string): void`** — Deletes the agent's entry from the map. Iterates all remaining entries and removes `agentId` from their target sets (including parent's).
 
 **Verify:** Functions exported. `addToTopology` extends topology for regular and fork agents without touching existing agents' entries. `removeFromTopology` cleans all references. Existing `buildTopology`, `validateTopology`, `canSend` unchanged.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Expand broker dead agent handling for intentional removal
 
@@ -93,7 +95,7 @@ In `extensions/subagents/broker.ts`:
 - Update `handleSend` dead agent check to read from `removedAgents` map and include the reason-specific message.
 
 **Verify:** Both `agentCrashed` and `agentRemoved` callable. Sends to crashed agents get "crashed" error, sends to removed agents get "removed" error. Pending correlations cleaned up in both paths.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Remove group_idle serialization from messages.ts
 
@@ -105,7 +107,7 @@ In `extensions/subagents/messages.ts`:
 Leave `GroupCompleteData`, `serializeGroupComplete`, `AgentCompleteData`, `serializeAgentComplete` intact.
 
 **Verify:** No exports of `GroupIdleData` or `serializeGroupIdle`. All other serializers present and unchanged.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Rename GroupManager → SubagentManager and restructure for long-lived use
 
