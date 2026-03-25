@@ -1,9 +1,10 @@
 /**
- * Group lifecycle management.
+ * Subagent lifecycle management.
  *
- * Spawns pi --mode rpc child processes, manages per-agent state,
- * subscribes to RPC event streams for widget updates, and coordinates
- * broker startup/teardown.
+ * Long-lived manager that spawns pi --mode rpc child processes, manages
+ * per-agent state, subscribes to RPC event streams for widget updates,
+ * and coordinates broker startup/teardown. Infrastructure is created
+ * lazily on first start() and torn down when the last agent is removed.
  */
 
 import * as fs from "node:fs";
@@ -13,10 +14,12 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { RpcChild } from "./rpc-child.js";
 import { Broker } from "./broker.js";
 import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs } from "./agents.js";
-import type { Topology } from "./channels.js";
+import { type Topology, buildTopology, addToTopology, removeFromTopology } from "./channels.js";
 import {
 	serializeSubagentIdentity,
 	serializeAgentMessage,
+	serializeGroupComplete,
+	serializeAgentComplete,
 	type GroupCompleteData,
 	type AgentCompleteData,
 	type BrokerResponse,
@@ -50,29 +53,25 @@ interface AgentEntry {
 	status: AgentStatus;
 }
 
-export interface GroupManagerOptions {
+export interface SubagentManagerOptions {
 	pi: ExtensionAPI;
-	agents: AgentSpec[];
-	agentConfigs: AgentConfig[];
-	topology: Topology;
-	skillPaths: Map<string, string[]>;
 	cwd: string;
+	skillPaths: Map<string, string[]>;
+	resolveContextWindow: (modelId: string) => number | undefined;
 	onUpdate: () => void;
-	onGroupIdle: () => void;
 	onAgentComplete: (agentId: string) => void;
 	onParentMessage: (xml: string, meta: { correlationId?: string; responseExpected: boolean }) => void;
-	resolveContextWindow?: (modelId: string) => number | undefined;
 }
 
-export class GroupManager {
+export class SubagentManager {
 	private entries: AgentEntry[] = [];
 	private broker: Broker | null = null;
-	private opts: GroupManagerOptions;
-	private destroyed = false;
+	private topology: Topology | null = null;
+	private opts: SubagentManagerOptions;
 	private correlationToTarget = new Map<string, string>();
 	private sessionDir: string | null = null;
 
-	constructor(opts: GroupManagerOptions) {
+	constructor(opts: SubagentManagerOptions) {
 		this.opts = opts;
 	}
 
@@ -84,7 +83,11 @@ export class GroupManager {
 		return this.entries.find((e) => e.id === agentId)?.status;
 	}
 
-	getCompletionReport(): GroupCompleteData {
+	hasAgents(): boolean {
+		return this.entries.length > 0;
+	}
+
+	private getCompletionReport(): GroupCompleteData {
 		const agents: AgentCompleteData[] = this.entries.map((e) => ({
 			id: e.id,
 			status: e.status.state === "failed" ? "failed" : "idle",
@@ -104,38 +107,71 @@ export class GroupManager {
 		};
 	}
 
-	async start(): Promise<string> {
-		const { pi, agents, agentConfigs, topology, skillPaths, cwd } = this.opts;
+	async start(agents: AgentSpec[], agentConfigs: AgentConfig[]): Promise<string> {
+		const { pi, cwd, skillPaths } = this.opts;
+		const isFirstCall = this.broker === null;
 
-		// Create shared temp directory for session files
-		this.sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-"));
+		if (isFirstCall) {
+			// Create shared temp directory for session files
+			this.sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-"));
 
-		// Start broker
-		this.broker = new Broker({
-			topology,
-			onParentMessage: (msg) => this.handleParentMessage(msg),
-			onBlockingSendStart: (from, to, correlationId) => this.setAgentWaiting(from, correlationId, to),
-			onBlockingSendEnd: (from, correlationId) => this.clearAgentWaiting(from, correlationId),
-		});
-		await this.broker.start();
+			// Build initial topology
+			const specs = agents.map((a) => ({
+				id: a.id,
+				channels: a.kind === "agent" ? a.channels : undefined,
+			}));
+			this.topology = buildTopology(specs);
 
-		// Build and spawn each agent
+			// Start broker
+			this.broker = new Broker({
+				topology: this.topology,
+				onParentMessage: (msg) => this.handleParentMessage(msg),
+				onBlockingSendStart: (from, to, correlationId) => this.setAgentWaiting(from, correlationId, to),
+				onBlockingSendEnd: (from, correlationId) => this.clearAgentWaiting(from, correlationId),
+			});
+			await this.broker.start();
+		} else {
+			// Extend existing topology
+			const existingIds = new Set(this.entries.map((e) => e.id));
+			const forkIds = new Set(agents.filter((a) => a.kind === "fork").map((a) => a.id));
+			const specs = agents.map((a) => ({
+				id: a.id,
+				channels: a.kind === "agent" ? a.channels : undefined,
+			}));
+			addToTopology(this.topology!, specs, existingIds, forkIds);
+		}
+
+		// Build and spawn each new agent
+		const newEntries: AgentEntry[] = [];
+
 		for (const agentSpec of agents) {
 			const channels = agentSpec.kind === "agent" ? (agentSpec.channels ?? []) : [];
 			const allChannels = [...channels, "parent"];
 
+			// For fork agents, add all existing agent IDs as channels (parent-equivalent)
+			if (agentSpec.kind === "fork") {
+				for (const entry of this.entries) {
+					if (!allChannels.includes(entry.id)) {
+						allChannels.push(entry.id);
+					}
+				}
+			}
+
 			// Build identity XML for system prompt
-			const peers = agents
+			const allAgents = [...this.entries.map((e) => ({ id: e.id, kind: "agent" as const, task: e.task, agentDef: e.agentDef })), ...agents];
+			const peers = allAgents
 				.filter((a) => a.id !== agentSpec.id)
 				.filter((a) => allChannels.includes(a.id) || agentSpec.id === "parent")
 				.map((a) => {
-					const peerConfig = a.kind === "agent" && a.agent
-						? agentConfigs.find((c) => c.name === a.agent)
-						: undefined;
+					const peerConfig = "agentDef" in a && a.agentDef
+						? agentConfigs.find((c) => c.name === a.agentDef)
+						: a.kind === "agent" && "agent" in a && (a as any).agent
+							? agentConfigs.find((c) => c.name === (a as any).agent)
+							: undefined;
 					return {
 						id: a.id,
 						description: peerConfig?.description,
-						isDefault: a.kind === "agent" ? !a.agent : false,
+						isDefault: a.kind === "agent" ? !("agent" in a && (a as any).agent) && !("agentDef" in a && a.agentDef) : false,
 					};
 				});
 
@@ -157,12 +193,12 @@ export class GroupManager {
 			let agentConfig: AgentConfig | undefined;
 
 			if (agentSpec.kind === "fork") {
-				args = buildForkArgs(agentSpec, this.sessionDir);
+				args = buildForkArgs(agentSpec, this.sessionDir!);
 				// Fork inherits system prompt from session — no agentConfig append
 			} else {
 				agentConfig = agentSpec.agent ? agentConfigs.find((a) => a.name === agentSpec.agent) : undefined;
 				const agentSkillPaths = skillPaths.get(agentSpec.id) ?? [];
-				args = buildAgentArgs(agentConfig, agentSkillPaths, this.sessionDir);
+				args = buildAgentArgs(agentConfig, agentSkillPaths, this.sessionDir!);
 				if (agentConfig) {
 					args.push("--append-system-prompt", agentConfig.systemPrompt);
 				}
@@ -175,7 +211,7 @@ export class GroupManager {
 				id: agentSpec.id,
 				channels: allChannels,
 				task: agentSpec.task,
-				brokerSocket: this.broker.socketPath,
+				brokerSocket: this.broker!.socketPath,
 				...(agentConfig?.tools ? { tools: agentConfig.tools } : {}),
 			});
 
@@ -207,36 +243,46 @@ export class GroupManager {
 				status,
 			};
 
+			newEntries.push(entry);
 			this.entries.push(entry);
 
 			// Subscribe to RPC events
 			rpc.onEvent((event) => this.handleRpcEvent(entry, event));
 		}
 
-		// Start all RPC children
-		await Promise.all(this.entries.map((e) => e.rpc.start()));
+		// Start new RPC children
+		await Promise.all(newEntries.map((e) => e.rpc.start()));
 
 		// Send initial task prompts
-		for (const entry of this.entries) {
+		for (const entry of newEntries) {
 			entry.rpc.prompt(`Task: ${entry.task}`).catch(() => {
 				// Process may have died
 			});
 		}
 
 		// Monitor for process exits
-		for (const entry of this.entries) {
+		for (const entry of newEntries) {
 			this.monitorExit(entry);
 		}
 
-		// Build acknowledgment — positively framed to steer the model toward
-		// confirming the spawn and moving on, rather than fabricating results.
+		// Build acknowledgment
 		const ids = agents.map((a) => a.id);
-		return `Group spawned: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}). Agents are running — confirm what was launched and continue.`;
+		if (isFirstCall) {
+			return `Agents spawned: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}). Agents are running — confirm what was launched and continue.`;
+		}
+		return `Added ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}) to existing agents. Agents are running — confirm what was launched and continue.`;
 	}
 
-	async destroy(): Promise<void> {
-		if (this.destroyed) return;
-		this.destroyed = true;
+	async teardown(agentId?: string): Promise<{ report: string; empty: boolean }> {
+		if (agentId) {
+			return this.teardownSingle(agentId);
+		}
+		return this.teardownAll();
+	}
+
+	private async teardownAll(): Promise<{ report: string; empty: boolean }> {
+		const report = this.getCompletionReport();
+		const xml = serializeGroupComplete(report);
 
 		// Stop all children
 		await Promise.all(this.entries.map((e) => e.rpc.stop()));
@@ -252,10 +298,77 @@ export class GroupManager {
 			try {
 				fs.rmSync(this.sessionDir, { recursive: true, force: true });
 			} catch {
-				// Best effort — may already be gone
+				// Best effort
 			}
 			this.sessionDir = null;
 		}
+
+		this.entries = [];
+		this.topology = null;
+		this.correlationToTarget.clear();
+
+		return { report: xml, empty: true };
+	}
+
+	private async teardownSingle(agentId: string): Promise<{ report: string; empty: boolean }> {
+		const entryIdx = this.entries.findIndex((e) => e.id === agentId);
+		if (entryIdx === -1) {
+			throw new Error(`Unknown agent: "${agentId}"`);
+		}
+
+		const entry = this.entries[entryIdx];
+
+		// Build single-agent report before stopping
+		const data: AgentCompleteData = {
+			id: entry.id,
+			status: entry.status.state === "failed" ? "failed" : "idle",
+			output: entry.status.lastOutput,
+			error: entry.status.state === "failed" ? (entry.rpc.stderr || "Process crashed") : undefined,
+		};
+		const xml = serializeAgentComplete(data);
+
+		// Stop the agent's RPC child
+		await entry.rpc.stop();
+
+		// Notify broker
+		if (this.broker) {
+			this.broker.agentRemoved(agentId);
+		}
+
+		// Update topology
+		if (this.topology) {
+			removeFromTopology(this.topology, agentId);
+		}
+
+		// Remove from entries
+		this.entries.splice(entryIdx, 1);
+
+		// Clean up correlation tracking for this agent
+		for (const [corrId, target] of this.correlationToTarget) {
+			if (target === agentId) {
+				this.correlationToTarget.delete(corrId);
+			}
+		}
+
+		// If no agents left, tear down infrastructure
+		if (this.entries.length === 0) {
+			if (this.broker) {
+				await this.broker.stop();
+				this.broker = null;
+			}
+			if (this.sessionDir) {
+				try {
+					fs.rmSync(this.sessionDir, { recursive: true, force: true });
+				} catch {}
+				this.sessionDir = null;
+			}
+			this.topology = null;
+			this.correlationToTarget.clear();
+
+			return { report: xml, empty: true };
+		}
+
+		return { report: xml, empty: false };
 	}
 
 	getBroker(): Broker | null {
@@ -265,12 +378,10 @@ export class GroupManager {
 	// ─── Internal ────────────────────────────────────────────────────────
 
 	private handleRpcEvent(entry: AgentEntry, event: any): void {
-		if (this.destroyed) return;
-
 		if (event.type === "tool_execution_start") {
 			entry.status.lastActivity = `${event.toolName}(${summarizeArgs(event.args)})`.replace(/[\r\n]+/g, " ");
 			if (event.toolName === "subagent" || event.toolName === "fork") entry.status.hasSubgroup = true;
-			if (event.toolName === "teardown_group") entry.status.hasSubgroup = false;
+			if (event.toolName === "teardown_group" || event.toolName === "teardown") entry.status.hasSubgroup = false;
 			this.opts.onUpdate();
 		}
 
@@ -319,24 +430,22 @@ export class GroupManager {
 				entry.status.lastActivity = undefined;
 				this.opts.onUpdate();
 				this.opts.onAgentComplete(entry.id);
-				this.checkGroupIdle();
 			}
 		}
 	}
 
 	private monitorExit(entry: AgentEntry): void {
 		const check = () => {
-			if (this.destroyed) return;
+			if (!this.entries.includes(entry)) return; // entry was removed
 			if (entry.rpc.exitCode !== null && entry.status.state !== "failed") {
 				if (entry.rpc.exitCode !== 0) {
 					entry.status.state = "failed";
 					entry.status.lastActivity = undefined;
 					if (this.broker) {
-						this.broker.agentDied(entry.id);
+						this.broker.agentCrashed(entry.id);
 					}
 					this.opts.onUpdate();
 					this.opts.onAgentComplete(entry.id);
-					this.checkGroupIdle();
 				}
 			}
 		};
@@ -344,22 +453,10 @@ export class GroupManager {
 		// Poll for exit (RPC child doesn't expose an exit event directly)
 		const interval = setInterval(() => {
 			check();
-			if (entry.rpc.exitCode !== null || this.destroyed) {
+			if (!this.entries.includes(entry) || entry.rpc.exitCode !== null) {
 				clearInterval(interval);
 			}
 		}, 500);
-	}
-
-	private checkGroupIdle(): void {
-		if (this.destroyed) return;
-
-		const allDone = this.entries.every(
-			(e) => e.status.state === "idle" || e.status.state === "failed",
-		);
-
-		if (allDone && this.broker?.isQuiet()) {
-			this.opts.onGroupIdle();
-		}
 	}
 
 	private handleParentMessage(msg: BrokerResponse): void {

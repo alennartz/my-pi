@@ -145,7 +145,7 @@ No `agents`, `agentConfigs`, or `topology` in constructor.
 **Retain:** `onAgentComplete` per-agent notifications, `getAgentStatus`, `getAgentStatuses`, `correlationToTarget` tracking.
 
 **Verify:** Class renamed. Constructor takes only stable deps. `start()` works on first and subsequent calls (first creates infrastructure, subsequent extend it). `teardown()` works with and without id. No references to `checkGroupIdle`, `onGroupIdle`, or `destroy`.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Rewire tools, remove gating, and update guidelines in index.ts
 
