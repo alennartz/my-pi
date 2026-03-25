@@ -327,6 +327,10 @@ export class SubagentManager {
 		};
 		const xml = serializeAgentComplete(data);
 
+		// Remove from entries before stopping — prevents monitorExit from
+		// seeing the SIGTERM exit code and firing a spurious crash notification.
+		this.entries.splice(entryIdx, 1);
+
 		// Stop the agent's RPC child
 		await entry.rpc.stop();
 
@@ -339,9 +343,6 @@ export class SubagentManager {
 		if (this.topology) {
 			removeFromTopology(this.topology, agentId);
 		}
-
-		// Remove from entries
-		this.entries.splice(entryIdx, 1);
 
 		// Clean up correlation tracking for this agent
 		for (const [corrId, target] of this.correlationToTarget) {

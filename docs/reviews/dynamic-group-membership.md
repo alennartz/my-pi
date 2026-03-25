@@ -15,18 +15,22 @@ All five plan steps were implemented faithfully — topology mutation functions,
 - **Category:** plan deviation
 - **Severity:** critical
 - **Location:** `extensions/subagents/index.ts:537-540`
-- **Status:** open
+- **Status:** resolved
 
 The subagent tool calls `validateTopology(params.agents)` before `manager.start()`. This function builds its `allIds` set solely from the new batch. On incremental adds, if a new agent declares a channel to an already-running agent, `validateTopology` rejects it as "unknown peer" — even though `addToTopology` (called later in `group.ts:141`) would correctly accept it because it validates against both `existingIds` and `newIds`. This breaks the core use case of dynamic group membership: adding agents that communicate with previously-spawned agents. Either pass existing IDs into the validator, or remove the call entirely since `addToTopology` already validates.
+
+**Resolution:** Removed the `validateTopology` call and its import from index.ts. `addToTopology` in channels.ts already validates channel references against both existing and new-batch IDs, making the pre-check redundant and incorrect for incremental adds.
 
 ### 2. Race between `monitorExit` and `teardownSingle` produces spurious crash notification
 
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/group.ts:331-344` and `437-458`
-- **Status:** open
+- **Status:** resolved
 
 `teardownSingle` calls `await entry.rpc.stop()` (line 331), which kills the process and sets a non-zero exit code (SIGTERM). During the await, the `monitorExit` 500ms polling interval can fire. It passes the `!this.entries.includes(entry)` guard (entry hasn't been spliced yet), sees non-zero `exitCode`, and triggers the crash path: sets state to "failed", calls `broker.agentCrashed(id)` (sending synthetic error responses to blocked senders), and fires `onAgentComplete` (queuing a `<agent_complete status="failed">` notification). Then `teardownSingle` resumes and calls `broker.agentRemoved(id)` a second time. The result is a spurious "crashed" notification for an intentionally removed agent, which may confuse the orchestrating agent into error-handling behavior.
+
+**Resolution:** Moved `this.entries.splice(entryIdx, 1)` before `await entry.rpc.stop()` in `teardownSingle`. The `monitorExit` polling loop already has a `!this.entries.includes(entry)` guard that bails out early — splicing first ensures the guard triggers before the SIGTERM exit code is observed.
 
 ### 3. Fork topology excludes same-batch peers in `addToTopology`
 
@@ -42,9 +46,11 @@ When `addToTopology` processes a fork agent, it sets targets to `existingIds` + 
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/index.ts:943-948`
-- **Status:** open
+- **Status:** resolved
 
 `formatTokenCount` is defined at the bottom of `index.ts` but never called. Its only consumer (`aggregateUsage`) was removed in this diff. The identical function in `group.ts:535` is the one actually used.
+
+**Resolution:** Deleted the dead `formatTokenCount` function from index.ts.
 
 ## No Issues
 

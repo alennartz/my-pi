@@ -23,7 +23,7 @@ import {
 	resolveSkillPaths,
 	formatAgentList,
 } from "./agents.js";
-import { validateTopology } from "./channels.js";
+
 import type { TUI } from "@mariozechner/pi-tui";
 import { SubagentManager } from "./group.js";
 import { SubagentDashboard } from "./widget.js";
@@ -533,12 +533,6 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Validate topology (channel references)
-			const topoError = validateTopology(params.agents);
-			if (topoError) {
-				throw new Error(`Invalid topology: ${topoError}`);
-			}
-
 			// Resolve skill paths for agents that declare skills
 			const commands = pi.getCommands();
 			for (const a of params.agents) {
@@ -938,11 +932,4 @@ function formatAgentStatusDetail(s: import("./group.js").AgentStatus): string {
 		lines.push(`Pending correlations: ${s.pendingCorrelations.join(", ")}`);
 	}
 	return lines.join("\n");
-}
-
-function formatTokenCount(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1000000).toFixed(1)}M`;
 }
