@@ -173,4 +173,4 @@ In `extensions/subagents/index.ts`:
 **Collapse startGroup.** The `startGroup` helper is absorbed into the subagent tool's execute handler (or a thinner helper). Widget/dashboard setup moves to first-use initialization.
 
 **Verify:** No `activeGroup` variable. No `serializeGroupIdle` import. No `startGroup` helper. SubagentManager instantiated once. `subagent` tool adds agents without gating. `fork` tool requires `id`. `teardown` tool replaces `teardown_group` with optional `agent` param. Prompt guidelines reference new semantics.
-**Status:** not started
+**Status:** done

@@ -5,8 +5,8 @@
  * - Absent: root agent. Starts broker, registers all tools.
  * - Present: has a parent. Connects to parent's broker, registers all tools.
  *
- * Both roles register the same five tools: subagent, send, respond,
- * check_status, teardown_group. Any agent can spawn sub-groups (recursive).
+ * Both roles register the same six tools: subagent, fork, send, respond,
+ * check_status, teardown. Any agent can spawn sub-groups (recursive).
  */
 
 import * as net from "node:net";
@@ -18,20 +18,17 @@ import {
 	type AgentConfig,
 	type RegularAgentSpec,
 	type ForkAgentSpec,
-	type AgentSpec,
 	discoverAgents,
 	discoverPackageAgents,
 	resolveSkillPaths,
 	formatAgentList,
 } from "./agents.js";
-import { buildTopology, validateTopology } from "./channels.js";
+import { validateTopology } from "./channels.js";
 import type { TUI } from "@mariozechner/pi-tui";
-import { GroupManager } from "./group.js";
+import { SubagentManager } from "./group.js";
 import { SubagentDashboard } from "./widget.js";
 import {
 	serializeAgentComplete,
-	serializeGroupIdle,
-	serializeGroupComplete,
 	serializeAgentMessage,
 	type BrokerRequest,
 	type BrokerResponse,
@@ -221,8 +218,11 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	// Shared state
-	let activeGroup: GroupManager | null = null;
+	let manager: SubagentManager | null = null;
+	let dashboard: SubagentDashboard | null = null;
+	let tuiRef: TUI | null = null;
 	let brokerClient: BrokerClient | null = null;
+	const skillPathsMap = new Map<string, string[]>();
 
 	// ─── Notification queue ─────────────────────────────────────────────
 	//
@@ -407,64 +407,31 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-	// ─── Shared group creation helper ────────────────────────────────────
+	// ─── Lazy manager + widget initialization ───────────────────────────
 
-	interface StartGroupOpts {
-		agents: AgentSpec[];
-		agentConfigs: AgentConfig[];
-		topology: import("./channels.js").Topology;
-		skillPaths: Map<string, string[]>;
-		ctx: Parameters<Parameters<typeof pi.registerTool>[0]["execute"]>[4];
-	}
+	type ToolCtx = Parameters<Parameters<typeof pi.registerTool>[0]["execute"]>[4];
 
-	async function startGroup(opts: StartGroupOpts): Promise<string> {
-		const { agents, agentConfigs, topology, skillPaths, ctx } = opts;
+	function ensureManager(ctx: ToolCtx): SubagentManager {
+		if (manager) return manager;
 
-		// Widget setup — only for root agents (not RPC children)
-		let dashboard: SubagentDashboard | null = null;
-		let tuiRef: TUI | null = null;
-
-		if (!parentLink) {
-			ctx.ui.setWidget("subagents", (tui, theme) => {
-				tuiRef = tui;
-				dashboard = new SubagentDashboard(theme);
-				return dashboard;
-			});
-		}
-
-		// Create and start group
-		const group = new GroupManager({
+		manager = new SubagentManager({
 			pi,
-			agents,
-			agentConfigs,
-			topology,
-			skillPaths,
 			cwd: ctx.cwd,
+			skillPaths: skillPathsMap,
 			resolveContextWindow: (modelId: string) => {
 				const all = ctx.modelRegistry.getAll();
 				const found = all.find((m: any) => m.id === modelId);
 				return found?.contextWindow;
 			},
 			onUpdate: () => {
-				if (dashboard && tuiRef) {
-					dashboard.update(group.getAgentStatuses());
+				if (dashboard && tuiRef && manager) {
+					dashboard.update(manager.getAgentStatuses());
 					tuiRef.requestRender();
 				}
 			},
-			onGroupIdle: () => {
-				const statuses = group.getAgentStatuses();
-				const agents: AgentCompleteData[] = statuses.map((s) => ({
-					id: s.id,
-					status: s.state === "failed" ? "failed" : "idle",
-					output: s.lastOutput,
-					error: s.state === "failed" ? "Process crashed" : undefined,
-				}));
-				const usage = aggregateUsage(statuses);
-				const xml = serializeGroupIdle({ agents, usage });
-				queueNotification(xml, "local");
-			},
 			onAgentComplete: (agentId) => {
-				const status = group.getAgentStatus(agentId);
+				if (!manager) return;
+				const status = manager.getAgentStatus(agentId);
 				if (!status) return;
 				const data: AgentCompleteData = {
 					id: agentId,
@@ -483,24 +450,25 @@ export default function (pi: ExtensionAPI) {
 			},
 		});
 
-		activeGroup = group;
-		const ack = await group.start();
+		return manager;
+	}
 
-		// Push initial statuses so the widget renders immediately
-		// (before any RPC child emits its first event).
-		if (dashboard && tuiRef) {
-			dashboard.update(group.getAgentStatuses());
-			tuiRef.requestRender();
-		}
+	function ensureWidget(ctx: ToolCtx): void {
+		if (dashboard || parentLink) return;
+		ctx.ui.setWidget("subagents", (tui, theme) => {
+			tuiRef = tui;
+			dashboard = new SubagentDashboard(theme);
+			return dashboard;
+		});
+	}
 
-		// Connect parent's broker client eagerly
-		const broker = group.getBroker();
-		if (broker) {
-			parentBrokerClient = new BrokerClient();
-			await parentBrokerClient.connect(broker.socketPath, "parent");
-		}
-
-		return ack;
+	/** Connect the parent broker client to the manager's broker (first call only). */
+	async function ensureParentBrokerClient(): Promise<void> {
+		if (!manager) return;
+		const broker = manager.getBroker();
+		if (!broker || parentBrokerClient) return;
+		parentBrokerClient = new BrokerClient();
+		await parentBrokerClient.connect(broker.socketPath, "parent");
 	}
 
 	// ─── Tool: subagent ──────────────────────────────────────────────────
@@ -521,9 +489,10 @@ export default function (pi: ExtensionAPI) {
 		label: "Subagent Group",
 		description: "Spawn a group of specialized subagents with channel-based inter-agent communication.",
 		promptGuidelines: [
-			"Spawns a group of agents that run in parallel with isolated contexts. Non-blocking — returns immediately with an acknowledgment. Live status shown in the widget.",
-			"One active group at a time. Each agent gets its own pi process. Agents communicate via the send/respond tools using channels declared at spawn time.",
+			"Spawns agents that run in parallel with isolated contexts. Non-blocking — returns immediately with an acknowledgment. Live status shown in the widget.",
+			"Each agent gets its own pi process. Agents communicate via the send/respond tools using channels declared at spawn time.",
 			"Parent (you) is auto-injected into every agent's channel list. The channels field governs agent-to-agent peer communication only.",
+			"Agents can be added incrementally — call subagent again to add more agents to the existing set. New agents join the running infrastructure.",
 			"Spawning is non-blocking — results arrive later as system notifications. After spawning, briefly confirm what was launched, then either continue with independent work or end your turn.",
 			"When system notifications arrive, respond with your analysis and next actions. The notification content is already visible to the user — summarize your takeaway, not the raw content.",
 			"Use subagent when the work needs multiple coordinated agents, specialized personas, or a clean slate. Use fork when you want a copy of yourself with your full context to explore something.",
@@ -534,10 +503,6 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			if (activeGroup) {
-				throw new Error("A group is already active. Call teardown_group first.");
-			}
-
 			const discovery = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined);
 			const allAgentConfigs = discovery.agents;
 
@@ -554,24 +519,28 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Validate unique ids
+			// Validate unique ids (including against existing agents)
+			const mgr = ensureManager(ctx);
+			const existingIds = new Set(mgr.getAgentStatuses().map((s) => s.id));
 			const ids = params.agents.map((a) => a.id);
 			const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
 			if (dupes.length > 0) {
 				throw new Error(`Duplicate agent ids: ${dupes.join(", ")}`);
 			}
+			for (const id of ids) {
+				if (existingIds.has(id)) {
+					throw new Error(`Agent id "${id}" already exists`);
+				}
+			}
 
-			// Validate topology
+			// Validate topology (channel references)
 			const topoError = validateTopology(params.agents);
 			if (topoError) {
 				throw new Error(`Invalid topology: ${topoError}`);
 			}
 
-			const topology = buildTopology(params.agents);
-
 			// Resolve skill paths for agents that declare skills
 			const commands = pi.getCommands();
-			const skillPathsMap = new Map<string, string[]>();
 			for (const a of params.agents) {
 				const agentConfig = a.agent ? allAgentConfigs.find((c) => c.name === a.agent) : undefined;
 				if (agentConfig?.skills) {
@@ -590,13 +559,15 @@ export default function (pi: ExtensionAPI) {
 				...a,
 			}));
 
-			const ack = await startGroup({
-				agents: agentSpecs,
-				agentConfigs: allAgentConfigs,
-				topology,
-				skillPaths: skillPathsMap,
-				ctx,
-			});
+			ensureWidget(ctx);
+			const ack = await mgr.start(agentSpecs, allAgentConfigs);
+			await ensureParentBrokerClient();
+
+			// Push initial statuses so the widget renders immediately
+			if (dashboard && tuiRef) {
+				dashboard.update(mgr.getAgentStatuses());
+				tuiRef.requestRender();
+			}
 
 			return {
 				content: [{ type: "text", text: ack }],
@@ -614,17 +585,21 @@ export default function (pi: ExtensionAPI) {
 		description: "Clone yourself into a sub-agent with your full conversation history.",
 		promptGuidelines: [
 			"Clones yourself into a sub-agent with your full conversation history. The clone explores independently while you continue working — use for divergent exploration without committing context.",
-			"One parameter: task. Use fork when you want a copy of yourself with full context to explore an alternative path. Use subagent for multiple agents, specialized personas, or a clean slate.",
-			"One active group at a time. Fork creates a single-agent group — send, respond, check_status, and teardown_group all work normally. Notifications arrive the same way as subagent groups.",
+			"Two parameters: id and task. Use fork when you want a copy of yourself with full context to explore an alternative path. Use subagent for multiple agents, specialized personas, or a clean slate.",
+			"Fork adds a single agent — send, respond, check_status, and teardown all work normally. Notifications arrive the same way as subagent spawns.",
 			"Forking is non-blocking — results arrive later as a system notification. After forking, briefly confirm what was launched, then either continue with independent work or end your turn.",
 		],
 		parameters: Type.Object({
+			id: Type.String({ description: "Unique identifier for the forked agent" }),
 			task: Type.String({ description: "Task description for the forked clone" }),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			if (activeGroup) {
-				throw new Error("A group is already active. Call teardown_group first.");
+			const mgr = ensureManager(ctx);
+
+			// Validate id doesn't conflict with existing agents
+			if (mgr.getAgentStatus(params.id)) {
+				throw new Error(`Agent id "${params.id}" already exists`);
 			}
 
 			// Gather parent state
@@ -651,7 +626,7 @@ export default function (pi: ExtensionAPI) {
 			// Build spec
 			const forkSpec: ForkAgentSpec = {
 				kind: "fork",
-				id: "fork",
+				id: params.id,
 				task: params.task,
 				sessionFile,
 				tools,
@@ -659,16 +634,15 @@ export default function (pi: ExtensionAPI) {
 				thinkingLevel,
 			};
 
-			// Single-agent topology
-			const topology = buildTopology([{ id: "fork", channels: [] }]);
+			ensureWidget(ctx);
+			const ack = await mgr.start([forkSpec], []);
+			await ensureParentBrokerClient();
 
-			const ack = await startGroup({
-				agents: [forkSpec],
-				agentConfigs: [],
-				topology,
-				skillPaths: new Map(),
-				ctx,
-			});
+			// Push initial statuses
+			if (dashboard && tuiRef) {
+				dashboard.update(mgr.getAgentStatuses());
+				tuiRef.requestRender();
+			}
 
 			return {
 				content: [{ type: "text", text: ack }],
@@ -705,7 +679,7 @@ export default function (pi: ExtensionAPI) {
 			let client: BrokerClient | null;
 			let from: string;
 
-			const isLocalAgent = activeGroup?.getAgentStatus(params.to) !== undefined;
+			const isLocalAgent = manager?.getAgentStatus(params.to) !== undefined;
 
 			if (isLocalAgent) {
 				if (!parentBrokerClient) throw new Error("Broker client not connected");
@@ -716,7 +690,7 @@ export default function (pi: ExtensionAPI) {
 				client = brokerClient;
 				from = parentLink.id;
 			} else {
-				throw new Error("No active group. Spawn a group first with the subagent tool.");
+				throw new Error("No agents running. Spawn agents first with the subagent or fork tool.");
 			}
 
 			const correlationId = params.expectResponse ? crypto.randomUUID() : undefined;
@@ -835,9 +809,9 @@ export default function (pi: ExtensionAPI) {
 	if (shouldRegisterTool("check_status")) pi.registerTool({
 		name: "check_status",
 		label: "Check Status",
-		description: "Query agent status. Omit agent for group summary.",
+		description: "Query agent status. Omit agent for summary of all agents.",
 		promptGuidelines: [
-			"Prefer waiting for automatic notifications (<agent_complete>, <group_idle>) over calling this tool. Notifications arrive without polling.",
+			"Prefer waiting for automatic notifications (<agent_complete>) over calling this tool. Notifications arrive without polling.",
 			"Use only when you have a specific reason: diagnosing a suspected stall, answering a user question about progress, or checking usage mid-run.",
 		],
 		parameters: Type.Object({
@@ -845,12 +819,12 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			if (!activeGroup) {
-				throw new Error("No active group.");
+			if (!manager || !manager.hasAgents()) {
+				throw new Error("No agents running.");
 			}
 
 			if (params.agent) {
-				const status = activeGroup.getAgentStatus(params.agent);
+				const status = manager.getAgentStatus(params.agent);
 				if (!status) {
 					throw new Error(`Unknown agent: "${params.agent}"`);
 				}
@@ -859,7 +833,7 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			const statuses = activeGroup.getAgentStatuses();
+			const statuses = manager.getAgentStatuses();
 			const lines = statuses.map(formatAgentStatusSummary);
 			return {
 				content: [{ type: "text", text: lines.join("\n") }],
@@ -867,40 +841,45 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── Tool: teardown_group ────────────────────────────────────────────
+	// ─── Tool: teardown ──────────────────────────────────────────────────
 
-	if (shouldRegisterTool("teardown_group")) pi.registerTool({
-		name: "teardown_group",
-		label: "Teardown Group",
-		description: "End the current agent group. Kills all agent processes and delivers a final summary.",
-		promptSnippet: "End the current agent group. Kills all agent processes and delivers a final summary.",
+	if (shouldRegisterTool("teardown")) pi.registerTool({
+		name: "teardown",
+		label: "Teardown",
+		description: "Remove an agent or tear down all agents. Returns a completion report.",
 		promptGuidelines: [
-			"Call when the group no longer serves a purpose. Idle groups remain fully functional — you can send new messages to restart work or use agents as persistent specialists. Teardown kills all processes and returns a <group_complete> report with final output and aggregate usage.",
+			"Call when an agent or all agents are no longer needed. Idle agents remain fully functional — you can send new messages to restart work or use agents as persistent specialists.",
+			"With an agent id: removes that single agent and returns its completion report. Without: tears down all agents and returns a <group_complete> summary with aggregate usage.",
+			"When the last agent is removed (either explicitly or via full teardown), infrastructure is cleaned up automatically.",
 		],
-		parameters: Type.Object({}),
+		parameters: Type.Object({
+			agent: Type.Optional(Type.String({ description: "Agent id to remove. Omit to tear down all agents." })),
+		}),
 
-		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-			if (!activeGroup) {
-				throw new Error("No active group to teardown.");
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (!manager || !manager.hasAgents()) {
+				throw new Error("No agents to teardown.");
 			}
 
-			const report = activeGroup.getCompletionReport();
-			const xml = serializeGroupComplete(report);
+			const { report, empty } = await manager.teardown(params.agent);
 
-			await activeGroup.destroy();
-
-			// Disconnect parent broker client
-			if (parentBrokerClient) {
-				parentBrokerClient.disconnect();
-				parentBrokerClient = null;
+			if (empty) {
+				// Infrastructure torn down — clean up widget and parent broker client
+				if (parentBrokerClient) {
+					parentBrokerClient.disconnect();
+					parentBrokerClient = null;
+				}
+				manager = null;
+				drainLocalNotifications();
+				ctx.ui.setWidget("subagents", undefined as any);
+				dashboard = null;
+				tuiRef = null;
+				skillPathsMap.clear();
 			}
 
-			activeGroup = null;
-			drainLocalNotifications();
-			ctx.ui.setWidget("subagents", undefined as any);
-
+			const label = params.agent ? `Agent "${params.agent}" removed.` : "All agents terminated.";
 			return {
-				content: [{ type: "text", text: `Group terminated.\n\n${xml}` }],
+				content: [{ type: "text", text: `${label}\n\n${report}` }],
 			};
 		},
 	});
@@ -909,17 +888,13 @@ export default function (pi: ExtensionAPI) {
 
 	let parentBrokerClient: BrokerClient | null = null;
 
-	function getParentBrokerClient(): BrokerClient | null {
-		return parentBrokerClient;
-	}
-
 	// ─── Cleanup on shutdown ─────────────────────────────────────────────
 
 	pi.on("session_shutdown", async () => {
 		clearNotificationQueue();
-		if (activeGroup) {
-			await activeGroup.destroy();
-			activeGroup = null;
+		if (manager) {
+			await manager.teardown();
+			manager = null;
 		}
 		if (parentBrokerClient) {
 			parentBrokerClient.disconnect();
@@ -929,6 +904,9 @@ export default function (pi: ExtensionAPI) {
 			brokerClient.disconnect();
 			brokerClient = null;
 		}
+		dashboard = null;
+		tuiRef = null;
+		skillPathsMap.clear();
 	});
 }
 
@@ -960,22 +938,6 @@ function formatAgentStatusDetail(s: import("./group.js").AgentStatus): string {
 		lines.push(`Pending correlations: ${s.pendingCorrelations.join(", ")}`);
 	}
 	return lines.join("\n");
-}
-
-function aggregateUsage(statuses: import("./group.js").AgentStatus[]): import("./messages.js").UsageData {
-	let input = 0;
-	let output = 0;
-	let cost = 0;
-	for (const s of statuses) {
-		input += s.usage.input + s.usage.cacheRead + s.usage.cacheWrite;
-		output += s.usage.output;
-		cost += s.usage.cost;
-	}
-	return {
-		input: formatTokenCount(input),
-		output: formatTokenCount(output),
-		cost: `$${cost.toFixed(4)}`,
-	};
 }
 
 function formatTokenCount(count: number): string {
