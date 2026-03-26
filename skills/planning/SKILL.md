@@ -48,7 +48,17 @@ Present the full plan to the user for review before writing it to the file.
 
 ### 3. Write the Plan
 
-Append the implementation steps to `docs/plans/<topic>.md` below the architecture section. Follow the artifact format below. Commit with message: `plan: <topic>`
+Append the implementation steps to `docs/plans/<topic>.md` below the architecture section. Follow the artifact format below.
+
+### 4. Check for Blind Spots
+
+If `docs/brainstorms/<topic>.md` exists, spawn a default subagent with the brainstorm and plan file paths. Its task: read both files and identify brainstorm intent that the plan steps don't cover. Each gap should name the missing intent and explain why existing steps don't address it.
+
+Wait for `<agent_complete>`. Review the output — filter noise (intent already covered, or out of scope) and surface substantive findings to the user. The user decides per finding: add a step (next sequential number, `not started` status) or dismiss. Update the plan file if steps were added.
+
+If no brainstorm exists, skip the check.
+
+Commit with message: `plan: <topic>`
 
 ## Artifact Format
 

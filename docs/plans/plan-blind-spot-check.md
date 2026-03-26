@@ -15,3 +15,15 @@ The code-review skill is plan-anchored — it checks implementation against the 
 **Blind spot subagent task contract** — the subagent receives file paths to `docs/brainstorms/<topic>.md` and `docs/plans/<topic>.md` in its task description. It reads both, compares intent against coverage, and returns a list of gaps as prose in its completion output. Each gap identifies the brainstorm intent that's missing and why it isn't covered by existing steps. The subagent doesn't write files or modify the plan — it only produces findings.
 
 **Planner ↔ user for findings** — the planner reviews the subagent's output, filters noise (e.g., things already covered by existing steps that the subagent misjudged), and presents remaining findings to the user conversationally. The user decides per-finding: add a step, dismiss as already covered, or dismiss as out of scope. New steps get appended with the next sequential number and `not started` status.
+
+## Steps
+
+### Step 1: Add blind spot check phase to planning skill
+
+In `skills/planning/SKILL.md`, split the current step 3 and add a new step 4:
+
+- **Step 3 ("Write the Plan")** — remove the commit instruction. This step now only writes the plan to disk.
+- **Add step 4 ("Check for Blind Spots")** — if `docs/brainstorms/<topic>.md` exists, spawn a default subagent with the brainstorm and plan file paths. The subagent reads both and identifies brainstorm intent the plan doesn't cover. Planner waits for `<agent_complete>`, reviews output, filters noise, surfaces substantive findings to the user. User decides per finding: add a step or dismiss. Update the plan if steps were added. If no brainstorm exists, skip the check. Commit with message: `plan: <topic>`.
+
+**Verify:** Read `skills/planning/SKILL.md` and confirm step 3 no longer mentions committing; a new step 4 describes the conditional blind spot check with subagent spawn, finding review, user conversation, and the commit at the end.
+**Status:** done
