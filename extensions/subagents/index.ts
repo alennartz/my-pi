@@ -429,7 +429,7 @@ export default function (pi: ExtensionAPI) {
 					tuiRef.requestRender();
 				}
 			},
-			onAgentComplete: (agentId) => {
+			onAgentComplete: (agentId, allDone) => {
 				if (!manager) return;
 				const status = manager.getAgentStatus(agentId);
 				if (!status) return;
@@ -439,7 +439,11 @@ export default function (pi: ExtensionAPI) {
 					output: status.lastOutput,
 					error: status.state === "failed" ? "Process crashed" : undefined,
 				};
-				const xml = serializeAgentComplete(data);
+				let xml = serializeAgentComplete(data);
+				if (allDone) {
+					const total = manager.getAgentStatuses().length;
+					xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have completed. Review results above and call teardown to clean up.`;
+				}
 				queueNotification(xml, "local");
 			},
 			onParentMessage: (xml, meta) => {

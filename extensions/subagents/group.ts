@@ -59,7 +59,7 @@ export interface SubagentManagerOptions {
 	skillPaths: Map<string, string[]>;
 	resolveContextWindow: (modelId: string) => number | undefined;
 	onUpdate: () => void;
-	onAgentComplete: (agentId: string) => void;
+	onAgentComplete: (agentId: string, allDone: boolean) => void;
 	onParentMessage: (xml: string, meta: { correlationId?: string; responseExpected: boolean }) => void;
 }
 
@@ -430,7 +430,7 @@ export class SubagentManager {
 				entry.status.state = "idle";
 				entry.status.lastActivity = undefined;
 				this.opts.onUpdate();
-				this.opts.onAgentComplete(entry.id);
+				this.opts.onAgentComplete(entry.id, this.allDone());
 			}
 		}
 	}
@@ -446,7 +446,7 @@ export class SubagentManager {
 						this.broker.agentCrashed(entry.id);
 					}
 					this.opts.onUpdate();
-					this.opts.onAgentComplete(entry.id);
+					this.opts.onAgentComplete(entry.id, this.allDone());
 				}
 			}
 		};
@@ -458,6 +458,13 @@ export class SubagentManager {
 				clearInterval(interval);
 			}
 		}, 500);
+	}
+
+	private allDone(): boolean {
+		const allSettled = this.entries.every(
+			(e) => e.status.state === "idle" || e.status.state === "failed",
+		);
+		return allSettled && (this.broker?.isQuiet() ?? true);
 	}
 
 	private handleParentMessage(msg: BrokerResponse): void {
