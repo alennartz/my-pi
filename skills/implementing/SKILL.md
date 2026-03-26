@@ -57,13 +57,13 @@ For larger plans. The primary orchestrates; workers write code.
 
 1. **Group pending steps by module alignment.** Use the architecture section and codemap to identify which steps touch which modules. Identify inter-step dependencies — where one step's output (an interface, a type, a file) is needed by another.
 
-2. **Spawn a collaborative team.** Create module-aligned workers with channels reflecting dependencies. Each worker gets: its assigned step(s), the relevant file references from the plan, and clear scope boundaries. Workers that depend on each other's outputs get mutual channels so they can share interfaces and types directly.
+2. **Spawn a collaborative team.** Create module-aligned workers with channels reflecting dependencies. Keep task strings lean — point workers at the plan file and tell them which steps they own. Include peer context so they can coordinate dependencies. Example task: *"Read `docs/plans/<topic>.md` and `codemap.md`. You own steps 3–4. Agent `backend` is doing steps 1–2 — if you depend on their output, send to them to ask when it's ready. Do not edit the plan file or commit."* Workers read the plan themselves and get full context (architecture, all steps) rather than a regurgitated excerpt. The plan is the source of truth; don't duplicate it in the task string.
 
 3. **Workers execute.** Each worker writes code, runs its step's verify check, and finishes. Workers communicate laterally via channels to share interfaces, types, or contracts that unblock peer dependencies. Workers do not edit the plan file or commit. If a worker fails verification or gets stuck, it escalates to the primary via `send`. The primary decides whether to intervene, mark the step `blocked`, or tear down the group — same judgment as the direct path: try to fix it, stop when stuck.
 
 4. **Track progress.** As `<agent_complete>` notifications arrive, update plan status fields — mark steps done as they finish. If a worker reports failure and the primary can't resolve it, mark the step `blocked` with an explanation, tear down the group, commit the current state, and stop.
 
-5. **Commit when workers finish.** When all workers' `<agent_complete>` notifications have arrived, the phase is complete. Review the state, run any cross-cutting verification, commit all changes (code + plan updates) together, and decide the next phase.
+5. **Commit when workers finish.** When all workers' `<agent_complete>` notifications have arrived, the phase is complete. Run any cross-cutting verification (type checks, tests), update plan status, commit all changes (code + plan updates) together, and decide the next phase. Don't read the source files workers wrote — that's what the code-review phase is for.
 
 6. **Slice into phases for control.** On larger plans, don't try to run everything in one group. Slice the work into phases — groups of steps that form a natural unit. After each phase: review, commit, course-correct, engage the user if needed. Phases exist for your own control, not for dependency management (channels handle that).
 

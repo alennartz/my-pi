@@ -25,7 +25,7 @@ Before starting:
 
 ### 1. Investigate
 
-Identify which modules from the codemap are likely impacted. Scout those modules — entry points, interfaces, and key files.
+Identify which modules from the codemap are likely impacted. Scout those modules — locate their entry points, public interfaces, and key files.
 
 Share what you're finding as you go. The user should see your reasoning, not just your conclusions.
 

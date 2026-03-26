@@ -52,6 +52,8 @@ Each agent should produce a **coherent, independently verifiable deliverable**. 
 - **Scope boundaries:** "Do not modify files outside `src/legacy/`. Do not change any public API signatures."
 - **Output expectations:** "When finished, report the list of converted files and any files you skipped with reasons."
 
+**Leverage existing artifacts.** When a shared document already describes the work — a plan file, a spec, a review — don't restate it in the task string. Point the agent at the file, tell them which parts are theirs, and give them peer context for coordination. The agent can read the file and get full context (including parts you'd omit from a summary). Reserve detailed inline task strings for ad-hoc work where no artifact exists.
+
 **Granularity.** Too coarse wastes parallelism — one agent doing everything is just you with extra overhead. Too fine creates coordination overhead — ten agents that each change one line need more orchestration than the work itself. A good agent-sized task takes multiple tool calls, produces a meaningful result, and can be verified without understanding the other agents' work.
 
 ## Orchestration Patterns
@@ -190,7 +192,7 @@ Normally, the primary agent (with the TUI) is the lead — it decomposes work an
 ## Key Principles
 
 - **Design before spawning** — think through decomposition, pattern, and topology before calling `subagent`. You can add agents incrementally, but thoughtful upfront design is still cheaper than ad-hoc restructuring.
-- **Task strings are the whole brief** — for default agents, the task string is all they get. Make it complete: identity, mission, scope, output expectations.
+- **Task strings are the whole brief** — for default agents, the task string is all they get. But "complete" means the agent can start working, not that you duplicate existing artifacts. When a shared document already covers the mission (a plan file, a spec, a review), point the agent at it with just enough context to orient: which file, which sections are theirs, who their peers are. Save inline detail for tasks where no artifact exists.
 - **Minimal topology** — only connect agents that need to talk. Parent is always there; peer channels are for lateral communication only.
 - **Default to fire-and-forget** — use blocking sends only when the sender genuinely can't continue without a response.
 - **Incremental growth** — agents can be added to the running set by calling `subagent` again. Individual agents can be removed with `teardown(agent)`, or all agents torn down at once with `teardown()`.
