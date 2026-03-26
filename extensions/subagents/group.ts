@@ -268,9 +268,9 @@ export class SubagentManager {
 		// Build acknowledgment
 		const ids = agents.map((a) => a.id);
 		if (isFirstCall) {
-			return `Agents spawned: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}). Agents are running — confirm what was launched and continue.`;
+			return `Agents spawned: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}). Results arrive as notifications. Continue with other work, or if there's nothing else to do, briefly describe what was launched and end your turn.`;
 		}
-		return `Added ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}) to existing agents. Agents are running — confirm what was launched and continue.`;
+		return `Added ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}) to existing group. Results arrive as notifications. Continue with other work, or if there's nothing else to do, briefly describe what was launched and end your turn.`;
 	}
 
 	async teardown(agentId?: string): Promise<{ report: string; empty: boolean }> {
