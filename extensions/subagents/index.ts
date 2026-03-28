@@ -442,7 +442,7 @@ export default function (pi: ExtensionAPI) {
 				let xml = serializeAgentComplete(data);
 				if (allDone) {
 					const total = manager.getAgentStatuses().length;
-					xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have completed. Review results above and call teardown to clean up.`;
+					xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have completed. Review results above, then call teardown to clean up — or use send first if you have follow-ups for any agent.`;
 				}
 				queueNotification(xml, "local");
 			},
