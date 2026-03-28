@@ -15,7 +15,7 @@ The plan was implemented faithfully — all 8 steps are done and the changes mat
 - **Category:** plan deviation
 - **Severity:** nit
 - **Location:** `extensions/azure-foundry/index.ts:95,125,209,310-317`
-- **Status:** open
+- **Status:** dismissed
 
 The diff includes changes to `extensions/azure-foundry/index.ts` that aren't part of any plan step: renaming the `"anthropic"` backend to `"anthropic-messages"`, and moving the `api` field from the provider level to per-model registration. These appear to be an independent fix (commit `a4b1576 fix: use correct pi-ai API identifiers for Azure Foundry models`). The changes are reasonable on their own — they're just not part of the agentic-tdd plan.
 
