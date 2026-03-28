@@ -2,7 +2,7 @@
 
 ## Overview
 
-A personal [pi coding agent](https://github.com/badlogic/pi-mono) package providing a development workflow pipeline (brainstorm → architect → plan → implement → review → cleanup), standalone utility skills, a subagent orchestration system, and an Azure AI Foundry provider. Built as a pi package with TypeScript extensions and Markdown skills.
+A personal [pi coding agent](https://github.com/badlogic/pi-mono) package providing a development workflow pipeline (brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle review → cleanup), standalone utility skills, a subagent orchestration system, and an Azure AI Foundry provider. Built as a pi package with TypeScript extensions and Markdown skills.
 
 ```mermaid
 graph LR
@@ -28,11 +28,11 @@ sequenceDiagram
 
 ### Workflow
 
-Pipeline orchestration extension and the seven workflow skills it drives. The extension provides the `/workflow` command and `workflow_phase_complete` tool; the skills define each phase's behavior.
+Pipeline orchestration extension and the nine workflow skills it drives. The extension provides the `/workflow` command and `workflow_phase_complete` tool; the skills define each phase's behavior.
 
-**Responsibilities:** pipeline phase routing, artifact-driven handoffs, context boundary management, brainstorming facilitation, architectural decision-making, implementation planning, dual-mode implementation execution, plan-based code review, review finding resolution, post-workflow cleanup with DR extraction
+**Responsibilities:** pipeline phase routing, artifact-driven handoffs, context boundary management, brainstorming facilitation, architectural decision-making, test writing, test review, implementation planning, dual-mode implementation execution, plan-based code review, review finding resolution, post-workflow cleanup with DR extraction
 
-**Dependencies:** Skills (decision-records skill delegated from cleanup), Subagents (workflow skills delegate to subagents at runtime — scout investigation in architecting/planning, worker orchestration in implementing, parallel fan-out in code review)
+**Dependencies:** Skills (decision-records skill delegated from cleanup), Subagents (workflow skills delegate to subagents at runtime — scout investigation in architecting/impl-planning, worker orchestration in implementing, parallel fan-out in code review)
 
 **Files:**
 - `extensions/workflow/**`
@@ -40,7 +40,9 @@ Pipeline orchestration extension and the seven workflow skills it drives. The ex
 - `lib/components/**`
 - `skills/brainstorming/SKILL.md`
 - `skills/architecting/SKILL.md`
-- `skills/planning/SKILL.md`
+- `skills/test-writing/SKILL.md`
+- `skills/test-review/SKILL.md`
+- `skills/impl-planning/SKILL.md`
 - `skills/implementing/SKILL.md`
 - `skills/code-review/SKILL.md`
 - `skills/handle-review/SKILL.md`
