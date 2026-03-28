@@ -110,3 +110,96 @@ Two changes:
 Two changes:
 - Tests are immutable. Test files listed in the plan's Tests section cannot be modified by the implementer. If a test seems unsatisfiable, the implementer escalates to the human.
 - The verification loop includes running the test suite as a primary success criterion. "Done" means tests pass.
+
+## Steps
+
+### Step 1: Rename `skills/planning/` to `skills/impl-planning/`
+
+Rename the directory from `skills/planning/` to `skills/impl-planning/`. Update `SKILL.md` inside:
+- Frontmatter: name becomes `impl-planning`, description updated to reference "implementation planning" and note that tests already exist
+- Remove the "Follow TDD where it makes sense" paragraph from section 2 (Generate the Plan)
+- Add guidance in section 0 (Read the Plan and Codemap) to also read the Tests section and actual test files
+- Add to section 2 that steps are planned with awareness of the tests that must pass, and should not include test-writing steps
+
+**Verify:** `skills/impl-planning/SKILL.md` exists, `skills/planning/` does not. Skill name in frontmatter is `impl-planning`. No TDD guidance in the Generate the Plan section. Tests referenced as additional input.
+**Status:** not started
+
+### Step 2: Create `skills/test-writing/SKILL.md`
+
+New skill file. Should cover:
+- **Overview:** Write component-level behavioral tests against architecture interfaces. Also materializes interface definitions as real code.
+- **Process:**
+  - Read `codemap.md` and the architecture section of `docs/plans/<topic>.md`, focusing on the Interfaces subsection
+  - Materialize interface definitions as real code (types, contracts) in appropriate locations per the codemap/architecture
+  - Write behavioral/component tests against those interfaces
+  - Append a `## Tests` section to the plan file documenting test files created and behaviors covered
+  - Commit
+- **Test style constraints:** Component boundary behavioral tests only. Happy paths, boundary conditions, error cases. No non-deterministic tests. No internal function tests. No implementation detail testing.
+- **Key principle:** The implementation doesn't exist yet — tests can only exercise interfaces, not internals.
+
+**Verify:** `skills/test-writing/SKILL.md` exists with frontmatter name `test-writing`. Covers interface materialization, test writing, and plan file update. Test style constraints are explicit.
+**Status:** not started
+
+### Step 3: Create `skills/test-review/SKILL.md`
+
+New skill file. Should cover:
+- **Overview:** Validate tests against brainstorm intent and architecture. Interactive with the user. Fix issues inline with user approval.
+- **Process:**
+  - Read brainstorm (`docs/brainstorms/<topic>.md`), architecture + Tests section from `docs/plans/<topic>.md`, and actual test files
+  - Validate: test coverage of brainstorm intent, abstraction level, interface-only testing, path coverage (happy/boundary/error), no non-deterministic tests, reasonable expectations
+  - Escalate ambiguity to user: missing intent coverage, unexpected test scope, wrong abstraction level, ambiguous expectations
+  - Fix issues inline during interactive session with user approval
+  - Produce `docs/reviews/<topic>-tests.md` as artifact
+  - Stamp plan file Tests section with `**Review status:** approved`
+  - Commit
+
+**Verify:** `skills/test-review/SKILL.md` exists with frontmatter name `test-review`. Covers validation criteria, escalation triggers, inline fixing, artifact production, and review stamp.
+**Status:** not started
+
+### Step 4: Modify `skills/architecting/SKILL.md`
+
+Strengthen the Interfaces guidance:
+- In the artifact format's `### Interfaces` section description, emphasize component boundary contracts — what data flows across boundaries, what operations each component exposes, what shapes are expected. Note these must be specific enough for the test writer to materialize as code without making design decisions.
+- In the format rules, update the Interfaces bullet to match.
+- In Key Principles, add or update the code snippets principle to note that interface descriptions are the primary input for the test-writing phase.
+
+**Verify:** Interfaces section in artifact format and format rules emphasize component boundary specificity. Reference to test-writing phase as downstream consumer is present.
+**Status:** not started
+
+### Step 5: Modify `skills/implementing/SKILL.md`
+
+Two changes:
+- Add a new subsection or bullets in section 0 (Read the Plan and Codemap) noting the Tests section lists immutable test files. The implementer reads the test files but cannot modify them.
+- In the verification guidance (sections 1a and 1b), add that running the test suite is a primary success criterion. "Done" means all tests in the Tests section pass.
+- Add to section 2 (Handling Reality vs. Plan) or Key Principles: if a test seems unsatisfiable, escalate to the human rather than modifying the test.
+- Update references from "planning skill" to "impl-planning skill".
+
+**Verify:** Test immutability constraint is explicit. Test suite as verification criterion is stated. Human escalation for unsatisfiable tests is documented. References say `impl-planning`.
+**Status:** not started
+
+### Step 6: Update `extensions/workflow/index.ts`
+
+Update all phase-related constants and logic:
+- `PHASE_SKILL_MAP`: rename `plan` key to `impl-plan` mapping to `impl-planning`, add `"test-write": "test-writing"` and `"test-review": "test-review"`
+- `PHASE_ORDER`: `["brainstorm", "architect", "test-write", "test-review", "impl-plan", "implement", "review", "handle-review", "cleanup"]`
+- `FLEXIBLE_TRANSITIONS`: set becomes `["brainstorm", "architect", "test-write", "review"]`
+- `PHASE_ARTIFACTS`: add `"test-write": (topic) => "docs/plans/${topic}.md"`, `"test-review": (topic) => "docs/reviews/${topic}-tests.md"`, rename `plan` key to `impl-plan`
+- `StringEnum` in the tool parameter: update to include `test-write`, `test-review`, `impl-plan`; remove `plan`
+
+**Verify:** All five constants updated. Phase order is 9 phases. `impl-plan` used consistently instead of `plan`. New phases present in skill map, artifact map, and tool enum. `FLEXIBLE_TRANSITIONS` includes `brainstorm`, `architect`, `test-write`, `review`.
+**Status:** not started
+
+### Step 7: Update `extensions/workflow/prompt.md`
+
+Update the phase listing to reflect the 9-phase pipeline with correct skill mappings. Update the state inference examples in the "Infer the next phase" bullet to include the new phases.
+
+**Verify:** Prompt lists 9 phases with correct skill mappings. State inference examples reference the new phases.
+**Status:** not started
+
+### Step 8: Update cross-references in other skills
+
+- `skills/code-review/SKILL.md`: reference to "architecting and planning skills" → "architecting and impl-planning skills"
+- `skills/handle-review/SKILL.md`: check for any specific "planning" skill references that need updating
+
+**Verify:** `grep -rn "planning" skills/` shows only `impl-planning` references (in the renamed skill itself and in cross-references). No stale references to the old `planning` skill name.
+**Status:** not started
