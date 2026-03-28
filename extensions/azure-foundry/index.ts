@@ -146,36 +146,58 @@ const BACKENDS: Record<Backend, BackendConfig> = {
 // Known Model Metadata Catalog
 // =============================================================================
 
+/** Per-million-token cost rates (matches pi-ai's Model.cost format). */
+interface ModelCost {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+}
+
 interface ModelMeta {
 	reasoning: boolean;
 	input: ("text" | "image")[];
 	contextWindow: number;
 	maxTokens: number;
+	cost: ModelCost;
 }
+
+const ZERO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 const DEFAULTS: ModelMeta = {
 	reasoning: false,
 	input: ["text"],
 	contextWindow: 128000,
 	maxTokens: 16384,
+	cost: ZERO_COST,
 };
 
 /**
  * Known model metadata, keyed by the model name from the deployment API
  * (properties.model.name). Add entries here when new model families are
  * deployed — unknown models get conservative defaults.
+ *
+ * Cost rates are $ per million tokens, matching pi-ai's built-in model data.
  */
 const MODEL_CATALOG: Record<string, Partial<ModelMeta>> = {
 	// Anthropic
-	"claude-sonnet-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000 },
-	"claude-sonnet-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000 },
-	"claude-opus-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 32000 },
-	"claude-opus-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000 },
-	"claude-haiku-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000 },
+	"claude-sonnet-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
+		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
+	"claude-sonnet-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
+		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
+	"claude-opus-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 32000,
+		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
+	"claude-opus-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
+		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
+	"claude-haiku-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
+		cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 } },
 	// OpenAI
-	"gpt-4.1": { reasoning: false, input: ["text", "image"], contextWindow: 1048576, maxTokens: 32768 },
-	"gpt-5.2-codex": { reasoning: true, input: ["text"], contextWindow: 1048576, maxTokens: 65536 },
-	"gpt-5.3-codex": { reasoning: true, input: ["text"], contextWindow: 1048576, maxTokens: 65536 },
+	"gpt-4.1": { reasoning: false, input: ["text", "image"], contextWindow: 1048576, maxTokens: 32768,
+		cost: { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 0 } },
+	"gpt-5.2-codex": { reasoning: true, input: ["text"], contextWindow: 1048576, maxTokens: 65536,
+		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 } },
+	"gpt-5.3-codex": { reasoning: true, input: ["text"], contextWindow: 1048576, maxTokens: 65536,
+		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 } },
 };
 
 function lookupMeta(modelName: string): ModelMeta {
@@ -326,7 +348,7 @@ export default function (pi: ExtensionAPI) {
 					name: `Foundry ${d.deploymentName}`,
 					reasoning: meta.reasoning,
 					input: meta.input,
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					cost: meta.cost,
 					contextWindow: meta.contextWindow,
 					maxTokens: meta.maxTokens,
 				};

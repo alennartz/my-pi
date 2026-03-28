@@ -400,8 +400,10 @@ export class SubagentManager {
 				}
 				if (msg.model) entry.status.model = msg.model;
 
-				// Per-turn input (represents current context fill)
-				entry.status.lastTurnInput = usage?.input || 0;
+				// Context fill: sum input-side token types (non-cached + cache read + cache write).
+				// Excludes output — those don't count against the window for this turn.
+				entry.status.lastTurnInput = (usage?.input || 0)
+					+ (usage?.cacheRead || 0) + (usage?.cacheWrite || 0);
 
 				// Resolve context window on first model sighting
 				if (entry.status.contextWindow === undefined && msg.model && this.opts.resolveContextWindow) {
