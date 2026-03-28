@@ -34,6 +34,7 @@ import {
 	type BrokerResponse,
 	type AgentCompleteData,
 } from "./messages.js";
+import { createStopSequenceManager } from "./stop-sequences.js";
 
 // ─── Delivery mode flag ──────────────────────────────────────────────────────
 //
@@ -206,6 +207,7 @@ class BrokerClient {
 
 export default function (pi: ExtensionAPI) {
 	const parentLink = getParentLink();
+	const stopSequences = createStopSequenceManager(pi);
 
 	// Tool gating: when a child agent has a tools restriction, only register
 	// tools that appear in the allowed list. `respond` is always allowed
@@ -567,6 +569,7 @@ export default function (pi: ExtensionAPI) {
 				tuiRef.requestRender();
 			}
 
+			stopSequences.addOnce("<agent_complete");
 			return {
 				content: [{ type: "text", text: ack }],
 			};
@@ -642,6 +645,7 @@ export default function (pi: ExtensionAPI) {
 				tuiRef.requestRender();
 			}
 
+			stopSequences.addOnce("<agent_complete");
 			return {
 				content: [{ type: "text", text: ack }],
 			};
