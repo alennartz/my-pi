@@ -1,13 +1,13 @@
 ---
-name: planning
-description: "Turn a direction into concrete, ordered implementation steps grounded in the codebase. Use when the user wants a step-by-step plan for building something. Requires architectural decisions in docs/plans/<topic>.md — if those don't exist, suggest the architecting skill first."
+name: impl-planning
+description: "Turn a direction into concrete, ordered implementation steps grounded in the codebase. Use when the user wants a step-by-step plan for building something. Tests already exist — this skill plans implementation steps that make them pass. Requires architectural decisions in docs/plans/<topic>.md — if those don't exist, suggest the architecting skill first."
 ---
 
-# Planning
+# Implementation Planning
 
 ## Overview
 
-Take the architecture in `docs/plans/<topic>.md` and produce concrete, ordered implementation steps. Read the codemap, read the architecture, dive into the relevant code, then write steps specific enough to act on without ambiguity.
+Take the architecture in `docs/plans/<topic>.md` and produce concrete, ordered implementation steps. Read the codemap, read the architecture, read the tests, dive into the relevant code, then write steps specific enough to act on without ambiguity.
 
 The output is the second half of `docs/plans/<topic>.md` — appended below the architecture the architecting skill wrote. The plan file then serves as a living progress tracker during implementation.
 
@@ -22,6 +22,8 @@ Before anything else:
 1. **Read `docs/plans/<topic>.md`** — the architecture section written by the architecting skill. This is your scope. If the plan file doesn't exist or has no architecture section, stop and tell the user. Suggest running the architecting skill first to establish the architectural decisions this skill builds on.
 
 2. **Read `codemap.md`** at the repo root. If it doesn't exist, suggest the user create one using the codemap skill. If they decline, fall back to exploring the codebase directly.
+
+3. **Read the Tests section and actual test files.** The plan file's `## Tests` section lists test files written against the architecture's interfaces. Read the section and the test files themselves — these are the behavioral expectations the implementation must satisfy. All implementation steps exist to make these tests pass.
 
 ### 1. Investigate
 
@@ -38,7 +40,7 @@ Write the full set of implementation steps. Each step should be:
 - **Ordered correctly** — steps are executed top to bottom. Earlier steps lay foundations that later steps build on. Get the order right.
 - **Verifiable** — each step says what "done" looks like
 
-Follow TDD where it makes sense — write the failing test, then make it pass. But don't force test cycles on structural glue: directory setup, export barrels, config changes, dependency additions. Use judgment.
+**Steps are planned with awareness of the tests that must pass.** Each step should advance the implementation toward satisfying one or more existing tests. Do not include test-writing steps — tests already exist and are immutable. The goal is making them pass, not creating new ones.
 
 **Code snippets in steps** — use code when it communicates shape more clearly than prose: interfaces, type signatures, data structures, important function signatures. These help the implementer understand boundaries and contracts without ambiguity. Avoid implementation snippets — function bodies, algorithms, control flow — because they pre-empt TDD and over-constrain how the implementer solves the problem. The step should describe *what* the code needs to look like at its boundaries, not *how* it works internally. When prose is equally clear, prefer prose.
 
@@ -100,7 +102,6 @@ The steps are appended below the existing architecture section:
 - **Adds detail, not scope** — the architecture decides what to build. This skill decides the sequence and the specifics. Don't expand beyond the architecture.
 - **Generate, don't negotiate** — present the full plan, don't walk through it conversationally. Only surface questions when the architecture doesn't match the code.
 - **Get the order right** — earlier steps should lay foundations for later steps. This is good authoring practice and gives the implementer a natural build sequence, but it's not a strict concurrency constraint — the implementer may parallelize steps that touch independent modules.
-- **TDD where it fits** — test-first for behavior, not for wiring. Use judgment. Prefer black-box tests that verify observable behavior over white-box tests that couple to implementation details.
 - **The plan is a living document** — status fields turn it into a progress tracker during implementation. One artifact from architecture through completion.
 - **YAGNI** — don't add steps for things the architecture doesn't call for.
 - **Code snippets for shape, not implementation** — use code in steps when it clarifies interfaces, types, or signatures better than prose. Avoid implementation snippets that pre-empt TDD or over-constrain the implementer.

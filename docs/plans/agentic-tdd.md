@@ -113,6 +113,8 @@ Two changes:
 
 ## Steps
 
+**Pre-implementation commit:** `6446016a782ad720bb68cf65bd6b49713e067570`
+
 ### Step 1: Rename `skills/planning/` to `skills/impl-planning/`
 
 Rename the directory from `skills/planning/` to `skills/impl-planning/`. Update `SKILL.md` inside:
@@ -122,7 +124,7 @@ Rename the directory from `skills/planning/` to `skills/impl-planning/`. Update 
 - Add to section 2 that steps are planned with awareness of the tests that must pass, and should not include test-writing steps
 
 **Verify:** `skills/impl-planning/SKILL.md` exists, `skills/planning/` does not. Skill name in frontmatter is `impl-planning`. No TDD guidance in the Generate the Plan section. Tests referenced as additional input.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Create `skills/test-writing/SKILL.md`
 
@@ -138,7 +140,7 @@ New skill file. Should cover:
 - **Key principle:** The implementation doesn't exist yet — tests can only exercise interfaces, not internals.
 
 **Verify:** `skills/test-writing/SKILL.md` exists with frontmatter name `test-writing`. Covers interface materialization, test writing, and plan file update. Test style constraints are explicit.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Create `skills/test-review/SKILL.md`
 
@@ -154,7 +156,7 @@ New skill file. Should cover:
   - Commit
 
 **Verify:** `skills/test-review/SKILL.md` exists with frontmatter name `test-review`. Covers validation criteria, escalation triggers, inline fixing, artifact production, and review stamp.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Modify `skills/architecting/SKILL.md`
 
@@ -164,7 +166,7 @@ Strengthen the Interfaces guidance:
 - In Key Principles, add or update the code snippets principle to note that interface descriptions are the primary input for the test-writing phase.
 
 **Verify:** Interfaces section in artifact format and format rules emphasize component boundary specificity. Reference to test-writing phase as downstream consumer is present.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Modify `skills/implementing/SKILL.md`
 
@@ -175,7 +177,7 @@ Two changes:
 - Update references from "planning skill" to "impl-planning skill".
 
 **Verify:** Test immutability constraint is explicit. Test suite as verification criterion is stated. Human escalation for unsatisfiable tests is documented. References say `impl-planning`.
-**Status:** not started
+**Status:** done
 
 ### Step 6: Update `extensions/workflow/index.ts`
 
@@ -187,14 +189,14 @@ Update all phase-related constants and logic:
 - `StringEnum` in the tool parameter: update to include `test-write`, `test-review`, `impl-plan`; remove `plan`
 
 **Verify:** All five constants updated. Phase order is 9 phases. `impl-plan` used consistently instead of `plan`. New phases present in skill map, artifact map, and tool enum. `FLEXIBLE_TRANSITIONS` includes `brainstorm`, `architect`, `test-write`, `review`.
-**Status:** not started
+**Status:** done
 
 ### Step 7: Update `extensions/workflow/prompt.md`
 
 Update the phase listing to reflect the 9-phase pipeline with correct skill mappings. Update the state inference examples in the "Infer the next phase" bullet to include the new phases.
 
 **Verify:** Prompt lists 9 phases with correct skill mappings. State inference examples reference the new phases.
-**Status:** not started
+**Status:** done
 
 ### Step 8: Update cross-references in other skills
 
@@ -202,4 +204,4 @@ Update the phase listing to reflect the 9-phase pipeline with correct skill mapp
 - `skills/handle-review/SKILL.md`: check for any specific "planning" skill references that need updating
 
 **Verify:** `grep -rn "planning" skills/` shows only `impl-planning` references (in the renamed skill itself and in cross-references). No stale references to the old `planning` skill name.
-**Status:** not started
+**Status:** done

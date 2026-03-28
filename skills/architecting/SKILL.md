@@ -88,7 +88,7 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 
 ### Interfaces
 
-[Interfaces affected by the changes. Data shapes, API boundaries, communication patterns. Enough to understand how the pieces connect — not full API specs.]
+[Component boundary contracts for interfaces affected by the changes. For each boundary: what data flows across it (shapes, structures), what operations each component exposes, and what contracts callers and callees must satisfy. These must be specific enough that a test writer can materialize them as code — types, function signatures, expected behaviors — without making design decisions. Pseudocode and type signatures encouraged. Not full API specs, but thorough enough to code against.]
 
 ### Technology Choices
 
@@ -104,7 +104,7 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 - **Context** — brief. The brainstorm already covers the exploration; don't repeat it. Link to `docs/brainstorms/<topic>.md` if one exists.
 - **Impacted Modules** — use the codemap's module names. Focus on what changes about each module's responsibilities and dependencies, not file-level details.
 - **New Modules** — same level of detail as a codemap module entry: purpose, responsibilities, dependencies, approximate location. Not exact files.
-- **Interfaces** — only interfaces affected by the changes. Enough for someone to understand the boundaries and data flow. Pseudocode or type signatures are fine if they clarify; don't force them if prose is clearer.
+- **Interfaces** — component boundary contracts for interfaces affected by the changes. Describe what data flows across each boundary, what operations each side exposes, and what shapes are expected. Be specific enough that a test writer can materialize these as real code (types, function signatures, behavioral expectations) without making design decisions. Pseudocode and type signatures encouraged when they add precision; prose alone is fine when the contract is simple.
 - **Technology Choices** — only present when new tech is introduced or existing tech is replaced. Include what was considered and why the choice was made. Omit this section if no technology decisions were needed.
 - **DR Supersessions** — only present when the architecture supersedes one or more existing decision records. List each superseded DR with its number, title, reason for supersession, and a summary of the replacement decision. Cleanup uses this section to delete old DRs and write replacements with provenance.
 - **Omit empty sections.** If there are no new modules, no technology choices, or no DR supersessions, leave those sections out entirely.
@@ -118,4 +118,4 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 - **The codemap is the map** — use its module names, respect its boundaries, note when boundaries need to shift
 - **YAGNI** — don't architect what isn't needed. If a simple approach works, take it.
 - **Decision records are settled context** — check `docs/decisions/` before making decisions. Follow existing DRs; superseding one is always a conversation with the user.
-- **Code snippets for shape, not implementation** — use code in the plan when it communicates shape more clearly than prose: interfaces, type signatures, data structures, module boundaries. Avoid implementation snippets (function bodies, algorithms, logic) — those pre-empt TDD and constrain the implementer unnecessarily. When prose is equally clear, prefer prose.
+- **Code snippets for shape, not implementation** — use code in the plan when it communicates shape more clearly than prose: interfaces, type signatures, data structures, module boundaries. Avoid implementation snippets (function bodies, algorithms, logic) — those pre-empt TDD and constrain the implementer unnecessarily. When prose is equally clear, prefer prose. Interface descriptions are the primary input for the test-writing phase — the test writer materializes them as real code and writes behavioral tests against them, potentially in a clean context with no access to the architectural conversation. What you write in the Interfaces section is what they have to work with.

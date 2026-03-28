@@ -13,23 +13,27 @@ import { showNumberedSelect } from "../../lib/components/numbered-select.ts";
 const PHASE_SKILL_MAP: Record<string, string> = {
 	brainstorm: "brainstorming",
 	architect: "architecting",
-	plan: "planning",
+	"test-write": "test-writing",
+	"test-review": "test-review",
+	"impl-plan": "impl-planning",
 	implement: "implementing",
 	review: "code-review",
 	"handle-review": "handle-review",
 	cleanup: "cleanup",
 };
 
-const PHASE_ORDER = ["brainstorm", "architect", "plan", "implement", "review", "handle-review", "cleanup"];
+const PHASE_ORDER = ["brainstorm", "architect", "test-write", "test-review", "impl-plan", "implement", "review", "handle-review", "cleanup"];
 
 /** Phases where the user can choose to continue in the same context or start fresh */
-const FLEXIBLE_TRANSITIONS = new Set(["brainstorm", "architect", "review"]);
+const FLEXIBLE_TRANSITIONS = new Set(["brainstorm", "architect", "test-write", "review"]);
 
 /** Maps each phase to the artifact path pattern it produces/validates */
 const PHASE_ARTIFACTS: Record<string, (topic: string) => string> = {
 	brainstorm: (topic) => `docs/brainstorms/${topic}.md`,
 	architect: (topic) => `docs/plans/${topic}.md`,
-	plan: (topic) => `docs/plans/${topic}.md`,
+	"test-write": (topic) => `docs/plans/${topic}.md`,
+	"test-review": (topic) => `docs/reviews/${topic}-tests.md`,
+	"impl-plan": (topic) => `docs/plans/${topic}.md`,
 	implement: (topic) => `docs/plans/${topic}.md`,
 	review: (topic) => `docs/reviews/${topic}.md`,
 	"handle-review": (topic) => `docs/reviews/${topic}.md`,
@@ -154,7 +158,7 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: "Signal that a workflow phase is complete. Validates the artifact exists, confirms with the user, and transitions to the next phase.",
 		parameters: Type.Object({
 			topic: Type.String({ description: "The filename slug (e.g. 'workflow-orchestration')" }),
-			phase: StringEnum(["brainstorm", "architect", "plan", "implement", "review", "handle-review", "cleanup"] as const, {
+			phase: StringEnum(["brainstorm", "architect", "test-write", "test-review", "impl-plan", "implement", "review", "handle-review", "cleanup"] as const, {
 				description: "The phase that was just completed",
 			}),
 		}),

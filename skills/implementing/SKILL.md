@@ -1,6 +1,6 @@
 ---
 name: implementing
-description: "Execute an implementation plan — directly for small plans, or by orchestrating module-aligned workers for larger ones. Use when there's a plan ready to build. Requires a plan with steps in docs/plans/<topic>.md — if the plan doesn't exist or has no steps, suggest the planning skill first."
+description: "Execute an implementation plan — directly for small plans, or by orchestrating module-aligned workers for larger ones. Use when there's a plan ready to build. Requires a plan with steps in docs/plans/<topic>.md — if the plan doesn't exist or has no steps, suggest the impl-planning skill first."
 ---
 
 # Implementing
@@ -19,9 +19,11 @@ Before touching any code:
 
 1. **Read `codemap.md`** at the repo root. This gives you broad context beyond what the plan references directly.
 
-2. **Read `docs/plans/<topic>.md`** — the full plan: architecture section and steps. If the plan file doesn't exist or has no steps, stop and tell the user. Suggest running the planning skill first (or the architecting skill if no plan file exists at all).
+2. **Read `docs/plans/<topic>.md`** — the full plan: architecture section and steps. If the plan file doesn't exist or has no steps, stop and tell the user. Suggest running the impl-planning skill first (or the architecting skill if no plan file exists at all).
 
-3. **Find your starting point.** Scan the steps for the first one that isn't `done`. Start there. This makes the skill naturally resumable after interruptions or blocks.
+3. **Read the Tests section.** The plan file's `## Tests` section lists test files written against the architecture's interfaces. These files are **immutable** — read them to understand the behavioral expectations, but do not modify them. The implementation's job is to make these tests pass.
+
+4. **Find your starting point.** Scan the steps for the first one that isn't `done`. Start there. This makes the skill naturally resumable after interruptions or blocks.
 
 ### 0.5. Stamp the Starting Commit
 
@@ -46,7 +48,7 @@ For small plans. Work through each pending step in order:
 
 1. **Mark the step `in progress`** in the plan file.
 2. **Do the work.** Write code, create files, make the changes the step describes. Default to pure functions with explicit argument passing. Shared immutable state (config, constants, frozen structures) is fine. If you're about to introduce shared mutable state — even for a micro-design decision the plan didn't address — flag it to the user before proceeding.
-3. **Verify.** Run the step's verify check. Layer on cheap smoke checks (compilation, type checking, specific unit tests) as you see fit. Save expensive checks (full test suite, integration tests) for natural breakpoints or the final step.
+3. **Verify.** Run the step's verify check. Layer on cheap smoke checks (compilation, type checking, specific unit tests) as you see fit. **Running the test suite from the Tests section is the primary success criterion** — "done" means all tests pass. Save full integration tests for natural breakpoints or the final step, but run the plan's tests early and often.
 4. **If verification fails,** try to fix it. Adapt, debug, iterate. If you resolve it, carry on. If you can't — you're going in circles or genuinely stuck — mark the step `blocked` with an explanation, commit that state, and stop.
 5. **Mark the step `done`.**
 6. **Commit.** Each commit includes the code changes and the updated plan file. Write a real commit message describing what the commit does — not a formulaic template.
@@ -59,7 +61,7 @@ For larger plans. The primary orchestrates; workers write code.
 
 2. **Spawn a collaborative team.** Create module-aligned workers with channels reflecting dependencies. Keep task strings lean — point workers at the plan file and tell them which steps they own. Include peer context so they can coordinate dependencies. Example task: *"Read `docs/plans/<topic>.md` and `codemap.md`. You own steps 3–4. Agent `backend` is doing steps 1–2 — if you depend on their output, send to them to ask when it's ready. Do not edit the plan file or commit."* Workers read the plan themselves and get full context (architecture, all steps) rather than a regurgitated excerpt. The plan is the source of truth; don't duplicate it in the task string.
 
-3. **Workers execute.** Each worker writes code, runs its step's verify check, and finishes. Workers communicate laterally via channels to share interfaces, types, or contracts that unblock peer dependencies. Workers do not edit the plan file or commit. If a worker fails verification or gets stuck, it escalates to the primary via `send`. The primary decides whether to intervene, mark the step `blocked`, or tear down the group — same judgment as the direct path: try to fix it, stop when stuck.
+3. **Workers execute.** Each worker writes code, runs its step's verify check (including the test suite from the Tests section — **all tests passing is the primary success criterion**), and finishes. Workers communicate laterally via channels to share interfaces, types, or contracts that unblock peer dependencies. Workers do not edit the plan file or commit. If a worker fails verification or gets stuck, it escalates to the primary via `send`. The primary decides whether to intervene, mark the step `blocked`, or tear down the group — same judgment as the direct path: try to fix it, stop when stuck.
 
 4. **Track progress.** As `<agent_complete>` notifications arrive, update plan status fields — mark steps done as they finish. If a worker reports failure and the primary can't resolve it, mark the step `blocked` with an explanation, tear down the group, commit the current state, and stop.
 
@@ -72,6 +74,7 @@ For larger plans. The primary orchestrates; workers write code.
 Code doesn't always match what the planner predicted. Navigate mismatches using this hierarchy:
 
 - **Architecture section** — hard constraint. Module boundaries, interfaces, patterns, technology choices. Do not deviate. If reality conflicts with the architecture, stop and surface it to the user. In orchestrated mode, workers escalate architecture conflicts to the primary via `send`, and the primary escalates to the user.
+- **Tests are immutable** — if a test seems unsatisfiable — the expectation appears wrong, contradictory, or impossible to implement against — escalate to the human rather than modifying the test. Tests were reviewed and approved before implementation planning; changing them requires human judgment.
 - **Step sequence and scope** — soft constraint. Don't reorder, skip, or add steps without surfacing it to the user. If a step is unnecessary or a new step is clearly needed, say so rather than silently adjusting.
 - **Step implementation details** — flexible. Method names are slightly different, a file moved, an extra import is needed, a type is shaped differently than expected. Adapt and keep moving. This is normal.
 
