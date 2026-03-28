@@ -28,6 +28,8 @@ Turn the architecture's interface descriptions into real code — types, contrac
 - **Place files according to the codemap and architecture.** If the architecture specifies where interfaces live, follow it. Otherwise, use the codemap's module structure and existing conventions.
 - **Only define interfaces, not implementations.** Types, abstract contracts, data shapes, error types, enums — the structural skeleton. No function bodies, no business logic, no algorithms.
 - **Match the codebase's style.** Follow existing naming conventions, export patterns, and file organization.
+- **Alter existing code when necessary.** Introducing new interfaces into a live codebase often requires touching existing files — changing imports, adjusting type signatures, updating call sites, adding stub exports. Do whatever minimal work is needed so the project compiles with the new interfaces in place. This isn't implementation — it's integration scaffolding.
+- **Existing tests may need updating too.** If your interface changes break existing tests at the type or import level, fix them enough to compile. Don't rewrite their logic — just keep them structurally valid against the new interfaces.
 
 ### 2. Write Tests
 
@@ -39,6 +41,7 @@ Write component-level behavioral tests against the materialized interfaces.
   - **Boundary conditions** — empty inputs, maximum sizes, type edges, zero/null cases
   - **Error cases** — invalid inputs, missing required data, contract violations, expected failure modes
 - **Name tests descriptively.** Each test name should read as a behavioral assertion: what the component does under what conditions, not what internal function is called.
+- **The project must build and tests must run.** By the end of this phase, the full project compiles and the test suite executes. New tests will fail (no implementation yet) and altered existing tests may also fail — that's expected. But nothing should fail to *compile*, and the test suite must *launch and run*. The application itself crashing at startup is fine — that's not the bar. If getting there requires stub functions that throw `"not implemented"`, minimal adapter code, or trivial wiring changes to existing modules, do it.
 
 ### Test Style Constraints
 
@@ -93,7 +96,7 @@ The `## Tests` section appended to the plan file:
 ## Key Principles
 
 - **Interfaces first, tests second** — materialize the architecture's interfaces as real code before writing any tests. Tests import and exercise these interfaces.
-- **The implementation doesn't exist** — every test must be writable and understandable without any implementation code. If you find yourself needing implementation details to write a test, the architecture's interfaces are underspecified — stop and note the gap rather than guessing.
+- **The implementation doesn't exist yet — but the code must compile.** Tests should be writable and understandable without real implementation logic. But you're working in a live codebase, not a vacuum. If introducing new interfaces requires minimal changes to existing code — stub functions, updated imports, type adjustments, thin adapter wiring — make them. The bar is: the project compiles, the test runner launches and executes, and you haven't written real business logic. New tests failing is expected. Existing tests failing because you changed their interface surface is acceptable. The application crashing at startup is acceptable — you're not trying to keep it running, just compilable and testable. Compile errors or test runner crashes are not acceptable.
 - **Component boundaries, not internals** — test what crosses a boundary. Inputs, outputs, observable effects. Never reach inside.
 - **The architecture is the spec** — tests validate the behavioral contracts described in the architecture. Don't invent requirements the architecture doesn't describe. Don't skip requirements it does describe.
 - **Fit the codebase** — follow existing test frameworks, file conventions, and style. Don't introduce new test infrastructure unless the architecture calls for it.
