@@ -92,7 +92,7 @@ function getAzureToken(): string {
 // Backend Definitions
 // =============================================================================
 
-type Backend = "anthropic" | "openai-responses" | "openai-completions";
+type Backend = "anthropic-messages" | "openai-responses" | "openai-completions";
 
 interface BackendConfig {
 	/** Base path appended to the Foundry endpoint */
@@ -122,7 +122,7 @@ interface BackendConfig {
  * patterns or auth methods per backend.
  */
 const BACKENDS: Record<Backend, BackendConfig> = {
-	anthropic: {
+	"anthropic-messages": {
 		basePath: "/anthropic",
 		buildHeaders: (token) => ({ Authorization: `Bearer ${token}` }),
 		apiKeyValue: "azure-foundry", // dummy — real auth via headers
@@ -206,7 +206,7 @@ interface Deployment {
  */
 function resolveBackend(format: string, capabilities: Record<string, string>): Backend | null {
 	if (format === "Anthropic") {
-		return "anthropic";
+		return "anthropic-messages";
 	}
 	if (format === "OpenAI") {
 		if (capabilities.responses === "true") return "openai-responses";
@@ -307,13 +307,13 @@ export default function (pi: ExtensionAPI) {
 	pi.registerProvider("azure-foundry", {
 		baseUrl: ENDPOINT,
 		apiKey: "azure-foundry-dynamic",
-		api: "azure-foundry-api",
 
 		models: deployments.map((d) => {
 			const meta = lookupMeta(d.modelName);
 			return {
 				id: d.deploymentName,
 				name: `Foundry ${d.deploymentName}`,
+				api: d.backend,
 				reasoning: meta.reasoning,
 				input: meta.input,
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
