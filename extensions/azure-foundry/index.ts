@@ -287,9 +287,8 @@ function streamAzureFoundry(
 	const token = getAzureToken();
 	const apiKeyValue = typeof cfg.apiKeyValue === "function" ? cfg.apiKeyValue(token) : cfg.apiKeyValue;
 	const headers = { ...options?.headers, ...cfg.buildHeaders(token) };
-	const modelWithBaseUrl = { ...model, baseUrl: `${ENDPOINT}${cfg.basePath}` };
 
-	return cfg.streamFn(modelWithBaseUrl as Model<any>, context, {
+	return cfg.streamFn(model as Model<any>, context, {
 		...options,
 		apiKey: apiKeyValue,
 		headers,
@@ -304,24 +303,36 @@ export default function (pi: ExtensionAPI) {
 	const deployments = discoverDeployments();
 	deploymentMap = new Map(deployments.map((d) => [d.deploymentName, d]));
 
-	pi.registerProvider("azure-foundry", {
-		baseUrl: ENDPOINT,
-		apiKey: "azure-foundry-dynamic",
+	// Group deployments by backend
+	const byBackend = new Map<Backend, Deployment[]>();
+	for (const d of deployments) {
+		const group = byBackend.get(d.backend) ?? [];
+		group.push(d);
+		byBackend.set(d.backend, group);
+	}
 
-		models: deployments.map((d) => {
-			const meta = lookupMeta(d.modelName);
-			return {
-				id: d.deploymentName,
-				name: `Foundry ${d.deploymentName}`,
-				api: d.backend,
-				reasoning: meta.reasoning,
-				input: meta.input,
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: meta.contextWindow,
-				maxTokens: meta.maxTokens,
-			};
-		}),
+	// Register one provider per backend — each gets the correct api string
+	for (const [backend, group] of byBackend) {
+		const cfg = BACKENDS[backend];
+		pi.registerProvider(`azure-foundry-${backend}`, {
+			baseUrl: `${ENDPOINT}${cfg.basePath}`,
+			apiKey: "azure-foundry-dynamic",
+			api: backend,
 
-		streamSimple: streamAzureFoundry,
-	});
+			models: group.map((d) => {
+				const meta = lookupMeta(d.modelName);
+				return {
+					id: d.deploymentName,
+					name: `Foundry ${d.deploymentName}`,
+					reasoning: meta.reasoning,
+					input: meta.input,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					contextWindow: meta.contextWindow,
+					maxTokens: meta.maxTokens,
+				};
+			}),
+
+			streamSimple: streamAzureFoundry,
+		});
+	}
 }
