@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
@@ -221,6 +221,34 @@ export default function (pi: ExtensionAPI) {
 					pendingTransition = { topic, phase: nextPhase };
 					return { content: [{ type: "text" as const, text: appendAnnotation(STOP_TEXT, result.annotation) }] };
 				}
+			} else if (phase === "handle-review") {
+				const result = await showNumberedSelect(
+					ctx,
+					`${phase} done for ${topic}. Move on to ${nextPhase}?`,
+					[
+						{ label: `Yes, start ${nextPhase}` },
+						{ label: "Extra review pass" },
+						{ label: "No, not done yet" },
+					],
+				);
+
+				if (result === undefined || result.label === "No, not done yet") {
+					return {
+						content: [
+							{ type: "text" as const, text: appendAnnotation(NOT_DONE_TEXT, result?.annotation) },
+						],
+					};
+				} else if (result.label === "Extra review pass") {
+					const reviewPath = join(process.cwd(), `docs/reviews/${topic}.md`);
+					if (existsSync(reviewPath)) {
+						unlinkSync(reviewPath);
+					}
+					pendingTransition = { topic, phase: "review" };
+					return { content: [{ type: "text" as const, text: appendAnnotation(STOP_TEXT, result.annotation) }] };
+				}
+
+				pendingTransition = { topic, phase: nextPhase };
+				return { content: [{ type: "text" as const, text: appendAnnotation(STOP_TEXT, result.annotation) }] };
 			} else {
 				const result = await showNumberedSelect(
 					ctx,
