@@ -21,6 +21,10 @@ The output is threefold: interface definition code in the codebase, test files i
 
 3. **Read existing code** around the interfaces being defined. Understand current type conventions, file organization patterns, and import styles so the materialized interfaces fit naturally.
 
+### 0.5. Stamp the Starting Commit
+
+Record the current HEAD hash before making any changes. This becomes the `pre-test-write-commit` baseline — code review uses it to scope its diff back to before any test infrastructure existed. You'll write this hash into the `## Tests` section in step 3.
+
 ### 1. Materialize Interfaces
 
 Turn the architecture's interface descriptions into real code — types, contracts, data shapes, API boundaries. These are the public surfaces that tests will exercise and the implementation will later satisfy.
@@ -65,6 +69,8 @@ The `## Tests` section appended to the plan file:
 ```markdown
 ## Tests
 
+**Pre-test-write commit:** `<full 40-character HEAD hash>`
+
 ### Interface Files
 
 - `path/to/interfaces.ts` — [brief description of what interfaces are defined]
@@ -91,6 +97,7 @@ The `## Tests` section appended to the plan file:
 - **Interface Files** — list every file created or modified to materialize interfaces. Brief description of contents.
 - **Test Files** — list every test file created. Brief description of what behavioral surface it covers.
 - **Behaviors Covered** — grouped by component. Each bullet is a behavioral assertion, not a test function name. Written so a reader can understand what the implementation must do without reading the test code.
+- **Pre-test-write commit** — the HEAD hash captured in step 0.5. Code review uses this as its diff baseline to scope the review back through test writing.
 - **No review status yet.** The test-review skill adds the review stamp later. Don't include it here.
 
 ## Key Principles

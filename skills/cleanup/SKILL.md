@@ -23,6 +23,8 @@ This skill always runs in a clean context with no conversational history from pr
 
 4. **Read `docs/reviews/<topic>.md`** — the review. If it doesn't exist, skip it.
 
+5. **Read `docs/reviews/<topic>-tests.md`** — the test review. If it doesn't exist, skip it.
+
 ### 1. Spawn Background Agents
 
 Before starting DR extraction, spawn two subagents as a fan-out — no inter-agent channels needed:
@@ -41,7 +43,7 @@ Before extracting new DRs, check the plan for a `### DR Supersessions` section u
 
 #### Extract New Records
 
-Scan the working artifacts (brainstorm, plan, review) for decisions worth preserving. Follow the decision-records skill for quality criteria, format, file conventions, and proposal flow.
+Scan the working artifacts (brainstorm, plan, review, test review) for decisions worth preserving. Follow the decision-records skill for quality criteria, format, file conventions, and proposal flow.
 
 ### 3. Wait for Background Agents
 
@@ -53,6 +55,7 @@ Remove the working artifacts for this topic:
 - `docs/brainstorms/<topic>.md`
 - `docs/plans/<topic>.md`
 - `docs/reviews/<topic>.md`
+- `docs/reviews/<topic>-tests.md`
 
 Only delete files that actually exist.
 

@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: "Review implemented code against its plan. Use when changes have been made and need checking — after implementation, before pushing, or when the user asks for a review. Requires a plan in docs/plans/<topic>.md with a pre-implementation-commit field — if the plan doesn't exist, suggest running the earlier pipeline phases first."
+description: "Review implemented code against its plan. Use when changes have been made and need checking — after implementation, before pushing, or when the user asks for a review. Requires a plan in docs/plans/<topic>.md — if the plan doesn't exist, suggest running the earlier pipeline phases first."
 ---
 
 # Code Review
@@ -17,9 +17,9 @@ The output is a findings file — not a conversation, not a fix. The review runs
 
 1. **Read `codemap.md`** at the repo root. If it doesn't exist, proceed without it — the plan and diff are the primary inputs.
 
-2. **Read `docs/plans/<topic>.md`** — the full plan: architecture, steps, and status fields. If the plan doesn't exist, tell the user and stop. Suggest running the architecting and impl-planning skills first to establish the plan this review checks against. If the plan has no `pre-implementation-commit` field, ask the user for a commit hash or ref to diff from.
+2. **Read `docs/plans/<topic>.md`** — the full plan: architecture, tests, steps, and status fields. If the plan doesn't exist, tell the user and stop. Suggest running the earlier pipeline phases first to establish the plan this review checks against. The plan should have a `pre-test-write-commit` field (in the Tests section) — this is the diff baseline, scoping the review back through test writing. If it's missing, fall back to `pre-implementation-commit` (in the Steps section). If neither exists, ask the user for a commit hash or ref to diff from.
 
-3. **Get the diff.** Use the `pre-implementation-commit` field from the plan to run `git diff <commit>..HEAD`. This is the scope of review — everything that changed during implementation.
+3. **Get the diff.** Use the `pre-test-write-commit` field from the plan (or `pre-implementation-commit` as fallback) to run `git diff <commit>..HEAD`. This is the scope of review — everything that changed from test writing through implementation.
 
 4. **Read the changed files in full.** The diff tells you what changed, but review requires understanding context. Read the full current version of files with non-trivial changes. Don't read every file touched — use judgment about which files need full context (e.g., a file with 2 lines changed in a 500-line module probably needs the full read; a new file is already fully visible in the diff).
 
@@ -40,6 +40,8 @@ Compare the plan against the diff. For each step in the plan, check:
 Also check the reverse:
 
 - **Was anything done that wasn't planned?** Changes in the diff that don't trace back to any step. Unplanned work isn't automatically wrong, but it should be noted.
+
+**Check test immutability.** If the plan has both `pre-test-write-commit` and `pre-implementation-commit` fields, diff the test files listed in the `## Tests` section between `pre-implementation-commit` and HEAD. Test files are immutable during implementation — any modifications are a critical finding. Interface files from the Tests section should also be checked but are less likely to be problematic (implementation may legitimately add to files that contain interfaces).
 
 **Use judgment on deviations.** Reasonable adaptations are normal during implementation — method names differ slightly, an extra edge case is handled, a file lives in a slightly different path than the plan assumed. These aren't findings. Flag deviations where the intent drifted: planned validation that's missing, a module boundary that was ignored, a pattern the architecture specified that wasn't followed.
 
