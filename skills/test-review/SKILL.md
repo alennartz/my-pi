@@ -43,12 +43,14 @@ Walk through findings with the user. This is interactive — one issue or group 
 
 **Escalate to the user:**
 
-- Brainstorm intent that no test covers — the user decides whether it needs a test or is intentionally untested
+- Brainstorm intent that no test covers — trace the gap back to its source. If the architecture doesn't cover the intent either, that's an architecture gap, not just a test gap. If the architecture covers it but the test writer missed it, that's a test-writing gap. Either way, the user decides whether it needs coverage or is intentionally untested.
 - Tests that cover something the brainstorm didn't describe — the user decides whether to keep or remove
 - Tests at too low an abstraction level — explain why and propose a higher-level replacement
 - Ambiguous expectations — where the test asserts something the interface doesn't clearly define
 
 **Fix inline with approval.** When the user agrees an issue needs fixing, make the change directly — edit the test file, update the interface if needed, adjust the plan's Tests section to match. Don't batch fixes for later; fix as you go.
+
+**Architecture gaps are fixable here.** When missing test coverage traces back to brainstorm intent the architecture didn't include, don't punt back to the architect phase. With the user's approval, update the architecture section of the plan (add the missing interfaces/decisions), then add the corresponding tests and interface code. This review has the brainstorm, the architecture, and the tests all in context — it's the right place to catch and close these gaps.
 
 **Use judgment on severity.** Not everything needs escalation. Minor naming issues, slightly redundant tests, or trivially fixable gaps can be noted and fixed with a brief mention. Save escalation for genuine ambiguity or missing coverage that could affect implementation.
 
