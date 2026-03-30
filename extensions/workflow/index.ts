@@ -169,7 +169,7 @@ export default function (pi: ExtensionAPI) {
 			const artifactPathFn = PHASE_ARTIFACTS[phase];
 			if (artifactPathFn) {
 				const artifactPath = artifactPathFn(topic);
-				const fullPath = join(process.cwd(), artifactPath);
+				const fullPath = join(ctx.cwd, artifactPath);
 				if (!existsSync(fullPath)) {
 					throw new Error(
 						`Expected artifact not found: ${artifactPath} — complete the phase before signaling completion.`,
@@ -243,7 +243,7 @@ export default function (pi: ExtensionAPI) {
 						],
 					};
 				} else if (result.label === "Extra review pass") {
-					const reviewPath = join(process.cwd(), `docs/reviews/${topic}.md`);
+					const reviewPath = join(ctx.cwd, `docs/reviews/${topic}.md`);
 					if (existsSync(reviewPath)) {
 						unlinkSync(reviewPath);
 					}
