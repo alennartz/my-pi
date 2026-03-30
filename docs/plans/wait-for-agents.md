@@ -150,8 +150,8 @@ Key behaviors per the tests:
 - `setParentBusy(false)` triggers `flush()`
 - `trackToolEnd()` triggers `flush()` when `pendingToolCalls` becomes empty
 
-**Verify:** `npx vitest run extensions/subagents/notification-queue.test.ts` — all 30 tests pass.
-**Status:** in progress
+**Verify:** `npx vitest run extensions/subagents/notification-queue.test.ts` — all 31 tests pass.
+**Status:** done
 
 ### Step 2: Replace inline notification queue with `NotificationQueue` instance
 
@@ -170,7 +170,7 @@ Replace with:
 - Update `session_shutdown` to call `queue.clear()` instead of `clearNotificationQueue()`
 
 **Verify:** All call sites in index.ts reference queue methods correctly. The `parentBusy` variable used by the `send` tool's broker routing is unaffected (it's a different `parentBusy` scoped to the queue internally — the send tool checks `manager?.getAgentStatus()`, not the queue state).
-**Status:** not started
+**Status:** done
 
 ### Step 3: Register the `await_agents` tool
 

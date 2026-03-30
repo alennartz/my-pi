@@ -35,6 +35,7 @@ import {
 	type AgentCompleteData,
 } from "./messages.js";
 import { createStopSequenceManager } from "./stop-sequences.js";
+import { NotificationQueue } from "./notification-queue.js";
 
 // ─── Delivery mode flag ──────────────────────────────────────────────────────
 //
@@ -227,101 +228,33 @@ export default function (pi: ExtensionAPI) {
 	const skillPathsMap = new Map<string, string[]>();
 
 	// ─── Notification queue ─────────────────────────────────────────────
-	//
-	// Notifications accumulate in an internal queue and flush as a single
-	// combined message at the right boundary:
-	//
-	// - Agent idle: flush immediately (prompt() path).
-	// - Agent busy, USE_STEER_DELIVERY off: accumulate, flush on agent_end.
-	//   (DR-019 — avoids cascading steer interrupts.)
-	// - Agent busy, USE_STEER_DELIVERY on, tools running: accumulate,
-	//   flush when the last in-flight tool call ends. Tool calls are
-	//   paired by toolCallId (start/end) so we know the exact boundary.
-	// - Agent busy, USE_STEER_DELIVERY on, LLM streaming (no tools):
-	//   flush immediately — no batching opportunity.
-	//
-	// On flush we set parentBusy = true synchronously, before the
-	// sendMessage call returns. This closes a race that would otherwise
-	// exist: sendMessage with triggerTurn starts the turn asynchronously,
-	// so agent_start hasn't fired yet when the next notification arrives.
-	// Without the synchronous state transition, that notification would
-	// see idle state and trigger a second flush — producing consecutive
-	// messages (out-of-distribution for most LLMs).
 
-	interface QueuedNotification {
-		xml: string;
-		source: "local" | "uplink";
-	}
-
-	const notificationQueue: QueuedNotification[] = [];
-	let parentBusy = false;
-
-	// Track in-flight tool calls by id so we can flush notifications
-	// when the last tool in a round completes, rather than per-tool.
-	const pendingToolCalls = new Set<string>();
-
-	function queueNotification(xml: string, source: "local" | "uplink"): void {
-		notificationQueue.push({ xml, source });
-		if (!parentBusy) {
-			// Agent is idle — flush immediately (goes through prompt() path).
-			flushNotifications();
-		} else if (USE_STEER_DELIVERY && pendingToolCalls.size === 0) {
-			// Agent is busy but LLM is streaming (no tools running) —
-			// no batching opportunity, flush immediately as steer.
-			flushNotifications();
-		}
-		// Otherwise: tools are running — accumulate and flush when last tool ends.
-		// Or: !USE_STEER_DELIVERY — accumulate and flush on agent_end (DR-019).
-	}
-
-	function flushNotifications(): void {
-		if (notificationQueue.length === 0) return;
-		if (parentBusy && !USE_STEER_DELIVERY) return;
-
-		// Mark busy before sendMessage so any notification arriving between
-		// now and the async agent_start event sees the correct state.
-		parentBusy = true;
-
-		const combined = notificationQueue.splice(0).map((n) => n.xml).join("\n");
-		pi.sendMessage(
-			{ customType: "subagents", content: combined, display: true },
-			{ triggerTurn: true },
-		);
-	}
-
-	/** Remove local (sub-group) entries, preserve uplink entries. */
-	function drainLocalNotifications(): void {
-		for (let i = notificationQueue.length - 1; i >= 0; i--) {
-			if (notificationQueue[i].source === "local") {
-				notificationQueue.splice(i, 1);
-			}
-		}
-	}
-
-	function clearNotificationQueue(): void {
-		notificationQueue.length = 0;
-	}
+	const queue = new NotificationQueue({
+		steerDelivery: USE_STEER_DELIVERY,
+		deliver(combined: string) {
+			pi.sendMessage(
+				{ customType: "subagents", content: combined, display: true },
+				{ triggerTurn: true },
+			);
+		},
+	});
 
 	pi.on("agent_start", async () => {
-		parentBusy = true;
+		queue.setParentBusy(true);
 	});
 
 	pi.on("agent_end", async () => {
-		pendingToolCalls.clear();
-		parentBusy = false;
-		flushNotifications();
+		queue.clearPendingTools();
+		queue.setParentBusy(false);
 	});
 
 	if (USE_STEER_DELIVERY) {
 		pi.on("tool_execution_start", async (event) => {
-			pendingToolCalls.add(event.toolCallId);
+			queue.trackToolStart(event.toolCallId);
 		});
 
 		pi.on("tool_execution_end", async (event) => {
-			pendingToolCalls.delete(event.toolCallId);
-			if (pendingToolCalls.size === 0) {
-				flushNotifications();
-			}
+			queue.trackToolEnd(event.toolCallId);
 		});
 	}
 
@@ -399,7 +332,7 @@ export default function (pi: ExtensionAPI) {
 							correlationId: msg.correlationId,
 							responseExpected: msg.responseExpected ?? false,
 						});
-						queueNotification(xml, "uplink");
+						queue.queue(xml, "uplink");
 					}
 				});
 			} catch (err) {
@@ -446,13 +379,13 @@ export default function (pi: ExtensionAPI) {
 					const total = manager.getAgentStatuses().length;
 					xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have completed. Review results above, then call teardown to clean up — or use send first if you have follow-ups for any agent.`;
 				}
-				queueNotification(xml, "local");
+				queue.queue(xml, "local");
 			},
 			onParentMessage: (xml, meta) => {
 				if (meta.responseExpected && meta.correlationId) {
 					correlationOrigin.set(meta.correlationId, "local");
 				}
-				queueNotification(xml, "local");
+				queue.queue(xml, "local");
 			},
 		});
 
@@ -872,7 +805,7 @@ export default function (pi: ExtensionAPI) {
 					parentBrokerClient = null;
 				}
 				manager = null;
-				drainLocalNotifications();
+				queue.drainLocal();
 				ctx.ui.setWidget("subagents", undefined as any);
 				dashboard = null;
 				tuiRef = null;
@@ -893,7 +826,7 @@ export default function (pi: ExtensionAPI) {
 	// ─── Cleanup on shutdown ─────────────────────────────────────────────
 
 	pi.on("session_shutdown", async () => {
-		clearNotificationQueue();
+		queue.clear();
 		if (manager) {
 			await manager.teardown();
 			manager = null;
