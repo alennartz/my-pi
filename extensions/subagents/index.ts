@@ -5,8 +5,8 @@
  * - Absent: root agent. Starts broker, registers all tools.
  * - Present: has a parent. Connects to parent's broker, registers all tools.
  *
- * Both roles register the same six tools: subagent, fork, send, respond,
- * check_status, teardown. Any agent can spawn sub-groups (recursive).
+ * Both roles register the same seven tools: subagent, fork, send, respond,
+ * check_status, teardown, await_agents. Any agent can spawn sub-groups (recursive).
  */
 
 import * as net from "node:net";
@@ -816,6 +816,70 @@ export default function (pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text", text: `${label}\n\n${report}` }],
 			};
+		},
+	});
+
+	// ─── Tool: await_agents ──────────────────────────────────────────────
+
+	if (shouldRegisterTool("await_agents")) pi.registerTool({
+		name: "await_agents",
+		label: "Await Agents",
+		description: "Block until an agent completes or sends a message. Returns accumulated notifications.",
+		promptGuidelines: [
+			"Use `await_agents` when you need results before your next step — it blocks until an agent completes or sends a message.",
+			"Any agent message (including fire-and-forget) interrupts the wait. If an expect-response message interrupts, you must call `respond` before waiting again.",
+			"After handling an interruption, call `await_agents` again to resume waiting.",
+		],
+		parameters: Type.Object({
+			agents: Type.Optional(
+				Type.Array(Type.String(), {
+					description: "Agent IDs to wait on. Omit to wait on all agents in the group.",
+				}),
+			),
+		}),
+
+		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+			if (!manager || !manager.hasAgents()) {
+				throw new Error("No agents running. Spawn agents first with the subagent or fork tool.");
+			}
+
+			// Validate agent IDs if scoped
+			if (params.agents) {
+				for (const id of params.agents) {
+					if (!manager.getAgentStatus(id)) {
+						throw new Error(`Unknown agent: "${id}"`);
+					}
+				}
+			}
+
+			// Build the early-satisfaction check: all scoped agents are idle or failed
+			const scopedIds = params.agents ?? manager.getAgentStatuses().map((s) => s.id);
+			const mgr = manager; // capture for closure
+			const isAlreadySatisfied = () => {
+				return scopedIds.every((id) => {
+					const s = mgr.getAgentStatus(id);
+					return s && (s.state === "idle" || s.state === "failed");
+				});
+			};
+
+			try {
+				const result = await queue.wait({ isAlreadySatisfied, signal: signal ?? undefined });
+
+				if (!result) {
+					return {
+						content: [{ type: "text", text: "All specified agents have already completed. No pending notifications." }],
+					};
+				}
+
+				return {
+					content: [{ type: "text", text: result }],
+				};
+			} catch (err: any) {
+				if (err?.message === "Aborted") {
+					throw new Error("Wait cancelled.");
+				}
+				throw err;
+			}
 		},
 	});
 

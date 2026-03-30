@@ -185,4 +185,4 @@ Add a new tool registration in `index.ts` gated by `shouldRegisterTool("await_ag
 - Update the module doc comment from "six tools" to "seven tools"
 
 **Verify:** Tool appears in the registered tools list. Schema accepts optional `agents` array. Follows the `shouldRegisterTool` gating pattern used by all other tools.
-**Status:** not started
+**Status:** done
