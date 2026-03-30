@@ -53,3 +53,136 @@ Guidelines should convey:
 - Use `await_agents` when you need results before your next step — it blocks until an agent completes or sends a message.
 - Any agent message (including fire-and-forget) interrupts the wait. If an expect-response message interrupts, you must call `respond` before waiting again.
 - After handling an interruption, call `await_agents` again to resume waiting.
+
+## Tests
+
+**Pre-test-write commit:** `0c206c413bd5101b670694a56cae490bd6865c6a`
+
+### Interface Files
+
+- `extensions/subagents/notification-queue.ts` — `NotificationQueue` class extracted from the inline notification queue closures in `index.ts`. Defines the queue + wait interface: `queue()`, `flush()`, `drainLocal()`, `clear()`, `setParentBusy()`, `trackToolStart/End()`, `clearPendingTools()`, `wait()`, plus `isWaiting` and `length` accessors. All methods throw "not implemented". Types: `NotificationQueueConfig`, `WaitOptions`, `NotificationSource`.
+- `vitest.config.ts` — Vitest configuration targeting `extensions/**/*.test.ts`.
+
+### Test Files
+
+- `extensions/subagents/notification-queue.test.ts` — Behavioral tests for the `NotificationQueue` component covering normal delivery, steer delivery batching, queue management, wait resolution, flush suppression during waits, early satisfaction, cancellation, and exclusivity.
+
+### Behaviors Covered
+
+#### Normal Delivery (no wait)
+
+- Flushes immediately when parent is idle (auto-flush on queue)
+- Sets parentBusy=true synchronously before calling deliver (prevents double-flush race)
+- Accumulates notifications when parentBusy and steerDelivery off
+- Flushes accumulated notifications when parentBusy clears and flush() is called
+- Concatenates multiple queued notifications with newline separators
+- Does nothing when flushing an empty queue
+- Explicit flush() is suppressed when parentBusy and steerDelivery off
+
+#### Steer Delivery
+
+- Flushes immediately when busy but no pending tool calls (LLM streaming)
+- Accumulates while tool calls are pending
+- Flushes when the last tracked tool call ends
+- Does not flush on trackToolEnd when queue is empty
+
+#### Queue Management (drainLocal / clear)
+
+- drainLocal removes local-source notifications and keeps uplink
+- Preserved uplink notifications can be flushed after drainLocal
+- clear removes all notifications regardless of source
+
+#### Wait Resolution
+
+- wait() returns a promise that resolves when queue() is called during the wait
+- Pre-queued notifications are included in the wait result
+- Queue is drained (emptied) on resolution
+- Multiple events queued synchronously during wait are captured
+
+#### Wait Flush Suppression
+
+- Normal auto-delivery is suppressed while waiting (deliver callback not called)
+- Explicit flush() is suppressed while waiting
+- Normal delivery resumes after wait resolves
+- Steer delivery flush (on trackToolEnd) is suppressed while waiting
+
+#### Wait Early Satisfaction
+
+- Resolves immediately when isAlreadySatisfied returns true, returning queued content
+- Returns empty string when satisfied and queue is empty
+- Blocks when isAlreadySatisfied returns false, resolves on next queue()
+
+#### Wait Cancellation
+
+- Rejects when AbortSignal fires during wait
+- Resumes normal delivery after cancellation
+- Preserves queued notifications after cancellation (not lost)
+- Rejects immediately if signal is already aborted at call time
+
+#### Wait Exclusivity
+
+- Rejects a second wait() call while one is already active
+
+## Tests
+
+**Pre-test-write commit:** `0c206c413bd5101b670694a56cae490bd6865c6a`
+
+### Interface Files
+
+- `extensions/subagents/notification-queue.ts` — `NotificationQueue` class with configuration types (`NotificationQueueConfig`, `WaitOptions`, `NotificationSource`). Defines the queue/flush/wait/cancel interface that the `await_agents` tool and existing notification delivery logic will use.
+
+### Test Files
+
+- `extensions/subagents/notification-queue.test.ts` — Behavioral tests for the `NotificationQueue` component: normal delivery, steer delivery batching, wait resolution, immediate resolution, cancellation, and queue management (drainLocal, clear).
+
+### Behaviors Covered
+
+#### Normal Delivery
+
+- Auto-flushes via deliver callback when parent agent is not busy
+- Combines multiple queued notifications into a single newline-joined delivery
+- Flush is a no-op when the queue is empty
+- Flush empties the queue after successful delivery
+- Flush is suppressed when parent is busy and steer delivery is off
+- Sets parentBusy before calling deliver to prevent double-flush race condition
+
+#### Steer Delivery
+
+- Auto-flushes when parent is busy but no tool calls are pending (LLM streaming)
+- Accumulates notifications when tool calls are pending
+- Flushes when the last tracked tool call completes
+- Does not flush when other tool calls are still in flight
+- Flushes only when all concurrent tool calls have completed
+
+#### Wait Resolution
+
+- Wait promise resolves when queue() is called during an active wait
+- Pre-existing queued notifications are included in the wait result
+- isWaiting transitions: false → true on wait start → false on resolution
+- Events during wait go to the wait result, not to the deliver callback
+- Explicit flush() calls are suppressed while wait is active
+- Steer delivery auto-flush is suppressed while wait is active
+- Normal delivery resumes after wait resolves
+- Queue is drained completely on wait resolution
+
+#### Wait Immediate Resolution
+
+- Resolves immediately when isAlreadySatisfied callback returns true
+- Returns empty string when already satisfied and queue is empty
+- isWaiting is false after immediate resolution (no lingering state)
+
+#### Wait Cancellation
+
+- Rejects the promise when the abort signal fires
+- Clears isWaiting on cancellation
+- Normal delivery resumes after cancellation
+- Rejects immediately when given an already-aborted signal
+
+#### Wait Errors
+
+- Throws when a second wait is started while one is already active
+
+#### Queue Management
+
+- drainLocal removes only local-source notifications, preserving uplink entries
+- clear removes all notifications regardless of source

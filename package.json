@@ -2,12 +2,27 @@
   "name": "alenna-pi",
   "version": "0.1.0",
   "description": "My personal pi coding agent package containing skills and other things.",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"],
-    "prompts": ["./prompts"],
-    "themes": ["./themes"],
-    "agents": ["./agents"]
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ],
+    "themes": [
+      "./themes"
+    ],
+    "agents": [
+      "./agents"
+    ]
+  },
+  "devDependencies": {
+    "vitest": "^4.1.2"
   }
 }
