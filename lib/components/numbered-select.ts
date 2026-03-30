@@ -254,8 +254,33 @@ export async function showNumberedSelect(
 		throw new Error("showNumberedSelect: options must have 9 or fewer items");
 	}
 
-	return ctx.ui.custom<NumberedSelectResult | undefined>((tui, theme, _kb, done) => {
+	// Try the custom TUI component first — returns the selection in TUI mode,
+	// undefined when the environment can't render custom components (RPC, pimote, etc.)
+	const customResult = await ctx.ui.custom<NumberedSelectResult | undefined>((tui, theme, _kb, done) => {
 		const component = new NumberedSelectComponent(tui, theme, title, options, done);
 		return component;
 	});
+
+	if (customResult !== undefined) {
+		return customResult;
+	}
+
+	// Fallback: use ctx.ui.select() which works via the RPC bridge
+	const selectLabels = options.map((opt, i) => {
+		let label = `${i + 1}. ${opt.label}`;
+		if (opt.description) label += ` — ${opt.description}`;
+		return label;
+	});
+
+	const selected = await ctx.ui.select(title, selectLabels);
+	if (selected === undefined) return undefined;
+
+	const selectedIndex = selectLabels.indexOf(selected);
+	if (selectedIndex === -1) return undefined;
+
+	return {
+		index: selectedIndex,
+		label: options[selectedIndex]!.label,
+		// Annotations not available in fallback mode
+	};
 }
