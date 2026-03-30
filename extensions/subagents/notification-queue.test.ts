@@ -112,6 +112,16 @@ describe("NotificationQueue — steer delivery", () => {
 		queue.trackToolEnd("tool2");
 		expect(delivered).toEqual(["<event>a</event>"]);
 	});
+
+	it("clearPendingTools does not trigger a flush", () => {
+		const { queue, delivered } = createQueue({ steerDelivery: true });
+		queue.setParentBusy(true);
+		queue.trackToolStart("tool1");
+		queue.queue("<event>a</event>", "local");
+		queue.clearPendingTools();
+		expect(delivered).toEqual([]);
+		expect(queue.length).toBe(1);
+	});
 });
 
 // ─── Wait resolution ─────────────────────────────────────────────────────────
@@ -265,6 +275,21 @@ describe("NotificationQueue — wait cancellation", () => {
 		queue.setParentBusy(false);
 		queue.queue("<event>after-cancel</event>", "local");
 		expect(delivered).toEqual(["<event>after-cancel</event>"]);
+	});
+
+	it("preserves queued notifications after cancellation", async () => {
+		const { queue } = createQueue();
+		queue.setParentBusy(true);
+		queue.queue("<event>a</event>", "local");
+		const controller = new AbortController();
+		const p = queue.wait({ signal: controller.signal });
+		controller.abort();
+		try {
+			await p;
+		} catch {
+			// expected
+		}
+		expect(queue.length).toBe(1);
 	});
 
 	it("rejects immediately when given an already-aborted signal", async () => {
