@@ -126,3 +126,61 @@ Guidelines should convey:
 - Rejects a second wait() call while one is already active
 
 **Review status:** approved
+
+## Steps
+
+### Step 1: Implement `NotificationQueue`
+
+Implement all stub methods in `extensions/subagents/notification-queue.ts`. Internal state needed:
+
+- `entries: Array<{xml: string, source: NotificationSource}>` — the queue
+- `parentBusy: boolean` — tracks agent busy state
+- `pendingToolCalls: Set<string>` — tracks in-flight tool calls for steer delivery
+- `_isWaiting: boolean` — wait flag
+- `waitResolve: ((result: string) => void) | null` — promise resolver for active wait
+- `waitReject: ((err: Error) => void) | null` — promise rejecter for cancellation
+- `abortCleanup: (() => void) | null` — removes abort listener on resolution
+
+Key behaviors per the tests:
+- `queue()`: pushes entry, then either resolves the active wait OR auto-flushes based on busy/steer/tools state
+- `flush()`: suppressed when waiting, when empty, or when busy + no steer. Otherwise drains queue, sets `parentBusy = true`, calls `deliver`
+- `wait()`: throws if already waiting, checks `isAlreadySatisfied` for immediate resolution, wires abort signal, sets `_isWaiting = true`
+- `setParentBusy(false)` triggers `flush()`
+- `trackToolEnd()` triggers `flush()` when `pendingToolCalls` becomes empty
+
+**Verify:** `npx vitest run extensions/subagents/notification-queue.test.ts` — all 30 tests pass.
+**Status:** not started
+
+### Step 2: Replace inline notification queue with `NotificationQueue` instance
+
+In `extensions/subagents/index.ts`, remove:
+- The `QueuedNotification` interface and `notificationQueue` array
+- The `parentBusy` variable and `pendingToolCalls` set
+- The `queueNotification()`, `flushNotifications()`, `drainLocalNotifications()`, `clearNotificationQueue()` functions
+- The `agent_start`, `agent_end`, `tool_execution_start`, `tool_execution_end` event handlers that manage the queue
+
+Replace with:
+- `import { NotificationQueue } from "./notification-queue.js"`
+- A `NotificationQueue` instance configured with `deliver` calling `pi.sendMessage(...)` and `steerDelivery: USE_STEER_DELIVERY`
+- Event handlers wired to `queue.setParentBusy()`, `queue.trackToolStart()`, `queue.trackToolEnd()`, `queue.clearPendingTools()`, `queue.flush()`
+- Update `onAgentComplete`/`onParentMessage` callbacks to call `queue.queue()` instead of `queueNotification()`
+- Update `teardown` to call `queue.drainLocal()` instead of `drainLocalNotifications()`
+- Update `session_shutdown` to call `queue.clear()` instead of `clearNotificationQueue()`
+
+**Verify:** All call sites in index.ts reference queue methods correctly. The `parentBusy` variable used by the `send` tool's broker routing is unaffected (it's a different `parentBusy` scoped to the queue internally — the send tool checks `manager?.getAgentStatus()`, not the queue state).
+**Status:** not started
+
+### Step 3: Register the `await_agents` tool
+
+Add a new tool registration in `index.ts` gated by `shouldRegisterTool("await_agents")`:
+
+- **Schema:** `{ agents?: string[] }` — optional array of agent IDs
+- **Validation:** no manager or no agents → error; any unknown agent ID → error
+- **Build `isAlreadySatisfied`:** closure that checks if all scoped agents (or all if no scope) have state `"idle"` or `"failed"` via `manager.getAgentStatuses()`
+- **Call `queue.wait({ isAlreadySatisfied, signal })`** where `signal` is the tool's abort signal
+- **Return** the resolved string as `[{ type: "text", text: result }]`; handle empty result (all satisfied, nothing queued) with a descriptive message
+- **Prompt guidelines** per architecture: use when you need results, any message interrupts, call `respond` then re-wait for expect-response interrupts
+- Update the module doc comment from "six tools" to "seven tools"
+
+**Verify:** Tool appears in the registered tools list. Schema accepts optional `agents` array. Follows the `shouldRegisterTool` gating pattern used by all other tools.
+**Status:** not started
