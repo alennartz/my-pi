@@ -52,9 +52,9 @@ function buildEntryPrompt(userInput: string, inventory: string, gitStatus: strin
 		.replace("${GIT_STATUS}", gitStatus);
 }
 
-function buildPhasePrompt(topic: string, phase: string): string {
+function buildPhasePrompt(topic: string, phase: string, cwd: string): string {
 	const skill = PHASE_SKILL_MAP[phase];
-	const gitStatus = getGitStatus();
+	const gitStatus = getGitStatus(cwd);
 	const lines = [
 		`# Workflow: Continue Pipeline`,
 		``,
@@ -107,8 +107,8 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("workflow", {
 		description: "Start or continue the development workflow pipeline",
 		handler: async (args, ctx) => {
-			const inventory = getArtifactInventory();
-			const gitStatus = getGitStatus();
+			const inventory = getArtifactInventory(ctx.cwd);
+			const gitStatus = getGitStatus(ctx.cwd);
 			const prompt = buildEntryPrompt(args, inventory, gitStatus);
 			pi.sendUserMessage(prompt);
 		},
@@ -138,7 +138,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			pi.sendUserMessage(buildPhasePrompt(topic, phase));
+			pi.sendUserMessage(buildPhasePrompt(topic, phase, ctx.cwd));
 		},
 	});
 

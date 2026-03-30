@@ -12,9 +12,9 @@ const ARTIFACT_DIRS = ["docs/brainstorms", "docs/plans", "docs/reviews", "docs/d
 /** Directories where we only care about the count, not individual filenames */
 const COUNT_ONLY_DIRS = new Set(["docs/decisions"]);
 
-export function getArtifactInventory(): string {
+export function getArtifactInventory(cwd: string): string {
 	return ARTIFACT_DIRS.map((dir: string) => {
-		const fullPath = join(process.cwd(), dir);
+		const fullPath = join(cwd, dir);
 		let files: string[];
 		try {
 			files = readdirSync(fullPath).filter((f) => f.endsWith(".md"));
@@ -38,9 +38,9 @@ export function getArtifactInventory(): string {
  * Returns a clean message if the working tree is clean, or the porcelain output
  * with a recommendation if there are uncommitted changes.
  */
-export function getGitStatus(): string {
+export function getGitStatus(cwd: string): string {
 	try {
-		const output = execSync("git status --porcelain", { cwd: process.cwd(), encoding: "utf-8" }).trim();
+		const output = execSync("git status --porcelain", { cwd, encoding: "utf-8" }).trim();
 		if (!output) {
 			return "Clean — no uncommitted changes.";
 		}

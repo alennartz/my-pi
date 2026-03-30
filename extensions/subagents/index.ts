@@ -333,9 +333,9 @@ export default function (pi: ExtensionAPI) {
 
 	let cachedPackageAgents: { user: AgentConfig[], project: AgentConfig[] } | null = null;
 
-	pi.on("session_start", async (_event, _ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		try {
-			cachedPackageAgents = await discoverPackageAgents(process.cwd());
+			cachedPackageAgents = await discoverPackageAgents(ctx.cwd);
 		} catch {
 			cachedPackageAgents = null;
 		}
@@ -343,12 +343,12 @@ export default function (pi: ExtensionAPI) {
 
 	// ─── Inject available agent definitions into system prompt ───────────
 
-	pi.on("before_agent_start", async (event, _ctx) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		// Only inject when the subagent tool is active for this agent
 		const activeTools = pi.getActiveTools();
 		if (!activeTools.includes("subagent")) return;
 
-		const agents = discoverAgents(process.cwd(), cachedPackageAgents ?? undefined).agents;
+		const agents = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined).agents;
 		if (agents.length === 0) return;
 
 		const lines = [
