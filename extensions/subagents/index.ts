@@ -499,7 +499,7 @@ export default function (pi: ExtensionAPI) {
 			"Each agent gets its own pi process. Agents communicate via the send/respond tools using channels declared at spawn time.",
 			"Parent (you) is auto-injected into every agent's channel list. The channels field governs agent-to-agent peer communication only.",
 			"Agents can be added incrementally — call subagent again to add more agents to the existing set. New agents join the running infrastructure.",
-			"Spawning is non-blocking — results arrive later as system notifications. Continue with other work, or if there's nothing else to do, briefly describe what was launched and end your turn.",
+			"Spawning is non-blocking — results arrive later as system notifications. Unless explicitly told to do other work after spawning, briefly describe what you launched and end your turn immediately with no further actions.",
 			"When system notifications arrive, respond with your analysis and next actions. The notification content is already visible to the user — summarize your takeaway, not the raw content.",
 			"Use subagent when the work needs multiple coordinated agents, specialized personas, or a clean slate. Use fork when you want a copy of yourself with your full context to explore something.",
 			"For task decomposition, pattern selection, and when-to-delegate guidance, read the orchestrating-agents skill.",
@@ -588,7 +588,7 @@ export default function (pi: ExtensionAPI) {
 			"Clones yourself into a sub-agent with your full conversation history. The clone explores independently while you continue working — use for divergent exploration without committing context.",
 			"Two parameters: id and task. Use fork when you want a copy of yourself with full context to explore an alternative path. Use subagent for multiple agents, specialized personas, or a clean slate.",
 			"Fork adds a single agent — send, respond, check_status, and teardown all work normally. Notifications arrive the same way as subagent spawns.",
-			"Forking is non-blocking — results arrive later as a system notification. Continue with other work, or if there's nothing else to do, briefly describe what was launched and end your turn.",
+			"Forking is non-blocking — results arrive later as a system notification. Unless explicitly told to do other work after forking, briefly describe what you launched and end your turn immediately with no further actions.",
 		],
 		parameters: Type.Object({
 			id: Type.String({ description: "Unique identifier for the forked agent" }),

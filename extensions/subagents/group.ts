@@ -267,10 +267,10 @@ export class SubagentManager {
 
 		// Build acknowledgment
 		const ids = agents.map((a) => a.id);
-		if (isFirstCall) {
-			return `Agents spawned: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}). Results arrive as notifications. Continue with other work, or if there's nothing else to do, briefly describe what was launched and end your turn.`;
-		}
-		return `Added ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}) to existing group. Results arrive as notifications. Continue with other work, or if there's nothing else to do, briefly describe what was launched and end your turn.`;
+		const spawned = isFirstCall
+			? `Agents spawned: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}).`
+			: `Added ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}) to existing group.`;
+		return `${spawned} Results will arrive as notifications.\n\nIMPORTANT: Unless you were explicitly told to do other work after spawning, you MUST briefly tell the user what you spawned and then end your turn. Do not take any further actions — no searching, no reading files, no tool calls. Just describe what was launched and stop.`;
 	}
 
 	async teardown(agentId?: string): Promise<{ report: string; empty: boolean }> {
