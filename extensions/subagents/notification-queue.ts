@@ -51,99 +51,145 @@ export interface WaitOptions {
 	signal?: AbortSignal;
 }
 
+interface QueueEntry {
+	xml: string;
+	source: NotificationSource;
+}
+
 export class NotificationQueue {
+	private entries: QueueEntry[] = [];
+	private parentBusy = false;
+	private pendingToolCalls = new Set<string>();
+	private _isWaiting = false;
+	private waitResolve: ((result: string) => void) | null = null;
+	private waitReject: ((err: Error) => void) | null = null;
+	private abortCleanup: (() => void) | null = null;
+
 	constructor(private config: NotificationQueueConfig) {}
 
-	/**
-	 * Add a notification to the queue.
-	 *
-	 * Behavior depends on current state:
-	 * - Wait active: pushes to queue, then resolves the wait promise
-	 * - Not busy: auto-flushes (immediate delivery)
-	 * - Busy + steer + no tools: auto-flushes (LLM streaming)
-	 * - Busy + steer + tools pending: accumulates (batch for tool end)
-	 * - Busy + no steer: accumulates (batch for agent_end)
-	 */
-	queue(_xml: string, _source: NotificationSource): void {
-		throw new Error("Not implemented");
+	queue(xml: string, source: NotificationSource): void {
+		this.entries.push({ xml, source });
+
+		if (this._isWaiting) {
+			this.resolveWait();
+			return;
+		}
+
+		if (!this.parentBusy) {
+			this.doFlush();
+		} else if (this.config.steerDelivery && this.pendingToolCalls.size === 0) {
+			this.doFlush();
+		}
 	}
 
-	/**
-	 * Attempt to deliver accumulated notifications via the deliver callback.
-	 *
-	 * Suppressed when:
-	 * - Queue is empty
-	 * - A wait is active (wait suppression)
-	 * - parentBusy is true and steerDelivery is false
-	 *
-	 * When delivering: sets parentBusy=true synchronously before calling
-	 * deliver, preventing a double-flush race between sendMessage and
-	 * the subsequent agent_start event.
-	 */
 	flush(): void {
-		throw new Error("Not implemented");
+		if (this._isWaiting) return;
+		if (this.entries.length === 0) return;
+		if (this.parentBusy && !this.config.steerDelivery) return;
+
+		this.doFlush();
 	}
 
-	/** Remove local-source notifications from the queue, preserving uplink entries. */
 	drainLocal(): void {
-		throw new Error("Not implemented");
+		this.entries = this.entries.filter((e) => e.source !== "local");
 	}
 
-	/** Remove all notifications from the queue. */
 	clear(): void {
-		throw new Error("Not implemented");
+		this.entries.length = 0;
 	}
 
-	/**
-	 * Update the parent agent's busy state.
-	 * When set to false, automatically attempts to flush queued notifications.
-	 */
-	setParentBusy(_busy: boolean): void {
-		throw new Error("Not implemented");
+	setParentBusy(busy: boolean): void {
+		this.parentBusy = busy;
+		if (!busy) {
+			this.flush();
+		}
 	}
 
-	/** Record a tool call starting (for steer delivery batching). */
-	trackToolStart(_toolCallId: string): void {
-		throw new Error("Not implemented");
+	trackToolStart(toolCallId: string): void {
+		this.pendingToolCalls.add(toolCallId);
 	}
 
-	/**
-	 * Record a tool call ending. When the last tracked tool call completes,
-	 * attempts to flush queued notifications (subject to normal suppression rules).
-	 */
-	trackToolEnd(_toolCallId: string): void {
-		throw new Error("Not implemented");
+	trackToolEnd(toolCallId: string): void {
+		this.pendingToolCalls.delete(toolCallId);
+		if (this.pendingToolCalls.size === 0) {
+			this.flush();
+		}
 	}
 
-	/** Clear all tracked tool calls without triggering a flush. */
 	clearPendingTools(): void {
-		throw new Error("Not implemented");
+		this.pendingToolCalls.clear();
 	}
 
-	/**
-	 * Block until a notification arrives or the condition is already met.
-	 *
-	 * While waiting, all normal flush delivery is suppressed. The queue
-	 * accumulates notifications, and the first queue() call during the
-	 * wait triggers resolution: the queue is drained and its concatenated
-	 * XML content is returned as the promise result.
-	 *
-	 * If isAlreadySatisfied returns true at call time, resolves immediately
-	 * with any queued content (which may be empty).
-	 *
-	 * Throws synchronously if a wait is already active.
-	 */
-	wait(_opts?: WaitOptions): Promise<string> {
-		throw new Error("Not implemented");
+	wait(opts?: WaitOptions): Promise<string> {
+		if (this._isWaiting) {
+			throw new Error("A wait is already active");
+		}
+
+		// Check for already-aborted signal before entering wait state
+		if (opts?.signal?.aborted) {
+			return Promise.reject(new Error("Aborted"));
+		}
+
+		// Check early satisfaction
+		if (opts?.isAlreadySatisfied?.()) {
+			const result = this.drain();
+			return Promise.resolve(result);
+		}
+
+		this._isWaiting = true;
+
+		return new Promise<string>((resolve, reject) => {
+			this.waitResolve = resolve;
+			this.waitReject = reject;
+
+			if (opts?.signal) {
+				const onAbort = () => {
+					this.cleanupWait();
+					reject(new Error("Aborted"));
+				};
+				opts.signal.addEventListener("abort", onAbort, { once: true });
+				this.abortCleanup = () => opts.signal!.removeEventListener("abort", onAbort);
+			}
+		});
 	}
 
-	/** Whether a wait is currently active. */
 	get isWaiting(): boolean {
-		throw new Error("Not implemented");
+		return this._isWaiting;
 	}
 
-	/** Number of currently queued notifications. */
 	get length(): number {
-		throw new Error("Not implemented");
+		return this.entries.length;
+	}
+
+	// ─── Private ─────────────────────────────────────────────────────────
+
+	private drain(): string {
+		const combined = this.entries.map((e) => e.xml).join("\n");
+		this.entries.length = 0;
+		return combined;
+	}
+
+	private doFlush(): void {
+		if (this.entries.length === 0) return;
+
+		this.parentBusy = true;
+		const combined = this.entries.map((e) => e.xml).join("\n");
+		this.entries.length = 0;
+		this.config.deliver(combined);
+	}
+
+	private resolveWait(): void {
+		const resolve = this.waitResolve;
+		this.cleanupWait();
+		const result = this.drain();
+		resolve?.(result);
+	}
+
+	private cleanupWait(): void {
+		this._isWaiting = false;
+		this.abortCleanup?.();
+		this.abortCleanup = null;
+		this.waitResolve = null;
+		this.waitReject = null;
 	}
 }

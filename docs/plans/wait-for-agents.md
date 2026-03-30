@@ -129,6 +129,8 @@ Guidelines should convey:
 
 ## Steps
 
+**Pre-implementation commit:** `69fc1227b673491b6d7bc20731d427986fbc4347`
+
 ### Step 1: Implement `NotificationQueue`
 
 Implement all stub methods in `extensions/subagents/notification-queue.ts`. Internal state needed:
@@ -149,7 +151,7 @@ Key behaviors per the tests:
 - `trackToolEnd()` triggers `flush()` when `pendingToolCalls` becomes empty
 
 **Verify:** `npx vitest run extensions/subagents/notification-queue.test.ts` — all 30 tests pass.
-**Status:** not started
+**Status:** in progress
 
 ### Step 2: Replace inline notification queue with `NotificationQueue` instance
 
