@@ -24,6 +24,12 @@ export default function (pi: ExtensionAPI) {
 				throw new Error("ask_user requires an interactive terminal.");
 			}
 
+			if (params.title.length > 160) {
+				throw new Error(
+					"Title must be 160 characters or less. If you need to provide more context, send it as a regular message first, then follow up with the ask_user tool call.",
+				);
+			}
+
 			const result = await showNumberedSelect(ctx, params.title, params.options);
 
 			if (result === undefined) {
