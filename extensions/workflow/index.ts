@@ -1,4 +1,5 @@
 import { readFileSync, existsSync, unlinkSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
@@ -247,6 +248,7 @@ export default function (pi: ExtensionAPI) {
 					const reviewPath = join(ctx.cwd, `docs/reviews/${topic}.md`);
 					if (existsSync(reviewPath)) {
 						unlinkSync(reviewPath);
+						execSync(`git add docs/reviews/${topic}.md && git commit -m "chore: remove review for ${topic} (extra review pass)"`, { cwd: ctx.cwd });
 					}
 					pendingTransition = { topic, phase: "review" };
 					return { content: [{ type: "text" as const, text: appendAnnotation(STOP_TEXT, result.annotation) }] };
