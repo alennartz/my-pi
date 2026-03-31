@@ -2,7 +2,7 @@
 
 ## Context
 
-Add an `await_agents` tool that blocks until something interesting happens in the agent group — an agent completes, or an agent sends a message to the parent. This is a standalone primitive that decouples spawning from waiting; an `await` parameter on `subagent` can be layered on later as sugar. See [brainstorm](../brainstorms/wait-for-agents.md).
+Add an `await_agents` tool that blocks until all scoped agents have completed (idle or failed), or until an agent sends a message to the parent (which interrupts the wait immediately). Agent completions accumulate — the wait resolves only when every scoped agent is done. Parent-bound messages interrupt and resolve the wait right away, regardless of remaining agents. This is a standalone primitive that decouples spawning from waiting; an `await` parameter on `subagent` can be layered on later as sugar. See [brainstorm](../brainstorms/wait-for-agents.md).
 
 ## Architecture
 
@@ -27,13 +27,13 @@ The tool result is a single text content block containing concatenated XML-tagge
 
 #### Wait Resolution
 
-Two things can resolve the wait:
+Two types of events interact with the wait, but they behave differently:
 
-1. **Agent completion** — an agent goes idle or failed. The `onAgentComplete` handler pushes to the notification queue via `queueNotification()`, then resolves the wait. The resolver drains the queue and returns its contents as the tool result.
+1. **Agent completion** — an agent goes idle or failed. The `onAgentComplete` handler pushes to the notification queue. This does **not** immediately resolve the wait. Instead, the queue checks whether all scoped agents are now idle or failed (the satisfaction condition). If yes, the wait resolves and drains the queue. If not, the completion accumulates and the wait keeps blocking.
 
-2. **Parent-bound message** — any agent sends to parent (fire-and-forget or expect-response). The `onParentMessage` handler pushes to the queue, then resolves the wait the same way.
+2. **Parent-bound message** (interrupt) — any agent sends to parent (fire-and-forget or expect-response). The `onParentMessage` handler pushes to the queue, then resolves the wait **immediately** regardless of how many agents are still running. This is an interrupt: the parent needs to handle the message (especially expect-response, to avoid deadlock), then re-call `await_agents` to resume waiting.
 
-Both paths: push to queue first (so the triggering event is included in the drain), then resolve.
+Both paths push to the queue first so the triggering event is included in the drain. The difference is whether resolution is conditional (completions — check satisfaction) or unconditional (messages — always resolve).
 
 #### Flush Suppression
 
@@ -41,7 +41,9 @@ While a wait is active, `queueNotification` / `flushNotifications` suppress norm
 
 #### Scoping
 
-The `agents` parameter controls the natural completion condition: "all specified agents are idle/failed." Any event — including events from agents *not* in the scoped set — still triggers resolution. This preserves the interrupt semantics from the brainstorm: a message from any agent interrupts the wait regardless of scope, avoiding deadlocks and ensuring notifications are delivered promptly.
+The `agents` parameter controls the completion condition: "all specified agents are idle/failed." When an agent completes, the queue checks this condition — the wait only resolves when all scoped agents are done. Completions from agents outside the scoped set are accumulated but don't satisfy the condition.
+
+Messages (send to parent) are different: a message from **any** agent interrupts the wait immediately, regardless of scope. This preserves the interrupt semantics from the brainstorm — if an agent sends a message during a wait, the parent needs to handle it. The model re-calls `await_agents` after handling the interruption.
 
 #### Cancellation
 
@@ -50,9 +52,9 @@ The tool receives an `AbortSignal` from pi. If the signal fires while the wait i
 #### Prompt Guidelines
 
 Guidelines should convey:
-- Use `await_agents` when you need results before your next step — it blocks until an agent completes or sends a message.
-- Any agent message (including fire-and-forget) interrupts the wait. If an expect-response message interrupts, you must call `respond` before waiting again.
-- After handling an interruption, call `await_agents` again to resume waiting.
+- Use `await_agents` when you need results before your next step — it blocks until all specified agents complete (or all agents, if none specified).
+- Any agent message (including fire-and-forget) interrupts the wait early. If an expect-response message interrupts, you must call `respond` before waiting again.
+- After handling an interruption, call `await_agents` again to resume waiting for the remaining agents.
 
 ## Tests
 

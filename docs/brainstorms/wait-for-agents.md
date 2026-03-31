@@ -2,7 +2,7 @@
 
 ## The Idea
 
-Add a `wait_for_agents` tool that blocks until something interesting happens in the agent group — an agent completes, or an agent sends a message to the parent. This is a standalone primitive, separate from the `subagent` spawn tool.
+Add a `wait_for_agents` tool that blocks until all scoped agents have completed, or until an agent sends a message to the parent (which interrupts the wait immediately). Agent completions accumulate — the wait only resolves when every scoped agent is idle or failed. Parent-bound messages are different: they interrupt and resolve the wait right away, regardless of how many agents are still running. This is a standalone primitive, separate from the `subagent` spawn tool.
 
 The original idea ([blocking-subagent-await](../ideas/blocking-subagent-await.md)) proposed an `await` flag on the `subagent` tool that couples spawning and waiting atomically. This variant decouples them: spawn stays async, and the parent calls `wait_for_agents` when it's ready to block. The `await` parameter can be layered on trivially later as sugar — spawn then immediately wait.
 
@@ -27,9 +27,9 @@ Both `expectResponse=true` and fire-and-forget sends interrupt the wait and retu
 
 Agent completions and messages are already serialized as XML tags (`<agent_complete>`, `<agent_message>`). The wait tool returns them concatenated with line breaks — the same format the model already handles when notifications arrive. No new format needed.
 
-### No buffer needed
+### Completions accumulate, messages interrupt
 
-The wait tool is an open tool call. When an event triggers, it resolves the tool call with the XML content directly as the tool result. The pi SDK sequences tool results correctly — no intermediate buffer, no flush mode switching, no interaction with the existing notification queue. Events that arrive while the wait is open resolve the promise; events before the wait call were already delivered normally.
+Agent completions don't resolve the wait individually — they accumulate in the notification queue. The wait only resolves when all scoped agents are idle or failed. This means if three agents are running and one completes, the wait keeps blocking until the other two finish (or a message interrupts). Parent-bound messages, on the other hand, resolve the wait immediately — the parent needs to handle them (especially expect-response messages, to avoid deadlock). After handling an interrupting message, the model re-calls `wait_for_agents` to resume waiting for the remaining agents.
 
 ## Direction
 
@@ -37,9 +37,10 @@ Implement `wait_for_agents` as a new tool in the subagents extension:
 
 1. Tool schema: optional `agent` parameter (string, single agent ID). Omit to wait on all.
 2. When called, register a listener for agent_complete events and parent-bound messages.
-3. On any such event, resolve the tool call with the XML content.
-4. The parent gets full context: any completed agent results plus the event that triggered the return.
-5. After the `wait_for_agents` primitive exists, optionally add `await` as sugar on the `subagent` tool (spawn → immediately wait).
+3. Agent completions accumulate in the queue. Parent-bound messages (send to parent) interrupt and resolve the wait immediately.
+4. When all scoped agents are idle/failed, the wait resolves with all accumulated completions.
+5. The parent gets full context: all completed agent results in one batch, or the interrupting message plus any completions that arrived before it.
+6. After the `wait_for_agents` primitive exists, optionally add `await` as sugar on the `subagent` tool (spawn → immediately wait).
 
 ## Open Questions
 
