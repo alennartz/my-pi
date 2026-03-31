@@ -138,6 +138,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			pi.setSessionName(`${topic}-${phase}`);
 			pi.sendUserMessage(buildPhasePrompt(topic, phase, ctx.cwd));
 		},
 	});
