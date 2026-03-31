@@ -845,6 +845,9 @@ export default function (pi: ExtensionAPI) {
 
 			// Validate agent IDs if scoped
 			if (params.agents) {
+				if (params.agents.length === 0) {
+					throw new Error("Empty agents array. Omit the parameter to wait on all agents.");
+				}
 				for (const id of params.agents) {
 					if (!manager.getAgentStatus(id)) {
 						throw new Error(`Unknown agent: "${id}"`);

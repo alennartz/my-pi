@@ -95,6 +95,11 @@ export class NotificationQueue {
 	}
 
 	clear(): void {
+		if (this._isWaiting && this.waitReject) {
+			const reject = this.waitReject;
+			this.cleanupWait();
+			reject(new Error("Queue cleared"));
+		}
 		this.entries.length = 0;
 	}
 

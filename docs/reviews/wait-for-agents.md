@@ -24,7 +24,7 @@ When `await_agents` is called with an `agents` array (or omitted to mean "all"),
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/notification-queue.ts:97-98`, `extensions/subagents/index.ts:893`
-- **Status:** open
+- **Status:** resolved
 
 `clear()` empties the entries array but does not resolve or reject an active `wait()` promise. During `session_shutdown` (index.ts:892-893), `queue.clear()` is called while `await_agents` could be in-flight. If the tool's `AbortSignal` fires independently (which it likely does — pi cancels tool calls on shutdown), the abort handler properly rejects and cleanup is fine. But if the ordering is unlucky — `clear()` runs before abort fires, then the await in `execute` never unblocks — the tool execution hangs. `clear()` should reject any active wait before clearing entries. The `waitReject` field (finding 2) appears to exist for exactly this purpose but is never called.
 
@@ -33,7 +33,7 @@ When `await_agents` is called with an `agents` array (or omitted to mean "all"),
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/notification-queue.ts:65,143,193`
-- **Status:** open
+- **Status:** resolved
 
 `this.waitReject` is assigned in `wait()` (line 143) and nullified in `cleanupWait()` (line 193), but is never read or called anywhere. The abort handler captures the Promise constructor's `reject` via closure rather than using `this.waitReject`. This is dead state that looks like it exists for programmatic rejection (e.g., from `clear()`) but isn't wired up. Fixing finding 1 would make this field useful.
 
@@ -42,7 +42,7 @@ When `await_agents` is called with an `agents` array (or omitted to mean "all"),
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/index.ts:847-862`
-- **Status:** open
+- **Status:** resolved
 
 If `params.agents` is `[]` (empty array, which passes the `Type.Array` schema), validation succeeds (the for-loop body never runs), `scopedIds` is `[]`, and `isAlreadySatisfied` calls `scopedIds.every(...)` on an empty array — which returns `true` (vacuous truth). `wait()` immediately resolves and the tool returns "All specified agents have already completed." This is a degenerate input unlikely from a model, but it silently succeeds rather than erroring.
 
