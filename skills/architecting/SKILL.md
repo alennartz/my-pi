@@ -65,6 +65,8 @@ For other decisions, lead with your recommendation based on what you found in th
 
 ### 4. Capture the Outcome
 
+**Watch for summarization drift.** When any decision involved extended back-and-forth — especially where you initially leaned one direction and the user corrected you, or where you worked through confusion together — re-read the conversation to find the specific exchange where agreement was reached. Capture *that*, not your general impression of the discussion. The longer and more contested a decision was, the more likely your summary will regress toward your earlier (wrong) position, because that's where your completions were already leaning. If you argued for X, the user corrected you toward Y, and you agreed Y was right — the plan must say Y, with Y's reasoning. Not a softened version of X.
+
 Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact format below.
 
 ### 5. Check for Blind Spots

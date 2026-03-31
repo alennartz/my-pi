@@ -108,6 +108,8 @@ Apply YAGNI to the *solution*, not to the *exploration*. Cut unnecessary complex
 
 Before writing the artifact, review the decisions that emerged during the conversation. If the reasoning behind any decision wasn't made explicit — it felt obvious in the moment but wouldn't be clear to someone reading the artifact cold — ask the user to clarify the why before capturing it.
 
+**Watch for summarization drift.** When any topic involved extended back-and-forth — especially where you initially proposed something the user pushed back on, or where you worked through confusion together — re-read the conversation to find the specific exchange where agreement was reached. Capture *that*, not your general impression of the discussion. The longer and more contested a topic was, the more likely your summary will regress toward your earlier (wrong) position, because that's where your completions were already leaning. If you argued for X, the user corrected you toward Y, and you agreed Y was right — the artifact must say Y, with Y's reasoning. Not a softened version of X.
+
 Write a brainstorming artifact that captures:
 
 - **The idea** — what we set out to explore
