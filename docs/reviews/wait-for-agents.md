@@ -15,7 +15,7 @@ The core feature works — `NotificationQueue` correctly manages flush suppressi
 - **Category:** plan deviation
 - **Severity:** critical
 - **Location:** `extensions/subagents/notification-queue.test.ts` (entire file)
-- **Status:** open
+- **Status:** dismissed
 
 The test file was locked at `pre-implementation-commit` (69fc1227b6) with 31 tests across 8 describe blocks. During implementation, 13 tests were deleted and 7 new tests added, leaving 21 tests across 6 describe blocks. Entire test sections were removed:
 
@@ -31,7 +31,7 @@ New sections test a different interface: "Waiting suppresses delivery" (5 tests 
 - **Category:** plan deviation
 - **Severity:** critical
 - **Location:** `extensions/subagents/notification-queue.ts`, `extensions/subagents/index.ts:237-247,845-938`
-- **Status:** open
+- **Status:** dismissed
 
 The plan specified `NotificationQueue` with `wait(opts?: WaitOptions): Promise<string>` encapsulating the wait promise, abort handling, early satisfaction, and exclusivity. The implementation replaced this with `setWaiting(boolean)` (a bare flag) and `drainAll()` (synchronous drain), moving all wait promise management into `index.ts`:
 
@@ -72,7 +72,7 @@ If an agent is torn down (removed from the manager) while a wait is active, `get
 - **Category:** plan deviation
 - **Severity:** warning
 - **Location:** `docs/plans/wait-for-agents.md`, `docs/brainstorms/wait-for-agents.md`
-- **Status:** open
+- **Status:** dismissed
 
 Both the plan and brainstorm were modified during implementation. The plan's architecture section was rewritten to describe the new design, but the Steps section still references `queue.wait()`, `waitReject`, `abortCleanup`, and "all 31 tests pass" — contradicting the implementation. Step 1's verify condition ("all 31 tests pass") cannot be satisfied: the test file has 21 tests. The brainstorm was also modified to align with final design (accumulate-completions semantics).
 
@@ -90,7 +90,7 @@ When `resolveWait()` fires from a callback, the promise resolves but the `onAbor
 - **Category:** plan deviation
 - **Severity:** nit
 - **Location:** `extensions/workflow/index.ts`, `extensions/workflow/phases.ts`, `extensions/subagents/index.ts:283,295`
-- **Status:** open
+- **Status:** dismissed
 
 The diff includes changes replacing `process.cwd()` with `ctx.cwd` in the workflow extension (`getArtifactInventory`, `getGitStatus`, `buildPhasePrompt`) and in the subagents extension (`session_start`, `before_agent_start`). These changes are correct and complete — no remaining `process.cwd()` references in the changed code — but they aren't mentioned anywhere in the plan. Likely a parallel improvement, not a defect.
 
