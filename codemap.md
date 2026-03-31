@@ -69,12 +69,13 @@ Standalone utility skills not tied to the workflow pipeline.
 
 Long-lived subagent orchestration extension — spawns and manages child pi processes with channel-based messaging and incremental membership. Includes agent definitions and skills for using/creating agents.
 
-**Responsibilities:** subagent lifecycle management, RPC child process spawning, channel topology and message brokering, deadlock detection, fork-based session branching, TUI dashboard widget, agent definition discovery (four-tier package merge), orchestration guidance, specialist agent authoring guidance
+**Responsibilities:** subagent lifecycle management, RPC child process spawning, channel topology and message brokering, deadlock detection, fork-based session branching, blocking await with interrupt handling (await_agents tool), notification queue with waiting-mode drain, TUI dashboard widget, agent definition discovery (four-tier package merge), orchestration guidance, specialist agent authoring guidance
 
 **Dependencies:** none (standalone extension loaded by pi)
 
 **Files:**
-- `extensions/subagents/**`
+- `extensions/subagents/**` — includes `notification-queue.ts` (extracted `NotificationQueue` class) and `notification-queue.test.ts`
+- `vitest.config.ts` (repo root — test runner config)
 - `skills/orchestrating-agents/SKILL.md`
 - `skills/specialist-design/SKILL.md`
 - `agents/*.md`

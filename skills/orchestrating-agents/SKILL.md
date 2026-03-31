@@ -185,7 +185,7 @@ Avoid designs where agents form blocking rings. If A blocks on B, B must not blo
 
 ## Recursive Subagents
 
-Any agent — including a child agent — can spawn its own subagents using the same `subagent` tool. The child has the full tool suite (`subagent`, `fork`, `send`, `respond`, `check_status`, `teardown`).
+Any agent — including a child agent — can spawn its own subagents using the same `subagent` tool. The child has the full tool suite (`subagent`, `fork`, `send`, `respond`, `check_status`, `teardown`, `await_agents`).
 
 Normally, the primary agent (with the TUI) is the lead — it decomposes work and spawns workers directly. But if a worker's task is large enough to warrant further decomposition, that worker can spawn its own subagents. The primary sees only the worker; the worker's subagents are invisible above it. This enables hierarchical decomposition without the primary managing every leaf agent.
 
@@ -196,6 +196,6 @@ Normally, the primary agent (with the TUI) is the lead — it decomposes work an
 - **Minimal topology** — only connect agents that need to talk. Parent is always there; peer channels are for lateral communication only.
 - **Default to fire-and-forget** — use blocking sends only when the sender genuinely can't continue without a response.
 - **Incremental growth** — agents can be added to the running set by calling `subagent` again. Individual agents can be removed with `teardown(agent)`, or all agents torn down at once with `teardown()`.
-- **Let notifications drive you** — `<agent_complete>` arrives automatically when each agent finishes. Don't poll with `check_status` unless you have a specific reason.
+- **Let notifications drive you** — `<agent_complete>` arrives automatically when each agent finishes. Don't poll with `check_status` unless you have a specific reason. Use `await_agents` when you need results before your next step — it blocks until the specified agents complete, with any parent-bound message interrupting the wait.
 
 For creating persistent, reusable agent definitions (the `.md` files referenced by the `agent` field), see the **specialist-design** skill.
