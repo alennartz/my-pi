@@ -1,6 +1,6 @@
 ---
 name: impl-planning
-description: "Turn a direction into concrete, ordered implementation steps grounded in the codebase. Use when the user wants a step-by-step plan for building something. Tests already exist — this skill plans implementation steps that make them pass. Requires architectural decisions in docs/plans/<topic>.md — if those don't exist, suggest the architecting skill first."
+description: "Turn a direction into concrete, ordered implementation steps grounded in the codebase. Use when the user wants a step-by-step plan for building something. Tests already exist unless skipped — this skill plans implementation steps that make them pass. Requires architectural decisions in docs/plans/<topic>.md — if those don't exist, suggest the architecting skill first."
 ---
 
 # Implementation Planning

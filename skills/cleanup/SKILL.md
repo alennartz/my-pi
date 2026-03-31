@@ -74,4 +74,4 @@ The description should briefly summarize what's in the commit — e.g., "decisio
 - **Open-ended doc sweep** — discover what exists, don't assume a fixed set of files.
 - **Extract before delete** — decision records are captured before working artifacts are removed.
 - **Wait before committing** — don't delete artifacts or commit until background agents have finished and their output is reviewed.
-- **Pipeline cap** — this skill only runs after a complete pipeline (brainstorm → architect → plan → implement → review → handle-review).
+- **Pipeline cap** — this skill runs after the pipeline completes. Some phases may have been skipped — the working artifacts reflect what was actually produced, not necessarily the full sequence.

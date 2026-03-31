@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, unlinkSync } from "node:fs";
+import { readFileSync, existsSync, unlinkSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -39,6 +39,75 @@ const PHASE_ARTIFACTS: Record<string, (topic: string) => string> = {
 	review: (topic) => `docs/reviews/${topic}.md`,
 	"handle-review": (topic) => `docs/reviews/${topic}.md`,
 };
+
+/** Phases that offer skip-ahead options, mapped to their target phases */
+const SKIP_TARGETS: Record<string, string[]> = {
+	brainstorm: ["impl-plan", "implement"],
+	architect: ["impl-plan", "implement"],
+};
+
+const SKIPPED_ARCHITECTURE = [
+	`## Architecture`,
+	``,
+	`> **Skipped.** Make lightweight architectural decisions as you go — respect existing`,
+	`> module boundaries and patterns in the codemap, keep changes minimal and consistent`,
+	`> with codebase conventions.`,
+].join("\n");
+
+const SKIPPED_TESTS = [
+	`## Tests`,
+	``,
+	`> **Skipped.** No tests were written upfront. Follow red-green TDD as you implement —`,
+	`> write a focused failing test, make it pass, move on. Aim for component-boundary`,
+	`> behavioral tests (inputs, outputs, observable effects), not exhaustive coverage.`,
+].join("\n");
+
+const SKIPPED_STEPS = [
+	`## Steps`,
+	``,
+	`> **Skipped.** Work through the architecture methodically — identify affected files,`,
+	`> make changes in a logical order, and commit in coherent units.`,
+].join("\n");
+
+/**
+ * Write scaffold sections for skipped phases to the plan file.
+ * Creates the file when skipping from brainstorm, appends when skipping from architect.
+ */
+function writeSkipScaffold(topic: string, fromPhase: string, toPhase: string, cwd: string): void {
+	const planPath = join(cwd, `docs/plans/${topic}.md`);
+
+	if (fromPhase === "brainstorm") {
+		mkdirSync(join(cwd, "docs/plans"), { recursive: true });
+		const sections = [
+			`# Plan: ${topic}`,
+			``,
+			`## Context`,
+			``,
+			`See brainstorm: \`docs/brainstorms/${topic}.md\``,
+			``,
+			SKIPPED_ARCHITECTURE,
+			``,
+			SKIPPED_TESTS,
+		];
+		if (toPhase === "implement") {
+			sections.push(``, SKIPPED_STEPS);
+		}
+		sections.push(``);
+		writeFileSync(planPath, sections.join("\n"));
+	} else {
+		const sections = [``, SKIPPED_TESTS];
+		if (toPhase === "implement") {
+			sections.push(``, SKIPPED_STEPS);
+		}
+		sections.push(``);
+		appendFileSync(planPath, sections.join("\n"));
+	}
+
+	execSync(
+		`git add docs/plans/${topic}.md && git commit -m "plan: ${topic} (skipped to ${toPhase})"`,
+		{ cwd },
+	);
+}
 
 // =============================================================================
 // Prompt helpers
@@ -195,14 +264,24 @@ export default function (pi: ExtensionAPI) {
 				annotation ? `${text} User's note: ${annotation}` : text;
 
 			if (FLEXIBLE_TRANSITIONS.has(phase)) {
+				const options: { label: string }[] = [
+					{ label: "Yes, in a new context" },
+					{ label: "Yes, in this context" },
+				];
+
+				const skipTargets = SKIP_TARGETS[phase];
+				if (skipTargets) {
+					for (const target of skipTargets) {
+						options.push({ label: `Skip to ${target}` });
+					}
+				}
+
+				options.push({ label: "No, not done yet" });
+
 				const result = await showNumberedSelect(
 					ctx,
 					`${phase} done for ${topic}. Move on to ${nextPhase}?`,
-					[
-						{ label: "Yes, in a new context" },
-						{ label: "Yes, in this context" },
-						{ label: "No, not done yet" },
-					],
+					options,
 				);
 
 				if (result === undefined || result.label === "No, not done yet") {
@@ -223,6 +302,11 @@ export default function (pi: ExtensionAPI) {
 					return {
 						content: [{ type: "text" as const, text: appendAnnotation(lines.join("\n"), result.annotation) }],
 					};
+				} else if (result.label.startsWith("Skip to ")) {
+					const targetPhase = result.label.replace("Skip to ", "");
+					writeSkipScaffold(topic, phase, targetPhase, ctx.cwd);
+					pendingTransition = { topic, phase: targetPhase };
+					return { content: [{ type: "text" as const, text: appendAnnotation(STOP_TEXT, result.annotation) }] };
 				} else {
 					pendingTransition = { topic, phase: nextPhase };
 					return { content: [{ type: "text" as const, text: appendAnnotation(STOP_TEXT, result.annotation) }] };
