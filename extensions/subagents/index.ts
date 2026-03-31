@@ -849,7 +849,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Await Agents",
 		description: "Block until an agent completes or sends a message. Returns accumulated notifications.",
 		promptGuidelines: [
-			"Use `await_agents` when you need results before your next step — it blocks until an agent completes or sends a message.",
+			"Use `await_agents` when you need results before your next step — it blocks until all specified agents complete (or all agents, if none specified).",
 			"Any agent message (including fire-and-forget) interrupts the wait. If an expect-response message interrupts, you must call `respond` before waiting again.",
 			"After handling an interruption, call `await_agents` again to resume waiting.",
 		],
