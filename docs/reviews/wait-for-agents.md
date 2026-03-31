@@ -15,7 +15,7 @@ The plan was implemented faithfully across all three steps — notification queu
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/subagents/notification-queue.ts:71-76` (`queue()` method), `extensions/subagents/index.ts:856-862`
-- **Status:** open
+- **Status:** resolved
 
 When `await_agents` is called with an `agents` array (or omitted to mean "all"), the expectation is that it blocks until all specified agents are idle or failed. The current implementation does not do this — `queue.wait()` resolves on the *first* `queue()` call during the wait, regardless of how many agents remain active. The `agents` parameter only controls the `isAlreadySatisfied` early-exit check at wait start; once the wait is active, a single notification from any source resolves it immediately. This means `await_agents()` effectively means "wait for the next event" rather than "wait for these agents to finish." The resolution logic in `queue()` should check the satisfaction condition after each event and only resolve when all scoped agents are done, accumulating notifications until then.
 

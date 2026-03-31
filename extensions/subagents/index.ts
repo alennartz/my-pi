@@ -239,6 +239,20 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// await_agents state — set while a wait is active, used by callbacks
+	// to decide when to resolve the wait promise.
+	let waitSatisfied: (() => boolean) | null = null;
+	let waitResolve: ((result: string) => void) | null = null;
+
+	function resolveWait(): void {
+		if (!waitResolve) return;
+		const resolve = waitResolve;
+		waitResolve = null;
+		waitSatisfied = null;
+		queue.setWaiting(false);
+		resolve(queue.drainAll());
+	}
+
 	pi.on("agent_start", async () => {
 		queue.setParentBusy(true);
 	});
@@ -333,6 +347,9 @@ export default function (pi: ExtensionAPI) {
 							responseExpected: msg.responseExpected ?? false,
 						});
 						queue.queue(xml, "uplink");
+						if (queue.isWaiting) {
+							resolveWait();
+						}
 					}
 				});
 			} catch (err) {
@@ -380,12 +397,18 @@ export default function (pi: ExtensionAPI) {
 					xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have completed. Review results above, then call teardown to clean up — or use send first if you have follow-ups for any agent.`;
 				}
 				queue.queue(xml, "local");
+				if (queue.isWaiting && waitSatisfied?.()) {
+					resolveWait();
+				}
 			},
 			onParentMessage: (xml, meta) => {
 				if (meta.responseExpected && meta.correlationId) {
 					correlationOrigin.set(meta.correlationId, "local");
 				}
 				queue.queue(xml, "local");
+				if (queue.isWaiting) {
+					resolveWait();
+				}
 			},
 		});
 
@@ -855,27 +878,54 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Build the early-satisfaction check: all scoped agents are idle or failed
+			// Build the satisfaction check: all scoped agents are idle or failed
 			const scopedIds = params.agents ?? manager.getAgentStatuses().map((s) => s.id);
 			const mgr = manager; // capture for closure
-			const isAlreadySatisfied = () => {
+			const isSatisfied = () => {
 				return scopedIds.every((id) => {
 					const s = mgr.getAgentStatus(id);
 					return s && (s.state === "idle" || s.state === "failed");
 				});
 			};
 
-			try {
-				const result = await queue.wait({ isAlreadySatisfied, signal: signal ?? undefined });
-
+			// Early satisfaction — all scoped agents already done
+			if (isSatisfied()) {
+				const result = queue.drainAll();
 				if (!result) {
 					return {
 						content: [{ type: "text", text: "All specified agents have already completed. No pending notifications." }],
 					};
 				}
-
 				return {
 					content: [{ type: "text", text: result }],
+				};
+			}
+
+			// Enter wait mode
+			waitSatisfied = isSatisfied;
+			queue.setWaiting(true);
+
+			try {
+				const result = await new Promise<string>((resolve, reject) => {
+					waitResolve = resolve;
+
+					if (signal) {
+						const onAbort = () => {
+							waitResolve = null;
+							waitSatisfied = null;
+							queue.setWaiting(false);
+							reject(new Error("Aborted"));
+						};
+						if (signal.aborted) {
+							onAbort();
+							return;
+						}
+						signal.addEventListener("abort", onAbort, { once: true });
+					}
+				});
+
+				return {
+					content: [{ type: "text", text: result || "All specified agents have completed. No pending notifications." }],
 				};
 			} catch (err: any) {
 				if (err?.message === "Aborted") {

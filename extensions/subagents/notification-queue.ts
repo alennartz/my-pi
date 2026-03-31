@@ -1,9 +1,10 @@
 /**
- * Notification queue with wait support for await_agents.
+ * Notification queue for the subagents extension.
  *
- * Manages notification accumulation, delivery timing, and wait resolution
- * for the subagents extension. Extracted from inline closures in index.ts
- * to provide a testable component boundary.
+ * Manages notification accumulation and delivery timing. The queue
+ * stores XML notification strings and flushes them via a deliver
+ * callback based on parent busy state, steer delivery mode, and
+ * a waiting flag.
  *
  * Delivery modes:
  * - Idle: auto-flush on queue() (goes through prompt() path)
@@ -11,10 +12,8 @@
  * - Busy, steer on, tools running: accumulate, flush when last tool ends
  * - Busy, steer on, LLM streaming: auto-flush on queue()
  *
- * Wait mode (await_agents):
- * - Suppresses all normal flush delivery
- * - queue() resolves the wait promise instead of flushing
- * - Resolution drains the full queue and returns concatenated XML
+ * When waiting is set, all flush delivery is suppressed. External
+ * callers drain the queue themselves via drainAll().
  */
 
 export type NotificationSource = "local" | "uplink";
@@ -34,23 +33,6 @@ export interface NotificationQueueConfig {
 	steerDelivery: boolean;
 }
 
-export interface WaitOptions {
-	/**
-	 * Checked once at wait start. If it returns true, the wait resolves
-	 * immediately with any queued content (e.g., all scoped agents are
-	 * already idle/failed). If false or omitted, the wait blocks until
-	 * the next queue() call.
-	 */
-	isAlreadySatisfied?: () => boolean;
-
-	/**
-	 * Abort signal for cancellation. When the signal fires, the wait
-	 * promise rejects and normal delivery resumes. Supports pre-aborted
-	 * signals (rejects immediately).
-	 */
-	signal?: AbortSignal;
-}
-
 interface QueueEntry {
 	xml: string;
 	source: NotificationSource;
@@ -61,9 +43,6 @@ export class NotificationQueue {
 	private parentBusy = false;
 	private pendingToolCalls = new Set<string>();
 	private _isWaiting = false;
-	private waitResolve: ((result: string) => void) | null = null;
-	private waitReject: ((err: Error) => void) | null = null;
-	private abortCleanup: (() => void) | null = null;
 
 	constructor(private config: NotificationQueueConfig) {}
 
@@ -71,7 +50,6 @@ export class NotificationQueue {
 		this.entries.push({ xml, source });
 
 		if (this._isWaiting) {
-			this.resolveWait();
 			return;
 		}
 
@@ -90,16 +68,21 @@ export class NotificationQueue {
 		this.doFlush();
 	}
 
+	/**
+	 * Drain all entries and return the concatenated XML content.
+	 * Empties the queue.
+	 */
+	drainAll(): string {
+		const combined = this.entries.map((e) => e.xml).join("\n");
+		this.entries.length = 0;
+		return combined;
+	}
+
 	drainLocal(): void {
 		this.entries = this.entries.filter((e) => e.source !== "local");
 	}
 
 	clear(): void {
-		if (this._isWaiting && this.waitReject) {
-			const reject = this.waitReject;
-			this.cleanupWait();
-			reject(new Error("Queue cleared"));
-		}
 		this.entries.length = 0;
 	}
 
@@ -108,6 +91,10 @@ export class NotificationQueue {
 		if (!busy) {
 			this.flush();
 		}
+	}
+
+	setWaiting(waiting: boolean): void {
+		this._isWaiting = waiting;
 	}
 
 	trackToolStart(toolCallId: string): void {
@@ -125,39 +112,6 @@ export class NotificationQueue {
 		this.pendingToolCalls.clear();
 	}
 
-	wait(opts?: WaitOptions): Promise<string> {
-		if (this._isWaiting) {
-			throw new Error("A wait is already active");
-		}
-
-		// Check for already-aborted signal before entering wait state
-		if (opts?.signal?.aborted) {
-			return Promise.reject(new Error("Aborted"));
-		}
-
-		// Check early satisfaction
-		if (opts?.isAlreadySatisfied?.()) {
-			const result = this.drain();
-			return Promise.resolve(result);
-		}
-
-		this._isWaiting = true;
-
-		return new Promise<string>((resolve, reject) => {
-			this.waitResolve = resolve;
-			this.waitReject = reject;
-
-			if (opts?.signal) {
-				const onAbort = () => {
-					this.cleanupWait();
-					reject(new Error("Aborted"));
-				};
-				opts.signal.addEventListener("abort", onAbort, { once: true });
-				this.abortCleanup = () => opts.signal!.removeEventListener("abort", onAbort);
-			}
-		});
-	}
-
 	get isWaiting(): boolean {
 		return this._isWaiting;
 	}
@@ -168,12 +122,6 @@ export class NotificationQueue {
 
 	// ─── Private ─────────────────────────────────────────────────────────
 
-	private drain(): string {
-		const combined = this.entries.map((e) => e.xml).join("\n");
-		this.entries.length = 0;
-		return combined;
-	}
-
 	private doFlush(): void {
 		if (this.entries.length === 0) return;
 
@@ -181,20 +129,5 @@ export class NotificationQueue {
 		const combined = this.entries.map((e) => e.xml).join("\n");
 		this.entries.length = 0;
 		this.config.deliver(combined);
-	}
-
-	private resolveWait(): void {
-		const resolve = this.waitResolve;
-		this.cleanupWait();
-		const result = this.drain();
-		resolve?.(result);
-	}
-
-	private cleanupWait(): void {
-		this._isWaiting = false;
-		this.abortCleanup?.();
-		this.abortCleanup = null;
-		this.waitResolve = null;
-		this.waitReject = null;
 	}
 }

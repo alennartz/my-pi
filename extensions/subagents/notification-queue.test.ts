@@ -124,197 +124,80 @@ describe("NotificationQueue — steer delivery", () => {
 	});
 });
 
-// ─── Wait resolution ─────────────────────────────────────────────────────────
+// ─── Waiting flag suppresses delivery ────────────────────────────────────────
 
-describe("NotificationQueue — wait resolution", () => {
-	it("resolves when queue() is called during a wait", async () => {
-		const { queue } = createQueue();
-		queue.setParentBusy(true);
-		const p = queue.wait();
-		queue.queue('<agent_complete id="a" status="idle"/>', "local");
-		const result = await p;
-		expect(result).toBe('<agent_complete id="a" status="idle"/>');
-	});
-
-	it("includes pre-existing queued notifications in the result", async () => {
-		const { queue } = createQueue({ steerDelivery: false });
-		queue.setParentBusy(true);
-		queue.queue("<event>pre-existing</event>", "local"); // accumulated before wait
-		const p = queue.wait();
-		queue.queue("<event>trigger</event>", "local"); // triggers resolution
-		const result = await p;
-		expect(result).toBe("<event>pre-existing</event>\n<event>trigger</event>");
-	});
-
-	it("sets isWaiting to true during wait and false after resolution", async () => {
-		const { queue } = createQueue();
-		queue.setParentBusy(true);
-		expect(queue.isWaiting).toBe(false);
-		const p = queue.wait();
-		expect(queue.isWaiting).toBe(true);
-		queue.queue("<event/>", "local");
-		await p;
-		expect(queue.isWaiting).toBe(false);
-	});
-
-	it("does not call deliver during wait — events go to the wait result", async () => {
+describe("NotificationQueue — waiting suppresses delivery", () => {
+	it("accumulates without flushing when waiting is set", () => {
 		const { queue, delivered } = createQueue();
-		queue.setParentBusy(true);
-		const p = queue.wait();
-		queue.queue("<event/>", "local");
-		await p;
-		expect(delivered).toEqual([]);
-	});
-
-	it("suppresses explicit flush() calls while wait is active", () => {
-		const { queue, delivered } = createQueue({ steerDelivery: false });
-		queue.setParentBusy(true);
-		queue.queue("<event>pre</event>", "local"); // accumulated (busy + no steer)
-		queue.wait(); // start wait with pre-existing item
-		queue.flush(); // explicit flush — suppressed by wait
-		expect(delivered).toEqual([]);
-	});
-
-	it("suppresses steer delivery auto-flush while wait is active", async () => {
-		const { queue, delivered } = createQueue({ steerDelivery: true });
-		queue.setParentBusy(true);
-		// Steer + no pending tools would normally auto-flush
-		const p = queue.wait();
-		queue.queue("<event/>", "local");
-		const result = await p;
-		expect(result).toBe("<event/>");
-		expect(delivered).toEqual([]);
-	});
-
-	it("resumes normal delivery after wait resolves", async () => {
-		const { queue, delivered } = createQueue();
-		queue.setParentBusy(true);
-		const p = queue.wait();
-		queue.queue("<event>trigger</event>", "local");
-		await p;
-		// Wait resolved — normal delivery should work again
-		queue.setParentBusy(false);
-		queue.queue("<event>after</event>", "local");
-		expect(delivered).toEqual(["<event>after</event>"]);
-	});
-
-	it("drains the queue completely on resolution", async () => {
-		const { queue } = createQueue({ steerDelivery: false });
-		queue.setParentBusy(true);
-		queue.queue("<event>pre</event>", "local");
-		const p = queue.wait();
-		queue.queue("<event>trigger</event>", "local");
-		await p;
-		expect(queue.length).toBe(0);
-	});
-});
-
-// ─── Wait immediate resolution ───────────────────────────────────────────────
-
-describe("NotificationQueue — wait immediate resolution", () => {
-	it("resolves immediately when isAlreadySatisfied returns true", async () => {
-		const { queue } = createQueue({ steerDelivery: false });
-		queue.setParentBusy(true);
-		queue.queue("<event>pre</event>", "local");
-		const result = await queue.wait({ isAlreadySatisfied: () => true });
-		expect(result).toBe("<event>pre</event>");
-	});
-
-	it("resolves with empty string when already satisfied and queue is empty", async () => {
-		const { queue } = createQueue();
-		queue.setParentBusy(true);
-		const result = await queue.wait({ isAlreadySatisfied: () => true });
-		expect(result).toBe("");
-	});
-
-	it("isWaiting is false after immediate resolution", async () => {
-		const { queue } = createQueue();
-		queue.setParentBusy(true);
-		await queue.wait({ isAlreadySatisfied: () => true });
-		expect(queue.isWaiting).toBe(false);
-	});
-});
-
-// ─── Wait cancellation ───────────────────────────────────────────────────────
-
-describe("NotificationQueue — wait cancellation", () => {
-	it("rejects the promise when the abort signal fires", async () => {
-		const { queue } = createQueue();
-		queue.setParentBusy(true);
-		const controller = new AbortController();
-		const p = queue.wait({ signal: controller.signal });
-		controller.abort();
-		await expect(p).rejects.toThrow();
-	});
-
-	it("clears isWaiting on cancellation", async () => {
-		const { queue } = createQueue();
-		queue.setParentBusy(true);
-		const controller = new AbortController();
-		const p = queue.wait({ signal: controller.signal });
-		controller.abort();
-		try {
-			await p;
-		} catch {
-			// expected
-		}
-		expect(queue.isWaiting).toBe(false);
-	});
-
-	it("resumes normal delivery after cancellation", async () => {
-		const { queue, delivered } = createQueue();
-		queue.setParentBusy(true);
-		const controller = new AbortController();
-		const p = queue.wait({ signal: controller.signal });
-		controller.abort();
-		try {
-			await p;
-		} catch {
-			// expected
-		}
-		queue.setParentBusy(false);
-		queue.queue("<event>after-cancel</event>", "local");
-		expect(delivered).toEqual(["<event>after-cancel</event>"]);
-	});
-
-	it("preserves queued notifications after cancellation", async () => {
-		const { queue } = createQueue();
-		queue.setParentBusy(true);
+		queue.setWaiting(true);
 		queue.queue("<event>a</event>", "local");
-		const controller = new AbortController();
-		const p = queue.wait({ signal: controller.signal });
-		controller.abort();
-		try {
-			await p;
-		} catch {
-			// expected
-		}
+		expect(delivered).toEqual([]);
 		expect(queue.length).toBe(1);
 	});
 
-	it("rejects immediately when given an already-aborted signal", async () => {
-		const { queue } = createQueue();
+	it("suppresses explicit flush() while waiting", () => {
+		const { queue, delivered } = createQueue();
+		queue.queue("<event>a</event>", "local"); // auto-flushes (not waiting yet)
+		queue.setParentBusy(true); // now busy from the flush
+		queue.setWaiting(true);
+		queue.queue("<event>b</event>", "local");
+		queue.flush();
+		expect(delivered).toEqual(["<event>a</event>"]); // only the pre-wait one
+		expect(queue.length).toBe(1);
+	});
+
+	it("suppresses steer delivery auto-flush while waiting", () => {
+		const { queue, delivered } = createQueue({ steerDelivery: true });
 		queue.setParentBusy(true);
-		const controller = new AbortController();
-		controller.abort();
-		const p = queue.wait({ signal: controller.signal });
-		await expect(p).rejects.toThrow();
-		expect(queue.isWaiting).toBe(false);
+		queue.setWaiting(true);
+		// Steer + no pending tools would normally auto-flush
+		queue.queue("<event>a</event>", "local");
+		expect(delivered).toEqual([]);
+		expect(queue.length).toBe(1);
+	});
+
+	it("suppresses trackToolEnd flush while waiting", () => {
+		const { queue, delivered } = createQueue({ steerDelivery: true });
+		queue.setParentBusy(true);
+		queue.trackToolStart("tool1");
+		queue.setWaiting(true);
+		queue.queue("<event>a</event>", "local");
+		queue.trackToolEnd("tool1");
+		expect(delivered).toEqual([]);
+		expect(queue.length).toBe(1);
+	});
+
+	it("resumes normal delivery after waiting is cleared", () => {
+		const { queue, delivered } = createQueue();
+		queue.setWaiting(true);
+		queue.queue("<event>a</event>", "local");
+		queue.setWaiting(false);
+		// Queue doesn't auto-flush on setWaiting(false) — needs a trigger
+		queue.queue("<event>b</event>", "local");
+		expect(delivered).toEqual(["<event>a</event>\n<event>b</event>"]);
 	});
 });
 
-// ─── Wait error cases ────────────────────────────────────────────────────────
+// ─── drainAll ────────────────────────────────────────────────────────────────
 
-describe("NotificationQueue — wait errors", () => {
-	it("throws when a wait is already active", () => {
+describe("NotificationQueue — drainAll", () => {
+	it("returns concatenated content and empties the queue", () => {
 		const { queue } = createQueue();
 		queue.setParentBusy(true);
-		queue.wait(); // first wait
-		expect(() => queue.wait()).toThrow();
+		queue.queue("<event>a</event>", "local");
+		queue.queue("<event>b</event>", "local");
+		const result = queue.drainAll();
+		expect(result).toBe("<event>a</event>\n<event>b</event>");
+		expect(queue.length).toBe(0);
+	});
+
+	it("returns empty string when queue is empty", () => {
+		const { queue } = createQueue();
+		expect(queue.drainAll()).toBe("");
 	});
 });
 
-// ─── drainLocal / clear ──────────────────────────────────────────────────────
+// ─── drainLocal ──────────────────────────────────────────────────────────────
 
 describe("NotificationQueue — drainLocal", () => {
 	it("removes local-source notifications and preserves uplink entries", () => {
@@ -327,6 +210,8 @@ describe("NotificationQueue — drainLocal", () => {
 		expect(queue.length).toBe(1);
 	});
 });
+
+// ─── clear ───────────────────────────────────────────────────────────────────
 
 describe("NotificationQueue — clear", () => {
 	it("removes all notifications regardless of source", () => {
