@@ -243,12 +243,17 @@ export default function (pi: ExtensionAPI) {
 	// to decide when to resolve the wait promise.
 	let waitSatisfied: (() => boolean) | null = null;
 	let waitResolve: ((result: string) => void) | null = null;
+	let waitAbortCleanup: (() => void) | null = null;
 
 	function resolveWait(): void {
 		if (!waitResolve) return;
 		const resolve = waitResolve;
 		waitResolve = null;
 		waitSatisfied = null;
+		if (waitAbortCleanup) {
+			waitAbortCleanup();
+			waitAbortCleanup = null;
+		}
 		queue.setWaiting(false);
 		resolve(queue.drainAll());
 	}
@@ -884,7 +889,7 @@ export default function (pi: ExtensionAPI) {
 			const isSatisfied = () => {
 				return scopedIds.every((id) => {
 					const s = mgr.getAgentStatus(id);
-					return s && (s.state === "idle" || s.state === "failed");
+					return !s || s.state === "idle" || s.state === "failed";
 				});
 			};
 
@@ -901,6 +906,11 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
+			// Guard against concurrent await_agents calls
+			if (waitResolve) {
+				throw new Error("Another await_agents call is already active.");
+			}
+
 			// Enter wait mode
 			waitSatisfied = isSatisfied;
 			queue.setWaiting(true);
@@ -913,6 +923,7 @@ export default function (pi: ExtensionAPI) {
 						const onAbort = () => {
 							waitResolve = null;
 							waitSatisfied = null;
+							waitAbortCleanup = null;
 							queue.setWaiting(false);
 							reject(new Error("Aborted"));
 						};
@@ -921,6 +932,7 @@ export default function (pi: ExtensionAPI) {
 							return;
 						}
 						signal.addEventListener("abort", onAbort, { once: true });
+						waitAbortCleanup = () => signal.removeEventListener("abort", onAbort);
 					}
 				});
 

@@ -47,7 +47,7 @@ The removed tests covered the exact behaviors now implemented in `index.ts` — 
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/index.ts:912-916`
-- **Status:** open
+- **Status:** resolved
 
 The module-level `waitResolve` and `waitSatisfied` are unconditionally overwritten when entering wait mode. If the model issues two `await_agents` tool calls in the same turn (parallel execution), the second overwrites `waitResolve`, orphaning the first promise — it will never resolve or reject, silently hanging that tool call forever. While pi's execution model makes this unlikely (the model would have to emit two `await_agents` in the same response), there's no guard. A cheap fix: `if (waitResolve) throw new Error("Another await_agents call is already active.")` before entering wait mode.
 
@@ -56,7 +56,7 @@ The module-level `waitResolve` and `waitSatisfied` are unconditionally overwritt
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/index.ts:895-901`
-- **Status:** open
+- **Status:** resolved
 
 The satisfaction check requires every scoped agent to have a status with `state === "idle" || state === "failed"`:
 
@@ -81,7 +81,7 @@ Both the plan and brainstorm were modified during implementation. The plan's arc
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/index.ts:917-928`
-- **Status:** open
+- **Status:** resolved
 
 When `resolveWait()` fires from a callback, the promise resolves but the `onAbort` listener remains on the signal. The `{ once: true }` option only auto-removes on fire, not on normal resolution. If the signal later aborts, `onAbort` runs harmlessly (setting already-null variables, calling `reject()` on an already-resolved promise). No functional breakage, but the closure is kept alive until the signal is GCed. The plan specified `abortCleanup` for this; it wasn't implemented.
 
