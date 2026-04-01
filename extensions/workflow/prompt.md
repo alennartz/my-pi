@@ -48,5 +48,5 @@ Once you've determined the topic and phase:
 ## Guidance
 
 - Follow the skill's instructions for what to read and do.
-- If you're uncertain about intent or context during a phase, you may consult earlier artifacts (brainstorm, plan) before asking the user — but don't read them by default.
+- If you're uncertain about intent or context during a phase, you may consult earlier artifacts before asking the user — but don't read anything the skill doesn't call for by default.
 - Do not duplicate the skill's logic — invoke it and follow it.

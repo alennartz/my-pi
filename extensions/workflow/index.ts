@@ -140,7 +140,7 @@ function buildPhasePrompt(topic: string, phase: string, cwd: string): string {
 		``,
 		`When the skill's work is done, call \`workflow_phase_complete\` with topic \`${topic}\` and phase \`${phase}\`.`,
 		``,
-		`Follow the skill's instructions for what to read. If you're uncertain about intent or context during a phase, you may consult earlier artifacts (brainstorm, plan) before asking the user — but don't read them by default.`,
+		`Follow the skill's instructions for what to read. If you're uncertain about intent or context during a phase, you may consult earlier artifacts before asking the user — but don't read anything the skill doesn't call for by default.`,
 	];
 	return lines.join("\n");
 }
