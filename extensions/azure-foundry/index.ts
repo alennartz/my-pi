@@ -183,11 +183,11 @@ const MODEL_CATALOG: Record<string, Partial<ModelMeta>> = {
 	// Anthropic
 	"claude-sonnet-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
 		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
-	"claude-sonnet-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
+	"claude-sonnet-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
 		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
 	"claude-opus-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 32000,
 		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
-	"claude-opus-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
+	"claude-opus-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
 		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
 	"claude-haiku-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
 		cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 } },
