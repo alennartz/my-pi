@@ -1,6 +1,6 @@
 ---
 name: debugging
-description: "Use when encountering any bug, test failure, or unexpected behavior — whether observed directly or reported by the user. Enforces root cause investigation before attempting fixes. Triggers include: the user reporting something is broken, wrong, or not working; the user describing unexpected behavior or a regression; build/compile errors; runtime exceptions; stack traces; test failures; type errors; assertion failures; crashes; hangs; wrong output; error messages in logs; a previous fix attempt that didn't work; or any situation where code isn't behaving as expected. Also use when stuck in a fix loop — multiple failed attempts at the same problem."
+description: "Use any time the user reports a problem — something not working, broken, wrong, unexpected, or off. This is the go-to skill whenever the user describes a symptom rather than requesting a specific change. Covers everything from vague 'this doesn't work' reports to specific error messages, stack traces, test failures, crashes, wrong output, regressions, or build errors. Also use when stuck — a previous fix didn't work, the same problem keeps coming back, or you're looping on failed attempts. Enforces root cause investigation before any fix."
 ---
 
 # Systematic Debugging
