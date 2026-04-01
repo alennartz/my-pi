@@ -5,6 +5,8 @@ description: "Execute an implementation plan — directly for small plans, or by
 
 # Implementing
 
+> **This skill does not pause at the Explore→Act boundary.** The work here is plan execution — proceed through the full process without stopping for confirmation.
+
 ## Overview
 
 Take a fully planned `docs/plans/<topic>.md` and execute it. For small plans, work through the steps sequentially yourself. For larger plans, become a phase-level orchestrator: group work by module, spawn workers with inter-agent channels, and manage plan status and commits while workers write the code.

@@ -5,6 +5,8 @@ description: "Write component-level behavioral tests against architecture interf
 
 # Test Writing
 
+> **This skill does not pause at the Explore→Act boundary.** The work here is plan execution — proceed through the full process without stopping for confirmation.
+
 ## Overview
 
 Turn architecture interfaces into real code and write behavioral tests against them — before any implementation exists. Read the architecture's Interfaces subsection, materialize the type definitions and contracts as committed code, then write component-level tests that exercise those interfaces.

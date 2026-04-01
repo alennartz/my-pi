@@ -5,6 +5,8 @@ description: "Turn a direction into concrete, ordered implementation steps groun
 
 # Implementation Planning
 
+> **This skill does not pause at the Explore→Act boundary.** The work here is plan execution — proceed through the full process without stopping for confirmation.
+
 ## Overview
 
 Take the architecture in `docs/plans/<topic>.md` and produce concrete, ordered implementation steps. Read the codemap, read the architecture, read the tests, dive into the relevant code, then write steps specific enough to act on without ambiguity.

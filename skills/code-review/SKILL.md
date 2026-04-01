@@ -5,6 +5,8 @@ description: "Review implemented code against its plan. Use when changes have be
 
 # Code Review
 
+> **This skill does not pause at the Explore→Act boundary.** The work here is plan execution — proceed through the full process without stopping for confirmation.
+
 ## Overview
 
 Review what was built against what was planned. Read the plan, read the diff, and produce a findings report. Two passes: first check that the plan was faithfully implemented, then check that the code itself is sound.
