@@ -25,13 +25,15 @@ The goal is to understand what's happening and why. Do not propose fixes during 
 
 **Trace backward to the root cause.** Bugs manifest deep in the call stack but originate elsewhere. When you find where something goes wrong, don't stop — ask what called it with bad data, then what called that, and keep tracing upward until you find the original source. The fix belongs at the source, not at the symptom. If you can't trace manually, add temporary diagnostic logging at component boundaries to reveal where data goes wrong.
 
+**Consider the data structure angle.** Tracing control flow isn't the only lens. Sometimes — especially when the bug is a design issue rather than an algorithmic logic error — it's more productive to look at the problem from the perspective of data structures and their lifecycles: what exists, who owns it, what invalidates it. This framing can yield more intuitive explanations and higher-quality root cause fixes for that class of problem.
+
 **Compare against working examples.** Find similar code in the same codebase that works correctly. Identify every difference between the working version and the broken one, no matter how small. Don't assume any difference is irrelevant.
 
 When this phase is complete, you should be able to articulate clearly what the root cause is and why it produces the observed behavior.
 
 ### Phase 2: Hypothesize and Test
 
-**Form a single hypothesis.** State it clearly — what you believe the root cause is and why. Be specific, not vague.
+**Form a single hypothesis.** State it clearly — what you believe the root cause is and why. Be specific, not vague. A good test: can you name a specific location to check and what you'd expect to see? If verifying your hypothesis requires broad exploratory reading, it's not specific enough — narrow it before you start reading.
 
 **Test with the smallest possible change.** Change one variable at a time. If the hypothesis is wrong, you need to know it was wrong — not wonder whether your test was confounded by a second change you made simultaneously.
 
