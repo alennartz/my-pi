@@ -48,8 +48,6 @@ Write the full set of implementation steps. Each step should be:
 
 **Pure functions by default** — design data flow through explicit argument passing and pure functions. Shared immutable state (config loaded once, constants, frozen data structures) is fine and needs no special treatment. If a step's design requires shared *mutable* state, surface the decision to the user with reasoning before writing it into the step.
 
-Present the full plan to the user for review before writing it to the file.
-
 ### 3. Write the Plan
 
 Append the implementation steps to `docs/plans/<topic>.md` below the architecture section. Follow the artifact format below.
