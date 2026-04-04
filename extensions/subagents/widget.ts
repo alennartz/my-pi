@@ -10,7 +10,7 @@
 import type { Component } from "@mariozechner/pi-tui";
 import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
 import type { Theme } from "@mariozechner/pi-coding-agent";
-import type { AgentStatus, AgentState } from "./group.js";
+import type { AgentStatus, AgentState } from "./agent-set.js";
 
 const STATUS_ICONS: Record<AgentState, string> = {
 	running: "⏳",

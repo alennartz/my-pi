@@ -4,23 +4,23 @@
  * Long-lived manager that spawns pi --mode rpc child processes, manages
  * per-agent state, subscribes to RPC event streams for widget updates,
  * and coordinates broker startup/teardown. Infrastructure is created
- * lazily on first start() and torn down when the last agent is removed.
+ * lazily on first start() and torn down when no agents remain.
  */
 
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { RpcChild } from "./rpc-child.js";
 import { Broker } from "./broker.js";
 import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs } from "./agents.js";
+import { ensurePersistence, appendAgentAdded, appendAgentRemoved, loadPersistedAgents, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
 import { type Topology, buildTopology, addToTopology, removeFromTopology } from "./channels.js";
 import {
 	serializeSubagentIdentity,
 	serializeAgentMessage,
 	serializeGroupComplete,
 	serializeAgentComplete,
-	type GroupCompleteData,
+	type ActiveAgentsCompleteData,
 	type AgentCompleteData,
 	type BrokerResponse,
 } from "./messages.js";
@@ -51,6 +51,9 @@ interface AgentEntry {
 	channels: string[];
 	rpc: RpcChild;
 	status: AgentStatus;
+	sessionFile?: string;
+	sessionId?: string;
+	kind: AgentSpec["kind"];
 }
 
 export interface SubagentManagerOptions {
@@ -70,6 +73,8 @@ export class SubagentManager {
 	private opts: SubagentManagerOptions;
 	private correlationToTarget = new Map<string, string>();
 	private sessionDir: string | null = null;
+	private persistence: PersistencePaths | null = null;
+	private restoring = false;
 
 	constructor(opts: SubagentManagerOptions) {
 		this.opts = opts;
@@ -87,7 +92,7 @@ export class SubagentManager {
 		return this.entries.length > 0;
 	}
 
-	private getCompletionReport(): GroupCompleteData {
+	private getCompletionReport(): ActiveAgentsCompleteData {
 		const agents: AgentCompleteData[] = this.entries.map((e) => ({
 			id: e.id,
 			status: e.status.state === "failed" ? "failed" : "idle",
@@ -112,8 +117,12 @@ export class SubagentManager {
 		const isFirstCall = this.broker === null;
 
 		if (isFirstCall) {
-			// Create shared temp directory for session files
-			this.sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-"));
+			const parentSessionFile = pi.getSessionManager().getSessionFile();
+			if (!parentSessionFile) {
+				throw new Error("Subagents require a persisted parent session file");
+			}
+			this.persistence = ensurePersistence(parentSessionFile);
+			this.sessionDir = this.persistence.childSessionsDir;
 
 			// Build initial topology
 			const specs = agents.map((a) => ({
@@ -179,7 +188,8 @@ export class SubagentManager {
 			peers.push({
 				id: "parent",
 				description:
-					"The orchestrating agent that spawned this group. It can see all agents' status and decides when the group is done. Send it questions when you need human-level judgment or decisions that affect the whole group.",
+					"The orchestrating agent that spawned you. It can see all active agents' status and decides when to add, remove, or redirect work. Send it questions when you need human-level judgment or decisions that affect multiple agents.",
+
 			});
 
 			const identityXml = serializeSubagentIdentity({
@@ -198,8 +208,8 @@ export class SubagentManager {
 			} else {
 				agentConfig = agentSpec.agent ? agentConfigs.find((a) => a.name === agentSpec.agent) : undefined;
 				const agentSkillPaths = skillPaths.get(agentSpec.id) ?? [];
-				args = buildAgentArgs(agentConfig, agentSkillPaths, this.sessionDir!);
-				if (agentConfig) {
+				args = buildAgentArgs(agentConfig, agentSkillPaths, this.sessionDir!, agentSpec.resumeSessionFile);
+				if (agentConfig && !agentSpec.resumeSessionFile) {
 					args.push("--append-system-prompt", agentConfig.systemPrompt);
 				}
 			}
@@ -241,6 +251,7 @@ export class SubagentManager {
 				channels: allChannels,
 				rpc,
 				status,
+				kind: agentSpec.kind,
 			};
 
 			newEntries.push(entry);
@@ -253,11 +264,30 @@ export class SubagentManager {
 		// Start new RPC children
 		await Promise.all(newEntries.map((e) => e.rpc.start()));
 
-		// Send initial task prompts
 		for (const entry of newEntries) {
-			entry.rpc.prompt(`Task: ${entry.task}`).catch(() => {
-				// Process may have died
-			});
+			entry.sessionFile = entry.rpc.sessionFile;
+			entry.sessionId = entry.rpc.sessionId;
+			if (!this.restoring && this.persistence && entry.sessionFile) {
+				appendAgentAdded(this.persistence, {
+					id: entry.id,
+					kind: entry.kind,
+					task: entry.task,
+					channels: entry.channels.filter((c) => c !== "parent"),
+					agent: entry.agentDef,
+					sessionFile: entry.sessionFile,
+					sessionId: entry.sessionId,
+				});
+			}
+		}
+
+		// Send initial task prompts. Restored sessions rely on generic session-resume
+		// behavior to receive their wake-up message when the session is resumed.
+		if (!this.restoring) {
+			for (const entry of newEntries) {
+				entry.rpc.prompt(`Task: ${entry.task}`).catch(() => {
+					// Process may have died
+				});
+			}
 		}
 
 		// Monitor for process exits
@@ -267,10 +297,31 @@ export class SubagentManager {
 
 		// Build acknowledgment
 		const ids = agents.map((a) => a.id);
-		const spawned = isFirstCall
-			? `Agents spawned: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}).`
-			: `Added ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}) to existing group.`;
+		const spawned = this.restoring
+			? `Agents restored: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}).`
+			: isFirstCall
+				? `Agents spawned: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}).`
+				: `Added ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}) to the existing active set.`;
 		return `${spawned} Results will arrive as notifications.\n\nIMPORTANT: Unless you were explicitly told to do other work after spawning, you MUST briefly tell the user what you spawned and then end your turn. Do not take any further actions — no searching, no reading files, no tool calls. Just describe what was launched and stop.`;
+	}
+
+	async restoreFromPersistence(agentConfigs: AgentConfig[]): Promise<void> {
+		if (this.broker || this.entries.length > 0) return;
+		const parentSessionFile = this.opts.pi.getSessionManager().getSessionFile();
+		if (!parentSessionFile) return;
+
+		const persisted = loadPersistedAgents(parentSessionFile);
+		if (!persisted || persisted.agents.length === 0) return;
+
+		this.persistence = persisted.paths;
+		this.sessionDir = persisted.paths.childSessionsDir;
+		this.restoring = true;
+		try {
+			const restored = persisted.agents.map((agent) => this.toRestoreSpec(agent));
+			await this.start(restored, agentConfigs);
+		} finally {
+			this.restoring = false;
+		}
 	}
 
 	async teardown(agentId?: string): Promise<{ report: string; empty: boolean }> {
@@ -284,6 +335,16 @@ export class SubagentManager {
 		const report = this.getCompletionReport();
 		const xml = serializeGroupComplete(report);
 
+		for (const entry of this.entries) {
+			if (this.persistence) {
+				appendAgentRemoved(this.persistence, {
+					id: entry.id,
+					sessionFile: entry.sessionFile,
+					sessionId: entry.sessionId,
+				});
+			}
+		}
+
 		// Stop all children
 		await Promise.all(this.entries.map((e) => e.rpc.stop()));
 
@@ -293,19 +354,12 @@ export class SubagentManager {
 			this.broker = null;
 		}
 
-		// Clean up shared session temp directory
-		if (this.sessionDir) {
-			try {
-				fs.rmSync(this.sessionDir, { recursive: true, force: true });
-			} catch {
-				// Best effort
-			}
-			this.sessionDir = null;
-		}
 
 		this.entries = [];
 		this.topology = null;
 		this.correlationToTarget.clear();
+		this.sessionDir = null;
+		this.persistence = null;
 
 		return { report: xml, empty: true };
 	}
@@ -330,6 +384,14 @@ export class SubagentManager {
 		// Remove from entries before stopping — prevents monitorExit from
 		// seeing the SIGTERM exit code and firing a spurious crash notification.
 		this.entries.splice(entryIdx, 1);
+
+		if (this.persistence) {
+			appendAgentRemoved(this.persistence, {
+				id: entry.id,
+				sessionFile: entry.sessionFile,
+				sessionId: entry.sessionId,
+			});
+		}
 
 		// Stop the agent's RPC child
 		await entry.rpc.stop();
@@ -357,12 +419,8 @@ export class SubagentManager {
 				await this.broker.stop();
 				this.broker = null;
 			}
-			if (this.sessionDir) {
-				try {
-					fs.rmSync(this.sessionDir, { recursive: true, force: true });
-				} catch {}
-				this.sessionDir = null;
-			}
+			this.sessionDir = null;
+			this.persistence = null;
 			this.topology = null;
 			this.correlationToTarget.clear();
 
@@ -378,11 +436,35 @@ export class SubagentManager {
 
 	// ─── Internal ────────────────────────────────────────────────────────
 
+	private toRestoreSpec(agent: PersistedAgentRecord): AgentSpec {
+		if (agent.kind === "fork") {
+			return {
+				kind: "fork",
+				id: agent.id,
+				task: agent.task,
+				sessionFile: agent.sessionFile,
+				resumeSessionFile: agent.sessionFile,
+				tools: [],
+				skillPaths: [],
+				thinkingLevel: this.opts.pi.getThinkingLevel() as string,
+			};
+		}
+
+		return {
+			kind: "agent",
+			id: agent.id,
+			agent: agent.agent,
+			task: agent.task,
+			channels: agent.channels,
+			resumeSessionFile: agent.sessionFile,
+		};
+	}
+
 	private handleRpcEvent(entry: AgentEntry, event: any): void {
 		if (event.type === "tool_execution_start") {
 			entry.status.lastActivity = `${event.toolName}(${summarizeArgs(event.args)})`.replace(/[\r\n]+/g, " ");
 			if (event.toolName === "subagent" || event.toolName === "fork") entry.status.hasSubgroup = true;
-			if (event.toolName === "teardown_group" || event.toolName === "teardown") entry.status.hasSubgroup = false;
+			if (event.toolName === "teardown") entry.status.hasSubgroup = false;
 			this.opts.onUpdate();
 		}
 

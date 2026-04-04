@@ -17,6 +17,7 @@ export interface RegularAgentSpec {
 	agent?: string;
 	task: string;
 	channels?: string[];
+	resumeSessionFile?: string;
 }
 
 export interface ForkAgentSpec {
@@ -27,6 +28,7 @@ export interface ForkAgentSpec {
 	tools: string[];
 	skillPaths: string[];
 	thinkingLevel: string;
+	resumeSessionFile?: string;
 }
 
 export type AgentSpec = RegularAgentSpec | ForkAgentSpec;
@@ -245,8 +247,8 @@ export function resolveSkillPaths(
 /**
  * Build CLI args for spawning a pi child process for this agent.
  */
-export function buildAgentArgs(agent: AgentConfig | undefined, skillPaths: string[], sessionDir: string): string[] {
-	const args: string[] = ["--session-dir", sessionDir];
+export function buildAgentArgs(agent: AgentConfig | undefined, skillPaths: string[], sessionDir: string, resumeSessionFile?: string): string[] {
+	const args: string[] = resumeSessionFile ? ["--session", resumeSessionFile] : ["--session-dir", sessionDir];
 	if (agent?.model) args.push("--model", agent.model);
 	if (agent?.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 	if (skillPaths.length > 0) {
@@ -264,11 +266,16 @@ export function buildAgentArgs(agent: AgentConfig | undefined, skillPaths: strin
  * its tool restrictions, skills, and thinking level.
  */
 export function buildForkArgs(spec: ForkAgentSpec, sessionDir: string): string[] {
-	const args: string[] = [
-		"--fork", spec.sessionFile,
-		"--session-dir", sessionDir,
-		"--thinking", spec.thinkingLevel,
-	];
+	const args: string[] = spec.resumeSessionFile
+		? [
+			"--session", spec.resumeSessionFile,
+			"--thinking", spec.thinkingLevel,
+		]
+		: [
+			"--fork", spec.sessionFile,
+			"--session-dir", sessionDir,
+			"--thinking", spec.thinkingLevel,
+		];
 	if (spec.tools.length > 0) {
 		args.push("--tools", spec.tools.join(","));
 	}

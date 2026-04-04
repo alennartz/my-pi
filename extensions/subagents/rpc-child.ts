@@ -21,6 +21,8 @@ export class RpcChild {
 	private nextId = 1;
 	private _exitCode: number | null = null;
 	private _stderr = "";
+	private _sessionFile?: string;
+	private _sessionId?: string;
 	private opts: RpcChildOptions;
 
 	constructor(opts: RpcChildOptions = {}) {
@@ -37,6 +39,14 @@ export class RpcChild {
 
 	get stderr(): string {
 		return this._stderr;
+	}
+
+	get sessionFile(): string | undefined {
+		return this._sessionFile;
+	}
+
+	get sessionId(): string | undefined {
+		return this._sessionId;
 	}
 
 	start(): Promise<void> {
@@ -130,7 +140,11 @@ export class RpcChild {
 			this.proc.on("spawn", () => {
 				started = true;
 				this.sendCommand({ type: "get_state" })
-					.then(() => resolve())
+					.then((resp) => {
+						this._sessionFile = resp?.data?.sessionFile;
+						this._sessionId = resp?.data?.sessionId;
+						resolve();
+					})
 					.catch(reject);
 			});
 		});

@@ -16,7 +16,7 @@ export interface AgentChannelSpec {
 /**
  * Build a topology map from agent declarations.
  * Each agent can send to its declared channels + "parent".
- * "parent" can send to any agent in the group.
+ * "parent" can send to any active agent.
  */
 export function buildTopology(agents: AgentChannelSpec[]): Topology {
 	const topology: Topology = new Map();
@@ -35,7 +35,7 @@ export function buildTopology(agents: AgentChannelSpec[]): Topology {
 }
 
 /**
- * Validate that all channel references resolve to agent ids in the group.
+ * Validate that all channel references resolve to currently known agent ids.
  * Returns an error message if invalid, null if valid.
  * Disconnected agents (empty channels) are allowed.
  */

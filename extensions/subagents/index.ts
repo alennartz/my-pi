@@ -6,7 +6,7 @@
  * - Present: has a parent. Connects to parent's broker, registers all tools.
  *
  * Both roles register the same seven tools: subagent, fork, send, respond,
- * check_status, teardown, await_agents. Any agent can spawn sub-groups (recursive).
+ * check_status, teardown, await_agents. Any agent can spawn child agents recursively.
  */
 
 import * as net from "node:net";
@@ -27,9 +27,9 @@ import {
 import type { TUI } from "@mariozechner/pi-tui";
 import { detect } from "@pimote/panels";
 import type { PanelHandle, Card, CardColor } from "@pimote/panels";
-import { SubagentManager } from "./group.js";
+import { SubagentManager } from "./agent-set.js";
 import { SubagentDashboard } from "./widget.js";
-import type { AgentStatus, AgentState } from "./group.js";
+import type { AgentStatus, AgentState } from "./agent-set.js";
 import {
 	serializeAgentComplete,
 	serializeAgentMessage,
@@ -295,6 +295,25 @@ export default function (pi: ExtensionAPI) {
 		} catch {
 			cachedPackageAgents = null;
 		}
+
+		if (parentLink) return;
+
+		const mgr = ensureManager(ctx);
+		const discovery = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined);
+		await mgr.restoreFromPersistence(discovery.agents);
+		if (!mgr.hasAgents()) return;
+
+		await ensureWidget(ctx);
+		await ensureParentBrokerClient();
+		const restoredStatuses = mgr.getAgentStatuses();
+		if (dashboard && tuiRef) {
+			dashboard.update(restoredStatuses);
+			tuiRef.requestRender();
+		}
+		if (panelHandle) {
+			panelHandle.updateCards(statusesToCards(restoredStatuses));
+		}
+		stopSequences.addOnce("<agent_complete");
 	});
 
 	// ─── Inject available agent definitions into system prompt ───────────
@@ -461,7 +480,7 @@ export default function (pi: ExtensionAPI) {
 	// ─── Tool: subagent ──────────────────────────────────────────────────
 
 	const AgentItem = Type.Object({
-		id: Type.String({ description: "Unique identifier for this agent within the group" }),
+		id: Type.String({ description: "Unique identifier for this agent among the parent's active agents" }),
 		agent: Type.Optional(Type.String({ description: "Agent definition name (omit for default agent)" })),
 		task: Type.String({ description: "Task description for this agent" }),
 		channels: Type.Optional(
@@ -473,8 +492,8 @@ export default function (pi: ExtensionAPI) {
 
 	if (shouldRegisterTool("subagent")) pi.registerTool({
 		name: "subagent",
-		label: "Subagent Group",
-		description: "Spawn a group of specialized subagents with channel-based inter-agent communication.",
+		label: "Subagents",
+		description: "Spawn specialized subagents with channel-based inter-agent communication.",
 		promptGuidelines: [
 			"Spawns agents that run in parallel with isolated contexts. Non-blocking — returns immediately with an acknowledgment. Live status shown in the widget.",
 			"Each agent gets its own pi process. Agents communicate via the send/respond tools using channels declared at spawn time.",
@@ -486,7 +505,7 @@ export default function (pi: ExtensionAPI) {
 			"For task decomposition, pattern selection, and when-to-delegate guidance, read the orchestrating-agents skill.",
 		],
 		parameters: Type.Object({
-			agents: Type.Array(AgentItem, { description: "Agents to spawn in this group" }),
+			agents: Type.Array(AgentItem, { description: "Agents to spawn under this parent session" }),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -646,7 +665,8 @@ export default function (pi: ExtensionAPI) {
 	if (shouldRegisterTool("send")) pi.registerTool({
 		name: "send",
 		label: "Send Message",
-		description: "Send a message to another agent in the group.",
+		description: "Send a message to another active agent.",
+
 		promptGuidelines: [
 			"Fire-and-forget by default: sends the message and returns immediately. The target agent will receive it as an <agent_message> block.",
 			"Set expectResponse=true for blocking sends: the tool call stays open until the target calls respond. Use for synchronous coordination (e.g., asking a question and waiting for the answer).",
@@ -665,7 +685,7 @@ export default function (pi: ExtensionAPI) {
 			if (signal?.aborted) throw new Error("Cancelled");
 
 			// Route to the correct broker:
-			// - Target is in our own sub-group → parentBrokerClient (our local broker)
+			// - Target is one of our own child agents → parentBrokerClient (our local broker)
 			// - Otherwise → brokerClient (uplink to parent's broker)
 			let client: BrokerClient | null;
 			let from: string;
@@ -806,7 +826,8 @@ export default function (pi: ExtensionAPI) {
 			"Use only when you have a specific reason: diagnosing a suspected stall, answering a user question about progress, or checking usage mid-run.",
 		],
 		parameters: Type.Object({
-			agent: Type.Optional(Type.String({ description: "Agent id to query. Omit for group summary." })),
+			agent: Type.Optional(Type.String({ description: "Agent id to query. Omit for a summary of all active agents." })),
+
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
@@ -840,7 +861,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Remove an agent or tear down all agents. Returns a completion report.",
 		promptGuidelines: [
 			"Call when an agent or all agents are no longer needed. Idle agents remain fully functional — you can send new messages to restart work or use agents as persistent specialists.",
-			"With an agent id: removes that single agent and returns its completion report. Without: tears down all agents and returns a <group_complete> summary with aggregate usage.",
+			"With an agent id: removes that single agent and returns its completion report. Without: tears down all active agents and returns a <group_complete> summary with aggregate usage.",
 			"When the last agent is removed (either explicitly or via full teardown), infrastructure is cleaned up automatically.",
 		],
 		parameters: Type.Object({
@@ -893,7 +914,8 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({
 			agents: Type.Optional(
 				Type.Array(Type.String(), {
-					description: "Agent IDs to wait on. Omit to wait on all agents in the group.",
+					description: "Agent IDs to wait on. Omit to wait on all active agents.",
+
 				}),
 			),
 		}),
@@ -989,7 +1011,10 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", async () => {
 		queue.clear();
 		if (manager) {
-			await manager.teardown();
+			const broker = manager.getBroker();
+			if (broker) {
+				await broker.stop();
+			}
 			manager = null;
 		}
 		if (parentBrokerClient) {
@@ -1012,7 +1037,7 @@ export default function (pi: ExtensionAPI) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function formatAgentStatusSummary(s: import("./group.js").AgentStatus): string {
+function formatAgentStatusSummary(s: import("./agent-set.js").AgentStatus): string {
 	const icon = { running: "⏳", idle: "✓", failed: "✗", waiting: "⏸" }[s.state];
 	const usage = s.usage.cost > 0 ? ` ($${s.usage.cost.toFixed(4)})` : "";
 	return `${icon} ${s.id}: ${s.state}${s.lastActivity ? ` — ${s.lastActivity}` : ""}${usage}`;
@@ -1090,7 +1115,7 @@ function statusesToCards(statuses: AgentStatus[]): Card[] {
 	});
 }
 
-function formatAgentStatusDetail(s: import("./group.js").AgentStatus): string {
+function formatAgentStatusDetail(s: import("./agent-set.js").AgentStatus): string {
 	const lines = [
 		`Agent: ${s.id}`,
 		`State: ${s.state}`,

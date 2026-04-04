@@ -9,7 +9,7 @@ description: "Delegate work to subagents to preserve primary agent context, para
 
 Subagents let you delegate work to separate agent processes, each with its own context window. The primary benefit is **context efficiency** — a subagent absorbs all the heavy tool use (file reads, edits, test runs, investigations) and returns a compact result. Your context stays clean, letting you handle more total work across a session.
 
-Beyond context management, subagents enable parallel execution, specialist coordination, and rich inter-agent communication. This skill covers the thinking that happens *before* you call `subagent` — task decomposition, pattern selection, topology design. Once agents are running, the tool descriptions, notifications (`<agent_complete>`, `<agent_message>`), and communication tools carry you from there.
+Beyond context management, subagents enable parallel execution, specialist coordination, and rich inter-agent communication. Child agent sessions are persisted per parent session and reconstructed from append-only lifecycle logs rather than treated as disposable temp processes, so explicit `teardown` matters semantically. This skill covers the thinking that happens *before* you call `subagent` — task decomposition, pattern selection, topology design. Once agents are running, the tool descriptions, notifications (`<agent_complete>`, `<agent_message>`), and communication tools carry you from there.
 
 ## When to Use Subagents
 
@@ -100,7 +100,7 @@ Each agent works on its own task. Peers can send messages for consultation — f
 
 ### Scatter-Gather
 
-Parent queries multiple agents via blocking sends in the same turn, then synthesizes responses. Requires a long-lived group (agents must be idle but not torn down).
+Parent queries multiple agents via blocking sends in the same turn, then synthesizes responses. Requires a long-lived active set (agents must be idle but not torn down).
 
 ```
 agents: [expert-a, expert-b, expert-c]  — no peer channels
@@ -114,7 +114,7 @@ parent sends: send(to="expert-a", expectResponse=true)
 
 ### Persistent Specialists
 
-Long-lived group tapped on demand. Parent sends new work to idle agents as needs arise; the group stays alive across multiple exchanges. Agents don't finish after one task — they idle and wait for more messages.
+Long-lived active set tapped on demand. Parent sends new work to idle agents as needs arise; the set stays alive across multiple exchanges. Agents don't finish after one task — they idle and wait for more messages.
 
 ```
 agents: [researcher, coder]  — no peer channels (or selective ones)

@@ -70,7 +70,7 @@ Standalone utility skills not tied to the workflow pipeline.
 
 Long-lived subagent orchestration extension — spawns and manages child pi processes with channel-based messaging and incremental membership. Includes agent definitions and skills for using/creating agents.
 
-**Responsibilities:** subagent lifecycle management, RPC child process spawning, channel topology and message brokering, deadlock detection, fork-based session branching, blocking await with interrupt handling (await_agents tool), notification queue with waiting-mode drain, TUI dashboard widget, agent definition discovery (four-tier package merge), orchestration guidance, specialist agent authoring guidance
+**Responsibilities:** subagent lifecycle management, persistent per-parent child-session storage, append-only agent lifecycle logging for restore/replay, RPC child process spawning, channel topology and message brokering, deadlock detection, fork-based session branching, blocking await with interrupt handling (`await_agents`), notification queue with waiting-mode drain, TUI dashboard widget, agent definition discovery (four-tier package merge), orchestration guidance, specialist agent authoring guidance. Runtime model: one parent session managing a live set of child agents; bulk spawn/teardown operations are convenience APIs, not durable group identities.
 
 **Dependencies:** none (standalone extension loaded by pi)
 

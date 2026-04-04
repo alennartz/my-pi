@@ -27,7 +27,7 @@ export interface UsageData {
 	cost: string;
 }
 
-export interface GroupCompleteData {
+export interface ActiveAgentsCompleteData {
 	agents: AgentCompleteData[];
 	usage: UsageData;
 }
@@ -70,7 +70,7 @@ export function serializeAgentComplete(data: AgentCompleteData): string {
 	return serializeAgentForXml(data);
 }
 
-export function serializeGroupComplete(data: GroupCompleteData): string {
+export function serializeGroupComplete(data: ActiveAgentsCompleteData): string {
 	const summary = (() => {
 		const counts: Record<string, number> = {};
 		for (const a of data.agents) {
