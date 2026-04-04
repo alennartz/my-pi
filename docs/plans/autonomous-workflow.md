@@ -135,6 +135,8 @@ None. The autonomous workflow coexists with the traditional workflow — no exis
 
 ## Steps
 
+**Pre-implementation commit:** `42017c6b7051a463c6d0251c69ca6a6623276248`
+
 ### Step 1: Implement `checkTransitionArtifact()`
 
 Replace the `throw new Error("not implemented")` body in `extensions/workflow/autoflow-checks.ts` with the actual transition validation logic. The function takes `phase`, `topic`, and `cwd` and returns `TransitionCheckResult | null`.
@@ -154,7 +156,7 @@ Implementation structure:
 Import `existsSync` and `readFileSync` from `node:fs` and `join` from `node:path` at the top of the file.
 
 **Verify:** `npx vitest run extensions/workflow/autoflow-checks.test.ts` — all tests pass.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Guard `workflow_phase_complete` registration
 
