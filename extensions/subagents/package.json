@@ -2,5 +2,8 @@
   "name": "subagents",
   "version": "1.0.0",
   "description": "Group-based subagent orchestration with channel-based inter-agent communication",
+  "dependencies": {
+    "@pimote/panels": "file:../../../pimote/packages/panels"
+  },
   "pi": { "extensions": ["./index.ts"] }
 }

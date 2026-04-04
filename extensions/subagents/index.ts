@@ -25,8 +25,11 @@ import {
 } from "./agents.js";
 
 import type { TUI } from "@mariozechner/pi-tui";
+import { detect } from "@pimote/panels";
+import type { PanelHandle, Card, CardColor } from "@pimote/panels";
 import { SubagentManager } from "./group.js";
 import { SubagentDashboard } from "./widget.js";
+import type { AgentStatus, AgentState } from "./group.js";
 import {
 	serializeAgentComplete,
 	serializeAgentMessage,
@@ -223,6 +226,7 @@ export default function (pi: ExtensionAPI) {
 	// Shared state
 	let manager: SubagentManager | null = null;
 	let dashboard: SubagentDashboard | null = null;
+	let panelHandle: PanelHandle | null = null;
 	let tuiRef: TUI | null = null;
 	let brokerClient: BrokerClient | null = null;
 	const skillPathsMap = new Map<string, string[]>();
@@ -381,9 +385,14 @@ export default function (pi: ExtensionAPI) {
 				return found?.contextWindow;
 			},
 			onUpdate: () => {
-				if (dashboard && tuiRef && manager) {
-					dashboard.update(manager.getAgentStatuses());
+				if (!manager) return;
+				const statuses = manager.getAgentStatuses();
+				if (dashboard && tuiRef) {
+					dashboard.update(statuses);
 					tuiRef.requestRender();
+				}
+				if (panelHandle) {
+					panelHandle.updateCards(statusesToCards(statuses));
 				}
 			},
 			onAgentComplete: (agentId, allDone) => {
@@ -420,13 +429,24 @@ export default function (pi: ExtensionAPI) {
 		return manager;
 	}
 
-	function ensureWidget(ctx: ToolCtx): void {
-		if (dashboard || parentLink) return;
-		ctx.ui.setWidget("subagents", (tui, theme) => {
-			tuiRef = tui;
-			dashboard = new SubagentDashboard(theme);
-			return dashboard;
-		});
+	async function ensureWidget(ctx: ToolCtx): Promise<void> {
+		if (dashboard || panelHandle || parentLink) return;
+
+		// Detect TUI: custom() returns undefined in RPC mode, resolves immediately otherwise
+		const hasTUI = (await ctx.ui.custom(
+			(_tui, _theme, _kb, done) => { done(true); return { render: () => [] }; },
+			{ overlay: true },
+		)) !== undefined;
+
+		if (hasTUI) {
+			ctx.ui.setWidget("subagents", (tui, theme) => {
+				tuiRef = tui;
+				dashboard = new SubagentDashboard(theme);
+				return dashboard;
+			});
+		} else {
+			panelHandle = detect(pi, "subagents");
+		}
 	}
 
 	/** Connect the parent broker client to the manager's broker (first call only). */
@@ -520,14 +540,18 @@ export default function (pi: ExtensionAPI) {
 				...a,
 			}));
 
-			ensureWidget(ctx);
+			await ensureWidget(ctx);
 			const ack = await mgr.start(agentSpecs, allAgentConfigs);
 			await ensureParentBrokerClient();
 
 			// Push initial statuses so the widget renders immediately
+			const initialStatuses = mgr.getAgentStatuses();
 			if (dashboard && tuiRef) {
-				dashboard.update(mgr.getAgentStatuses());
+				dashboard.update(initialStatuses);
 				tuiRef.requestRender();
+			}
+			if (panelHandle) {
+				panelHandle.updateCards(statusesToCards(initialStatuses));
 			}
 
 			stopSequences.addOnce("<agent_complete");
@@ -596,14 +620,18 @@ export default function (pi: ExtensionAPI) {
 				thinkingLevel,
 			};
 
-			ensureWidget(ctx);
+			await ensureWidget(ctx);
 			const ack = await mgr.start([forkSpec], []);
 			await ensureParentBrokerClient();
 
 			// Push initial statuses
+			const forkStatuses = mgr.getAgentStatuses();
 			if (dashboard && tuiRef) {
-				dashboard.update(mgr.getAgentStatuses());
+				dashboard.update(forkStatuses);
 				tuiRef.requestRender();
+			}
+			if (panelHandle) {
+				panelHandle.updateCards(statusesToCards(forkStatuses));
 			}
 
 			stopSequences.addOnce("<agent_complete");
@@ -837,6 +865,10 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.setWidget("subagents", undefined as any);
 				dashboard = null;
 				tuiRef = null;
+				if (panelHandle) {
+					panelHandle.clear();
+					panelHandle = null;
+				}
 				skillPathsMap.clear();
 			}
 
@@ -970,6 +1002,10 @@ export default function (pi: ExtensionAPI) {
 		}
 		dashboard = null;
 		tuiRef = null;
+		if (panelHandle) {
+			panelHandle.clear();
+			panelHandle = null;
+		}
 		skillPathsMap.clear();
 	});
 }
@@ -980,6 +1016,78 @@ function formatAgentStatusSummary(s: import("./group.js").AgentStatus): string {
 	const icon = { running: "⏳", idle: "✓", failed: "✗", waiting: "⏸" }[s.state];
 	const usage = s.usage.cost > 0 ? ` ($${s.usage.cost.toFixed(4)})` : "";
 	return `${icon} ${s.id}: ${s.state}${s.lastActivity ? ` — ${s.lastActivity}` : ""}${usage}`;
+}
+
+// ─── Panel card mapping ──────────────────────────────────────────────────────
+
+const STATE_COLORS: Record<AgentState, CardColor> = {
+	running: "accent",
+	idle: "success",
+	waiting: "warning",
+	failed: "error",
+};
+
+const STATE_LABELS: Record<AgentState, string> = {
+	running: "running",
+	idle: "idle",
+	waiting: "waiting",
+	failed: "failed",
+};
+
+function fmtTokensPanel(count: number): string {
+	if (count < 1000) return count.toString();
+	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 1000000) return `${Math.round(count / 1000)}k`;
+	return `${(count / 1000000).toFixed(1)}M`;
+}
+
+function statusesToCards(statuses: AgentStatus[]): Card[] {
+	return statuses.map((s) => {
+		const body: Card["body"] = [];
+
+		// Agent def + model
+		const defName = s.agentDef || "default";
+		const modelName = s.model || "—";
+		body.push({ content: `${defName} · ${modelName}`, style: "secondary" });
+
+		// Activity
+		if (s.state === "running" && s.lastActivity) {
+			body.push({ content: s.lastActivity, style: "text" });
+		} else if (s.state === "waiting") {
+			body.push({ content: `waiting → ${s.waitingFor.join(", ") || "?"}`, style: "text" });
+		}
+
+		// Channels
+		if (s.channels.length > 0) {
+			body.push({ content: s.channels.join(" · "), style: "secondary" });
+		}
+
+		// Footer stats
+		const footer: string[] = [];
+		const totalInput = s.usage.input + s.usage.cacheRead + s.usage.cacheWrite;
+		if (totalInput > 0) footer.push(`↑${fmtTokensPanel(totalInput)}`);
+		if (s.usage.output > 0) footer.push(`↓${fmtTokensPanel(s.usage.output)}`);
+		if (s.contextWindow && s.contextWindow > 0 && s.lastTurnInput > 0) {
+			footer.push(`ctx:${Math.round((s.lastTurnInput / s.contextWindow) * 100)}%`);
+		}
+		if (s.usage.cost > 0) footer.push(`$${s.usage.cost.toFixed(2)}`);
+
+		// Build tag: "running (3)" or "running (3) 󰚩"
+		let tag = STATE_LABELS[s.state];
+		if (s.usage.turns > 0) tag += ` (${s.usage.turns})`;
+		if (s.hasSubgroup) tag += " \uDB81\uDEA9";
+
+		return {
+			id: s.id,
+			color: STATE_COLORS[s.state],
+			header: {
+				title: s.id,
+				tag,
+			},
+			body,
+			footer,
+		};
+	});
 }
 
 function formatAgentStatusDetail(s: import("./group.js").AgentStatus): string {
