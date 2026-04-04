@@ -214,6 +214,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// ── workflow_phase_complete tool ──────────────────────────────────────
+	// Guard: don't register in subagent processes (where PI_PARENT_LINK is set).
+	// Subagents running autonomous phases signal completion structurally, not via this tool.
+	if (!process.env.PI_PARENT_LINK) {
 	const STOP_TEXT = [
 		"PHASE COMPLETE — DO NOT CONTINUE.",
 		"",
@@ -363,4 +366,5 @@ export default function (pi: ExtensionAPI) {
 			}
 		},
 	});
+	} // end PI_PARENT_LINK guard
 }

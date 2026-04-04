@@ -167,7 +167,7 @@ Move the `STOP_TEXT` constant declaration inside the guard as well, since it's o
 No test for this — it's a one-line conditional guard on existing code, and the behavior (tool not available in subagents) is an environmental concern that can't be unit tested without mocking pi's extension API.
 
 **Verify:** `grep -n "PI_PARENT_LINK" extensions/workflow/index.ts` shows the guard wrapping the tool registration. Visually confirm the `pi.registerTool` call is inside the `if` block.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Create the autoflow skill
 
