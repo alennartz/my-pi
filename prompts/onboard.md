@@ -8,7 +8,7 @@ This is **alenna-pi**, a personal [pi coding agent](https://github.com/badlogic/
 
 ## What's Included
 
-- **Workflow pipeline** — a structured development flow: brainstorm → architect → plan → implement → review → cleanup. Each phase is a skill that produces artifacts consumed by the next. Invoke with `/workflow`.
+- **Workflow pipeline** — a structured development flow: brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle-review → cleanup. Each phase is a skill that produces artifacts consumed by the next. Two entry points: `/workflow` (traditional phase-by-phase with manual transitions) and `/autoflow` (brainstorm and architect are interactive; remaining phases run autonomously via subagents).
 - **Azure AI Foundry provider** — auto-discovers model deployments from Azure AI Foundry and registers them as pi models with dynamic Azure AD token refresh.
 - **Standalone skills** — `codemap` (generate/refresh a codebase map) and `debugging` (structured root-cause investigation).
 - **Subagent orchestration** — spawn groups of specialized agents with channel-based inter-agent communication. Agents run as isolated `pi --mode rpc` processes with topology enforcement, deadlock detection, and a live TUI widget. Tools: `subagent`, `fork`, `send`, `respond`, `check_status`, `teardown`, `await_agents`.

@@ -28,16 +28,17 @@ sequenceDiagram
 
 ### Workflow
 
-Pipeline orchestration extension and the nine workflow skills it drives. The extension provides the `/workflow` command and `workflow_phase_complete` tool; the skills define each phase's behavior.
+Pipeline orchestration extension, the nine workflow skills it drives, and the autoflow orchestration skill. The extension provides the `/workflow` command and `workflow_phase_complete` tool; the skills define each phase's behavior and autonomous pipeline execution.
 
-**Responsibilities:** pipeline phase routing, artifact-driven handoffs, context boundary management, brainstorming facilitation, architectural decision-making, test writing, test review, implementation planning, dual-mode implementation execution, plan-based code review, review finding resolution, post-workflow cleanup with DR extraction
+**Responsibilities:** pipeline phase routing, artifact-driven handoffs, context boundary management, autonomous pipeline orchestration, autonomous phase transition validation, brainstorming facilitation, architectural decision-making, test writing, test review, implementation planning, dual-mode implementation execution, plan-based code review, review finding resolution, post-workflow cleanup with DR extraction
 
-**Dependencies:** Skills (decision-records skill delegated from cleanup), Subagents (workflow skills delegate to subagents at runtime — scout investigation in architecting/impl-planning, worker orchestration in implementing, parallel fan-out in code review)
+**Dependencies:** Skills (decision-records skill delegated from cleanup; autoflow orchestrates the pipeline from brainstorm through cleanup), Subagents (workflow skills delegate to subagents at runtime — scout investigation in architecting/impl-planning, worker orchestration in implementing, parallel fan-out in code review, autonomous phase execution in autoflow)
 
 **Files:**
 - `extensions/workflow/**`
 - `extensions/numbered-select/**`
 - `lib/components/**`
+- `skills/autoflow/SKILL.md`
 - `skills/brainstorming/SKILL.md`
 - `skills/architecting/SKILL.md`
 - `skills/test-writing/SKILL.md`
