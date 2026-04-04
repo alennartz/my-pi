@@ -43,7 +43,7 @@ export type CheckablePhase =
  * - implement: plan file has no pending steps (all Status fields are "done")
  * - review: review file (docs/reviews/<topic>.md) exists
  * - handle-review: review file (docs/reviews/<topic>.md) exists
- * - cleanup: working artifacts (plan, reviews) have been cleaned up
+ * - cleanup: working artifacts (plan file, review files) have been cleaned up
  */
 export function checkTransitionArtifact(
 	phase: string,

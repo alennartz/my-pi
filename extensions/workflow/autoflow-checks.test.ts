@@ -310,9 +310,9 @@ describe("handle-review transition check", () => {
 // ─── cleanup: working artifacts cleaned ─────────────────────────────────────
 
 describe("cleanup transition check", () => {
-	it("passes when the plan file has been removed", () => {
+	it("passes when plan and review files have all been removed", () => {
 		setupDirs();
-		// Plan file absent = working artifacts cleaned
+		// No plan file, no review files = working artifacts cleaned
 		const result = checkTransitionArtifact("cleanup", "my-topic", testDir);
 		expect(result).not.toBeNull();
 		expect(result!.passed).toBe(true);
@@ -323,6 +323,28 @@ describe("cleanup transition check", () => {
 		writeFileSync(
 			join(testDir, "docs/plans/my-topic.md"),
 			"# Plan\n\n## Steps\n\nAll done.\n",
+		);
+		const result = checkTransitionArtifact("cleanup", "my-topic", testDir);
+		expect(result).not.toBeNull();
+		expect(result!.passed).toBe(false);
+	});
+
+	it("fails when the code review file still exists", () => {
+		setupDirs();
+		writeFileSync(
+			join(testDir, "docs/reviews/my-topic.md"),
+			"# Code Review\n",
+		);
+		const result = checkTransitionArtifact("cleanup", "my-topic", testDir);
+		expect(result).not.toBeNull();
+		expect(result!.passed).toBe(false);
+	});
+
+	it("fails when the test review file still exists", () => {
+		setupDirs();
+		writeFileSync(
+			join(testDir, "docs/reviews/my-topic-tests.md"),
+			"# Test Review\n",
 		);
 		const result = checkTransitionArtifact("cleanup", "my-topic", testDir);
 		expect(result).not.toBeNull();

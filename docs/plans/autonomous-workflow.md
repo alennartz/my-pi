@@ -52,7 +52,7 @@ Make the workflow pipeline run with minimal human intervention. Brainstorm and a
 | implement | `docs/plans/<topic>.md` has no pending steps |
 | review | `docs/reviews/<topic>.md` exists |
 | handle-review | `docs/reviews/<topic>.md` exists (re-review decision based on review content, not artifact presence) |
-| cleanup | `docs/decisions/` updated, working artifacts cleaned |
+| cleanup | Plan file (`docs/plans/<topic>.md`) and review files (`docs/reviews/<topic>.md`, `docs/reviews/<topic>-tests.md`) removed |
 
 **Primary → Plan file (skip scaffolding)**: When skipping phases, the primary writes scaffold sections to `docs/plans/<topic>.md` using the established "Skipped" marker format:
 - `## Architecture` with skip note (only when skipping from brainstorm — not applicable here since architect is always interactive)
@@ -121,10 +121,14 @@ None. The autonomous workflow coexists with the traditional workflow — no exis
 
 #### Transition Validation — cleanup
 
-- Passes when the plan file has been removed (working artifacts cleaned)
+- Passes when plan and review files have all been removed (working artifacts cleaned)
 - Fails when the plan file still exists
+- Fails when the code review file still exists
+- Fails when the test review file still exists
 
 #### Result Shape
 
 - Always returns a `passed` boolean and non-empty `detail` string on success
 - Always returns a non-empty `detail` string on failure
+
+**Review status:** approved
