@@ -9,6 +9,7 @@ graph LR
   Workflow --> Skills
   Workflow --> Subagents
   Subagents --> Subagents
+  SessionResume
 ```
 
 ### Key Flows
@@ -80,6 +81,18 @@ Long-lived subagent orchestration extension — spawns and manages child pi proc
 - `skills/orchestrating-agents/SKILL.md`
 - `skills/specialist-design/SKILL.md`
 - `agents/*.md`
+
+### Session Resume
+
+Extension that detects interrupted sessions and injects resume markers so the agent can orient on restart.
+
+**Responsibilities:** idle-state tracking on agent_end, resume detection on session_start, session-resume debug tooling
+
+**Dependencies:** none (standalone extension loaded by pi)
+
+**Files:**
+- `extensions/session-resume/**`
+- `scripts/pi-resume-debug.ts`
 
 ### Azure Foundry
 
