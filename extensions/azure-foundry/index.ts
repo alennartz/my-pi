@@ -183,21 +183,61 @@ const MODEL_CATALOG: Record<string, Partial<ModelMeta>> = {
 	// Anthropic
 	"claude-sonnet-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
 		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
-	"claude-sonnet-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
+	"claude-sonnet-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 64000,
 		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
-	"claude-opus-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 32000,
+	"claude-opus-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
 		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
 	"claude-opus-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
 		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
 	"claude-haiku-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
 		cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 } },
-	// OpenAI
-	"gpt-4.1": { reasoning: false, input: ["text", "image"], contextWindow: 1048576, maxTokens: 32768,
+	// OpenAI — GPT-4.1 family
+	"gpt-4.1": { reasoning: false, input: ["text", "image"], contextWindow: 1047576, maxTokens: 32768,
 		cost: { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 0 } },
-	"gpt-5.2-codex": { reasoning: true, input: ["text"], contextWindow: 1048576, maxTokens: 65536,
+	"gpt-4.1-mini": { reasoning: false, input: ["text", "image"], contextWindow: 1047576, maxTokens: 32768,
+		cost: { input: 0.4, output: 1.6, cacheRead: 0.1, cacheWrite: 0 } },
+	"gpt-4.1-nano": { reasoning: false, input: ["text", "image"], contextWindow: 1047576, maxTokens: 32768,
+		cost: { input: 0.1, output: 0.4, cacheRead: 0.025, cacheWrite: 0 } },
+	// OpenAI — O-series reasoning
+	"o3": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 100000,
+		cost: { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 0 } },
+	"o3-pro": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 100000,
+		cost: { input: 20, output: 80, cacheRead: 20, cacheWrite: 0 } },
+	"o3-mini": { reasoning: true, input: ["text"], contextWindow: 200000, maxTokens: 100000,
+		cost: { input: 1.1, output: 4.4, cacheRead: 0.55, cacheWrite: 0 } },
+	"o4-mini": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 100000,
+		cost: { input: 1.1, output: 4.4, cacheRead: 0.275, cacheWrite: 0 } },
+	// OpenAI — GPT-5 family
+	"gpt-5": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
+		cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 } },
+	"gpt-5-pro": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 272000,
+		cost: { input: 15, output: 120, cacheRead: 15, cacheWrite: 0 } },
+	"gpt-5-mini": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
+		cost: { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 } },
+	"gpt-5-nano": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
+		cost: { input: 0.05, output: 0.4, cacheRead: 0.005, cacheWrite: 0 } },
+	// OpenAI — GPT-5.1
+	"gpt-5.1": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
+		cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 } },
+	// OpenAI — GPT-5.2 family
+	"gpt-5.2": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
 		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 } },
-	"gpt-5.3-codex": { reasoning: true, input: ["text"], contextWindow: 1048576, maxTokens: 65536,
+	"gpt-5.2-pro": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
+		cost: { input: 21, output: 168, cacheRead: 21, cacheWrite: 0 } },
+	"gpt-5.2-codex": { reasoning: true, input: ["text"], contextWindow: 400000, maxTokens: 128000,
 		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 } },
+	// OpenAI — GPT-5.3
+	"gpt-5.3-codex": { reasoning: true, input: ["text"], contextWindow: 400000, maxTokens: 128000,
+		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 } },
+	// OpenAI — GPT-5.4 family
+	"gpt-5.4": { reasoning: true, input: ["text", "image"], contextWindow: 1050000, maxTokens: 128000,
+		cost: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 } },
+	"gpt-5.4-pro": { reasoning: true, input: ["text", "image"], contextWindow: 1050000, maxTokens: 128000,
+		cost: { input: 30, output: 180, cacheRead: 30, cacheWrite: 0 } },
+	"gpt-5.4-mini": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
+		cost: { input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0 } },
+	"gpt-5.4-nano": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
+		cost: { input: 0.2, output: 1.25, cacheRead: 0.02, cacheWrite: 0 } },
 };
 
 function lookupMeta(modelName: string): ModelMeta {
