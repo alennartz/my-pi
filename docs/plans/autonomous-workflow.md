@@ -64,3 +64,67 @@ Commits the scaffolded plan before spawning the target phase's subagent.
 ### DR Supersessions
 
 None. The autonomous workflow coexists with the traditional workflow — no existing decisions are superseded. DR-008 (context boundaries) is preserved structurally via subagents rather than session switching, but the principle and the boundary locations are unchanged.
+
+## Tests
+
+**Pre-test-write commit:** `0cb20382b7c1fc11d6fc6fdc41d34d1dd6d8e63c`
+
+### Interface Files
+
+- `extensions/workflow/autoflow-checks.ts` — `TransitionCheckResult` type, `CheckablePhase` type, and `checkTransitionArtifact()` function stub. Formalizes the architecture's artifact validation table as a callable contract.
+
+### Test Files
+
+- `extensions/workflow/autoflow-checks.test.ts` — Behavioral tests for the transition artifact validation contract across all autonomous phases.
+
+### Behaviors Covered
+
+#### Transition Validation — Non-checkable Phases
+
+- Returns null for brainstorm (interactive, no artifact check)
+- Returns null for architect (interactive, no artifact check)
+- Returns null for unrecognized phase names
+
+#### Transition Validation — test-write
+
+- Passes when the plan file contains a `## Tests` section
+- Fails when the plan file does not exist
+- Fails when the plan file exists but has no `## Tests` section
+
+#### Transition Validation — test-review
+
+- Passes when the test review file (`docs/reviews/<topic>-tests.md`) exists
+- Fails when the test review file does not exist
+
+#### Transition Validation — impl-plan
+
+- Passes when the plan file contains a `## Steps` section
+- Fails when the plan file does not exist
+- Fails when the plan file exists but has no `## Steps` section
+
+#### Transition Validation — implement
+
+- Passes when all steps have `**Status:** done`
+- Fails when any step has a non-done status (in progress, not started, blocked)
+- Fails when the plan file does not exist
+- Fails when the plan file has no `## Steps` section
+
+#### Transition Validation — review
+
+- Passes when the review file (`docs/reviews/<topic>.md`) exists
+- Fails when the review file does not exist
+
+#### Transition Validation — handle-review
+
+- Passes when the review file exists
+- Fails when the review file does not exist
+
+#### Transition Validation — cleanup
+
+- Passes when the plan file has been removed (working artifacts cleaned)
+- Fails when the plan file still exists
+
+#### Result Shape
+
+- Always returns a `passed` boolean and non-empty `detail` string on success
+- Always returns a non-empty `detail` string on failure
