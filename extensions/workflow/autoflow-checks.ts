@@ -106,10 +106,16 @@ export function checkTransitionArtifact(
 				return { passed: false, detail: `Plan file does not exist: docs/plans/${topic}.md` };
 			}
 			const content = readFileSync(planPath, "utf-8");
-			if (!/^## Steps$/m.test(content)) {
+			const stepsStart = content.match(/^## Steps$/m);
+			if (!stepsStart || stepsStart.index === undefined) {
 				return { passed: false, detail: `Plan file does not contain a ## Steps section.` };
 			}
-			const statusMatches = content.match(/^\*\*Status:\*\*\s*(.+)$/gm);
+			const stepsContent = content.slice(stepsStart.index);
+			const nextHeading = stepsContent.match(/\n## (?!#)/);
+			const stepsSection = nextHeading && nextHeading.index !== undefined
+				? stepsContent.slice(0, nextHeading.index)
+				: stepsContent;
+			const statusMatches = stepsSection.match(/^\*\*Status:\*\*\s*(.+)$/gm);
 			if (!statusMatches || statusMatches.length === 0) {
 				return { passed: false, detail: `No step status fields found in the ## Steps section.` };
 			}
