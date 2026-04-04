@@ -220,4 +220,4 @@ test-write → test-review → impl-plan → implement → review → handle-rev
 The skill should be structured with clear sections for each concern (interactive phases, skip decisions, autonomous orchestration, transition validation, escalation). Use the same Markdown heading hierarchy as other skills in the repo.
 
 **Verify:** `cat skills/autoflow/SKILL.md` shows the complete skill file with frontmatter, all sections described above, and no references to `workflow_phase_complete`.
-**Status:** not started
+**Status:** done
