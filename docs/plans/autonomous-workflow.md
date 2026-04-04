@@ -132,3 +132,90 @@ None. The autonomous workflow coexists with the traditional workflow — no exis
 - Always returns a non-empty `detail` string on failure
 
 **Review status:** approved
+
+## Steps
+
+### Step 1: Implement `checkTransitionArtifact()`
+
+Replace the `throw new Error("not implemented")` body in `extensions/workflow/autoflow-checks.ts` with the actual transition validation logic. The function takes `phase`, `topic`, and `cwd` and returns `TransitionCheckResult | null`.
+
+Implementation structure:
+- Return `null` for unrecognized phases (anything not in the `CheckablePhase` union — including `"brainstorm"` and `"architect"`).
+- For each checkable phase, read the relevant file(s) from disk using `existsSync` and `readFileSync` from `node:fs`, with paths constructed via `join(cwd, ...)`:
+  - `test-write`: read `docs/plans/<topic>.md`, check it contains a line matching `## Tests`. Pass if found, fail if file missing or section absent.
+  - `test-review`: check `docs/reviews/<topic>-tests.md` exists. Pass if present, fail if absent.
+  - `impl-plan`: read `docs/plans/<topic>.md`, check it contains a line matching `## Steps`. Pass if found, fail if file missing or section absent.
+  - `implement`: read `docs/plans/<topic>.md`, find the `## Steps` section, extract all `**Status:**` values, pass only if every status is exactly `done`. Fail if file missing, no Steps section, or any status is not `done`. Note: blocked statuses include trailing text (e.g., `blocked — waiting on dependency`), so match with a regex or trim — `**Status:** done` is the only passing value.
+  - `review`: check `docs/reviews/<topic>.md` exists.
+  - `handle-review`: check `docs/reviews/<topic>.md` exists.
+  - `cleanup`: check that all three working artifacts are absent: `docs/plans/<topic>.md`, `docs/reviews/<topic>.md`, `docs/reviews/<topic>-tests.md`. Pass only if none exist.
+- Every returned result must have a non-empty `detail` string describing what was checked and the outcome.
+
+Import `existsSync` and `readFileSync` from `node:fs` and `join` from `node:path` at the top of the file.
+
+**Verify:** `npx vitest run extensions/workflow/autoflow-checks.test.ts` — all tests pass.
+**Status:** not started
+
+### Step 2: Guard `workflow_phase_complete` registration
+
+In `extensions/workflow/index.ts`, wrap the `pi.registerTool({ name: "workflow_phase_complete", ... })` call (the entire block from the `pi.registerTool({` line through its closing `});`) inside `if (!process.env.PI_PARENT_LINK) { ... }`. This prevents the tool from registering in subagent processes, where `PI_PARENT_LINK` is set by the subagents extension.
+
+Move the `STOP_TEXT` constant declaration inside the guard as well, since it's only used by the tool.
+
+No test for this — it's a one-line conditional guard on existing code, and the behavior (tool not available in subagents) is an environmental concern that can't be unit tested without mocking pi's extension API.
+
+**Verify:** `grep -n "PI_PARENT_LINK" extensions/workflow/index.ts` shows the guard wrapping the tool registration. Visually confirm the `pi.registerTool` call is inside the `if` block.
+**Status:** not started
+
+### Step 3: Create the autoflow skill
+
+Create `skills/autoflow/SKILL.md` — the orchestration skill that drives the autonomous pipeline. This is the main deliverable: a Markdown skill file with YAML frontmatter (`name: autoflow`, description) and a structured body.
+
+The skill must cover:
+
+**Frontmatter:**
+```yaml
+name: autoflow
+description: "Run the full development workflow pipeline with minimal human intervention. Brainstorm and architect are interactive; remaining phases run autonomously via subagents."
+```
+
+**Interactive phases (brainstorm, architect):**
+- Instruct the primary agent to run these directly, following the brainstorming and architecting skills in conversation with the user.
+- After brainstorm: commit the artifact, then proceed to architect.
+- After architect: commit the artifact, then evaluate skip decisions before proceeding.
+
+**Skip decisions (after architect completes):**
+- Evaluate scope: for small, straightforward changes, skip to impl-plan (bypass test-write and test-review). For very small changes, skip to implement (bypass test-write, test-review, and impl-plan).
+- When skipping, write scaffold sections to the plan file using the format from `extensions/workflow/index.ts` (the `SKIPPED_TESTS` and `SKIPPED_STEPS` constants — reproduce their content in the skill's instructions). Commit before proceeding.
+- If uncertain whether to skip, ask the user.
+
+**Autonomous phase orchestration (test-write through cleanup):**
+- For each remaining phase, spawn a single subagent using the `subagent` tool. Each subagent gets a task string containing:
+  1. The skill to read and follow (e.g., `skills/test-writing/SKILL.md`)
+  2. The topic slug
+  3. The working directory context
+  4. The clarification invariant: "If you need clarification or encounter ambiguity, use `send(to='parent', expectResponse=true)` to ask. Do not stop or complete without finishing the phase."
+- After spawning, call `await_agents` to wait for completion.
+- If an `<agent_message>` interrupt arrives with `response_expected="true"`, the primary either answers directly or relays to the user, then calls `respond` and resumes `await_agents`.
+
+**Transition validation (after each subagent completes):**
+- Call `checkTransitionArtifact(phase, topic, cwd)` from `extensions/workflow/autoflow-checks.ts` using the `bash` tool (e.g., a one-liner Node script, or by reading the artifact files directly and checking manually). Actually — the primary agent can't import TypeScript. Instead, instruct the primary to validate artifacts directly: read the expected file and check for the expected content, following the artifact check table from the architecture.
+- If validation passes, proceed to the next phase.
+- If validation fails (artifact missing or incomplete), retry with one fresh subagent. If the retry also fails, escalate to the user.
+
+**Handle-review special case:**
+- After handle-review completes, read `docs/reviews/<topic>.md` and evaluate: if the review contained structural findings or multiple major/critical findings, spawn a re-review (delete the review file, commit, then spawn a `review` subagent). Otherwise proceed to cleanup.
+
+**Escalation:**
+- The primary can always surface questions or problems to the user.
+- Default posture: proceed autonomously, escalate when uncertain.
+
+**Phase sequence reference** (for the skill to enumerate):
+```
+test-write → test-review → impl-plan → implement → review → handle-review → cleanup
+```
+
+The skill should be structured with clear sections for each concern (interactive phases, skip decisions, autonomous orchestration, transition validation, escalation). Use the same Markdown heading hierarchy as other skills in the repo.
+
+**Verify:** `cat skills/autoflow/SKILL.md` shows the complete skill file with frontmatter, all sections described above, and no references to `workflow_phase_complete`.
+**Status:** not started
