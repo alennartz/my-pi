@@ -73,15 +73,25 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 
 			const baseBranch = request.baseBranch ?? await git.getCurrentBranch(env.cwd);
 			const worktreePath = resolveWorktreePath(env.homeDirectory, env.repoName, request.branchName);
-			await git.addWorktree({
-				cwd: env.cwd,
-				path: worktreePath,
-				branchName: request.branchName,
-				baseBranch,
-			});
+			try {
+				await git.addWorktree({
+					cwd: env.cwd,
+					path: worktreePath,
+					branchName: request.branchName,
+					baseBranch,
+				});
 
-			if (stashCreated) {
-				await git.stashPop(worktreePath);
+				if (stashCreated) {
+					await git.stashPop(worktreePath);
+				}
+			} catch (error) {
+				if (stashCreated) {
+					runtime.notify(
+						"Worktree creation failed. Your tracked changes are saved in the git stash — run `git stash pop` to recover them.",
+						"warning",
+					);
+				}
+				throw error;
 			}
 
 			const sessionFile = contextTransfer === "fresh-session"
@@ -92,6 +102,13 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 
 		async cleanup(request) {
 			const currentBranch = await git.getCurrentBranch(env.cwd);
+			if (!currentBranch) {
+				runtime.notify(
+					"Cannot run cleanup in a detached HEAD state. Check out a branch first.",
+					"warning",
+				);
+				return;
+			}
 			await agent.sendMergeInstruction(buildCleanupMergePrompt(currentBranch, request.mergeTarget));
 			await runtime.waitForIdle();
 
@@ -107,15 +124,29 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 			const worktrees = await git.listWorktrees(env.cwd);
 			const mainWorktree = requireMainWorktree(worktrees);
 			const currentWorktree = requireWorktreeAtPath(worktrees, env.cwd);
+			if (currentWorktree.isMain) {
+				runtime.notify(
+					"Cannot clean up the main worktree. Run /worktree cleanup from a branch worktree.",
+					"warning",
+				);
+				return;
+			}
 			await git.removeWorktree({
 				cwd: mainWorktree.path,
 				worktreePath: currentWorktree.path,
 			});
-			await git.deleteBranch({
-				cwd: mainWorktree.path,
-				branchName: currentWorktree.branch,
-				force: false,
-			});
+			try {
+				await git.deleteBranch({
+					cwd: mainWorktree.path,
+					branchName: currentWorktree.branch,
+					force: false,
+				});
+			} catch {
+				runtime.notify(
+					`Worktree removed but branch '${currentWorktree.branch}' could not be deleted. You may need to run \`git branch -d ${currentWorktree.branch}\` manually.`,
+					"warning",
+				);
+			}
 			const sessionFile = await sessions.create(mainWorktree.path);
 			await runtime.switchSession(sessionFile);
 		},

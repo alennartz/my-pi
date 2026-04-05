@@ -15,7 +15,7 @@ All three plan steps were implemented faithfully — create orchestration, clean
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/worktree/controller.ts:69-91`
-- **Status:** open
+- **Status:** resolved
 
 If `git.addWorktree()`, `sessions.create()`, `sessions.forkFrom()`, or `runtime.switchSession()` throws after `stashPush` succeeded, the stash is never popped. The user's tracked changes are silently hidden in the stash with no notification or recovery path. A try/finally around the post-stash operations (or at minimum a catch that notifies the user their changes are stashed) would prevent silent data loss.
 
@@ -24,7 +24,7 @@ If `git.addWorktree()`, `sessions.create()`, `sessions.forkFrom()`, or `runtime.
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/worktree/controller.ts:96-120`
-- **Status:** open
+- **Status:** resolved
 
 There is no check against running `/worktree cleanup` from the main worktree. If the user does so, `requireWorktreeAtPath` finds the main worktree entry, and `removeWorktree` runs `git worktree remove` on it — which git refuses with a fatal error (`'path' is a main working tree`). The result is an unhandled exception after the merge has already been performed. A guard like `if (currentWorktree.isMain)` with a user-friendly notification should precede the destructive operations.
 
@@ -33,7 +33,7 @@ There is no check against running `/worktree cleanup` from the main worktree. If
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/worktree/controller.ts:97-116`
-- **Status:** open
+- **Status:** resolved
 
 If the current worktree is in a detached HEAD state, `git branch --show-current` returns an empty string. `parseWorktreeList` assigns `branch: ""` for entries without a branch line. This cascades: `buildCleanupMergePrompt` produces a merge prompt with an empty branch name, `deleteBranch` runs `git branch -d ''` which errors, and the merge instruction to the agent is nonsensical. The cleanup method should validate that the current branch is non-empty before proceeding.
 
@@ -42,7 +42,7 @@ If the current worktree is in a detached HEAD state, `git branch --show-current`
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/worktree/index.ts:223-226`
-- **Status:** open
+- **Status:** resolved
 
 The `continueRecent` adapter calls `SessionManager.continueRecent(cwd, sessionDir).getSessionFile()` without null-checking the intermediate return value. The contract declares `continueRecent` returns `Promise<string | undefined>`, meaning the "no recent session" case should return `undefined`. If `SessionManager.continueRecent()` returns `null` or `undefined` instead of an object with a `getSessionFile()` method, this throws a `TypeError`. The `create` and `forkFrom` adapters handle `.getSessionFile()` results — `continueRecent` should guard the intermediate value or document the assumption that the static method always returns a non-null object.
 
@@ -51,7 +51,7 @@ The `continueRecent` adapter calls `SessionManager.continueRecent(cwd, sessionDi
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/worktree/controller.ts:107-116`
-- **Status:** open
+- **Status:** resolved
 
 `removeWorktree` is called before `deleteBranch` with `force: false` (`git branch -d`). If the branch has unmerged commits (e.g., the agent's merge was incomplete despite a clean working tree), branch deletion fails after the worktree has already been removed. The state is recoverable (`git branch -d` manually), but the user gets an unhandled exception after their worktree is gone. Consider catching the branch deletion error and notifying gracefully, or reversing the order.
 

@@ -220,7 +220,8 @@ function createDependencies(pi: ExtensionAPI, ctx: ExtensionCommandContext): Wor
 		sessions: {
 			async continueRecent(cwd: string) {
 				const SessionManager = loadSessionManager();
-				return SessionManager.continueRecent(cwd, sessionDir).getSessionFile();
+				const session = SessionManager.continueRecent(cwd, sessionDir);
+				return session?.getSessionFile();
 			},
 			async create(cwd: string) {
 				const SessionManager = loadSessionManager();
