@@ -74,3 +74,41 @@ The key APIs are:
 `ctx.newSession()` is not the cross-cwd primitive here. Worktree transitions should be modeled as "create or fork a session in the target cwd, then switch to it."
 
 This makes fork an optional continuity mechanism rather than a foundational requirement: use it only when the user explicitly wants to bring the current session context into a newly created worktree.
+
+## Tests
+
+**Pre-test-write commit:** `aa8420bf35e4d64885d0ff9f18997c064e9551dd`
+
+### Interface Files
+
+- `extensions/worktree/contracts.ts` — worktree command request types plus the git, session, agent, runtime, and autocomplete contracts the implementation will orchestrate.
+- `extensions/worktree/command-surface.ts` — slash-command parsing, centralized worktree path resolution, merge prompt construction, and autocomplete shaping for the `/worktree` surface.
+- `extensions/worktree/controller.ts` — controller boundary that will implement `/worktree create` and `/worktree cleanup` against the declared dependencies.
+- `extensions/worktree/index.ts` — extension entrypoint that registers the `/worktree` command and wires it to the command-surface helpers and controller boundary.
+- `extensions/worktree/package.json` — pi package metadata exposing the new worktree extension entrypoint.
+
+### Test Files
+
+- `extensions/worktree/command-surface.test.ts` — verifies `/worktree` argument parsing, default values, branch autocomplete shaping, worktree path placement, and merge-instruction prompt wording.
+- `extensions/worktree/controller.test.ts` — red-phase behavioral tests for create/resume/cleanup orchestration across mocked git, session, agent, and runtime boundaries.
+
+### Behaviors Covered
+
+#### Worktree Command Surface
+
+- Parses `/worktree create <branch-name> [base-branch]` into a create request with the branch name required and the base branch optional.
+- Rejects malformed create invocations before any git or session work begins.
+- Parses `/worktree cleanup [merge-target]` and defaults the merge target to `main` when omitted.
+- Rejects malformed cleanup invocations before any merge orchestration begins.
+- Suggests `create` and `cleanup` before a subcommand is chosen.
+- Suggests git branch names in the create branch slot, create base-branch slot, and cleanup merge-target slot.
+- Resolves new worktree directories under `~/.git-worktrees/<repo-name>/<branch-name>`.
+- Builds the cleanup merge instruction so the agent is explicitly told which current branch to merge into which target using bash tool calls.
+
+#### Worktree Controller
+
+- Reuses an existing worktree by continuing the most recent session in that worktree cwd without re-prompting for context transfer or pending-change handling.
+- Creates a new worktree from the current branch when no base branch is provided and the user chooses a fresh session.
+- Stashes tracked changes before creating a new worktree and reapplies them inside the new worktree when the user chooses to bring changes along.
+- Sends the cleanup merge instruction, waits for the agent to go idle, and returns control without removal when the worktree is still dirty after merge.
+- Removes the worktree from the main repo, deletes the branch with non-force `-d` semantics, and switches to a fresh main-repo session when cleanup finishes cleanly.

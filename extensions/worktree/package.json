@@ -1,0 +1,8 @@
+{
+  "name": "worktree-management",
+  "version": "1.0.0",
+  "description": "Git worktree session management for pi",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
