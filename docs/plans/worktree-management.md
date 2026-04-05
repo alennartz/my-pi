@@ -14,22 +14,29 @@ None. This is a standalone extension that doesn't modify existing modules.
 
 **Worktree** — a new extension at `extensions/worktree/`. Registers two slash commands (`/worktree create`, `/worktree cleanup`) for creating worktrees with branch setup, handling pending changes, and merging/cleaning up when done.
 
-**Responsibilities:** worktree lifecycle (create, switch-to, cleanup), branch creation, stash management, merge orchestration (delegates to agent), session transitions, autocomplete for branch names.
+**Responsibilities:** worktree lifecycle (create, resume, cleanup), branch creation, stash management, merge orchestration (delegates to agent), cross-cwd session transitions, autocomplete for branch names.
 
-**Dependencies:** pi core (session management APIs, tool creation APIs, command registration, `before_agent_start` event), git CLI.
+**Dependencies:** pi core (extension command APIs, `SessionManager.create`, `SessionManager.forkFrom`, `ctx.switchSession`, `ctx.waitForIdle`), git CLI.
 
 ### Interfaces
 
 **`/worktree create <branch-name> [base-branch]`**
 
 1. Check if worktree already exists for `<branch-name>` (via `git worktree list`).
-   - If yes: transition session to existing worktree directory, done.
+   - If yes: resume the most recent persisted session for that worktree cwd if one exists; otherwise create a fresh persisted session rooted there. Then `ctx.switchSession(...)` into it, done.
    - If no: continue to step 2.
-2. If working tree is dirty (`git status --porcelain`), ask user via `ctx.ui.select`: bring changes or leave them.
-3. If bringing changes: `git stash push` (staged + unstaged; untracked left behind).
-4. Create worktree: `git worktree add ~/.git-worktrees/<repo-name>/<branch-name> -b <branch-name> [base-branch]`. Base defaults to current branch.
-5. If stash was created: `git -C <worktree-path> stash pop`.
-6. Transition session to worktree directory (see blocker below).
+2. Ask whether to bring the current session context into the new worktree.
+   - Yes: preserve conversation history by forking the current persisted session into the worktree cwd.
+   - No: start a fresh persisted session in the worktree cwd.
+   - This question is only asked when creating a new worktree, not when resuming an existing one.
+3. If working tree is dirty (`git status --porcelain`), ask user via `ctx.ui.select`: bring changes or leave them.
+4. If bringing changes: `git stash push` (staged + unstaged; untracked left behind).
+5. Create worktree: `git worktree add ~/.git-worktrees/<repo-name>/<branch-name> -b <branch-name> [base-branch]`. Base defaults to current branch.
+6. If stash was created: `git -C <worktree-path> stash pop`.
+7. Transition to a session rooted at the worktree directory:
+   - For the context-preserving path, use `SessionManager.forkFrom(currentSessionFile, <worktree-path>)`.
+   - For the fresh-start path, use `SessionManager.create(<worktree-path>)`.
+   - `ctx.switchSession(<target-session-file>)` enters the worktree with rebuilt cwd-bound runtime state.
 
 **`/worktree cleanup [merge-target]`**
 
@@ -39,7 +46,8 @@ None. This is a standalone extension that doesn't modify existing modules.
 4. If clean:
    - Derive original repo path from `git worktree list` (main worktree is first entry).
    - From original repo dir: `git worktree remove <worktree-path>`, `git branch -d <branch-name>`.
-   - Transition session to original repo directory, starting a new session (no conversation carry-over).
+   - Create a fresh persisted session rooted at the original repo with `SessionManager.create(<original-repo-path>)`, then `ctx.switchSession(<new-session-file>)` into it. This is intentionally a fresh session rather than a fork — cleanup is the end of the isolated worktree conversation.
+   - Branch deletion always uses `git branch -d`; do not prompt and do not force-delete.
 
 **Worktree location:** `~/.git-worktrees/<repo-name>/<branch-name>` where `<repo-name>` is the basename of the git repo root.
 
@@ -47,17 +55,22 @@ None. This is a standalone extension that doesn't modify existing modules.
 
 **State:** No persistent state. Original repo path derived from `git worktree list`. Merge target specified at cleanup time (default `main`).
 
-## Blocked
+### Session Transition Mechanics
 
-**The extension cannot change the working directory of a running pi session.**
+Recent pi releases added runtime-backed session replacement. Cross-session transitions now rebuild cwd-bound runtime state — tools, resource discovery, and session plumbing are recreated for the target cwd rather than reusing the original session's cwd.
 
-All core tools (bash, read, edit, write) capture the cwd at session creation time via `createAllTools(this._cwd)`. The `_cwd` field on `AgentSession` is set once in the constructor and never updated. There is no `setCwd()` API, and `switchSession()` does not update the tool cwd — it loads conversation history but tools continue operating in the original directory.
+That removes the original blocker for this extension. The implementation should model worktree moves as **session replacement**, not in-place cwd mutation:
 
-**Workaround considered and rejected:** The SSH extension example (`examples/extensions/ssh.ts`) demonstrates registering replacement tools that delegate to custom operations. The worktree extension could use the same pattern — register overrides for bash/read/edit/write that dynamically resolve the cwd. This was rejected because:
-- It's a hack that reimplements core tool plumbing in an extension.
-- It's fragile — any upstream changes to tool behavior would need to be mirrored.
-- It doesn't update the session's actual cwd, so session files, extension discovery, skill discovery, and other cwd-dependent behavior would still point at the original directory.
+- **Create worktree:** ask whether to bring session context, then either fork or create a fresh session in the worktree cwd and `ctx.switchSession(...)` into it.
+- **Resume worktree:** reopen the most recent session for that worktree cwd when available; otherwise create a fresh one there.
+- **Cleanup back to main repo:** after merge + cleanliness checks + worktree removal, create a fresh session rooted at the original repo cwd and switch to it.
 
-**What's needed upstream:** An API on `AgentSession` (or exposed via `ExtensionCommandContext`) to change the working directory mid-session — updating `_cwd`, rebuilding base tools via `_buildRuntime`, and updating the `SessionManager` cwd. Something like `ctx.setCwd(newPath)`.
+The key APIs are:
 
-**Next step:** Open a discussion or issue on [badlogic/pi-mono](https://github.com/badlogic/pi-mono) requesting a `setCwd` capability for extensions.
+- `SessionManager.forkFrom(sourceSessionFile, targetCwd)` to preserve conversation history while relocating it into the target cwd's session space.
+- `SessionManager.create(targetCwd)` to start a fresh persisted session in a different cwd.
+- `ctx.switchSession()` to activate the target session via pi's runtime replacement path so cwd-bound services are rebuilt correctly for the worktree.
+
+`ctx.newSession()` is not the cross-cwd primitive here. Worktree transitions should be modeled as "create or fork a session in the target cwd, then switch to it."
+
+This makes fork an optional continuity mechanism rather than a foundational requirement: use it only when the user explicitly wants to bring the current session context into a newly created worktree.
