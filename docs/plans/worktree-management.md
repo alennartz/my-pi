@@ -157,4 +157,4 @@ In that dependency factory, add a small git command wrapper and implement the co
 Keep the existing `parseWorktreeCommand()` and `getWorktreeArgumentCompletions()` flow intact; the only command-surface work here should be consuming those helpers, not re-parsing arguments in `index.ts`.
 
 **Verify:** `npx vitest run extensions/worktree/command-surface.test.ts extensions/worktree/index.test.ts extensions/worktree/controller.test.ts`
-**Status:** in progress
+**Status:** done
