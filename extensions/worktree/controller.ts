@@ -1,4 +1,4 @@
-import { resolveWorktreePath } from "./command-surface.ts";
+import { buildCleanupMergePrompt, resolveWorktreePath } from "./command-surface.ts";
 import type {
 	WorktreeController,
 	WorktreeDependencies,
@@ -23,6 +23,22 @@ function requireCurrentSessionFile(env: WorktreeEnvironment): string {
 		throw new Error("Cannot bring context into a worktree without a persisted current session");
 	}
 	return env.currentSessionFile;
+}
+
+function requireMainWorktree(worktrees: readonly WorktreeInfo[]): WorktreeInfo {
+	const mainWorktree = worktrees.find((worktree) => worktree.isMain);
+	if (!mainWorktree) {
+		throw new Error("Could not determine the main repository worktree");
+	}
+	return mainWorktree;
+}
+
+function requireWorktreeAtPath(worktrees: readonly WorktreeInfo[], path: string): WorktreeInfo {
+	const worktree = worktrees.find((candidate) => candidate.path === path);
+	if (!worktree) {
+		throw new Error(`Could not find worktree for path: ${path}`);
+	}
+	return worktree;
 }
 
 export function createWorktreeController(dependencies: WorktreeDependencies): WorktreeController {
@@ -74,9 +90,34 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 			await runtime.switchSession(sessionFile);
 		},
 
-		async cleanup(_request) {
-			void agent;
-			return Promise.reject(new Error("/worktree cleanup is not implemented yet"));
+		async cleanup(request) {
+			const currentBranch = await git.getCurrentBranch(env.cwd);
+			await agent.sendMergeInstruction(buildCleanupMergePrompt(currentBranch, request.mergeTarget));
+			await runtime.waitForIdle();
+
+			const status = await git.getStatusPorcelain(env.cwd);
+			if (status.trim().length > 0) {
+				runtime.notify(
+					"Worktree is still dirty after merge. Resolve remaining changes and re-run /worktree cleanup.",
+					"warning",
+				);
+				return;
+			}
+
+			const worktrees = await git.listWorktrees(env.cwd);
+			const mainWorktree = requireMainWorktree(worktrees);
+			const currentWorktree = requireWorktreeAtPath(worktrees, env.cwd);
+			await git.removeWorktree({
+				cwd: mainWorktree.path,
+				worktreePath: currentWorktree.path,
+			});
+			await git.deleteBranch({
+				cwd: mainWorktree.path,
+				branchName: currentWorktree.branch,
+				force: false,
+			});
+			const sessionFile = await sessions.create(mainWorktree.path);
+			await runtime.switchSession(sessionFile);
 		},
 	};
 }

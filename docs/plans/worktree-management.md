@@ -146,7 +146,7 @@ Complete `/worktree cleanup` in the same file using the existing `buildCleanupMe
 After the agent finishes, inspect `await git.getStatusPorcelain(env.cwd)`. If it is still non-empty, notify the user through `runtime.notify(..., "warning")` and return without calling `removeWorktree`, `deleteBranch`, or creating a new session. If the worktree is clean, reload `git.listWorktrees(env.cwd)`, find the main repository entry via `isMain`, find the current worktree entry via `path === env.cwd`, and run the cleanup sequence from the main repo root: `git.removeWorktree({ cwd: mainRepo.path, worktreePath: currentWorktree.path })`, `git.deleteBranch({ cwd: mainRepo.path, branchName: currentWorktree.branch, force: false })`, `const sessionFile = await sessions.create(mainRepo.path)`, then `await runtime.switchSession(sessionFile)`. Keep cleanup as a fresh-session return to the main repo; do not add any fork/resume behavior here.
 
 **Verify:** `npx vitest run extensions/worktree/controller.test.ts -t "cleanup"`
-**Status:** in progress
+**Status:** done
 
 ### Step 3: Wire real git/session/runtime adapters in `index.ts`
 
@@ -157,4 +157,4 @@ In that dependency factory, add a small git command wrapper and implement the co
 Keep the existing `parseWorktreeCommand()` and `getWorktreeArgumentCompletions()` flow intact; the only command-surface work here should be consuming those helpers, not re-parsing arguments in `index.ts`.
 
 **Verify:** `npx vitest run extensions/worktree/command-surface.test.ts extensions/worktree/index.test.ts extensions/worktree/controller.test.ts`
-**Status:** not started
+**Status:** in progress
