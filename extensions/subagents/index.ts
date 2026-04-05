@@ -397,6 +397,7 @@ export default function (pi: ExtensionAPI) {
 		manager = new SubagentManager({
 			pi,
 			cwd: ctx.cwd,
+			parentSessionFile: ctx.sessionManager.getSessionFile(),
 			skillPaths: skillPathsMap,
 			resolveContextWindow: (modelId: string) => {
 				const all = ctx.modelRegistry.getAll();
@@ -891,6 +892,15 @@ export default function (pi: ExtensionAPI) {
 					panelHandle = null;
 				}
 				skillPathsMap.clear();
+			} else {
+				const statuses = manager.getAgentStatuses();
+				if (dashboard && tuiRef) {
+					dashboard.update(statuses);
+					tuiRef.requestRender();
+				}
+				if (panelHandle) {
+					panelHandle.updateCards(statusesToCards(statuses));
+				}
 			}
 
 			const label = params.agent ? `Agent "${params.agent}" removed.` : "All agents terminated.";

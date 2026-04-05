@@ -59,6 +59,7 @@ interface AgentEntry {
 export interface SubagentManagerOptions {
 	pi: ExtensionAPI;
 	cwd: string;
+	parentSessionFile?: string;
 	skillPaths: Map<string, string[]>;
 	resolveContextWindow: (modelId: string) => number | undefined;
 	onUpdate: () => void;
@@ -117,7 +118,7 @@ export class SubagentManager {
 		const isFirstCall = this.broker === null;
 
 		if (isFirstCall) {
-			const parentSessionFile = pi.getSessionManager().getSessionFile();
+			const parentSessionFile = this.opts.parentSessionFile;
 			if (!parentSessionFile) {
 				throw new Error("Subagents require a persisted parent session file");
 			}
@@ -307,7 +308,7 @@ export class SubagentManager {
 
 	async restoreFromPersistence(agentConfigs: AgentConfig[]): Promise<void> {
 		if (this.broker || this.entries.length > 0) return;
-		const parentSessionFile = this.opts.pi.getSessionManager().getSessionFile();
+		const parentSessionFile = this.opts.parentSessionFile;
 		if (!parentSessionFile) return;
 
 		const persisted = loadPersistedAgents(parentSessionFile);
