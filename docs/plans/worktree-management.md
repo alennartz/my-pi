@@ -125,3 +125,34 @@ This makes fork an optional continuity mechanism rather than a foundational requ
 - Removes the worktree from the main repo, deletes the branch with non-force `-d` semantics, and switches to a fresh main-repo session when cleanup finishes cleanly.
 
 **Review status:** approved
+
+## Steps
+
+### Step 1: Implement create orchestration in `controller.ts`
+
+Replace the `notImplemented()` placeholder in `extensions/worktree/controller.ts` with the real `/worktree create` flow, plus small pure helpers for worktree lookup. Start by loading `const worktrees = await git.listWorktrees(env.cwd)` and checking for an existing entry whose `branch` matches `request.branchName`. For that resume path, call `await sessions.continueRecent(existing.path)` and fall back to `await sessions.create(existing.path)` when it returns `undefined`, then `await runtime.switchSession(sessionFile)` and return without prompting for context transfer or pending changes.
+
+For a brand-new worktree, implement the ordered flow the tests describe: prompt `runtime.chooseContextTransfer()` and return immediately on `undefined`; inspect `await git.getStatusPorcelain(env.cwd)` and, when non-empty, prompt `runtime.choosePendingChanges()` and return on cancellation; call `git.stashPush(env.cwd)` only for the `"bring-changes"` branch; compute `const baseBranch = request.baseBranch ?? await git.getCurrentBranch(env.cwd)`; build `const worktreePath = resolveWorktreePath(env.homeDirectory, env.repoName, request.branchName)`; then call `git.addWorktree({ cwd: env.cwd, path: worktreePath, branchName: request.branchName, baseBranch })`. After creation, call `git.stashPop(worktreePath)` only if `stashPush()` reported that a stash was actually created, then choose the target session with `sessions.create(worktreePath)` for `"fresh-session"` or `sessions.forkFrom(env.currentSessionFile, worktreePath)` for `"bring-context"`, and finish with `runtime.switchSession(...)`.
+
+**Verify:** `npx vitest run extensions/worktree/controller.test.ts -t "create"`
+**Status:** not started
+
+### Step 2: Implement cleanup orchestration in `controller.ts`
+
+Complete `/worktree cleanup` in the same file using the existing `buildCleanupMergePrompt()` helper from `extensions/worktree/command-surface.ts`. The method should read `const currentBranch = await git.getCurrentBranch(env.cwd)`, send `buildCleanupMergePrompt(currentBranch, request.mergeTarget)` through `agent.sendMergeInstruction(...)`, then `await runtime.waitForIdle()` before touching sessions or worktrees.
+
+After the agent finishes, inspect `await git.getStatusPorcelain(env.cwd)`. If it is still non-empty, notify the user through `runtime.notify(..., "warning")` and return without calling `removeWorktree`, `deleteBranch`, or creating a new session. If the worktree is clean, reload `git.listWorktrees(env.cwd)`, find the main repository entry via `isMain`, find the current worktree entry via `path === env.cwd`, and run the cleanup sequence from the main repo root: `git.removeWorktree({ cwd: mainRepo.path, worktreePath: currentWorktree.path })`, `git.deleteBranch({ cwd: mainRepo.path, branchName: currentWorktree.branch, force: false })`, `const sessionFile = await sessions.create(mainRepo.path)`, then `await runtime.switchSession(sessionFile)`. Keep cleanup as a fresh-session return to the main repo; do not add any fork/resume behavior here.
+
+**Verify:** `npx vitest run extensions/worktree/controller.test.ts -t "cleanup"`
+**Status:** not started
+
+### Step 3: Wire real git/session/runtime adapters in `index.ts`
+
+Turn `extensions/worktree/index.ts` from a test stub into the real extension boundary. Instead of constructing one context-free controller at module load, add a `createDependencies(pi, ctx): WorktreeDependencies` helper and call `createWorktreeController(createDependencies(pi, ctx))` inside the command handler so each invocation is bound to the current cwd, session, and UI context.
+
+In that dependency factory, add a small git command wrapper and implement the concrete `WorktreeGitClient` methods the controller now depends on: branch listing for autocomplete, `git worktree list --porcelain` parsing into `WorktreeInfo[]`, `git status --porcelain`, tracked-only stash push/pop, `git worktree add/remove`, and `git branch -d`. Normalize `env.cwd` to the repo/worktree root (for example via `git rev-parse --show-toplevel`) before building `WorktreeEnvironment`, and derive `env.repoName` from that root so controller path comparisons line up with `git worktree list` output even when `/worktree` is run from a nested directory. Wrap session calls with `SessionManager.continueRecent/create/forkFrom`, passing `ctx.sessionManager.getSessionDir()` so new worktree sessions stay in the same session storage as the current session, and read `ctx.sessionManager.getSessionFile()` for the optional fork source. Wire `agent.sendMergeInstruction` to `pi.sendUserMessage`, wire `waitForIdle`, `switchSession`, and `notify` directly from `ctx`, and implement `chooseContextTransfer` / `choosePendingChanges` with the existing UI primitives (`ctx.ui.select` or `showNumberedSelect` from `lib/components/numbered-select.ts`) so cancellation returns `undefined` and selections map cleanly onto the contract enums.
+
+Keep the existing `parseWorktreeCommand()` and `getWorktreeArgumentCompletions()` flow intact; the only command-surface work here should be consuming those helpers, not re-parsing arguments in `index.ts`.
+
+**Verify:** `npx vitest run extensions/worktree/command-surface.test.ts extensions/worktree/index.test.ts extensions/worktree/controller.test.ts`
+**Status:** not started
