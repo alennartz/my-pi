@@ -262,6 +262,60 @@ export default function (pi: ExtensionAPI) {
 		resolve(queue.drainAll());
 	}
 
+	/** Shared await logic — blocks until the given agent IDs are all idle/failed. */
+	async function awaitAgentCompletion(ids: string[], mgr: SubagentManager, signal?: AbortSignal | null): Promise<string> {
+		const isSatisfied = () => {
+			return ids.every((id) => {
+				const s = mgr.getAgentStatus(id);
+				return !s || s.state === "idle" || s.state === "failed";
+			});
+		};
+
+		// Early satisfaction — all scoped agents already done
+		if (isSatisfied()) {
+			const result = queue.drainAll();
+			return result || "All specified agents have already completed. No pending notifications.";
+		}
+
+		// Guard against concurrent await_agents calls
+		if (waitResolve) {
+			throw new Error("Another await_agents call is already active.");
+		}
+
+		// Enter wait mode
+		waitSatisfied = isSatisfied;
+		queue.setWaiting(true);
+
+		try {
+			const result = await new Promise<string>((resolve, reject) => {
+				waitResolve = resolve;
+
+				if (signal) {
+					const onAbort = () => {
+						waitResolve = null;
+						waitSatisfied = null;
+						waitAbortCleanup = null;
+						queue.setWaiting(false);
+						reject(new Error("Aborted"));
+					};
+					if (signal.aborted) {
+						onAbort();
+						return;
+					}
+					signal.addEventListener("abort", onAbort, { once: true });
+					waitAbortCleanup = () => signal.removeEventListener("abort", onAbort);
+				}
+			});
+
+			return result || "All specified agents have completed. No pending notifications.";
+		} catch (err: any) {
+			if (err?.message === "Aborted") {
+				throw new Error("Wait cancelled.");
+			}
+			throw err;
+		}
+	}
+
 	pi.on("agent_start", async () => {
 		queue.setParentBusy(true);
 	});
@@ -507,9 +561,10 @@ export default function (pi: ExtensionAPI) {
 		],
 		parameters: Type.Object({
 			agents: Type.Array(AgentItem, { description: "Agents to spawn under this parent session" }),
+			await: Type.Optional(Type.Boolean({ description: "Block until all spawned agents complete. Default: false.", default: false })),
 		}),
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const discovery = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined);
 			const allAgentConfigs = discovery.agents;
 
@@ -575,6 +630,15 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			stopSequences.addOnce("<agent_complete");
+
+			if (params.await) {
+				const ids = params.agents.map((a) => a.id);
+				const waitResult = await awaitAgentCompletion(ids, mgr, signal);
+				return {
+					content: [{ type: "text", text: `${ack}\n\n${waitResult}` }],
+				};
+			}
+
 			return {
 				content: [{ type: "text", text: ack }],
 			};
@@ -598,9 +662,10 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({
 			id: Type.String({ description: "Unique identifier for the forked agent" }),
 			task: Type.String({ description: "Task description for the forked clone" }),
+			await: Type.Optional(Type.Boolean({ description: "Block until the forked agent completes. Default: false.", default: false })),
 		}),
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const mgr = ensureManager(ctx);
 
 			// Validate id doesn't conflict with existing agents
@@ -655,6 +720,14 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			stopSequences.addOnce("<agent_complete");
+
+			if (params.await) {
+				const waitResult = await awaitAgentCompletion([params.id], mgr, signal);
+				return {
+					content: [{ type: "text", text: `${ack}\n\n${waitResult}` }],
+				};
+			}
+
 			return {
 				content: [{ type: "text", text: ack }],
 			};
@@ -947,68 +1020,11 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Build the satisfaction check: all scoped agents are idle or failed
 			const scopedIds = params.agents ?? manager.getAgentStatuses().map((s) => s.id);
-			const mgr = manager; // capture for closure
-			const isSatisfied = () => {
-				return scopedIds.every((id) => {
-					const s = mgr.getAgentStatus(id);
-					return !s || s.state === "idle" || s.state === "failed";
-				});
+			const waitResult = await awaitAgentCompletion(scopedIds, manager, signal);
+			return {
+				content: [{ type: "text", text: waitResult }],
 			};
-
-			// Early satisfaction — all scoped agents already done
-			if (isSatisfied()) {
-				const result = queue.drainAll();
-				if (!result) {
-					return {
-						content: [{ type: "text", text: "All specified agents have already completed. No pending notifications." }],
-					};
-				}
-				return {
-					content: [{ type: "text", text: result }],
-				};
-			}
-
-			// Guard against concurrent await_agents calls
-			if (waitResolve) {
-				throw new Error("Another await_agents call is already active.");
-			}
-
-			// Enter wait mode
-			waitSatisfied = isSatisfied;
-			queue.setWaiting(true);
-
-			try {
-				const result = await new Promise<string>((resolve, reject) => {
-					waitResolve = resolve;
-
-					if (signal) {
-						const onAbort = () => {
-							waitResolve = null;
-							waitSatisfied = null;
-							waitAbortCleanup = null;
-							queue.setWaiting(false);
-							reject(new Error("Aborted"));
-						};
-						if (signal.aborted) {
-							onAbort();
-							return;
-						}
-						signal.addEventListener("abort", onAbort, { once: true });
-						waitAbortCleanup = () => signal.removeEventListener("abort", onAbort);
-					}
-				});
-
-				return {
-					content: [{ type: "text", text: result || "All specified agents have completed. No pending notifications." }],
-				};
-			} catch (err: any) {
-				if (err?.message === "Aborted") {
-					throw new Error("Wait cancelled.");
-				}
-				throw err;
-			}
 		},
 	});
 
