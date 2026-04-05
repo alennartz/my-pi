@@ -73,6 +73,38 @@ describe("Worktree controller", () => {
 			expect(dependencies.runtime.switchSession).toHaveBeenCalledWith("/sessions/worktree-recent.jsonl");
 		});
 
+		it("falls back to creating a fresh session when an existing worktree has no recent persisted session", async () => {
+			const { dependencies, mainRepo, currentWorktree } = createDependencies();
+			vi.mocked(dependencies.git.listWorktrees).mockResolvedValueOnce([mainRepo, currentWorktree]);
+			vi.mocked(dependencies.sessions.continueRecent).mockResolvedValueOnce(undefined);
+
+			const controller = createWorktreeController(dependencies);
+			await controller.create({ branchName: currentWorktree.branch });
+
+			expect(dependencies.sessions.continueRecent).toHaveBeenCalledWith(currentWorktree.path);
+			expect(dependencies.sessions.create).toHaveBeenCalledWith(currentWorktree.path);
+			expect(dependencies.runtime.chooseContextTransfer).not.toHaveBeenCalled();
+			expect(dependencies.runtime.choosePendingChanges).not.toHaveBeenCalled();
+			expect(dependencies.git.addWorktree).not.toHaveBeenCalled();
+			expect(dependencies.runtime.switchSession).toHaveBeenCalledWith("/sessions/new.jsonl");
+		});
+
+		it("stops after requesting the resume-session switch when the runtime reports that the switch was cancelled", async () => {
+			const { dependencies, mainRepo, currentWorktree } = createDependencies();
+			vi.mocked(dependencies.git.listWorktrees).mockResolvedValueOnce([mainRepo, currentWorktree]);
+			vi.mocked(dependencies.runtime.switchSession).mockResolvedValueOnce({ cancelled: true });
+
+			const controller = createWorktreeController(dependencies);
+			await controller.create({ branchName: currentWorktree.branch });
+
+			expect(dependencies.sessions.continueRecent).toHaveBeenCalledWith(currentWorktree.path);
+			expect(dependencies.runtime.switchSession).toHaveBeenCalledWith("/sessions/worktree-recent.jsonl");
+			expect(dependencies.sessions.create).not.toHaveBeenCalled();
+			expect(dependencies.runtime.chooseContextTransfer).not.toHaveBeenCalled();
+			expect(dependencies.runtime.choosePendingChanges).not.toHaveBeenCalled();
+			expect(dependencies.git.addWorktree).not.toHaveBeenCalled();
+		});
+
 		it("creates a new worktree from the current branch when no base branch is provided and the user starts fresh", async () => {
 			const { dependencies } = createDependencies();
 			vi.mocked(dependencies.git.getCurrentBranch).mockResolvedValueOnce("main");
@@ -92,6 +124,36 @@ describe("Worktree controller", () => {
 			expect(dependencies.sessions.create).toHaveBeenCalledWith(worktreePath);
 			expect(dependencies.sessions.forkFrom).not.toHaveBeenCalled();
 			expect(dependencies.runtime.switchSession).toHaveBeenCalledWith("/sessions/new.jsonl");
+		});
+
+		it("returns without side effects when the user cancels the context-transfer prompt for a new worktree", async () => {
+			const { dependencies } = createDependencies();
+			vi.mocked(dependencies.runtime.chooseContextTransfer).mockResolvedValueOnce(undefined);
+
+			const controller = createWorktreeController(dependencies);
+			await controller.create({ branchName: "feature/worktree" });
+
+			expect(dependencies.git.getStatusPorcelain).not.toHaveBeenCalled();
+			expect(dependencies.git.addWorktree).not.toHaveBeenCalled();
+			expect(dependencies.sessions.create).not.toHaveBeenCalled();
+			expect(dependencies.sessions.forkFrom).not.toHaveBeenCalled();
+			expect(dependencies.runtime.switchSession).not.toHaveBeenCalled();
+		});
+
+		it("returns without creating a worktree when the user cancels the pending-changes prompt", async () => {
+			const { dependencies } = createDependencies();
+			vi.mocked(dependencies.runtime.chooseContextTransfer).mockResolvedValueOnce("fresh-session");
+			vi.mocked(dependencies.git.getStatusPorcelain).mockResolvedValueOnce(" M extensions/worktree/index.ts\n");
+			vi.mocked(dependencies.runtime.choosePendingChanges).mockResolvedValueOnce(undefined);
+
+			const controller = createWorktreeController(dependencies);
+			await controller.create({ branchName: "feature/worktree" });
+
+			expect(dependencies.git.stashPush).not.toHaveBeenCalled();
+			expect(dependencies.git.addWorktree).not.toHaveBeenCalled();
+			expect(dependencies.sessions.create).not.toHaveBeenCalled();
+			expect(dependencies.sessions.forkFrom).not.toHaveBeenCalled();
+			expect(dependencies.runtime.switchSession).not.toHaveBeenCalled();
 		});
 
 		it("stashes tracked changes before worktree creation and reapplies them in the new worktree when the user brings changes", async () => {

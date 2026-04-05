@@ -90,7 +90,8 @@ This makes fork an optional continuity mechanism rather than a foundational requ
 ### Test Files
 
 - `extensions/worktree/command-surface.test.ts` — verifies `/worktree` argument parsing, default values, branch autocomplete shaping, worktree path placement, and merge-instruction prompt wording.
-- `extensions/worktree/controller.test.ts` — red-phase behavioral tests for create/resume/cleanup orchestration across mocked git, session, agent, and runtime boundaries.
+- `extensions/worktree/index.test.ts` — verifies `/worktree` command registration plus handler/autocomplete wiring between the extension entrypoint, command-surface helpers, and controller boundary.
+- `extensions/worktree/controller.test.ts` — red-phase behavioral tests for create/resume/cleanup orchestration across mocked git, session, agent, and runtime boundaries, including resume fallback and cancelled create interactions.
 
 ### Behaviors Covered
 
@@ -105,10 +106,22 @@ This makes fork an optional continuity mechanism rather than a foundational requ
 - Resolves new worktree directories under `~/.git-worktrees/<repo-name>/<branch-name>`.
 - Builds the cleanup merge instruction so the agent is explicitly told which current branch to merge into which target using bash tool calls.
 
+#### Worktree Extension Entrypoint
+
+- Registers the `/worktree` command with the extension API.
+- Dispatches parsed create and cleanup requests to the controller boundary.
+- Notifies the user with the parser usage message instead of calling the controller when command parsing fails.
+- Wires branch-name autocomplete through `git branch --list` and the command-surface helper.
+
 #### Worktree Controller
 
 - Reuses an existing worktree by continuing the most recent session in that worktree cwd without re-prompting for context transfer or pending-change handling.
+- Falls back to creating a fresh session when resuming an existing worktree that has no persisted session yet.
+- Treats a cancelled session switch during resume as a terminal return rather than retrying alternate session flows.
 - Creates a new worktree from the current branch when no base branch is provided and the user chooses a fresh session.
+- Returns without side effects when the user cancels either the context-transfer prompt or the pending-changes prompt during create.
 - Stashes tracked changes before creating a new worktree and reapplies them inside the new worktree when the user chooses to bring changes along.
 - Sends the cleanup merge instruction, waits for the agent to go idle, and returns control without removal when the worktree is still dirty after merge.
 - Removes the worktree from the main repo, deletes the branch with non-force `-d` semantics, and switches to a fresh main-repo session when cleanup finishes cleanly.
+
+**Review status:** approved

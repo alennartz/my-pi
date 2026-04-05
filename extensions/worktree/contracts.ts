@@ -51,7 +51,7 @@ export interface WorktreeGitClient {
 }
 
 export interface WorktreeSessionGateway {
-	continueRecent(cwd: string): Promise<string>;
+	continueRecent(cwd: string): Promise<string | undefined>;
 	create(cwd: string): Promise<string>;
 	forkFrom(sourceSessionFile: string, targetCwd: string): Promise<string>;
 }
