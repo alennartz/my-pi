@@ -10,6 +10,7 @@ graph LR
   Workflow --> Subagents
   Subagents --> Subagents
   SessionResume
+  Worktree
 ```
 
 ### Key Flows
@@ -93,6 +94,17 @@ Extension that detects interrupted sessions and injects resume markers so the ag
 **Files:**
 - `extensions/session-resume/**`
 - `scripts/pi-resume-debug.ts`
+
+### Worktree
+
+Extension that manages git worktree–based branch sessions — create a worktree, optionally transfer working changes and session context, resume an existing worktree, or clean up by merging back and removing the worktree.
+
+**Responsibilities:** worktree lifecycle (create, resume, cleanup), branch creation via `git worktree add`, stash-based change transfer between worktrees, merge orchestration (delegates to agent via `sendUserMessage`), cross-cwd session transitions (fork/create/continue), interactive prompts for context transfer and pending-changes policy, `/worktree` command argument parsing and branch-name autocomplete
+
+**Dependencies:** none (standalone extension; uses pi core extension APIs and git CLI at runtime)
+
+**Files:**
+- `extensions/worktree/**`
 
 ### Azure Foundry
 
