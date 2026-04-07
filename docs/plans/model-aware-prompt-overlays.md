@@ -188,3 +188,9 @@ This means model changes affect subsequent prompts automatically. There is no st
 - Exact per-scope adjacency inside pi's built `# Project Context` section is not available through the extension API, so v1 uses a single appended overlay block instead
 - Package-level context roots are out of scope because pi does not currently discover `AGENTS.md` from packages
 - Silent-by-default UX means no routine model-change or match notices in the UI
+
+## Tests
+
+> **Skipped.** No tests were written upfront. Follow red-green TDD as you implement —
+> write a focused failing test, make it pass, move on. Aim for component-boundary
+> behavioral tests (inputs, outputs, observable effects), not exhaustive coverage.
