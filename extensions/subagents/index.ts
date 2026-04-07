@@ -367,7 +367,7 @@ export default function (pi: ExtensionAPI) {
 		if (panelHandle) {
 			panelHandle.updateCards(statusesToCards(restoredStatuses));
 		}
-		stopSequences.addOnce("<agent_complete");
+		stopSequences.addOnce("<agent_idle");
 	});
 
 	// ─── Inject available agent definitions into system prompt ───────────
@@ -482,7 +482,7 @@ export default function (pi: ExtensionAPI) {
 				let xml = serializeAgentComplete(data);
 				if (allDone) {
 					const total = manager.getAgentStatuses().length;
-					xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have completed. Review results above, then call teardown to clean up — or use send first if you have follow-ups for any agent.`;
+					xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} are now idle. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
 				}
 				queue.queue(xml, "local");
 				if (queue.isWaiting && waitSatisfied?.()) {
@@ -629,7 +629,7 @@ export default function (pi: ExtensionAPI) {
 				panelHandle.updateCards(statusesToCards(initialStatuses));
 			}
 
-			stopSequences.addOnce("<agent_complete");
+			stopSequences.addOnce("<agent_idle");
 
 			if (params.await) {
 				const ids = params.agents.map((a) => a.id);
@@ -719,7 +719,7 @@ export default function (pi: ExtensionAPI) {
 				panelHandle.updateCards(statusesToCards(forkStatuses));
 			}
 
-			stopSequences.addOnce("<agent_complete");
+			stopSequences.addOnce("<agent_idle");
 
 			if (params.await) {
 				const waitResult = await awaitAgentCompletion([params.id], mgr, signal);
@@ -896,7 +896,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Check Status",
 		description: "Query agent status. Omit agent for summary of all agents.",
 		promptGuidelines: [
-			"Prefer waiting for automatic notifications (<agent_complete>) over calling this tool. Notifications arrive without polling.",
+			"Prefer waiting for automatic notifications (<agent_idle>) over calling this tool. Notifications arrive without polling.",
 			"Use only when you have a specific reason: diagnosing a suspected stall, answering a user question about progress, or checking usage mid-run.",
 		],
 		parameters: Type.Object({

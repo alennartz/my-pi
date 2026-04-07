@@ -60,10 +60,10 @@ export function serializeAgentMessage(data: AgentMessageData): string {
 function serializeAgentForXml(agent: AgentCompleteData): string {
 	if (agent.status === "failed") {
 		const errorContent = agent.error ? `\n<error>${agent.error}</error>\n` : "";
-		return `<agent_complete id="${escapeXml(agent.id)}" status="failed">${errorContent}</agent_complete>`;
+		return `<agent_idle id="${escapeXml(agent.id)}" status="failed">${errorContent}</agent_idle>`;
 	}
 	const output = agent.output ?? "(no output)";
-	return `<agent_complete id="${escapeXml(agent.id)}" status="idle">\n${output}\n</agent_complete>`;
+	return `<agent_idle id="${escapeXml(agent.id)}" status="idle">\n${output}\n</agent_idle>`;
 }
 
 export function serializeAgentComplete(data: AgentCompleteData): string {
@@ -118,7 +118,7 @@ export function serializeSubagentIdentity(data: SubagentIdentityData): string {
 	lines.push('    If response_expected="false", the message is informational — no response needed.');
 	lines.push("");
 	lines.push("    Completion: your final output (last message before going idle) is automatically");
-	lines.push("    delivered to parent via <agent_complete>. Do NOT call send to parent just to report");
+	lines.push("    delivered to parent via <agent_idle>. Do NOT call send to parent just to report");
 	lines.push("    results — simply produce your final output and stop. Use send to parent only for");
 	lines.push("    mid-task clarification or questions you need answered before you can continue.");
 	lines.push("    Peer-to-peer communication with other agents still goes through send as normal.");
