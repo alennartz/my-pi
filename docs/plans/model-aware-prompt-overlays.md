@@ -194,3 +194,226 @@ This means model changes affect subsequent prompts automatically. There is no st
 > **Skipped.** No tests were written upfront. Follow red-green TDD as you implement —
 > write a focused failing test, make it pass, move on. Aim for component-boundary
 > behavioral tests (inputs, outputs, observable effects), not exhaustive coverage.
+
+## Steps
+
+### Step 1: Create extension scaffold and context root discovery
+
+Create the extension directory `extensions/model-prompt-overlays/` with:
+
+- `package.json` — minimal manifest with `"pi": { "extensions": ["./index.ts"] }`
+- `discovery.ts` — exports `discoverContextRoots(cwd: string, agentDir: string): ContextRoot[]` and the `ContextRoot` type
+- `index.ts` — skeleton extension that imports from `@mariozechner/pi-coding-agent` and registers a `before_agent_start` handler that does nothing yet (returns `undefined`)
+
+`discoverContextRoots` mirrors pi's `loadProjectContextFiles` from `dist/core/resource-loader.js`:
+
+1. Check `agentDir` for `AGENTS.md` or `CLAUDE.md` (in that priority order). If found, emit a root with `scope: "global"`.
+2. Walk from filesystem root up to `cwd`, collecting directories that contain `AGENTS.md` or `CLAUDE.md`. Store farthest-first, closest-last. Each gets `scope: "ancestor"`.
+3. Return global root (if any) followed by ancestor roots. Each `ContextRoot` includes `dir`, `baseFilePath` (absolute path to the selected base file), and `scope`.
+
+Use `fs.existsSync` for detection, same as pi does. Use `path.resolve` for the ancestor walk.
+
+```ts
+type ContextRoot = {
+  dir: string;
+  baseFilePath: string;
+  scope: "global" | "ancestor";
+};
+```
+
+Write a companion test file `discovery.test.ts` using vitest. Tests should use `fs.mkdtempSync` to create temp directory trees with various `AGENTS.md` / `CLAUDE.md` placements and verify:
+- Global root is included first when present
+- Ancestor walk returns farthest → nearest order
+- `AGENTS.md` is preferred over `CLAUDE.md` when both exist
+- Directories with neither file are skipped
+- `cwd` itself is included when it has a context file
+
+**Verify:** `npx vitest run extensions/model-prompt-overlays/discovery.test.ts` passes.
+**Status:** not started
+
+### Step 2: Overlay file loading and parsing
+
+Create `extensions/model-prompt-overlays/parsing.ts` exporting `loadOverlayFiles(root: ContextRoot)` and the `OverlayFile` / `OverlayDiagnostic` types.
+
+```ts
+type OverlayFile = {
+  path: string;
+  dir: string;
+  body: string;
+  models: string[];
+};
+
+type OverlayDiagnostic = {
+  path: string;
+  message: string;
+};
+
+function loadOverlayFiles(root: ContextRoot): {
+  overlays: OverlayFile[];
+  diagnostics: OverlayDiagnostic[];
+};
+```
+
+Behavior:
+1. Read directory entries of `root.dir` using `fs.readdirSync`.
+2. Filter to files matching `AGENTS.*.md` (case-sensitive). Exclude `AGENTS.md` itself (no dot-segment).
+3. For each matching file, read its content and parse frontmatter using `parseFrontmatter` from `@mariozechner/pi-coding-agent`.
+4. Validate the `models` field:
+   - Must exist and be either a string or a non-empty array of strings.
+   - Normalize a single string `"claude-*"` to `["claude-*"]`.
+   - If missing, not a string/array, or empty array → push a diagnostic and skip the file.
+5. `body` is the post-frontmatter content (from `parseFrontmatter`'s `.body`).
+6. Return overlays sorted alphabetically by filename for deterministic output.
+
+Write `parsing.test.ts` with temp directories containing various overlay files:
+- Valid single-glob overlay
+- Valid multi-glob overlay
+- Missing `models:` field → diagnostic
+- Empty `models: []` → diagnostic
+- `models:` is a number → diagnostic
+- File named `AGENTS.md` (base file) is excluded
+- Non-matching filenames like `README.md` or `CLAUDE.md` are excluded
+- Body text after frontmatter is captured correctly
+
+**Verify:** `npx vitest run extensions/model-prompt-overlays/parsing.test.ts` passes.
+**Status:** not started
+
+### Step 3: Model matching with glob specificity
+
+Create `extensions/model-prompt-overlays/matching.ts` exporting `matchOverlay(modelId: string, overlay: OverlayFile)` and the `MatchResult` type.
+
+```ts
+type MatchResult = {
+  matched: true;
+  matchingGlob: string;
+  literalChars: number;
+  wildcardCount: number;
+};
+
+function matchOverlay(
+  modelId: string,
+  overlay: OverlayFile
+): MatchResult | { matched: false };
+```
+
+Also export a helper `globToRegex(glob: string): RegExp` (or keep it internal) and a comparator `compareSpecificity(a: MatchResult, b: MatchResult): number` for sorting broad → narrow.
+
+Glob semantics:
+- `*` matches zero or more characters (any character except nothing special — model IDs don't contain path separators so simple `.*` replacement works).
+- The glob must match the entire model ID (anchor `^...$`).
+- Escape regex-special characters in the literal parts of the glob.
+
+Specificity computation per matching glob:
+- `literalChars` = number of non-`*` characters in the glob string
+- `wildcardCount` = number of `*` characters in the glob string
+
+When multiple globs in one overlay match, pick the **most specific** one (highest `literalChars`, then lowest `wildcardCount`) — this becomes the overlay's sorting specificity.
+
+Comparator for broad → narrow ordering:
+1. Ascending `literalChars` (fewer literal chars = broader)
+2. Descending `wildcardCount` (more wildcards = broader)
+3. Ascending `path` (stable tie-breaker)
+
+Write `matching.test.ts`:
+- `claude-*` matches `claude-sonnet-4-5` → matched with literalChars=6, wildcardCount=1
+- `claude-sonnet-*` matches `claude-sonnet-4-5` → literalChars=14, wildcardCount=1
+- `claude-sonnet-4-5` matches exactly → literalChars=17, wildcardCount=0
+- `gpt-*` does NOT match `claude-sonnet-4-5`
+- Multi-glob overlay `["claude-*", "claude-sonnet-*"]` matching `claude-sonnet-4-5` → picks `claude-sonnet-*` as the most specific
+- Specificity comparator sorts `[claude-sonnet-4-5, claude-*, claude-sonnet-*]` into `[claude-*, claude-sonnet-*, claude-sonnet-4-5]`
+- Glob with special regex chars (e.g., `o3-*`) works correctly
+- Glob `*` matches any model ID (broadest possible)
+
+**Verify:** `npx vitest run extensions/model-prompt-overlays/matching.test.ts` passes.
+**Status:** not started
+
+### Step 4: Prompt block rendering
+
+Create `extensions/model-prompt-overlays/rendering.ts` exporting `renderOverlayAppendBlock(matches: MatchedOverlay[]): string | undefined`.
+
+```ts
+type MatchedOverlay = OverlayFile & MatchResult;
+```
+
+Behavior:
+- Returns `undefined` when `matches` is empty.
+- Produces a single Markdown block with the heading `# Model-Specific Prompt Overlays`, followed by one `## /absolute/path/to/AGENTS.foo.md` sub-section per overlay, with the overlay body as content.
+- The overlay body is included as-is (already stripped of frontmatter by `loadOverlayFiles`).
+- Trim trailing whitespace from each body, ensure a single blank line between sections.
+
+Expected output shape:
+```
+# Model-Specific Prompt Overlays
+
+## /home/user/.pi/agent/AGENTS.claude.md
+
+[body text]
+
+## /home/user/project/AGENTS.claude-sonnet.md
+
+[body text]
+```
+
+Write `rendering.test.ts`:
+- Empty matches → `undefined`
+- Single overlay → correct heading + section
+- Multiple overlays → sections in input order (caller is responsible for sorting)
+- Body whitespace is trimmed at the end
+
+**Verify:** `npx vitest run extensions/model-prompt-overlays/rendering.test.ts` passes.
+**Status:** not started
+
+### Step 5: Session-local diagnostics deduplication
+
+Create `extensions/model-prompt-overlays/diagnostics.ts` exporting `createDiagnosticsTracker()` which returns an object with a `shouldNotify(path: string, message: string): boolean` method.
+
+```ts
+function createDiagnosticsTracker(): {
+  shouldNotify(path: string, message: string): boolean;
+};
+```
+
+Behavior:
+- Maintains a `Set<string>` keyed by `"${path}:${message}"`.
+- Returns `true` on first occurrence of a given path+message pair, `false` on subsequent calls.
+- The tracker is created once per extension load (session-local lifetime).
+
+This is simple enough that a small set of inline tests in `diagnostics.test.ts` suffices:
+- First call for a path+message → `true`
+- Second identical call → `false`
+- Different message for same path → `true`
+- Different path for same message → `true`
+
+**Verify:** `npx vitest run extensions/model-prompt-overlays/diagnostics.test.ts` passes.
+**Status:** not started
+
+### Step 6: Wire up the main extension hook
+
+Complete `extensions/model-prompt-overlays/index.ts` to tie all modules together in the `before_agent_start` handler.
+
+The extension default export receives `pi: ExtensionAPI` and:
+1. Creates a diagnostics tracker (session-local, lives for the extension's lifetime).
+2. Registers a `before_agent_start` handler `(event, ctx)`:
+   a. Read `ctx.model?.id`. If no model, return `undefined` (no overlay).
+   b. Call `discoverContextRoots(ctx.cwd, getAgentDir())` to get ordered roots.
+   c. For each root, call `loadOverlayFiles(root)`. Collect all overlays and diagnostics.
+   d. For each diagnostic, if `tracker.shouldNotify(path, message)` is `true`, call `ctx.ui.notify(message, "warning")`.
+   e. For each overlay, call `matchOverlay(ctx.model.id, overlay)`. Collect matched overlays.
+   f. Sort matched overlays: preserve root order (global first, then far → near ancestors), then within each root sort broad → narrow by specificity comparator, with path as final tie-breaker.
+   g. Call `renderOverlayAppendBlock(sortedMatches)`. If it returns a string, return `{ systemPrompt: event.systemPrompt + "\n\n" + block }`.
+   h. Otherwise return `undefined`.
+
+Imports:
+- `getAgentDir`, `parseFrontmatter` from `"@mariozechner/pi-coding-agent"`
+- `ExtensionAPI` type from `"@mariozechner/pi-coding-agent"`
+- Internal modules: `discoverContextRoots`, `loadOverlayFiles`, `matchOverlay`, `renderOverlayAppendBlock`, `createDiagnosticsTracker`
+
+The sorting in step (f) should be implemented as a standalone exported function `sortMatchedOverlays(matches: Array<MatchedOverlay & { rootIndex: number }>): MatchedOverlay[]` in `matching.ts` so it can be unit-tested. Each matched overlay gets tagged with its `rootIndex` (the index of its root in the `discoverContextRoots` output) before sorting.
+
+Add sorting tests to `matching.test.ts`:
+- Overlays from earlier roots sort before later roots
+- Within same root, broad overlays sort before narrow
+- Tie-breaker: alphabetical path
+
+**Verify:** All tests pass: `npx vitest run extensions/model-prompt-overlays/`. Manual smoke test: create `~/.pi/agent/AGENTS.claude.md` with `models: ["claude-*"]` frontmatter and some body text, start a pi session with a Claude model, and confirm the overlay text appears at the end of the system prompt (inspect via `/context` or similar).
+**Status:** not started
