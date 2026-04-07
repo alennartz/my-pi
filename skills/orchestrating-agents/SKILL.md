@@ -9,7 +9,7 @@ description: "Delegate work to subagents to preserve primary agent context, para
 
 Subagents let you delegate work to separate agent processes, each with its own context window. The primary benefit is **context efficiency** — a subagent absorbs all the heavy tool use (file reads, edits, test runs, investigations) and returns a compact result. Your context stays clean, letting you handle more total work across a session.
 
-Beyond context management, subagents enable parallel execution, specialist coordination, and rich inter-agent communication. Child agent sessions are persisted per parent session and reconstructed from append-only lifecycle logs rather than treated as disposable temp processes, so explicit `teardown` matters semantically. This skill covers the thinking that happens *before* you call `subagent` — task decomposition, pattern selection, topology design. Once agents are running, the tool descriptions, notifications (`<agent_complete>`, `<agent_message>`), and communication tools carry you from there.
+Beyond context management, subagents enable parallel execution, specialist coordination, and rich inter-agent communication. Child agent sessions are persisted per parent session and reconstructed from append-only lifecycle logs rather than treated as disposable temp processes, so explicit `teardown` matters semantically. This skill covers the thinking that happens *before* you call `subagent` — task decomposition, pattern selection, topology design. Once agents are running, the tool descriptions, notifications (`<agent_idle>`, `<agent_message>`), and communication tools carry you from there.
 
 ## When to Use Subagents
 
@@ -60,11 +60,11 @@ Each agent should produce a **coherent, independently verifiable deliverable**. 
 
 ### Fan-out / Fan-in
 
-Independent parallel tasks. No peer communication needed. Parent spawns agents, waits for `<agent_complete>` notifications, gathers results.
+Independent parallel tasks. No peer communication needed. Parent spawns agents, waits for `<agent_idle>` notifications, gathers results.
 
 ```
 agents: [a, b, c]  — no channels
-parent ← a, b, c (via <agent_complete>)
+parent ← a, b, c (via <agent_idle>)
 ```
 
 **When to use:** Embarrassingly parallel work. Each agent's task is self-contained. Examples: migrating independent files, running separate analyses, generating documentation for unrelated modules.
@@ -79,7 +79,7 @@ a.channels: [b]
 b.channels: [c]
 ```
 
-Agent `a` does its work, sends output to `b` via `send`, and finishes. Agent `b` receives via `<agent_message>`, does its work, sends to `c`. The parent gets `<agent_complete>` as each stage finishes.
+Agent `a` does its work, sends output to `b` via `send`, and finishes. Agent `b` receives via `<agent_message>`, does its work, sends to `c`. The parent gets `<agent_idle>` as each stage finishes.
 
 **When to use:** Sequential transformations where each stage has a distinct role. Examples: generate → review → polish; extract → transform → load.
 
@@ -196,6 +196,6 @@ Normally, the primary agent (with the TUI) is the lead — it decomposes work an
 - **Minimal topology** — only connect agents that need to talk. Parent is always there; peer channels are for lateral communication only.
 - **Default to fire-and-forget** — use blocking sends only when the sender genuinely can't continue without a response.
 - **Incremental growth** — agents can be added to the running set by calling `subagent` again. Individual agents can be removed with `teardown(agent)`, or all agents torn down at once with `teardown()`.
-- **Let notifications drive you** — `<agent_complete>` arrives automatically when each agent finishes. Don't poll with `check_status` unless you have a specific reason. Use `await_agents` when you need results before your next step — it blocks until the specified agents complete, with any parent-bound message interrupting the wait.
+- **Let notifications drive you** — `<agent_idle>` arrives automatically when each agent finishes. Don't poll with `check_status` unless you have a specific reason. Use `await_agents` when you need results before your next step — it blocks until the specified agents complete, with any parent-bound message interrupting the wait.
 
 For creating persistent, reusable agent definitions (the `.md` files referenced by the `agent` field), see the **specialist-design** skill.

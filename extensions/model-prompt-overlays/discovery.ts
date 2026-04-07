@@ -22,6 +22,7 @@ export function discoverContextRoots(cwd: string, agentDir: string): ContextRoot
 	const seenPaths = new Set<string>();
 
 	// 1. Global agent dir
+	agentDir = resolve(agentDir);
 	const globalBase = findBaseFile(agentDir);
 	if (globalBase) {
 		roots.push({ dir: agentDir, baseFilePath: globalBase, scope: "global" });

@@ -73,7 +73,7 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 
 If `docs/brainstorms/<topic>.md` exists, spawn a default subagent with the brainstorm and plan file paths. Its task: read both files and identify brainstorm intent that the architecture doesn't cover. Each gap should name the missing intent and explain why the architectural decisions don't address it.
 
-Wait for `<agent_complete>`. If the subagent fails, inform the user and proceed to commit. Otherwise, review the output — filter noise (intent already covered, or out of scope) and surface substantive findings to the user. The user decides per finding: revisit the architecture to cover it, or dismiss. Update the plan file if the architecture was extended.
+Wait for `<agent_idle>`. If the subagent fails, inform the user and proceed to commit. Otherwise, review the output — filter noise (intent already covered, or out of scope) and surface substantive findings to the user. The user decides per finding: revisit the architecture to cover it, or dismiss. Update the plan file if the architecture was extended.
 
 If no brainstorm exists, skip the check.
 

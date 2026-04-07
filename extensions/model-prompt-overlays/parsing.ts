@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseFrontmatter } from "./frontmatter.ts";
+import { parseFrontmatter } from "@mariozechner/pi-coding-agent";
 import type { ContextRoot } from "./discovery.ts";
 
 export type OverlayFile = {

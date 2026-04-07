@@ -65,9 +65,9 @@ For larger plans. The primary orchestrates; workers write code.
 
 3. **Workers execute.** Each worker writes code, runs its step's verify check (including the test suite from the Tests section — **all tests passing is the primary success criterion**), and finishes. Workers communicate laterally via channels to share interfaces, types, or contracts that unblock peer dependencies. Workers do not edit the plan file or commit. If a worker fails verification or gets stuck, it escalates to the primary via `send`. The primary decides whether to intervene, mark the step `blocked`, or tear down the group — same judgment as the direct path: try to fix it, stop when stuck.
 
-4. **Track progress.** As `<agent_complete>` notifications arrive, update plan status fields — mark steps done as they finish. If a worker reports failure and the primary can't resolve it, mark the step `blocked` with an explanation, tear down the group, commit the current state, and stop.
+4. **Track progress.** As `<agent_idle>` notifications arrive, update plan status fields — mark steps done as they finish. If a worker reports failure and the primary can't resolve it, mark the step `blocked` with an explanation, tear down the group, commit the current state, and stop.
 
-5. **Commit when workers finish.** When all workers' `<agent_complete>` notifications have arrived, the phase is complete. Run any cross-cutting verification (type checks, tests), update plan status, commit all changes (code + plan updates) together, and decide the next phase. Don't read the source files workers wrote — that's what the code-review phase is for.
+5. **Commit when workers finish.** When all workers' `<agent_idle>` notifications have arrived, the phase is complete. Run any cross-cutting verification (type checks, tests), update plan status, commit all changes (code + plan updates) together, and decide the next phase. Don't read the source files workers wrote — that's what the code-review phase is for.
 
 6. **Slice into phases for control.** On larger plans, don't try to run everything in one group. Slice the work into phases — groups of steps that form a natural unit. After each phase: review, commit, course-correct, engage the user if needed. Phases exist for your own control, not for dependency management (channels handle that).
 
@@ -86,7 +86,7 @@ When in doubt: if you're changing *what* gets done, stop and talk to the user. I
 
 - **Small plans, direct execution** — if it's ≤ 5 files and under ~300 lines, just do it yourself. Don't over-orchestrate.
 - **Large plans, orchestrate** — the primary never reads source files or writes code. Workers do the work; the primary manages flow, plan status, and commits.
-- **Workers don't edit the plan or commit** — the primary owns the plan file and the git history. Workers finish (their final output is delivered automatically via `<agent_complete>`); the primary records progress.
+- **Workers don't edit the plan or commit** — the primary owns the plan file and the git history. Workers finish (their final output is delivered automatically via `<agent_idle>`); the primary records progress.
 - **Channels resolve dependencies, phases are for control** — inter-step dependencies are handled by worker-to-worker communication. The primary slices work into phases for its own ability to review, commit, and course-correct.
 - **One shot** — drive through the full plan without stopping for scheduled reviews. Interrupt when you discover something the plan didn't decide — an architecture conflict, a scope change, a design choice that wasn't anticipated. If the plan needs frequent interrupts, the plan is the problem.
 - **Architecture is inviolable** — the architecture section is a hard contract. Steps flex; architecture doesn't.

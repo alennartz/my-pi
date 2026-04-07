@@ -29,7 +29,7 @@ The output is a findings file — not a conversation, not a fix. The review runs
 
 Sections 1 and 2 are independent — they both operate on the same plan and diff but neither needs the other's output. Spawn two subagents as a fan-out: one for the plan adherence pass, one for the code correctness pass. Give each the plan content, the diff, and the full file reads from step 0. No inter-agent channels needed.
 
-Wait for both agents' `<agent_complete>` notifications, then merge their findings into the final review document (section 3). Deduplicate if both flagged the same issue; preserve the more detailed write-up.
+Wait for both agents' `<agent_idle>` notifications, then merge their findings into the final review document (section 3). Deduplicate if both flagged the same issue; preserve the more detailed write-up.
 
 ### 1. Plan Adherence Pass
 

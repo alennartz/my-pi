@@ -15,7 +15,7 @@ The model-aware prompt overlays extension was implemented faithfully across all 
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `skills/orchestrating-agents/SKILL.md:12,63,67,82,199`, `skills/implementing/SKILL.md:68,70,89`, `skills/code-review/SKILL.md:32`, `skills/cleanup/SKILL.md:50`, `skills/architecting/SKILL.md:76`
-- **Status:** open
+- **Status:** resolved
 
 The subagent changes in this diff renamed the XML notification tag from `<agent_complete>` to `<agent_idle>` in `messages.ts` and updated references in `index.ts` (stop sequences, prompt guidelines, completion message text). However, 5 skill files across 12+ occurrences still reference `<agent_complete>`. These skills are LLM-facing instructions — agents following them will be told to wait for `<agent_complete>` notifications that now arrive as `<agent_idle>`. While LLMs may adapt in context, the mismatch degrades instruction quality and could cause agents to miss or misinterpret notifications. This is an incomplete rename.
 
@@ -24,7 +24,7 @@ The subagent changes in this diff renamed the XML notification tag from `<agent_
 - **Category:** plan deviation
 - **Severity:** critical
 - **Location:** `extensions/model-prompt-overlays/frontmatter.ts:1-92`, `extensions/model-prompt-overlays/parsing.ts:3`
-- **Status:** open
+- **Status:** resolved
 
 The plan explicitly specifies using `parseFrontmatter` from `@mariozechner/pi-coding-agent` in three places: Step 2 ("parse frontmatter using `parseFrontmatter` from `@mariozechner/pi-coding-agent`"), Step 6 imports list, and the Architecture dependencies section. Instead, a local `frontmatter.ts` was created with a hand-rolled YAML parser.
 
@@ -52,7 +52,7 @@ These are meaningful behavioral and instructional changes to existing modules th
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/model-prompt-overlays/frontmatter.ts:60`
-- **Status:** open
+- **Status:** resolved
 
 The block array detector requires leading whitespace before the `-` marker: `/^\s+-\s/`. Standard YAML allows block sequence entries without indentation:
 
@@ -69,7 +69,7 @@ This is valid YAML, but the parser won't recognize it. The `models` key ends up 
 - **Category:** plan deviation
 - **Severity:** nit
 - **Location:** `extensions/model-prompt-overlays/matching.test.ts:34`
-- **Status:** open
+- **Status:** dismissed
 
 Plan Step 3 says `claude-*` → `literalChars=6`. The implementation and tests correctly use `literalChars=7` (`claude-` has 7 characters). The plan had an arithmetic error; the implementation reasonably deviates.
 
@@ -78,7 +78,7 @@ Plan Step 3 says `claude-*` → `literalChars=6`. The implementation and tests c
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/model-prompt-overlays/discovery.ts:25-29`
-- **Status:** open
+- **Status:** resolved
 
 The ancestor walk uses `resolve(cwd)` to get a canonical absolute path, but `agentDir` is used as-is. Deduplication relies on exact string comparison of file paths in `seenPaths`. If `agentDir` contained `..` segments or wasn't fully resolved, the same physical directory could appear as both a global root and an ancestor root because the path strings wouldn't match. In practice, `getAgentDir()` returns a clean absolute path, so this is unlikely to manifest. A defensive `resolve(agentDir)` at the top would eliminate the risk.
 
