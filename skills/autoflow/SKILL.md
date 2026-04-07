@@ -113,7 +113,7 @@ If an `<agent_message>` interrupt arrives with `response_expected="true"`:
 
 ### Transition Validation
 
-After each subagent completes, validate the expected artifact before proceeding to the next phase:
+After each subagent goes idle, validate the expected artifact before proceeding:
 
 | Phase | Validation |
 |-------|-----------|
@@ -130,9 +130,11 @@ After each subagent completes, validate the expected artifact before proceeding 
 - `grep -c "^## Tests$" docs/plans/<topic>.md` (returns count > 0 if section present)
 - `grep -oP '(?<=\*\*Status:\*\* ).+' docs/plans/<topic>.md` to extract all status values
 
-**If validation passes:** proceed to the next phase.
+**If validation passes:** tear down the subagent and proceed to the next phase.
 
-**If validation fails:** retry with one fresh subagent (same task string). If the retry also fails, escalate to the user with a summary of what the subagent produced and what's missing.
+**If validation fails:** the subagent stopped before finishing. Its last output will be visible to you — read it to understand why it stopped early. Then use `send(to='<agent-id>')` to instruct it to continue working until the phase is complete, and call `await_agents` again. Do **not** tear down and relaunch — the subagent still holds its full context and is better positioned to resume than a fresh agent starting from scratch.
+
+If the subagent repeatedly goes idle without passing validation (no progress between attempts), escalate to the user with a summary of what the subagent produced, what's missing, and why it appears stuck.
 
 ### Handle-Review Special Case
 
@@ -152,7 +154,7 @@ After handle-review completes and passes validation, read `docs/reviews/<topic>.
 The default posture is **proceed autonomously, escalate when uncertain**.
 
 Escalate to the user when:
-- A subagent fails twice on the same phase.
+- A subagent repeatedly goes idle without making progress on the current phase.
 - A subagent asks a question you can't answer from the existing artifacts.
 - You're uncertain about a skip decision.
 - Something unexpected happens that isn't covered by these instructions.
@@ -164,5 +166,5 @@ The user can always intervene — they see the subagent activity in real time.
 - **Brainstorm and architect are always interactive.** Don't automate the creative and decision-making phases.
 - **One subagent per phase, sequential.** No parallelism across phases — each phase depends on the previous one's artifact.
 - **The plan is the source of truth.** Subagents read the plan themselves; don't duplicate plan content in task strings.
-- **Retry once, then escalate.** Don't loop on failures.
+- **Continue before retrying.** When a subagent stalls, send it a message to continue — don't discard its context by relaunching. Escalate if it can't make progress.
 - **Don't call `workflow_phase_complete`.** That tool is for the interactive workflow. In autoflow, transitions are managed by this skill's orchestration logic.
