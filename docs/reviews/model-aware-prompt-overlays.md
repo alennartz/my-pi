@@ -26,7 +26,7 @@ Pi's extension runner catches the error (won't crash the session), but the entir
 - **Category:** plan deviation
 - **Severity:** nit
 - **Location:** `extensions/subagents/index.ts`, `extensions/subagents/messages.ts`, `skills/architecting/SKILL.md`, `skills/autoflow/SKILL.md`, `skills/cleanup/SKILL.md`, `skills/code-review/SKILL.md`, `skills/implementing/SKILL.md`, `skills/orchestrating-agents/SKILL.md`
-- **Status:** open
+- **Status:** dismissed
 
 The diff range includes a rename of `<agent_complete>` to `<agent_idle>` across the subagents extension (stop sequences, XML serialization, prompt guidelines, identity template) and six skill files, plus revised autoflow retry semantics (continue-before-retrying instead of retry-once-then-escalate). These are separate concurrent changes unrelated to model-prompt-overlays.
 
