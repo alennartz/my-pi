@@ -11,6 +11,7 @@ graph LR
   Subagents --> Subagents
   SessionResume
   Worktree
+  ModelPromptOverlays
 ```
 
 ### Key Flows
@@ -116,3 +117,14 @@ Provider extension that auto-discovers Azure AI Foundry model deployments and re
 
 **Files:**
 - `extensions/azure-foundry/**`
+
+### Model Prompt Overlays
+
+Extension that discovers AGENTS.*.md overlay files, matches them against the active model ID via glob patterns, and appends matching content to the system prompt.
+
+**Responsibilities:** context root discovery (global agent dir + ancestor walk, mirroring pi's AGENTS.md resolution), overlay file loading and frontmatter validation (models field), glob-based model ID matching with specificity ranking, deterministic sort order (root order → broad-to-narrow specificity → path), overlay block rendering appended to system prompt, per-session deduplicated diagnostic notifications
+
+**Dependencies:** none (standalone extension; hooks `before_agent_start`)
+
+**Files:**
+- `extensions/model-prompt-overlays/**`
