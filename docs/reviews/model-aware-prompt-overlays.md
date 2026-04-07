@@ -37,7 +37,7 @@ The `index.ts` imports list also deviates from the plan — only `getAgentDir` i
 - **Category:** plan deviation
 - **Severity:** warning
 - **Location:** `extensions/subagents/index.ts` (4 changes), `extensions/subagents/messages.ts` (3 changes), `skills/autoflow/SKILL.md` (5 hunks)
-- **Status:** open
+- **Status:** dismissed
 
 The plan states "No existing codemap module changes its runtime responsibilities" and that Subagents "remain behaviorally unchanged." The diff includes:
 
