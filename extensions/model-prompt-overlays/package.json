@@ -1,0 +1,8 @@
+{
+  "name": "model-prompt-overlays",
+  "version": "0.1.0",
+  "description": "Model-aware prompt overlay extension for pi",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

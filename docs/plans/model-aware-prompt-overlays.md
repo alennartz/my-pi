@@ -197,6 +197,8 @@ This means model changes affect subsequent prompts automatically. There is no st
 
 ## Steps
 
+**Pre-implementation commit:** `9fcb75a606d9e793a26bed8a9dc73a06e4339535`
+
 ### Step 1: Create extension scaffold and context root discovery
 
 Create the extension directory `extensions/model-prompt-overlays/` with:
@@ -229,7 +231,7 @@ Write a companion test file `discovery.test.ts` using vitest. Tests should use `
 - `cwd` itself is included when it has a context file
 
 **Verify:** `npx vitest run extensions/model-prompt-overlays/discovery.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Overlay file loading and parsing
 
@@ -276,7 +278,7 @@ Write `parsing.test.ts` with temp directories containing various overlay files:
 - Body text after frontmatter is captured correctly
 
 **Verify:** `npx vitest run extensions/model-prompt-overlays/parsing.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Model matching with glob specificity
 
@@ -325,7 +327,7 @@ Write `matching.test.ts`:
 - Glob `*` matches any model ID (broadest possible)
 
 **Verify:** `npx vitest run extensions/model-prompt-overlays/matching.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Prompt block rendering
 
@@ -361,7 +363,7 @@ Write `rendering.test.ts`:
 - Body whitespace is trimmed at the end
 
 **Verify:** `npx vitest run extensions/model-prompt-overlays/rendering.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Session-local diagnostics deduplication
 
@@ -385,7 +387,7 @@ This is simple enough that a small set of inline tests in `diagnostics.test.ts` 
 - Different path for same message → `true`
 
 **Verify:** `npx vitest run extensions/model-prompt-overlays/diagnostics.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 6: Wire up the main extension hook
 
@@ -416,4 +418,4 @@ Add sorting tests to `matching.test.ts`:
 - Tie-breaker: alphabetical path
 
 **Verify:** All tests pass: `npx vitest run extensions/model-prompt-overlays/`. Manual smoke test: create `~/.pi/agent/AGENTS.claude.md` with `models: ["claude-*"]` frontmatter and some body text, start a pi session with a Claude model, and confirm the overlay text appears at the end of the system prompt (inspect via `/context` or similar).
-**Status:** not started
+**Status:** done
