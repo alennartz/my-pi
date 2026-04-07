@@ -43,7 +43,14 @@ export function loadOverlayFiles(root: ContextRoot): {
 			continue;
 		}
 
-		const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content);
+		let frontmatter: Record<string, unknown>;
+		let body: string;
+		try {
+			({ frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content));
+		} catch {
+			diagnostics.push({ path: filePath, message: `Malformed frontmatter in overlay file: ${filePath}` });
+			continue;
+		}
 		const rawModels = frontmatter.models;
 
 		// Validate models field

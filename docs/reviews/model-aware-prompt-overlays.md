@@ -15,7 +15,7 @@ The plan was implemented faithfully across all 6 steps — types, function signa
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/model-prompt-overlays/parsing.ts:47-48`
-- **Status:** open
+- **Status:** resolved
 
 `parseFrontmatter()` calls `yaml.parse()` internally, which throws `YAMLParseError` on malformed YAML. The call site in `loadOverlayFiles` wraps `readFileSync` in try-catch but does not wrap `parseFrontmatter`. An exception propagates out of `loadOverlayFiles`, up through the root iteration loop in `index.ts`, and out of the `before_agent_start` hook entirely.
 

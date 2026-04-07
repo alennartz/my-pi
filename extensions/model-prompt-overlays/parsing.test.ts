@@ -115,6 +115,28 @@ describe("loadOverlayFiles", () => {
 		expect(overlays[0].body).toContain("Line two");
 	});
 
+	it("reports diagnostic for malformed YAML frontmatter", () => {
+		const dir = createTemp();
+		writeFileSync(join(dir, "AGENTS.bad-yaml.md"), "---\nmodels: [broken\n  invalid yaml\n---\nBody");
+
+		const { overlays, diagnostics } = loadOverlayFiles(makeRoot(dir));
+		expect(overlays.length).toBe(0);
+		expect(diagnostics.length).toBe(1);
+		expect(diagnostics[0].message).toContain("Malformed frontmatter");
+	});
+
+	it("continues loading valid overlays after a malformed one", () => {
+		const dir = createTemp();
+		writeFileSync(join(dir, "AGENTS.a-bad.md"), "---\nmodels: [broken\n---\nBad");
+		writeFileSync(join(dir, "AGENTS.b-good.md"), "---\nmodels: claude-*\n---\nGood overlay");
+
+		const { overlays, diagnostics } = loadOverlayFiles(makeRoot(dir));
+		expect(diagnostics.length).toBe(1);
+		expect(diagnostics[0].message).toContain("Malformed frontmatter");
+		expect(overlays.length).toBe(1);
+		expect(overlays[0].body).toContain("Good overlay");
+	});
+
 	it("returns overlays sorted alphabetically by filename", () => {
 		const dir = createTemp();
 		writeFileSync(join(dir, "AGENTS.z-model.md"), "---\nmodels: z-*\n---\nZ");
