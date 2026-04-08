@@ -90,3 +90,9 @@ Precedence for `--config` arguments passed to `toolscript run`:
 **MCP Client: `@modelcontextprotocol/sdk`**
 - **Chosen** because it's the official maintained SDK, handles JSON-RPC framing, stdio transport, and the full MCP handshake.
 - **Considered** hand-rolling a minimal client (~100-150 lines for the small protocol surface). Rejected — no reason to reimplement what a maintained library provides, even if the surface is small.
+
+## Tests
+
+> **Skipped.** No tests were written upfront. Follow red-green TDD as you implement —
+> write a focused failing test, make it pass, move on. Aim for component-boundary
+> behavioral tests (inputs, outputs, observable effects), not exhaustive coverage.
