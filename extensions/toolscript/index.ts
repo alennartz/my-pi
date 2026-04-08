@@ -37,7 +37,6 @@ export default function (pi: ExtensionAPI) {
 			});
 		}
 
-		ctx.ui.notify("Toolscript: " + result.tools.length + " tools registered", "info");
 	});
 
 	pi.on("session_shutdown", async () => {
