@@ -187,7 +187,7 @@ export class ToolscriptClient {
 3. Set `this.running = false`.
 
 **Verify:** File exists at `extensions/toolscript/client.ts`, exports `ToolscriptClient`, `McpToolDef`, `StartResult`, `CallToolResult`. The class compiles without type errors when loaded by pi's jiti runtime (verify by starting pi in a directory with a `toolscript.toml` — deferred to Step 3 integration).
-**Status:** not started
+**Status:** done
 
 ### Step 3: Implement extension entry point in `index.ts`
 
