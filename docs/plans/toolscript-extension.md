@@ -226,4 +226,4 @@ import { ToolscriptClient } from "./client.js";
 - The tools appear in the system prompt (check via `/tools` or equivalent).
 - Calling a toolscript tool (e.g., `toolscript_list_apis`) proxies to toolscript and returns results.
 - Exiting pi cleanly shuts down the toolscript child process (no orphaned processes).
-**Status:** not started
+**Status:** done
