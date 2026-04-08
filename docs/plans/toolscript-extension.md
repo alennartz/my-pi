@@ -99,6 +99,8 @@ Precedence for `--config` arguments passed to `toolscript run`:
 
 ## Steps
 
+**Pre-implementation commit:** `2e510ed146e555047d98e93371b1dad531873f09`
+
 ### Step 1: Create extension manifest and install dependency
 
 Create `extensions/toolscript/package.json` with the pi extension manifest structure and the `@modelcontextprotocol/sdk` dependency.
@@ -122,7 +124,7 @@ The manifest declares the extension entry point and its single npm dependency:
 After creating the file, run `npm install` in `extensions/toolscript/` to install the SDK and generate the lockfile.
 
 **Verify:** `extensions/toolscript/node_modules/@modelcontextprotocol/sdk` exists and `extensions/toolscript/package-lock.json` is generated.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Implement `ToolscriptClient` in `client.ts`
 
