@@ -25,6 +25,7 @@ export class ToolscriptClient {
 	private client: Client | null = null;
 	private transport: StdioClientTransport | null = null;
 	private running = false;
+	private restartPromise: Promise<void> | null = null;
 
 	constructor(cwd: string) {
 		this.cwd = cwd;
@@ -87,29 +88,48 @@ export class ToolscriptClient {
 	async callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
 		// If process has crashed, restart and report error for the failed call
 		if (!this.running) {
-			await this.start();
+			if (!this.restartPromise) {
+				this.restartPromise = this.start()
+					.then(() => {})
+					.finally(() => { this.restartPromise = null; });
+			}
+			try {
+				await this.restartPromise;
+			} catch (err) {
+				return {
+					content: `toolscript crashed and could not be restarted: ${err instanceof Error ? err.message : String(err)}`,
+					isError: true,
+				};
+			}
 			return {
 				content: "toolscript crashed and has been restarted. The previous call was lost — please retry.",
 				isError: true,
 			};
 		}
 
-		const result = await this.client!.callTool({ name, arguments: args });
+		try {
+			const result = await this.client!.callTool({ name, arguments: args });
 
-		// Extract text content
-		const textParts: string[] = [];
-		if (Array.isArray(result.content)) {
-			for (const item of result.content) {
-				if (typeof item === "object" && item !== null && "type" in item && item.type === "text" && "text" in item) {
-					textParts.push(item.text as string);
+			// Extract text content
+			const textParts: string[] = [];
+			if (Array.isArray(result.content)) {
+				for (const item of result.content) {
+					if (typeof item === "object" && item !== null && "type" in item && item.type === "text" && "text" in item) {
+						textParts.push(item.text as string);
+					}
 				}
 			}
-		}
 
-		return {
-			content: textParts.join("\n"),
-			isError: result.isError ?? false,
-		};
+			return {
+				content: textParts.join("\n"),
+				isError: result.isError ?? false,
+			};
+		} catch (err) {
+			return {
+				content: `toolscript call failed: ${err instanceof Error ? err.message : String(err)}`,
+				isError: true,
+			};
+		}
 	}
 
 	async stop(): Promise<void> {
