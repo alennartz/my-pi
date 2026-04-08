@@ -14,6 +14,7 @@ This is **alenna-pi**, a personal [pi coding agent](https://github.com/badlogic/
 - **Subagent orchestration** — spawn specialized agents with channel-based inter-agent communication. Agents run as isolated `pi --mode rpc` processes with topology enforcement, deadlock detection, persistent per-parent child sessions, append-only lifecycle logging for restore/replay, and a live TUI widget. Tools: `subagent`, `fork`, `send`, `respond`, `check_status`, `teardown`, `await_agents`.
 - **Agent definitions** — reusable specialist agents distributed with the package. Currently includes `scout` — a read-only codebase lookup agent that runs on a cheap model for lightweight, mechanical exploration (locating definitions, finding usage sites, grepping for patterns). Always returns file paths with line ranges so the parent reads only what matters.
 - **Git worktree management** — `/worktree create <branch>` and `/worktree cleanup` slash commands for working across git worktrees with automatic pi session handoff. Creates worktrees, transfers conversation context, and cleans up merged branches.
+- **Toolscript integration** — spawns toolscript as a long-lived child process and surfaces its MCP tools as pi tools. Config resolution looks for `~/.pi/toolscript/toolscript.toml` (user-level) and `./toolscript.toml` (project-level).
 - **TUI components** — reusable UI primitives like `numbered-select` (keyboard-driven select dialog with inline annotation).
 
 ## Behavioral Conventions

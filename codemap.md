@@ -12,6 +12,7 @@ graph LR
   SessionResume
   Worktree
   ModelPromptOverlays
+  ToolscriptExtension
 ```
 
 ### Key Flows
@@ -117,6 +118,17 @@ Provider extension that auto-discovers Azure AI Foundry model deployments and re
 
 **Files:**
 - `extensions/azure-foundry/**`
+
+### Toolscript Extension
+
+Extension that integrates toolscript by spawning it as a long-lived MCP child process and surfacing its tools as pi tools.
+
+**Responsibilities:** toolscript process lifecycle (spawn via `StdioClientTransport`, graceful shutdown), MCP client management via `@modelcontextprotocol/sdk`, pi tool registration from MCP tool definitions (prefixed `toolscript_`), layered config file resolution (user `~/.pi/toolscript/toolscript.toml` + project `toolscript.toml`), crash recovery with auto-restart on next tool call
+
+**Dependencies:** none (standalone extension loaded by pi)
+
+**Files:**
+- `extensions/toolscript/**`
 
 ### Model Prompt Overlays
 
