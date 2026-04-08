@@ -11,8 +11,7 @@ export default function (pi: ExtensionAPI) {
 		let result;
 		try {
 			result = await client.start();
-		} catch (err: any) {
-			ctx.ui.notify("Toolscript not available: " + err.message, "info");
+		} catch {
 			client = null;
 			return;
 		}
