@@ -146,6 +146,33 @@ Writer produces and sends to reviewer. Reviewer critiques and sends back. They i
 
 **When to use:** Work that benefits from multiple revision passes. Examples: document drafting with editorial review, code generation with correctness checking.
 
+### Adversarial Debate
+
+Two or more agents take opposing positions on a question and argue until one convinces the other or they agree to disagree. The parent gets each agent's final position and makes the call.
+
+**Two agents (typical):**
+```
+agents: [pro, con]
+pro.channels: [con]
+con.channels: [pro]
+```
+
+Pro and con exchange arguments via fire-and-forget sends. Each round, an agent reads the other's argument and responds. When one concedes or both declare impasse, each sends a final summary to parent and finishes.
+
+**More than two agents:**
+```
+agents: [position-a, position-b, position-c]
+position-a.channels: [position-b, position-c]
+position-b.channels: [position-a, position-c]
+position-c.channels: [position-a, position-b]
+```
+
+Full mesh — every agent can address every other. Communication gets noisier with more participants; three is practical, beyond that consider whether some positions can be consolidated.
+
+**When to use:** Decisions where the best choice isn't obvious and you want all angles genuinely explored before committing. Examples: architectural tradeoffs (monolith vs. microservices), API design alternatives, migration strategy choices. The adversarial framing forces each side to steel-man its position and engage with counterarguments rather than settling on the first plausible option.
+
+**Task string guidance:** Each agent's task should include the question, the position they're assigned to defend, and instructions to: argue genuinely for their side, engage with the other's points, and end by either conceding (with reasoning) or declaring impasse (with a summary of where disagreement remains). The parent synthesizes the final positions — agents don't need to reach consensus.
+
 ## Communication and Topology Design
 
 ### Topology
