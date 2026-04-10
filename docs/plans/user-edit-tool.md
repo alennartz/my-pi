@@ -33,5 +33,7 @@ A new extension that provides a `user_edit` LLM tool. The LLM calls it with a fi
 
 ## Steps
 
+**Pre-implementation commit:** `5001acde77efbcc277e8f075a0aa4c53638c1e6b`
+
 > **Skipped.** Work through the architecture methodically — identify affected files,
 > make changes in a logical order, and commit in coherent units.
