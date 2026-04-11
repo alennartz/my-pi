@@ -15,7 +15,7 @@ The plan was implemented faithfully — every architecture point is reflected in
 - **Category:** plan deviation
 - **Severity:** nit
 - **Location:** `extensions/user-edit/index.ts:19-21`
-- **Status:** open
+- **Status:** dismissed
 
 The implementation checks `if (!ctx.hasUI)` and throws before proceeding. The plan doesn't mention this guard. It's a reasonable defensive addition — without it, `ctx.ui.editor` would fail with a less clear error in headless mode — but it was not part of the architecture.
 
@@ -24,7 +24,7 @@ The implementation checks `if (!ctx.hasUI)` and throws before proceeding. The pl
 - **Category:** plan deviation
 - **Severity:** nit
 - **Location:** `extensions/user-edit/index.test.ts:1-193`
-- **Status:** open
+- **Status:** dismissed
 
 The plan says "No tests were written upfront. Follow red-green TDD as you implement." A comprehensive test file exists. This is consistent with the TDD-during-implementation instruction — the "skipped" label refers to the dedicated pre-implementation test-writing phase, not a prohibition on tests. Expected workflow; no corrective action needed.
 
