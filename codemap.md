@@ -13,6 +13,7 @@ graph LR
   Worktree
   ModelPromptOverlays
   ToolscriptExtension
+  UserEdit
 ```
 
 ### Key Flows
@@ -129,6 +130,17 @@ Extension that integrates toolscript by spawning it as a long-lived MCP child pr
 
 **Files:**
 - `extensions/toolscript/**`
+
+### User Edit
+
+Extension that provides a `user_edit` LLM tool — opens a file in pi's built-in editor UI so the user can manually edit it. On save, the file is written to disk. Supports new file creation (opens empty, creates on save including parent dirs).
+
+**Responsibilities:** user_edit tool registration, editor UI integration, file read/write with mutation queue, new-file creation with parent directory creation
+
+**Dependencies:** none (standalone extension loaded by pi)
+
+**Files:**
+- `extensions/user-edit/**`
 
 ### Model Prompt Overlays
 

@@ -15,6 +15,7 @@ This is **alenna-pi**, a personal [pi coding agent](https://github.com/badlogic/
 - **Agent definitions** — reusable specialist agents distributed with the package. Currently includes `scout` — a read-only codebase lookup agent that runs on a cheap model for lightweight, mechanical exploration (locating definitions, finding usage sites, grepping for patterns). Always returns file paths with line ranges so the parent reads only what matters.
 - **Git worktree management** — `/worktree create <branch>` and `/worktree cleanup` slash commands for working across git worktrees with automatic pi session handoff. Creates worktrees, transfers conversation context, and cleans up merged branches.
 - **Toolscript integration** — spawns toolscript as a long-lived child process and surfaces its MCP tools as pi tools. Config resolution looks for `~/.pi/toolscript/toolscript.toml` (user-level) and `./toolscript.toml` (project-level).
+- **User edit tool** — `user_edit` opens a file in pi's built-in editor so the user can manually edit it. Supports existing files and new file creation.
 - **TUI components** — reusable UI primitives like `numbered-select` (keyboard-driven select dialog with inline annotation).
 
 ## Behavioral Conventions
