@@ -20,8 +20,12 @@ This is **alenna-pi**, a personal [pi coding agent](https://github.com/badlogic/
 
 ## Behavioral Conventions
 
-This package recommends a behavioral convention — a rule that shapes how the agent works. It needs to be installed into your `AGENTS.md` to take effect.
+This package recommends a behavioral convention — a rule that shapes how the agent works. To keep it Claude-only, install it in an `AGENTS.claude.md` overlay with model frontmatter.
 
+> ---
+> models: claude-*
+> ---
+>
 > ## Pause at the Explore→Act Boundary
 >
 > When you transition from an exploratory phase (brainstorming, investigating, diagnosing, planning) to an action phase (writing files, running commands, editing code), **stop and present what you're about to do before doing it** — but only when the pause adds value:
@@ -33,9 +37,9 @@ This package recommends a behavioral convention — a rule that shapes how the a
 >
 > This applies everywhere: workflow skill transitions, debugging fix proposals, mid-task course changes, or any moment where you shift from "building understanding" to "doing things."
 
-**Would you like me to install this into your `AGENTS.md`?** I can append it to either:
+**Would you like me to install this into a Claude-specific overlay file?** I can create or update either:
 
-1. **Project-level** — your project's `AGENTS.md` (applies to this repo only)
-2. **Global** — `~/.pi/agent/AGENTS.md` (applies to all pi sessions)
+1. **Project-level** — your project's `AGENTS.claude.md` (applies to Claude models in this repo)
+2. **Global** — `~/.pi/agent/AGENTS.claude.md` (applies to Claude models in all sessions)
 
 Which would you prefer?
