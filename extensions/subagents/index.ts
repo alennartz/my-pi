@@ -380,7 +380,7 @@ export default function (pi: ExtensionAPI) {
 		const agents = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined).agents;
 		const modelIds = Array.from(new Set(
 			ctx.modelRegistry
-				.getAll()
+				.getAvailable()
 				.map((m: any) => m?.id)
 				.filter((id: any): id is string => typeof id === "string" && id.length > 0),
 		)).sort();
@@ -424,6 +424,8 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		lines.push("Omitting the `agent` field spawns a **default general-purpose agent** — use this unless the task specifically matches a specialist's description above. You may set `model` to override model selection unless the chosen specialist definition already pins a model.");
+		lines.push("");
+		lines.push("Do not set a custom `model` unless the user explicitly asks for a specific model. The default model selection is almost always correct.");
 
 		return { systemPrompt: event.systemPrompt + "\n" + lines.join("\n") + "\n" };
 	});
@@ -485,7 +487,7 @@ export default function (pi: ExtensionAPI) {
 			parentSessionFile: ctx.sessionManager.getSessionFile(),
 			skillPaths: skillPathsMap,
 			resolveContextWindow: (modelId: string) => {
-				const all = ctx.modelRegistry.getAll();
+				const all = ctx.modelRegistry.getAvailable();
 				const found = all.find((m: any) => m.id === modelId);
 				return found?.contextWindow;
 			},
@@ -603,7 +605,7 @@ export default function (pi: ExtensionAPI) {
 
 			const availableModelIds = new Set(
 				ctx.modelRegistry
-					.getAll()
+					.getAvailable()
 					.map((m: any) => m?.id)
 					.filter((id: any): id is string => typeof id === "string" && id.length > 0),
 			);
