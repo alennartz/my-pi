@@ -15,6 +15,7 @@ export interface RegularAgentSpec {
 	kind: "agent";
 	id: string;
 	agent?: string;
+	model?: string;
 	task: string;
 	channels?: string[];
 	resumeSessionFile?: string;
@@ -247,9 +248,16 @@ export function resolveSkillPaths(
 /**
  * Build CLI args for spawning a pi child process for this agent.
  */
-export function buildAgentArgs(agent: AgentConfig | undefined, skillPaths: string[], sessionDir: string, resumeSessionFile?: string): string[] {
+export function buildAgentArgs(
+	agent: AgentConfig | undefined,
+	skillPaths: string[],
+	sessionDir: string,
+	resumeSessionFile?: string,
+	modelOverride?: string,
+): string[] {
 	const args: string[] = resumeSessionFile ? ["--session", resumeSessionFile] : ["--session-dir", sessionDir];
-	if (agent?.model) args.push("--model", agent.model);
+	const model = agent?.model ?? modelOverride;
+	if (model) args.push("--model", model);
 	if (agent?.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 	if (skillPaths.length > 0) {
 		args.push("--no-skills");

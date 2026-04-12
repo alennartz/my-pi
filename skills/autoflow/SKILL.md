@@ -5,6 +5,17 @@ description: "Run the full development workflow pipeline with minimal human inte
 
 # Autoflow
 
+## Invocation Contract (Strict)
+
+When this skill is invoked (via `/autoflow ...`) or explicitly provided by the user as instructions, it is **mandatory**.
+
+- Do **not** switch to direct implementation mode.
+- Do **not** make ad-hoc code edits outside the defined phase flow.
+- Start at the Brainstorm phase and proceed through this skill's workflow unless the user explicitly asks to bypass/exit autoflow.
+- If there is any ambiguity about whether autoflow applies, ask the user before doing any non-autoflow work.
+
+Before taking substantive actions, acknowledge you are running autoflow and state the current phase.
+
 ## Overview
 
 Drive the full development workflow pipeline — brainstorm through cleanup — with minimal human intervention. The first two phases (brainstorm, architect) are interactive: you run them directly in conversation with the user. All subsequent phases run autonomously via subagents, with the primary agent orchestrating transitions, validating artifacts, and escalating only when necessary.

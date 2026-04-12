@@ -209,7 +209,13 @@ export class SubagentManager {
 			} else {
 				agentConfig = agentSpec.agent ? agentConfigs.find((a) => a.name === agentSpec.agent) : undefined;
 				const agentSkillPaths = skillPaths.get(agentSpec.id) ?? [];
-				args = buildAgentArgs(agentConfig, agentSkillPaths, this.sessionDir!, agentSpec.resumeSessionFile);
+				args = buildAgentArgs(
+					agentConfig,
+					agentSkillPaths,
+					this.sessionDir!,
+					agentSpec.resumeSessionFile,
+					agentSpec.model,
+				);
 				if (agentConfig && !agentSpec.resumeSessionFile) {
 					args.push("--append-system-prompt", agentConfig.systemPrompt);
 				}

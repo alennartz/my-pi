@@ -378,21 +378,52 @@ export default function (pi: ExtensionAPI) {
 		if (!activeTools.includes("subagent")) return;
 
 		const agents = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined).agents;
-		if (agents.length === 0) return;
+		const modelIds = Array.from(new Set(
+			ctx.modelRegistry
+				.getAll()
+				.map((m: any) => m?.id)
+				.filter((id: any): id is string => typeof id === "string" && id.length > 0),
+		)).sort();
 
-		const lines = [
-			"",
-			"## Available Agent Definitions",
-			"",
-			"The following agent definitions can be referenced in the subagent tool's `agent` field.",
-			"Each is self-contained — it carries its own system prompt, model, and tool restrictions. The description below is all you need to choose and deploy them; do not read their definition files before using them. Just pass the name in the `agent` field with a task string.",
-			"",
-		];
-		for (const a of agents) {
-			lines.push(`- **${a.name}** (${a.source}): ${a.description}`);
+		if (agents.length === 0 && modelIds.length === 0) return;
+
+		const lines = [""];
+
+		if (agents.length > 0) {
+			lines.push(
+				"## Available Agent Definitions",
+				"",
+				"The following agent definitions can be referenced in the subagent tool's `agent` field.",
+				"Each is self-contained — it carries its own system prompt, model, and tool restrictions. The description below is all you need to choose and deploy them; do not read their definition files before using them. Just pass the name in the `agent` field with a task string.",
+				"",
+			);
+			for (const a of agents) {
+				lines.push(`- **${a.name}** (${a.source}): ${a.description}`);
+			}
+			lines.push("");
 		}
-		lines.push("");
-		lines.push("Omitting the `agent` field spawns a **default general-purpose agent** — use this unless the task specifically matches a specialist's description above. Specialized agents are for use cases matching their descriptions; when in doubt, use default.");
+
+		if (modelIds.length > 0) {
+			const maxModels = 30;
+			const listed = modelIds.slice(0, maxModels);
+			const remaining = modelIds.length - listed.length;
+			lines.push(
+				"## Available Models",
+				"",
+				"The following model IDs can be used with `subagent` `agents[].model`.",
+				"If a specialist agent definition pins a model, that pinned model always wins and `agents[].model` is ignored.",
+				"",
+			);
+			for (const id of listed) {
+				lines.push(`- \`${id}\``);
+			}
+			if (remaining > 0) {
+				lines.push(`- ... and ${remaining} more`);
+			}
+			lines.push("");
+		}
+
+		lines.push("Omitting the `agent` field spawns a **default general-purpose agent** — use this unless the task specifically matches a specialist's description above. You may set `model` to override model selection unless the chosen specialist definition already pins a model.");
 
 		return { systemPrompt: event.systemPrompt + "\n" + lines.join("\n") + "\n" };
 	});
@@ -537,6 +568,7 @@ export default function (pi: ExtensionAPI) {
 	const AgentItem = Type.Object({
 		id: Type.String({ description: "Unique identifier for this agent among the parent's active agents" }),
 		agent: Type.Optional(Type.String({ description: "Agent definition name (omit for default agent)" })),
+		model: Type.Optional(Type.String({ description: "Optional model id override. Ignored if the selected specialist agent definition already pins a model." })),
 		task: Type.String({ description: "Task description for this agent" }),
 		channels: Type.Optional(
 			Type.Array(Type.String(), {
@@ -557,6 +589,7 @@ export default function (pi: ExtensionAPI) {
 			"Spawning is non-blocking — results arrive later as system notifications. Unless explicitly told to do other work after spawning, briefly describe what you launched and end your turn immediately with no further actions.",
 			"When system notifications arrive, respond with your analysis and next actions. The notification content is already visible to the user — summarize your takeaway, not the raw content.",
 			"Use subagent when the work needs multiple coordinated agents, specialized personas, or a clean slate. Use fork when you want a copy of yourself with your full context to explore something.",
+			"You may set `model` to override model selection, but if the selected specialist agent definition pins a model, that pinned model is used.",
 			"For task decomposition, pattern selection, and when-to-delegate guidance, read the orchestrating-agents skill.",
 		],
 		parameters: Type.Object({
@@ -568,14 +601,34 @@ export default function (pi: ExtensionAPI) {
 			const discovery = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined);
 			const allAgentConfigs = discovery.agents;
 
-			// Validate agent definitions exist
+			const availableModelIds = new Set(
+				ctx.modelRegistry
+					.getAll()
+					.map((m: any) => m?.id)
+					.filter((id: any): id is string => typeof id === "string" && id.length > 0),
+			);
+
+			// Validate agent definitions and model overrides
 			for (const a of params.agents) {
+				let foundConfig: AgentConfig | undefined;
 				if (a.agent) {
-					const found = allAgentConfigs.find((c) => c.name === a.agent);
-					if (!found) {
+					foundConfig = allAgentConfigs.find((c) => c.name === a.agent);
+					if (!foundConfig) {
 						const available = formatAgentList(allAgentConfigs, 10);
 						throw new Error(
 							`Unknown agent definition "${a.agent}". Available: ${available.text}`,
+						);
+					}
+				}
+
+				if (a.model) {
+					// Specialist-pinned model always wins; only validate override when it can actually apply.
+					if (!foundConfig?.model && !availableModelIds.has(a.model)) {
+						const available = Array.from(availableModelIds).sort();
+						const preview = available.length > 0 ? available.slice(0, 20).join(", ") : "none";
+						const more = available.length > 20 ? `, ... (+${available.length - 20} more)` : "";
+						throw new Error(
+							`Unknown model "${a.model}" for agent "${a.id}". Available models: ${preview}${more}`,
 						);
 					}
 				}
