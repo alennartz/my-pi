@@ -189,6 +189,8 @@ const MODEL_CATALOG: Record<string, Partial<ModelMeta>> = {
 		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
 	"claude-opus-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
 		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
+	"claude-opus-4-7": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
+		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
 	"claude-haiku-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
 		cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 } },
 	// OpenAI — GPT-4.1 family
