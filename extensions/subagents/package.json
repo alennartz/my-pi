@@ -6,8 +6,5 @@
     "extensions": [
       "./index.ts"
     ]
-  },
-  "dependencies": {
-    "@pimote/panels": "^0.1.0"
   }
 }

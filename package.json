@@ -23,7 +23,13 @@
     ]
   },
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.67.6",
     "vitest": "^4.1.2"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@pimote/panels": "^0.1.0"
   }
 }
