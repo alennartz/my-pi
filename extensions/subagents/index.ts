@@ -5,8 +5,8 @@
  * - Absent: root agent. Starts broker, registers all tools.
  * - Present: has a parent. Connects to parent's broker, registers all tools.
  *
- * Both roles register the same seven tools: subagent, fork, send, respond,
- * check_status, teardown, await_agents. Any agent can spawn child agents recursively.
+ * Both roles register the same eight tools: subagent, fork, send, respond,
+ * check_status, teardown, await_agents, interrupt. Any agent can spawn child agents recursively.
  */
 
 import * as net from "node:net";
@@ -1079,6 +1079,60 @@ export default function (pi: ExtensionAPI) {
 			const waitResult = await awaitAgentCompletion(scopedIds, manager, signal);
 			return {
 				content: [{ type: "text", text: waitResult }],
+			};
+		},
+	});
+
+	// ─── Tool: interrupt ─────────────────────────────────────────────────
+
+	if (shouldRegisterTool("interrupt")) pi.registerTool({
+		name: "interrupt",
+		label: "Interrupt",
+		description: "Halt a subagent immediately without tearing it down. Interrupts any in-flight tool call — useful when one is hung or stuck.",
+		promptGuidelines: [
+			"Forces the worker idle as fast as possible, short of teardown. Interrupts any running tool call — use when one is hung or stuck.",
+			"Prefer `send` unless you realize (usually because the user pointed it out) the subagent is going wrong and must be stopped now.",
+			"Also use it when the user reports a hung tool call and you want to unstick the subagent without tearing it down, so you can get it going again.",
+		],
+		parameters: Type.Object({
+			agents: Type.Optional(
+				Type.Array(Type.String(), {
+					description: "Agent IDs to interrupt. Omit to interrupt all active agents.",
+				}),
+			),
+		}),
+
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+			if (!manager || !manager.hasAgents()) {
+				throw new Error("No agents running. Spawn agents first with the subagent or fork tool.");
+			}
+
+			if (params.agents) {
+				if (params.agents.length === 0) {
+					throw new Error("Empty agents array. Omit the parameter to interrupt all agents.");
+				}
+				for (const id of params.agents) {
+					if (!manager.getAgentStatus(id)) {
+						throw new Error(`Unknown agent: "${id}"`);
+					}
+				}
+			}
+
+			const scopedIds = params.agents ?? manager.getAgentStatuses().map((s) => s.id);
+			const results = await Promise.allSettled(scopedIds.map((id) => manager!.interrupt(id)));
+
+			const interrupted: string[] = [];
+			const failed: string[] = [];
+			results.forEach((r, i) => {
+				if (r.status === "fulfilled") interrupted.push(scopedIds[i]);
+				else failed.push(`${scopedIds[i]}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+			});
+
+			const lines: string[] = [];
+			if (interrupted.length > 0) lines.push(`Interrupted: ${interrupted.join(", ")}`);
+			if (failed.length > 0) lines.push(`Failed: ${failed.join("; ")}`);
+			return {
+				content: [{ type: "text", text: lines.join("\n") || "No agents interrupted." }],
 			};
 		},
 	});

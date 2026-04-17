@@ -93,6 +93,14 @@ export class SubagentManager {
 		return this.entries.length > 0;
 	}
 
+	/** Abort the target agent's current operation (equivalent to pressing Escape in the TUI). */
+	async interrupt(agentId: string): Promise<void> {
+		const entry = this.entries.find((e) => e.id === agentId);
+		if (!entry) throw new Error(`Unknown agent: "${agentId}"`);
+		if (entry.status.state === "failed") return;
+		await entry.rpc.abort();
+	}
+
 	private getCompletionReport(): ActiveAgentsCompleteData {
 		const agents: AgentCompleteData[] = this.entries.map((e) => ({
 			id: e.id,
