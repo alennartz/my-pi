@@ -7,8 +7,8 @@ export default function (pi: ExtensionAPI) {
 		name: "ask_user",
 		label: "Ask User",
 		description:
-			"Ask the user to choose from a set of options (up to 9). The user can also annotate their choice with a free-text note. Returns the selected option and optional annotation, or indicates cancellation.",
-		promptSnippet: "Present the user with a structured choice of up to 9 options. Use when there are discrete alternatives to choose between — disambiguation, confirming a direction, or selecting from a generated list. Supports optional free-text annotation on the selection.",
+			"Ask the user to pick exactly one option from a set (up to 9). Single-select only — the user chooses one option and may attach an optional free-text annotation. Returns the single selected option and optional annotation, or indicates cancellation. Do NOT use this to collect multiple selections; for multi-select, ask in a regular message instead.",
+		promptSnippet: "Present the user with a structured single-choice prompt of up to 9 options. Use when there are discrete alternatives to choose between — disambiguation, confirming a direction, or selecting from a generated list. The user picks exactly one option (single-select only) and may add an optional free-text annotation. This tool does NOT support multi-selection — if you need multiple picks, ask in a regular message.",
 		parameters: Type.Object({
 			title: Type.String({ description: "The prompt or question to display" }),
 			options: Type.Array(
