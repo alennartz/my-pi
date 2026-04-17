@@ -3,6 +3,11 @@ import { Type } from "@sinclair/typebox";
 import { showNumberedSelect } from "../../lib/components/numbered-select.ts";
 
 export default function (pi: ExtensionAPI) {
+	// Skip registering ask_user in subagent child processes — they have no
+	// interactive UI and shouldn't prompt the user directly. Subagents detect
+	// their role via PI_PARENT_LINK (set by the subagents extension).
+	if (process.env.PI_PARENT_LINK) return;
+
 	pi.registerTool({
 		name: "ask_user",
 		label: "Ask User",
