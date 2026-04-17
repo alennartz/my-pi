@@ -31,5 +31,6 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@pimote/panels": "^0.1.0"
-  }
+  },
+  "license": "MIT"
 }
