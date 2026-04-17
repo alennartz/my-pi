@@ -124,22 +124,17 @@ If an `<agent_message>` interrupt arrives with `response_expected="true"`:
 
 ### Transition Validation
 
-After each subagent goes idle, validate the expected artifact before proceeding:
+After each subagent goes idle, validate the expected artifact before proceeding.
 
-| Phase | Validation |
-|-------|-----------|
-| test-write | `docs/plans/<topic>.md` contains a `## Tests` section |
-| test-review | `docs/reviews/<topic>-tests.md` exists |
-| impl-plan | `docs/plans/<topic>.md` contains a `## Steps` section |
-| implement | `docs/plans/<topic>.md` — all `**Status:**` fields are `done` |
-| review | `docs/reviews/<topic>.md` exists |
-| handle-review | `docs/reviews/<topic>.md` exists |
-| cleanup | `docs/plans/<topic>.md`, `docs/reviews/<topic>.md`, and `docs/reviews/<topic>-tests.md` are all absent |
+**To validate:** run the bundled check script via the `bash` tool, from the repo root:
 
-**To validate:** use the `bash` tool to check file existence and content. For example:
-- `test -f docs/reviews/<topic>.md && echo "exists" || echo "missing"`
-- `grep -c "^## Tests$" docs/plans/<topic>.md` (returns count > 0 if section present)
-- `grep -oP '(?<=\*\*Status:\*\* ).+' docs/plans/<topic>.md` to extract all status values
+```
+npx tsx skills/autoflow/check-transition.ts <phase> <topic>
+```
+
+The script prints `PASS [<phase>] <detail>` or `FAIL [<phase>] <detail>` and exits 0 on pass, 1 on fail, 2 on usage error / unknown phase.
+
+It covers these phases: `test-write`, `test-review`, `impl-plan`, `implement`, `review`, `handle-review`, `cleanup`. (brainstorm and architect are interactive and have no check.) For the full predicate list, see `skills/autoflow/check-transition.ts`.
 
 **If validation passes:** tear down the subagent and proceed to the next phase.
 
@@ -178,4 +173,3 @@ The user can always intervene — they see the subagent activity in real time.
 - **One subagent per phase, sequential.** No parallelism across phases — each phase depends on the previous one's artifact.
 - **The plan is the source of truth.** Subagents read the plan themselves; don't duplicate plan content in task strings.
 - **Continue before retrying.** When a subagent stalls, send it a message to continue — don't discard its context by relaunching. Escalate if it can't make progress.
-- **Don't call `workflow_phase_complete`.** That tool is for the interactive workflow. In autoflow, transitions are managed by this skill's orchestration logic.

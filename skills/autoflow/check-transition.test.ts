@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { checkTransitionArtifact } from "./autoflow-checks.js";
+import { checkTransitionArtifact } from "./check-transition.ts";
 
 let testDir: string;
 

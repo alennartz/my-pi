@@ -33,17 +33,16 @@ sequenceDiagram
 
 ### Workflow
 
-Pipeline orchestration extension, the nine workflow skills it drives, and the autoflow orchestration skill. The extension provides the `/workflow` command and `workflow_phase_complete` tool; the skills define each phase's behavior and autonomous pipeline execution.
+The nine workflow skills and the autoflow orchestration skill that drives them. Autoflow is invoked via the `/autoflow` command (a prompt template); the skills define each phase's behavior and autonomous pipeline execution. A bundled transition-check script (`skills/autoflow/check-transition.ts`) validates phase artifacts between subagent handoffs.
 
 **Responsibilities:** pipeline phase routing, artifact-driven handoffs, context boundary management, autonomous pipeline orchestration, autonomous phase transition validation, brainstorming facilitation, architectural decision-making, test writing, test review, implementation planning, dual-mode implementation execution, plan-based code review, review finding resolution, post-workflow cleanup with DR extraction
 
 **Dependencies:** Skills (decision-records skill delegated from cleanup; autoflow orchestrates the pipeline from brainstorm through cleanup), Subagents (workflow skills delegate to subagents at runtime — scout investigation in architecting/impl-planning, worker orchestration in implementing, parallel fan-out in code review, autonomous phase execution in autoflow)
 
 **Files:**
-- `extensions/workflow/**`
-- `extensions/numbered-select/**`
-- `lib/components/**`
 - `skills/autoflow/SKILL.md`
+- `skills/autoflow/check-transition.ts`
+- `skills/autoflow/check-transition.test.ts`
 - `skills/brainstorming/SKILL.md`
 - `skills/architecting/SKILL.md`
 - `skills/test-writing/SKILL.md`
@@ -130,6 +129,18 @@ Extension that integrates toolscript by spawning it as a long-lived MCP child pr
 
 **Files:**
 - `extensions/toolscript/**`
+
+### Numbered Select
+
+Extension providing a `numbered_select` LLM tool and a reusable `showNumberedSelect` TUI helper — a keyboard-driven selection dialog with inline annotation support.
+
+**Responsibilities:** numbered_select tool registration, interactive numbered-list TUI component, selection + annotation flow
+
+**Dependencies:** none (standalone extension loaded by pi)
+
+**Files:**
+- `extensions/numbered-select/**`
+- `lib/components/numbered-select.ts`
 
 ### User Edit
 

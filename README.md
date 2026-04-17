@@ -56,11 +56,11 @@ See pi's [packages docs](https://github.com/badlogic/pi-mono) for the full insta
 
 ### Workflow pipeline
 
-A nine-phase development pipeline driven by the `/workflow` command and a set of skills that hand off via artifacts in `docs/`:
+A nine-phase development pipeline driven by the `/autoflow` command and a set of skills that hand off via artifacts in `docs/`:
 
 `brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle-review → cleanup`
 
-Plus `autoflow` — runs the pipeline end-to-end with brainstorm and architect interactive and the rest autonomous via subagents.
+Brainstorm and architect are interactive; the remaining phases run autonomously via subagents, with the primary agent orchestrating transitions and validating artifacts between phases.
 
 ### Subagents
 
@@ -74,7 +74,6 @@ Long-lived subagent orchestration — spawn child pi processes, communicate over
 
 ### Extensions
 
-- **workflow** — `/workflow` command and `workflow_phase_complete` tool for pipeline routing
 - **subagents** — subagent lifecycle, channel messaging, TUI dashboard
 - **azure-foundry** — auto-discovers Azure AI Foundry deployments as pi models
 - **worktree** — `/worktree` command for git worktree-based branch sessions
