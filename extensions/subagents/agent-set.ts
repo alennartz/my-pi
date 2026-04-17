@@ -309,7 +309,7 @@ export class SubagentManager {
 			: isFirstCall
 				? `Agents spawned: ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}).`
 				: `Added ${agents.length} agent${agents.length === 1 ? "" : "s"} (${ids.join(", ")}) to the existing active set.`;
-		return `${spawned} Results will arrive as notifications.\n\nIMPORTANT: Unless you were explicitly told to do other work after spawning, you MUST briefly tell the user what you spawned and then end your turn. Do not take any further actions — no searching, no reading files, no tool calls. Just describe what was launched and stop.`;
+		return `${spawned} Results will arrive as notifications.\n\nUnless you were explicitly told to do other work after spawning, briefly tell the user what you spawned. Then:\n- If you have useful independent work to do in the meantime, do it.\n- If there is nothing else to do until an agent returns, call await_agents instead of ending your turn idle.\n- If the user might want you to take on other work while the agents run but you don't know what, ask them.`;
 	}
 
 	async restoreFromPersistence(agentConfigs: AgentConfig[]): Promise<void> {
