@@ -74,7 +74,7 @@ Commit the scaffolded plan before spawning the target phase's subagent.
 After the interactive phases and any skip scaffolding, execute the remaining phases sequentially. The phase sequence is:
 
 ```
-test-write → test-review → impl-plan → implement → review → handle-review → cleanup
+test-write → test-review → impl-plan → implement → review → handle-review → manual-test → cleanup
 ```
 
 Start from whichever phase the skip decision targets (or test-write for the full pipeline).
@@ -110,6 +110,7 @@ The skill-to-phase mapping:
 | implement | `skills/implementing/SKILL.md` |
 | review | `skills/code-review/SKILL.md` |
 | handle-review | `skills/handle-review/SKILL.md` |
+| manual-test | `skills/manual-testing/SKILL.md` |
 | cleanup | `skills/cleanup/SKILL.md` |
 
 ### Waiting and Handling Interrupts
@@ -134,7 +135,7 @@ npx tsx skills/autoflow/check-transition.ts <phase> <topic>
 
 The script prints `PASS [<phase>] <detail>` or `FAIL [<phase>] <detail>` and exits 0 on pass, 1 on fail, 2 on usage error / unknown phase.
 
-It covers these phases: `test-write`, `test-review`, `impl-plan`, `implement`, `review`, `handle-review`, `cleanup`. (brainstorm and architect are interactive and have no check.) For the full predicate list, see `skills/autoflow/check-transition.ts`.
+It covers these phases: `test-write`, `test-review`, `impl-plan`, `implement`, `review`, `handle-review`, `manual-test`, `cleanup`. (brainstorm and architect are interactive and have no check.) For the full predicate list, see `skills/autoflow/check-transition.ts`.
 
 **If validation passes:** tear down the subagent and proceed to the next phase.
 
@@ -153,7 +154,13 @@ After handle-review completes and passes validation, read `docs/reviews/<topic>.
   4. After that completes, spawn a new `handle-review` subagent.
   5. Repeat this evaluation.
 
-- Otherwise, proceed to cleanup.
+- Otherwise, proceed to manual-test.
+
+### Manual-Test Phase
+
+After handle-review stabilizes, spawn a `manual-test` subagent using the skill mapping above. The task string may include focus hints — areas of the change that warrant special human-style scrutiny, or areas to deliberately skip (e.g. unchanged surfaces).
+
+If manual-testing escalates via `send(to='parent', expectResponse=true)`, relay the question to the user as with any other phase. If manual-testing finishes with *Open Issues* populated in `docs/manual-tests/<topic>.md`, surface that to the user before proceeding to cleanup — they may want to resolve the issues or loop back through earlier phases rather than close out.
 
 ## Escalation
 

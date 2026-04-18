@@ -12,7 +12,7 @@
  *   2  usage error / unknown phase
  *
  * Phases covered: test-write, test-review, impl-plan, implement, review,
- *                 handle-review, cleanup.
+ *                 handle-review, manual-test, cleanup.
  * brainstorm and architect are interactive and have no check.
  */
 
@@ -29,6 +29,7 @@ export function checkTransitionArtifact(phase: string, topic: string, cwd: strin
 	const planPath = join(cwd, "docs/plans", `${topic}.md`);
 	const reviewPath = join(cwd, "docs/reviews", `${topic}.md`);
 	const testReviewPath = join(cwd, "docs/reviews", `${topic}-tests.md`);
+	const manualTestPath = join(cwd, "docs/manual-tests", `${topic}.md`);
 
 	switch (phase) {
 		case "test-write": {
@@ -106,11 +107,38 @@ export function checkTransitionArtifact(phase: string, topic: string, cwd: strin
 			return { passed: false, detail: `Review file not found: docs/reviews/${topic}.md` };
 		}
 
+		case "manual-test": {
+			if (!existsSync(manualTestPath)) {
+				return {
+					passed: false,
+					detail: `Manual test artifact not found: docs/manual-tests/${topic}.md`,
+				};
+			}
+			const content = readFileSync(manualTestPath, "utf-8");
+			if (!/^## Test Plan$/m.test(content)) {
+				return {
+					passed: false,
+					detail: `Manual test artifact exists but does not contain a ## Test Plan section.`,
+				};
+			}
+			if (!/^## Results$/m.test(content)) {
+				return {
+					passed: false,
+					detail: `Manual test artifact exists but does not contain a ## Results section.`,
+				};
+			}
+			return {
+				passed: true,
+				detail: `Manual test artifact exists with ## Test Plan and ## Results: docs/manual-tests/${topic}.md`,
+			};
+		}
+
 		case "cleanup": {
 			const remaining: string[] = [];
 			if (existsSync(planPath)) remaining.push(`docs/plans/${topic}.md`);
 			if (existsSync(reviewPath)) remaining.push(`docs/reviews/${topic}.md`);
 			if (existsSync(testReviewPath)) remaining.push(`docs/reviews/${topic}-tests.md`);
+			if (existsSync(manualTestPath)) remaining.push(`docs/manual-tests/${topic}.md`);
 			if (remaining.length === 0) {
 				return { passed: true, detail: `All working artifacts have been cleaned up.` };
 			}
@@ -132,7 +160,7 @@ if (invokedAsScript) {
 
 Exit codes: 0 passed, 1 failed, 2 usage error / unknown phase.
 
-Phases: test-write, test-review, impl-plan, implement, review, handle-review, cleanup.
+Phases: test-write, test-review, impl-plan, implement, review, handle-review, manual-test, cleanup.
 (brainstorm and architect are interactive — no check.)`;
 
 	const [, , phase, topic, ...extra] = process.argv;
