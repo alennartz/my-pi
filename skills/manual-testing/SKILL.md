@@ -1,6 +1,6 @@
 ---
 name: manual-testing
-description: "Exercise shipped functionality the way a human would — drive the real artifact end-to-end, fix straightforward issues inline, accumulate reusable testing tools in the repo. Use after handle-review and before cleanup to close the outer loop. Requires a plan in docs/plans/<topic>.md — if it doesn't exist, run the earlier pipeline phases first."
+description: "Exercise shipped functionality the way a human would — run a persistent smoke suite of primary user journeys, add topic-specific tests, fix straightforward issues inline, and grow the manual-test tooling over time. Use after handle-review and before cleanup to close the outer loop. Requires a plan in docs/plans/<topic>.md — if it doesn't exist, run the earlier pipeline phases first."
 ---
 
 # Manual Testing
@@ -9,13 +9,13 @@ description: "Exercise shipped functionality the way a human would — drive the
 
 Close the outer loop. Automated tests check component contracts; this skill exercises the thing that was built the way its user will — clicking the UI, invoking the CLI, hitting the endpoint, running the flow end-to-end — and fixes what breaks.
 
-The skill is **generic**: it runs in whatever repo autoflow runs in. The "app under test" is whatever this repo produces (web app, CLI, service, library, extension, …). The skill figures out what human-observable behavior to exercise by reading the upstream artifacts and the code, then drives it using whatever tools are available — existing agent skills (e.g. `agent-browser`), system utilities, and **bespoke tools that live in the repo and accumulate over time**.
+The skill is **generic**: it runs in whatever repo autoflow runs in. The "app under test" is whatever this repo produces (web app, CLI, service, library, extension, …). The skill is **incremental**: it maintains a persistent manual test plan and tool collection in the repo, so each run benefits from prior runs and primary user journeys become cheap to smoke-test.
 
 This skill is autonomous. When a manual test fails and the fix is obvious and aligned with the architecture, it fixes and re-runs. It only escalates when a failure reveals an architectural flaw, requires a disproportionately complex fix, or is otherwise ambiguous.
 
 ## Invocation
 
-This skill is invoked inside a subagent spawned by the autoflow orchestrator. The spawn message loads this skill for a given topic and may include optional focus hints (e.g. "pay special attention to the new upload flow", "skip the admin area — unchanged"). Expected task-string shape:
+This skill is invoked inside a subagent spawned by the autoflow orchestrator. The spawn message loads this skill for a given topic and may include optional focus hints. Expected task-string shape:
 
 ```
 Read and follow the skill at `skills/manual-testing/SKILL.md` for topic `<topic>`.
@@ -29,75 +29,93 @@ If you need clarification or encounter ambiguity, use `send(to='parent', expectR
 
 ## Conventions This Skill Establishes
 
-- **Bespoke manual-test tooling lives at `tools/manual-test/`** at the repo root.
-  - It MUST contain a `README.md` index that lists every tool, what it's for, how to invoke it, and any prerequisites.
-  - Tools are designed for reuse across topics — clear CLI/API surface, documented inputs and outputs, no one-shot scripts hard-coded to a single test run.
-  - `tools/manual-test/` is its own module in the codemap. This skill does not edit `codemap.md` — the cleanup phase handles that, using the artifact this skill produces as input.
-- **Artifact lives at `docs/manual-tests/<topic>.md`.** Written incrementally throughout the skill's run. Structure below.
-- **Upstream artifacts drive scope.** `docs/brainstorms/<topic>.md`, `docs/plans/<topic>.md` (both architecture and steps sections), `docs/reviews/<topic>.md`, and `docs/reviews/<topic>-tests.md` (any that exist) describe what was intended and what shipped. The manual tests exercise the user-facing behavior those artifacts describe.
+- **`tools/manual-test/`** at the repo root — its own module, owned by this skill. Contains:
+  - **`PLAN.md`** — the persistent, repo-wide manual test plan. Lists primary user journeys (the high-value happy paths a human would exercise). Each journey: what it is, why it matters, and which tool drives it. Lives indefinitely. Updated as the product evolves.
+  - **`README.md`** — index of available tools: purpose, invocation, inputs/outputs, prerequisites.
+  - **Tools themselves** — bespoke, reusable, parameterized. No one-shot scripts hard-coded to a single topic.
+- **Per-topic artifact at `docs/manual-tests/<topic>.md`** — thin. Records what this run did; the bulk of "what to test" lives in `PLAN.md`, not here.
+- **This skill does not edit `codemap.md`.** Cleanup handles the codemap refresh and uses this skill's artifact as input.
 
 ## Process
 
 ### 0. Gather Context
 
 1. **Read `codemap.md`** at the repo root. If it doesn't exist, proceed without it.
-2. **Read `docs/plans/<topic>.md`** — the plan. You need the architecture section (what was meant to be built) and the steps section (what actually shipped). If the plan doesn't exist, tell the user and stop.
-3. **Read `docs/brainstorms/<topic>.md`** if it exists — the original intent, especially any user-facing scenarios.
-4. **Read `docs/reviews/<topic>.md`** and `docs/reviews/<topic>-tests.md` if they exist — open issues or limitations called out in review may shape what to test or deliberately avoid.
-5. **Read `tools/manual-test/README.md`** if it exists. Learn what's already available before thinking about new tools. If the directory doesn't exist, you're establishing it this run.
-6. **Identify what this repo produces** and how a human exercises it (web app → browser, CLI → shell invocation, HTTP service → request client, library with a demo app → demo app, VS Code extension → VS Code host, etc.). If it's genuinely unclear how a human would exercise the artifact, ask the parent agent.
+2. **Read `docs/plans/<topic>.md`** — the plan (architecture + steps). If it doesn't exist, tell the user and stop.
+3. **Read `docs/brainstorms/<topic>.md`** if it exists — original intent and user-facing scenarios.
+4. **Read `docs/reviews/<topic>.md`** and `docs/reviews/<topic>-tests.md` if they exist — findings that shape what to test or deliberately avoid.
+5. **Read `tools/manual-test/PLAN.md` and `tools/manual-test/README.md`** if they exist. Everything you need to know about this repo's primary user journeys and existing tooling is there.
+6. **Identify what this repo produces** and how a human exercises it (browser, CLI, HTTP client, VS Code host, …). If genuinely unclear, ask the parent agent.
 
-### 1. Draft the Test Plan
+### 1. Bootstrap on First Run (one-time)
 
-Create `docs/manual-tests/<topic>.md` with a *Test Plan* section **before** running anything. List the user-facing behaviors to exercise — derived from the brainstorm/plan/reviews and the focus hints — and for each, the tool that will drive it. Prefer existing tools in `tools/manual-test/` and existing agent-level skills; only plan new tooling where there's a real gap.
+If `tools/manual-test/PLAN.md` does not exist, you're establishing the persistent plan this run. Before going further:
 
-Suggested sections (fill in incrementally, commit at the end):
+1. Figure out the repo's primary user journeys — the high-value happy paths that, if broken, would represent an unacceptable regression. Derive them from the codemap, existing user-facing docs (READMEs), and the brainstorm/plan for this topic. Keep the list focused; "primary" is the operative word.
+2. Write `tools/manual-test/PLAN.md` with a section per journey: what it is, why it matters, the tool that drives it (may be TBD for journeys whose tools you'll build this run).
+3. Create `tools/manual-test/README.md` with an initial index (may be empty if no tools exist yet).
+4. Commit: `chore: bootstrap manual-test plan and tooling`.
+
+On subsequent runs `PLAN.md` already exists — skip bootstrap and use what's there.
+
+### 2. Draft the Per-Topic Artifact
+
+Create `docs/manual-tests/<topic>.md` **before** running anything:
 
 ```markdown
 # Manual Testing — <topic>
 
-## Test Plan
+## Smoke Suite
 
-For each user-facing behavior: what it is, why it matters for this topic, and
-the tool/skill used to drive it.
+The subset of `tools/manual-test/PLAN.md` journeys exercised this run, and
+why (all journeys by default; a subset only when scoped by focus hints).
+
+## Topic-Specific Tests
+
+Behaviors specific to this topic that aren't covered by the persistent plan.
+For each: what it is, why it matters for this topic, and the tool used.
+Items promoted into `PLAN.md` during this run (new primary journeys) are
+noted here too.
 
 ## Tools
 
 - Reused: <existing tools under tools/manual-test/ or existing skills>
-- New: <new tools introduced in this run, with one-line purpose>
-- Improved: <existing tools that were generalized or hardened during this run>
+- New: <new tools introduced in this run>
+- Improved: <existing tools generalized or hardened this run>
 
 ## Results
 
-For each item in the Test Plan: what was run, what was observed, and the
-verdict — pass | fixed-inline | open.
+For each item from Smoke Suite and Topic-Specific Tests: what was run, what
+was observed, verdict — pass | fixed-inline | open. Fixed-inline entries
+include a one- or two-sentence fix note for cleanup's DR consideration.
 
-For fixed-inline entries, note the fix in one or two sentences so cleanup can
-consider whether it warrants a decision record.
+## Plan Updates
+
+Journeys added to, modified in, or retired from `tools/manual-test/PLAN.md`
+this run. Empty if the persistent plan was unchanged.
 
 ## Open Issues
 
-Anything not fixed inline — escalations, ambiguous findings, or issues the
-user must decide on. Empty if everything passed or was fixed.
+Anything not fixed inline — escalations, ambiguous findings, user-decision
+items. Empty if everything passed or was fixed.
 ```
 
-Commit the initial artifact once the Test Plan is drafted: `docs: manual-testing test plan for <topic>`.
+Commit once drafted: `docs: manual-testing plan for <topic>`.
 
-### 2. Prepare Tooling
+### 3. Prepare Tooling
 
-For each planned behavior:
+For each journey in the Smoke Suite and each Topic-Specific Test:
 
-1. **Prefer reuse.** If an existing tool under `tools/manual-test/` covers it, use it directly.
-2. **Prefer generalization over forking.** If a tool almost fits, extend/parameterize it rather than copying it to a near-duplicate. Record the improvement in the artifact's *Tools → Improved* list and update `tools/manual-test/README.md`.
-3. **Build new only for genuine gaps.** New tools go under `tools/manual-test/<tool-name>/` (or a single file if trivial). They must:
-   - Have a short README or top-of-file docstring explaining purpose, inputs, outputs.
-   - Be parameterized for reuse on future topics — no hard-coded topic-specific values.
-   - Be registered in `tools/manual-test/README.md`.
-4. **Agent-level skills count.** If `agent-browser`, `brave-search`, or similar existing skills already cover a behavior (e.g. driving a web UI), use them directly — don't re-build what's already available outside the repo.
+1. **Prefer reuse.** Existing tools under `tools/manual-test/` first; existing agent skills (`agent-browser`, etc.) second.
+2. **Prefer generalization over forking.** If a tool almost fits, extend or parameterize it. Record the improvement in the artifact's *Tools → Improved* list and update `tools/manual-test/README.md`.
+3. **Build new only for genuine gaps.** New tools go under `tools/manual-test/<tool-name>/` (or a single file if trivial). Requirements:
+   - Short README or top-of-file docstring: purpose, inputs, outputs.
+   - Parameterized for reuse — no topic-specific hard-coding.
+   - Registered in `tools/manual-test/README.md`.
 
-### 3. Execute Tests
+### 4. Execute Tests
 
-Run each planned behavior. For each, record in *Results*:
+Run the Smoke Suite first, then Topic-Specific Tests. For each, record in *Results*:
 
 - What was run (tool/skill, invocation).
 - What was observed.
@@ -105,43 +123,35 @@ Run each planned behavior. For each, record in *Results*:
 
 #### When a Test Fails
 
-Decide between **fix inline** and **escalate** using this rule:
+- **Fix inline** when the root cause is clear, the fix is consistent with the architecture in `docs/plans/<topic>.md`, and the fix is localized and low-complexity. Apply, commit (`fix: <short description> (manual-testing)`), re-run, mark `fixed-inline`.
+- **Escalate** when the failure suggests a fundamental architectural flaw, would require a high-complexity fix, or is ambiguous. Log in *Open Issues* with observation, suspected cause, and why you're not fixing inline. Use `send(to='parent', expectResponse=true)` only if you need an answer to continue.
 
-- **Fix inline** when:
-  - The root cause is clear from the code and the failure.
-  - The fix is consistent with the architecture in `docs/plans/<topic>.md` (and, if present, the brainstorm).
-  - The fix is localized and low-complexity — the kind of surgical change handle-review would also make autonomously.
+Keep iterating until every item is `pass`, `fixed-inline`, or logged in *Open Issues* with a clear reason.
 
-  Apply the fix, commit it (`fix: <short description> (manual-testing)`), re-run the failing test, and on success record it as `fixed-inline` in *Results*.
+### 5. Update the Persistent Plan
 
-- **Escalate** (record in *Open Issues* and stop running fixes for this behavior) when any of:
-  - The failure suggests a **fundamental architectural flaw** — the design itself doesn't support the user behavior, or makes it extremely brittle.
-  - A viable fix would be **high complexity** or touch many modules — it wants its own planning cycle, not an inline patch.
-  - Root cause or fix is **ambiguous** — more than one reasonable interpretation, or you'd be guessing.
+If this topic introduced, materially changed, or retired a primary user journey, update `tools/manual-test/PLAN.md` accordingly:
 
-  For escalations, write what was observed, the suspected cause, and why you're not fixing it inline. Use `send(to='parent', expectResponse=true)` only if you need an answer to proceed; otherwise just log the issue and continue with other tests.
+- **Added journey** — new high-value path this topic makes first-class.
+- **Modified journey** — existing path whose shape changed.
+- **Retired journey** — path no longer applicable.
 
-#### Looping
+Not every topic-specific test belongs in `PLAN.md`. Promote only genuine primary journeys — the plan stays focused. Record every change in the artifact's *Plan Updates* section.
 
-Keep iterating until either:
-- Every planned behavior is `pass` or `fixed-inline`, **or**
-- Remaining failures are all in *Open Issues* with a clear reason.
+### 6. Finalize
 
-Do not invent additional tests beyond the Test Plan to pad coverage — expand the plan deliberately if new user-facing behavior surfaces, and note the addition in the artifact.
-
-### 4. Finalize
-
-1. Make sure *Tools* lists every tool reused, added, or improved, and that `tools/manual-test/README.md` reflects reality.
-2. Make sure *Results* has an entry for every item in the Test Plan.
-3. Make sure *Open Issues* is either populated or explicitly empty (e.g. "None — all planned behaviors passed or were fixed inline.").
-4. Commit: `docs: manual-testing results for <topic>` — include the artifact and any final tool/readme updates. Inline-fix commits from step 3 stay as their own commits.
+1. Verify *Tools* reflects reality and `tools/manual-test/README.md` lists every tool.
+2. Verify *Results* has an entry for every item in Smoke Suite and Topic-Specific Tests.
+3. Verify *Plan Updates* is populated or explicitly empty.
+4. Verify *Open Issues* is populated or explicitly empty.
+5. Commit: `docs: manual-testing results for <topic>` — artifact + `PLAN.md` updates + final README edits. Inline-fix commits from step 4 stay as their own commits.
 
 ## Key Principles
 
-- **Test the thing, not the tests.** Automated tests already covered contracts in the test-write phase. This phase exercises the artifact as a user would.
-- **Accumulate tooling, don't discard it.** Tools under `tools/manual-test/` are a long-lived asset. Every run leaves that module stronger — generalize instead of fork, document every tool, and prefer extending over replacing.
-- **Fix inline when obvious, escalate when structural.** The escalation bar is architectural viability, complexity, or genuine ambiguity — not ordinary bugs.
-- **Upstream artifacts are the source of truth for scope.** Don't invent user behaviors that aren't implied by brainstorm/plan/reviews. Focus hints from the orchestrator narrow further.
-- **Do not edit `codemap.md`.** Record what's new in the artifact; cleanup will update the codemap using that as input.
-- **Artifact first, then execute.** Writing the Test Plan before running tests forces deliberate scope and gives the orchestrator something to audit if the skill stalls.
-- **Prefer existing skills and tools.** `agent-browser` and similar general-purpose skills cover a lot of ground — reach for them before building bespoke tooling.
+- **Persistent plan, cheap smoke.** The expensive part (enumerating journeys, building tools) is paid once. Every run amortizes it.
+- **Primary journeys only in `PLAN.md`.** The plan's value is focus. Topic-specific edge cases live in the per-topic artifact, not the persistent plan.
+- **Accumulate tooling, don't discard it.** Generalize instead of fork, document every tool, extend over replace.
+- **Fix inline when obvious, escalate when structural.** The bar is architectural viability, complexity, or ambiguity — not ordinary bugs.
+- **Upstream artifacts scope topic-specific tests.** Don't invent user behaviors beyond what brainstorm/plan/reviews imply. Focus hints narrow further.
+- **Do not edit `codemap.md`.** Record what changed in the artifact; cleanup updates the codemap using that as input.
+- **Artifact first, then execute.** Drafting before running forces deliberate scope and gives the orchestrator something to audit if the skill stalls.

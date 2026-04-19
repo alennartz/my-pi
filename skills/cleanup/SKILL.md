@@ -25,13 +25,13 @@ This skill always runs in a clean context with no conversational history from pr
 
 5. **Read `docs/reviews/<topic>-tests.md`** — the test review. If it doesn't exist, skip it.
 
-6. **Read `docs/manual-tests/<topic>.md`** — the manual-testing artifact. Pay attention to its *Tools* section (new or improved tools under `tools/manual-test/` that the codemap refresh must cover) and its *Results* / *Open Issues* sections (fix notes and unresolved items that may warrant decision records or user attention). If it doesn't exist, skip it.
+6. **Read `docs/manual-tests/<topic>.md`** — the manual-testing artifact. Pay attention to its *Tools* section (new or improved tools under `tools/manual-test/` that the codemap refresh must cover), its *Plan Updates* section (changes to the persistent `tools/manual-test/PLAN.md`), and its *Results* / *Open Issues* sections (fix notes and unresolved items that may warrant decision records or user attention). If it doesn't exist, skip it — manual-test may have been legitimately skipped by the orchestrator.
 
 ### 1. Spawn Background Agents
 
 Before starting DR extraction, spawn two subagents as a fan-out — no inter-agent channels needed:
 
-- **Codemap refresh agent** — give it the current codemap, the plan's `pre-implementation-commit` hash, the architecture's impacted modules list, and (if present) the *Tools* section of the manual-testing artifact so it can add or update the `tools/manual-test/` module. It runs the scoped codemap update: `git diff --name-only <hash>..HEAD` to find changed files, examines the changes, updates affected codemap sections, preserves everything else. Follows the codemap skill's scoped update operation.
+- **Codemap refresh agent** — give it the current codemap, the plan's `pre-implementation-commit` hash, the architecture's impacted modules list, and (if present) the *Tools* and *Plan Updates* sections of the manual-testing artifact so it can add or update the `tools/manual-test/` module. Note: `tools/manual-test/` and its contents (including `PLAN.md` and `README.md`) are **permanent** — they are the manual-testing module, not working artifacts. It runs the scoped codemap update: `git diff --name-only <hash>..HEAD` to find changed files, examines the changes, updates affected codemap sections, preserves everything else. Follows the codemap skill's scoped update operation.
 
 - **Documentation pass agent** — give it the plan summary and the diff scope. It sweeps user-facing documentation in the repo (READMEs, AGENTS.md, contributing guides, API docs — whatever exists, no hardcoded list). For each document, checks whether anything shipped in this workflow makes it stale: descriptions that no longer match reality, missing references to new features, outdated examples, structural descriptions that don't reflect current organization. Updates what needs updating, leaves accurate docs alone.
 
@@ -59,6 +59,8 @@ Remove the working artifacts for this topic:
 - `docs/reviews/<topic>.md`
 - `docs/reviews/<topic>-tests.md`
 - `docs/manual-tests/<topic>.md`
+
+Do **not** delete anything under `tools/manual-test/` — that's the persistent manual-testing module.
 
 Only delete files that actually exist.
 

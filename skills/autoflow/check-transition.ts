@@ -115,10 +115,10 @@ export function checkTransitionArtifact(phase: string, topic: string, cwd: strin
 				};
 			}
 			const content = readFileSync(manualTestPath, "utf-8");
-			if (!/^## Test Plan$/m.test(content)) {
+			if (!/^## Smoke Suite$/m.test(content)) {
 				return {
 					passed: false,
-					detail: `Manual test artifact exists but does not contain a ## Test Plan section.`,
+					detail: `Manual test artifact exists but does not contain a ## Smoke Suite section.`,
 				};
 			}
 			if (!/^## Results$/m.test(content)) {
@@ -129,7 +129,7 @@ export function checkTransitionArtifact(phase: string, topic: string, cwd: strin
 			}
 			return {
 				passed: true,
-				detail: `Manual test artifact exists with ## Test Plan and ## Results: docs/manual-tests/${topic}.md`,
+				detail: `Manual test artifact exists with ## Smoke Suite and ## Results: docs/manual-tests/${topic}.md`,
 			};
 		}
 

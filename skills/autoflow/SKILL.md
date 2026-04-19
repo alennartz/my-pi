@@ -154,11 +154,22 @@ After handle-review completes and passes validation, read `docs/reviews/<topic>.
   4. After that completes, spawn a new `handle-review` subagent.
   5. Repeat this evaluation.
 
-- Otherwise, proceed to manual-test.
+- Otherwise, evaluate the Manual-Test Skip Decision below.
+
+### Manual-Test Skip Decision
+
+After handle-review stabilizes, decide whether to run manual-test. Manual-testing maintains a persistent smoke suite at `tools/manual-test/PLAN.md` and reusable tools at `tools/manual-test/`, so the per-topic cost is usually small — the default is **run it, even for small changes**. A small change can still break a primary user journey; that's exactly what the smoke suite catches.
+
+Skip only in these narrow cases:
+
+- **Docs-only changes** — README, comments, decision records. Reading the diff is the test.
+- **Cannot be exercised in-environment** — production-only paths, CI-only logic, code requiring services the agent can't reach. This is a capability gap, not an optimization — surface it to the user explicitly rather than silently skipping.
+
+If uncertain, ask the user. When skipping, note the reason in your acknowledgment so it's visible in the transcript, and proceed directly to cleanup.
 
 ### Manual-Test Phase
 
-After handle-review stabilizes, spawn a `manual-test` subagent using the skill mapping above. The task string may include focus hints — areas of the change that warrant special human-style scrutiny, or areas to deliberately skip (e.g. unchanged surfaces).
+When not skipped, spawn a `manual-test` subagent using the skill mapping above. The task string may include focus hints — areas of the change that warrant special scrutiny, or areas to deliberately skip (e.g. unchanged surfaces not touched by this topic).
 
 If manual-testing escalates via `send(to='parent', expectResponse=true)`, relay the question to the user as with any other phase. If manual-testing finishes with *Open Issues* populated in `docs/manual-tests/<topic>.md`, surface that to the user before proceeding to cleanup — they may want to resolve the issues or loop back through earlier phases rather than close out.
 
