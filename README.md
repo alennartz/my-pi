@@ -56,9 +56,9 @@ See pi's [packages docs](https://github.com/badlogic/pi-mono) for the full insta
 
 ### Workflow pipeline
 
-A nine-phase development pipeline driven by the `/autoflow` command and a set of skills that hand off via artifacts in `docs/`:
+A ten-phase development pipeline driven by the `/autoflow` command and a set of skills that hand off via artifacts in `docs/`:
 
-`brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle-review → cleanup`
+`brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle-review → manual-test → cleanup`
 
 Brainstorm and architect are interactive; the remaining phases run autonomously via subagents, with the primary agent orchestrating transitions and validating artifacts between phases.
 
@@ -97,7 +97,7 @@ prompts/       prompt templates
 skills/        Markdown skills (YAML frontmatter + body)
 themes/        pi themes
 lib/           shared TS helpers used by extensions
-docs/          brainstorms, plans, reviews, decision records
+docs/          brainstorms, plans, reviews, manual tests, decision records
 codemap.md     full module map (read this for the deeper tour)
 ```
 
