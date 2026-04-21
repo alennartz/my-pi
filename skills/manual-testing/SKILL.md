@@ -106,9 +106,23 @@ Commit once drafted: `docs: manual-testing plan for <topic>`.
 
 For each journey in the Smoke Suite and each Topic-Specific Test:
 
-1. **Prefer reuse.** Existing tools under `tools/manual-test/` first; existing agent skills (`agent-browser`, etc.) second.
-2. **Prefer generalization over forking.** If a tool almost fits, extend or parameterize it. Record the improvement in the artifact's *Tools → Improved* list and update `tools/manual-test/README.md`.
-3. **Build new only for genuine gaps.** New tools go under `tools/manual-test/<tool-name>/` (or a single file if trivial). Requirements:
+1. **Prefer reuse.** In this order:
+   1. Existing tools under `tools/manual-test/`.
+   2. **Existing agent skills whose domain applies** (see the mandatory-reuse table below).
+   3. Generalize-over-fork if a tool almost fits.
+   4. Build new only for genuine gaps.
+2. **Mandatory reuse for the topic's own journey.** If the topic this run delivers a user-facing capability in a domain with a listed agent skill, you **must** attempt to drive that journey with the listed skill before declaring the journey has "no driver," "automation gap," or similar. Deferring the driver for the topic's own journey is not a judgment call available to this skill — if you believe the listed skill genuinely does not apply, `send(to='parent', expectResponse=true)` with the specific reason. Do not silently punt to *Open Issues*.
+
+   | Domain of the app-under-test | Mandatory-reuse skill | Minimum invocation to prove it works |
+   |---|---|---|
+   | Browser / PWA / web app | `agent-browser` | `agent-browser open <url>` → `agent-browser snapshot -i` → at least one `click`/`fill` against an element from the snapshot |
+   | CLI produced by the repo | Direct shell invocation via `bash` tool | Run the CLI with representative args; assert on stdout / exit code |
+   | HTTP API produced by the repo | `curl` / `fetch` via `bash` | Hit at least one endpoint; assert on status / body shape |
+
+   Journeys outside the topic's own scope may legitimately lack a driver on first-run bootstrap — record them in `PLAN.md` as "driver: TBD" and move on. This exemption does **not** apply to the topic's own journey.
+
+3. **Prefer generalization over forking.** If a tool almost fits, extend or parameterize it. Record the improvement in the artifact's *Tools → Improved* list and update `tools/manual-test/README.md`.
+4. **Build new only for genuine gaps.** New tools go under `tools/manual-test/<tool-name>/` (or a single file if trivial). Requirements:
    - Short README or top-of-file docstring: purpose, inputs, outputs.
    - Parameterized for reuse — no topic-specific hard-coding.
    - Registered in `tools/manual-test/README.md`.
