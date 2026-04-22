@@ -1,7 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseFrontmatter } from "@mariozechner/pi-coding-agent";
-import type { ContextRoot } from "./discovery.ts";
 
 export type OverlayFile = {
 	path: string;
@@ -17,7 +16,7 @@ export type OverlayDiagnostic = {
 
 const OVERLAY_PATTERN = /^AGENTS\..+\.md$/;
 
-export function loadOverlayFiles(root: ContextRoot): {
+export function loadOverlayFiles(dir: string): {
 	overlays: OverlayFile[];
 	diagnostics: OverlayDiagnostic[];
 } {
@@ -26,7 +25,7 @@ export function loadOverlayFiles(root: ContextRoot): {
 
 	let entries: string[];
 	try {
-		entries = readdirSync(root.dir);
+		entries = readdirSync(dir);
 	} catch {
 		return { overlays, diagnostics };
 	}
@@ -34,7 +33,7 @@ export function loadOverlayFiles(root: ContextRoot): {
 	const candidates = entries.filter((name) => OVERLAY_PATTERN.test(name)).sort();
 
 	for (const filename of candidates) {
-		const filePath = join(root.dir, filename);
+		const filePath = join(dir, filename);
 		let content: string;
 		try {
 			content = readFileSync(filePath, "utf-8");
@@ -79,7 +78,7 @@ export function loadOverlayFiles(root: ContextRoot): {
 
 		overlays.push({
 			path: filePath,
-			dir: root.dir,
+			dir,
 			body,
 			models,
 		});

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { discoverContextRoots } from "./discovery.ts";
 
@@ -24,86 +24,71 @@ describe("discoverContextRoots", () => {
 		tempDirs.length = 0;
 	});
 
-	it("includes global root first when agentDir has AGENTS.md", () => {
+	it("places the global agent dir first", () => {
 		const agentDir = createTemp();
 		const cwd = createTemp();
-		writeFileSync(join(agentDir, "AGENTS.md"), "global");
-		writeFileSync(join(cwd, "AGENTS.md"), "project");
 
 		const roots = discoverContextRoots(cwd, agentDir);
-		expect(roots[0]).toEqual({
-			dir: agentDir,
-			baseFilePath: join(agentDir, "AGENTS.md"),
-			scope: "global",
-		});
-		expect(roots.length).toBe(2);
-		expect(roots[1].scope).toBe("ancestor");
+		expect(roots[0]).toBe(resolve(agentDir));
 	});
 
-	it("prefers AGENTS.md over CLAUDE.md when both exist", () => {
+	it("does not require an AGENTS.md or CLAUDE.md anchor", () => {
+		// No context files anywhere — overlay-only directories must still be roots.
 		const agentDir = createTemp();
-		writeFileSync(join(agentDir, "AGENTS.md"), "agents");
-		writeFileSync(join(agentDir, "CLAUDE.md"), "claude");
-
 		const cwd = createTemp();
-		const roots = discoverContextRoots(cwd, agentDir);
-		expect(roots[0].baseFilePath).toBe(join(agentDir, "AGENTS.md"));
-	});
-
-	it("falls back to CLAUDE.md when AGENTS.md is absent", () => {
-		const agentDir = createTemp();
-		writeFileSync(join(agentDir, "CLAUDE.md"), "claude");
-
-		const cwd = createTemp();
-		const roots = discoverContextRoots(cwd, agentDir);
-		expect(roots[0].baseFilePath).toBe(join(agentDir, "CLAUDE.md"));
-	});
-
-	it("skips directories without context files", () => {
-		const agentDir = createTemp(); // no files
-		const cwd = createTemp(); // no files
 
 		const roots = discoverContextRoots(cwd, agentDir);
-		expect(roots.length).toBe(0);
+		expect(roots).toContain(resolve(agentDir));
+		expect(roots).toContain(resolve(cwd));
 	});
 
-	it("returns ancestors in farthest → nearest order", () => {
+	it("walks ancestors from filesystem root down to cwd", () => {
 		const base = createTemp();
 		const mid = join(base, "a", "b");
 		const deep = join(mid, "c");
-		mkdirSync(mid, { recursive: true });
 		mkdirSync(deep, { recursive: true });
-		writeFileSync(join(base, "AGENTS.md"), "root");
-		writeFileSync(join(mid, "AGENTS.md"), "mid");
-		writeFileSync(join(deep, "AGENTS.md"), "deep");
 
-		const agentDir = createTemp(); // empty, no global root
+		const agentDir = createTemp();
 		const roots = discoverContextRoots(deep, agentDir);
 
-		expect(roots.length).toBe(3);
-		expect(roots[0].dir).toBe(base);
-		expect(roots[1].dir).toBe(mid);
-		expect(roots[2].dir).toBe(deep);
+		// Global agent dir is first; then ancestors in farthest → nearest order
+		// up through cwd. Find the indices of our known dirs and assert order.
+		const iBase = roots.indexOf(resolve(base));
+		const iMid = roots.indexOf(resolve(mid));
+		const iDeep = roots.indexOf(resolve(deep));
+
+		expect(iBase).toBeGreaterThan(-1);
+		expect(iMid).toBeGreaterThan(-1);
+		expect(iDeep).toBeGreaterThan(-1);
+		expect(iBase).toBeLessThan(iMid);
+		expect(iMid).toBeLessThan(iDeep);
 	});
 
-	it("includes cwd itself when it has a context file", () => {
+	it("includes cwd itself as a root", () => {
 		const agentDir = createTemp();
 		const cwd = createTemp();
-		writeFileSync(join(cwd, "AGENTS.md"), "project");
 
 		const roots = discoverContextRoots(cwd, agentDir);
-		expect(roots.some((r) => r.dir === cwd)).toBe(true);
+		expect(roots).toContain(resolve(cwd));
 	});
 
 	it("deduplicates when agentDir is an ancestor of cwd", () => {
 		const agentDir = createTemp();
 		const cwd = join(agentDir, "sub");
 		mkdirSync(cwd, { recursive: true });
-		writeFileSync(join(agentDir, "AGENTS.md"), "shared");
 
 		const roots = discoverContextRoots(cwd, agentDir);
-		// agentDir should appear once as global, not again as ancestor
-		expect(roots.filter((r) => r.dir === agentDir).length).toBe(1);
-		expect(roots[0].scope).toBe("global");
+		const matches = roots.filter((r) => r === resolve(agentDir));
+		expect(matches.length).toBe(1);
+		// Still placed in the "global" slot (first).
+		expect(roots[0]).toBe(resolve(agentDir));
+	});
+
+	it("walks up to the filesystem root", () => {
+		const agentDir = createTemp();
+		const cwd = createTemp();
+
+		const roots = discoverContextRoots(cwd, agentDir);
+		expect(roots).toContain(resolve("/"));
 	});
 });

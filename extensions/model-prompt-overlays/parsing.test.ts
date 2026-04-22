@@ -3,7 +3,6 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadOverlayFiles } from "./parsing.ts";
-import type { ContextRoot } from "./discovery.ts";
 
 function makeTempDir(): string {
 	return mkdtempSync(join(tmpdir(), "overlay-parsing-"));
@@ -18,10 +17,6 @@ describe("loadOverlayFiles", () => {
 		return dir;
 	}
 
-	function makeRoot(dir: string): ContextRoot {
-		return { dir, baseFilePath: join(dir, "AGENTS.md"), scope: "ancestor" };
-	}
-
 	afterEach(() => {
 		for (const dir of tempDirs) {
 			rmSync(dir, { recursive: true, force: true });
@@ -34,7 +29,7 @@ describe("loadOverlayFiles", () => {
 		writeFileSync(join(dir, "AGENTS.md"), "base");
 		writeFileSync(join(dir, "AGENTS.claude.md"), "---\nmodels: claude-*\n---\nClaude-specific guidance");
 
-		const { overlays, diagnostics } = loadOverlayFiles(makeRoot(dir));
+		const { overlays, diagnostics } = loadOverlayFiles(dir);
 		expect(diagnostics).toEqual([]);
 		expect(overlays.length).toBe(1);
 		expect(overlays[0].models).toEqual(["claude-*"]);
@@ -50,7 +45,7 @@ describe("loadOverlayFiles", () => {
 			'---\nmodels:\n  - "claude-*"\n  - "gpt-*"\n---\nMulti-model guidance',
 		);
 
-		const { overlays, diagnostics } = loadOverlayFiles(makeRoot(dir));
+		const { overlays, diagnostics } = loadOverlayFiles(dir);
 		expect(diagnostics).toEqual([]);
 		expect(overlays[0].models).toEqual(["claude-*", "gpt-*"]);
 	});
@@ -59,7 +54,7 @@ describe("loadOverlayFiles", () => {
 		const dir = createTemp();
 		writeFileSync(join(dir, "AGENTS.bad.md"), "---\ntitle: nope\n---\nBody");
 
-		const { overlays, diagnostics } = loadOverlayFiles(makeRoot(dir));
+		const { overlays, diagnostics } = loadOverlayFiles(dir);
 		expect(overlays.length).toBe(0);
 		expect(diagnostics.length).toBe(1);
 		expect(diagnostics[0].message).toContain("Missing 'models'");
@@ -69,7 +64,7 @@ describe("loadOverlayFiles", () => {
 		const dir = createTemp();
 		writeFileSync(join(dir, "AGENTS.empty.md"), "---\nmodels: []\n---\nBody");
 
-		const { overlays, diagnostics } = loadOverlayFiles(makeRoot(dir));
+		const { overlays, diagnostics } = loadOverlayFiles(dir);
 		expect(overlays.length).toBe(0);
 		expect(diagnostics.length).toBe(1);
 		expect(diagnostics[0].message).toContain("Empty 'models'");
@@ -79,7 +74,7 @@ describe("loadOverlayFiles", () => {
 		const dir = createTemp();
 		writeFileSync(join(dir, "AGENTS.numeric.md"), "---\nmodels: 42\n---\nBody");
 
-		const { overlays, diagnostics } = loadOverlayFiles(makeRoot(dir));
+		const { overlays, diagnostics } = loadOverlayFiles(dir);
 		expect(overlays.length).toBe(0);
 		expect(diagnostics.length).toBe(1);
 		expect(diagnostics[0].message).toContain("Invalid 'models'");
@@ -89,7 +84,7 @@ describe("loadOverlayFiles", () => {
 		const dir = createTemp();
 		writeFileSync(join(dir, "AGENTS.md"), "base file");
 
-		const { overlays } = loadOverlayFiles(makeRoot(dir));
+		const { overlays } = loadOverlayFiles(dir);
 		expect(overlays.length).toBe(0);
 	});
 
@@ -99,7 +94,7 @@ describe("loadOverlayFiles", () => {
 		writeFileSync(join(dir, "CLAUDE.md"), "claude");
 		writeFileSync(join(dir, "agents.foo.md"), "lowercase");
 
-		const { overlays } = loadOverlayFiles(makeRoot(dir));
+		const { overlays } = loadOverlayFiles(dir);
 		expect(overlays.length).toBe(0);
 	});
 
@@ -110,7 +105,7 @@ describe("loadOverlayFiles", () => {
 			"---\nmodels: test-*\n---\nLine one\n\nLine two\n",
 		);
 
-		const { overlays } = loadOverlayFiles(makeRoot(dir));
+		const { overlays } = loadOverlayFiles(dir);
 		expect(overlays[0].body).toContain("Line one");
 		expect(overlays[0].body).toContain("Line two");
 	});
@@ -119,7 +114,7 @@ describe("loadOverlayFiles", () => {
 		const dir = createTemp();
 		writeFileSync(join(dir, "AGENTS.bad-yaml.md"), "---\nmodels: [broken\n  invalid yaml\n---\nBody");
 
-		const { overlays, diagnostics } = loadOverlayFiles(makeRoot(dir));
+		const { overlays, diagnostics } = loadOverlayFiles(dir);
 		expect(overlays.length).toBe(0);
 		expect(diagnostics.length).toBe(1);
 		expect(diagnostics[0].message).toContain("Malformed frontmatter");
@@ -130,7 +125,7 @@ describe("loadOverlayFiles", () => {
 		writeFileSync(join(dir, "AGENTS.a-bad.md"), "---\nmodels: [broken\n---\nBad");
 		writeFileSync(join(dir, "AGENTS.b-good.md"), "---\nmodels: claude-*\n---\nGood overlay");
 
-		const { overlays, diagnostics } = loadOverlayFiles(makeRoot(dir));
+		const { overlays, diagnostics } = loadOverlayFiles(dir);
 		expect(diagnostics.length).toBe(1);
 		expect(diagnostics[0].message).toContain("Malformed frontmatter");
 		expect(overlays.length).toBe(1);
@@ -142,7 +137,7 @@ describe("loadOverlayFiles", () => {
 		writeFileSync(join(dir, "AGENTS.z-model.md"), "---\nmodels: z-*\n---\nZ");
 		writeFileSync(join(dir, "AGENTS.a-model.md"), "---\nmodels: a-*\n---\nA");
 
-		const { overlays } = loadOverlayFiles(makeRoot(dir));
+		const { overlays } = loadOverlayFiles(dir);
 		expect(overlays[0].path).toContain("AGENTS.a-model.md");
 		expect(overlays[1].path).toContain("AGENTS.z-model.md");
 	});

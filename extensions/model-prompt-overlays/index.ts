@@ -19,8 +19,7 @@ export default function modelPromptOverlays(pi: ExtensionAPI) {
 		const allMatched: IndexedMatchedOverlay[] = [];
 
 		for (let rootIndex = 0; rootIndex < roots.length; rootIndex++) {
-			const root = roots[rootIndex];
-			const { overlays, diagnostics } = loadOverlayFiles(root);
+			const { overlays, diagnostics } = loadOverlayFiles(roots[rootIndex]);
 
 			for (const diag of diagnostics) {
 				if (tracker.shouldNotify(diag.path, diag.message)) {

@@ -1,51 +1,47 @@
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
-export type ContextRoot = {
-	dir: string;
-	baseFilePath: string;
-	scope: "global" | "ancestor";
-};
+/**
+ * Discover directories where model-prompt overlays may live.
+ *
+ * Mirrors pi's own context-file walk (see `loadProjectContextFiles` in
+ * `@mariozechner/pi-coding-agent`): global agent dir first, then ancestor
+ * directories from filesystem root down to cwd. Unlike context-file loading,
+ * this walk does not require an AGENTS.md / CLAUDE.md anchor — overlays are
+ * discovered on their own.
+ *
+ * The returned list is ordered farthest → nearest so overlay precedence can
+ * be decided by index.
+ */
+export function discoverContextRoots(cwd: string, agentDir: string): string[] {
+	const roots: string[] = [];
+	const seen = new Set<string>();
 
-const CANDIDATES = ["AGENTS.md", "CLAUDE.md"] as const;
+	const addRoot = (dir: string, position: "append" | "unshift") => {
+		if (seen.has(dir)) return;
+		seen.add(dir);
+		if (position === "append") roots.push(dir);
+		else roots.unshift(dir);
+	};
 
-function findBaseFile(dir: string): string | undefined {
-	for (const filename of CANDIDATES) {
-		const filePath = join(dir, filename);
-		if (existsSync(filePath)) return filePath;
-	}
-	return undefined;
-}
+	// 1. Global agent dir always comes first.
+	addRoot(resolve(agentDir), "append");
 
-export function discoverContextRoots(cwd: string, agentDir: string): ContextRoot[] {
-	const roots: ContextRoot[] = [];
-	const seenPaths = new Set<string>();
-
-	// 1. Global agent dir
-	agentDir = resolve(agentDir);
-	const globalBase = findBaseFile(agentDir);
-	if (globalBase) {
-		roots.push({ dir: agentDir, baseFilePath: globalBase, scope: "global" });
-		seenPaths.add(globalBase);
-	}
-
-	// 2. Ancestor walk: filesystem root up to cwd, farthest → nearest
-	const ancestorRoots: ContextRoot[] = [];
+	// 2. Ancestor walk: filesystem root → cwd (farthest first).
+	const ancestors: string[] = [];
 	let currentDir = resolve(cwd);
 	const fsRoot = resolve("/");
 
 	while (true) {
-		const base = findBaseFile(currentDir);
-		if (base && !seenPaths.has(base)) {
-			ancestorRoots.unshift({ dir: currentDir, baseFilePath: base, scope: "ancestor" });
-			seenPaths.add(base);
-		}
+		ancestors.unshift(currentDir);
 		if (currentDir === fsRoot) break;
 		const parent = resolve(currentDir, "..");
 		if (parent === currentDir) break;
 		currentDir = parent;
 	}
 
-	roots.push(...ancestorRoots);
+	for (const dir of ancestors) {
+		addRoot(dir, "append");
+	}
+
 	return roots;
 }
