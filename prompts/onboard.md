@@ -37,9 +37,23 @@ This package recommends a behavioral convention — a rule that shapes how the a
 >
 > This applies everywhere: workflow skill transitions, debugging fix proposals, mid-task course changes, or any moment where you shift from "building understanding" to "doing things."
 
-**Would you like me to install this into a Claude-specific overlay file?** I can create or update either:
+A second convention targets Opus 4.7 specifically, which tends toward verbosity. Install it in an `AGENTS.claude-opus-4-7.md` overlay so it stacks on top of the Claude-wide overlay.
 
-1. **Project-level** — your project's `AGENTS.claude.md` (applies to Claude models in this repo)
-2. **Global** — `~/.pi/agent/AGENTS.claude.md` (applies to Claude models in all sessions)
+> ---
+> models: claude-opus-4-7
+> ---
+>
+> ## Concision — Elements of Style
+>
+> Channel *The Elements of Style*: omit needless words, prefer the specific to the general, cut throat-clearing and recaps. Short sentences. Active voice. No preamble like "Great question" or "Here's what I'll do"; no closing summaries unless asked.
+>
+> ## Chunk Large Presentations
+>
+> When you have a lot to present — a plan with many parts, a long set of findings, several tradeoffs — don't dump it all at once. Break it into logical sections and present one at a time, waiting for the user before moving on. Each chunk should stand on its own and invite a response.
+
+**Would you like me to install these into Claude-specific overlay files?** For each convention I can create or update either:
+
+1. **Project-level** — your project's `AGENTS.claude*.md` (applies in this repo)
+2. **Global** — `~/.pi/agent/AGENTS.claude*.md` (applies in all sessions)
 
 Which would you prefer?
