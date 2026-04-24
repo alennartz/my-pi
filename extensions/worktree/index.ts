@@ -282,7 +282,13 @@ function createDependencies(
 			},
 			async create(cwd: string) {
 				const SessionManager = loadSessionManager();
-				const sessionFile = SessionManager.create(cwd, sessionDir).getSessionFile();
+				const manager = SessionManager.create(cwd, sessionDir);
+				// Force the session file to exist on disk so the persisted header (which
+				// records `cwd`) is what `SessionManager.open` will read when the runtime
+				// switches into it. Without this, the new session inherits the runtime's
+				// current cwd (the original process cwd / a now-removed worktree).
+				manager.appendCustomEntry("worktree:bootstrap", { cwd });
+				const sessionFile = manager.getSessionFile();
 				if (!sessionFile) {
 					throw new Error(`Failed to create a persisted session for ${cwd}`);
 				}
