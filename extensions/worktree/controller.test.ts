@@ -39,6 +39,7 @@ function createDependencies() {
 			continueRecent: vi.fn(async () => "/sessions/worktree-recent.jsonl"),
 			create: vi.fn(async () => "/sessions/new.jsonl"),
 			forkFrom: vi.fn(async () => "/sessions/forked.jsonl"),
+			discard: vi.fn(async () => undefined),
 		},
 		agent: {
 			sendMergeInstruction: vi.fn(async () => undefined),
@@ -265,13 +266,13 @@ describe("Worktree controller", () => {
 			expect(dependencies.git.deleteBranch).not.toHaveBeenCalled();
 		});
 
-		it("verifies the merge, removes the worktree, force-deletes the branch, and switches to a fresh main session when cleanup finishes cleanly", async () => {
+		it("verifies the merge, removes the worktree, force-deletes the branch, forks the current session into the main worktree path, and discards the source session file when cleanup finishes cleanly", async () => {
 			const { dependencies, mainRepo, currentWorktree } = createDependencies();
 			dependencies.env.cwd = currentWorktree.path;
 			vi.mocked(dependencies.git.getCurrentBranch).mockResolvedValueOnce(currentWorktree.branch);
 			vi.mocked(dependencies.git.listWorktrees).mockResolvedValue([mainRepo, currentWorktree]);
 			vi.mocked(dependencies.git.getStatusPorcelain).mockResolvedValueOnce("");
-			vi.mocked(dependencies.sessions.create).mockResolvedValueOnce("/sessions/back-in-main.jsonl");
+			vi.mocked(dependencies.sessions.forkFrom).mockResolvedValueOnce("/sessions/back-in-main.jsonl");
 
 			const controller = createWorktreeController(dependencies);
 			await controller.cleanup({ mergeTarget: "release/1.2" });
@@ -290,8 +291,13 @@ describe("Worktree controller", () => {
 				branchName: currentWorktree.branch,
 				force: true,
 			});
-			expect(dependencies.sessions.create).toHaveBeenCalledWith(mainRepo.path);
+			expect(dependencies.sessions.forkFrom).toHaveBeenCalledWith(
+				"/sessions/current.jsonl",
+				mainRepo.path,
+			);
+			expect(dependencies.sessions.create).not.toHaveBeenCalled();
 			expect(dependencies.runtime.switchSession).toHaveBeenCalledWith("/sessions/back-in-main.jsonl");
+			expect(dependencies.sessions.discard).toHaveBeenCalledWith("/sessions/current.jsonl");
 		});
 
 		it("falls back to the configured fallback when the repo has no detectable default branch and the user did not provide one", async () => {

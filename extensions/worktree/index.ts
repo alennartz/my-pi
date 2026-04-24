@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { createRequire, globalPaths } from "node:module";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, join } from "node:path";
@@ -301,6 +302,12 @@ function createDependencies(
 					throw new Error(`Failed to fork a persisted session into ${targetCwd}`);
 				}
 				return sessionFile;
+			},
+			async discard(sessionFile: string) {
+				// Best-effort: the source session is fully duplicated by `forkFrom`,
+				// so deleting it just removes the redundant copy. Other historical
+				// session files in the same directory are intentionally left behind.
+				await rm(sessionFile, { force: true });
 			},
 		},
 		agent: {

@@ -94,6 +94,13 @@ export interface WorktreeSessionGateway {
 	continueRecent(cwd: string): Promise<string | undefined>;
 	create(cwd: string): Promise<string>;
 	forkFrom(sourceSessionFile: string, targetCwd: string): Promise<string>;
+	/**
+	 * Delete a session file from disk. Used by cleanup to drop the source
+	 * session after forking — the fork copies all entries into the new file,
+	 * so the source is fully redundant. Best-effort; missing files are not
+	 * an error. Does not touch the parent directory.
+	 */
+	discard(sessionFile: string): Promise<void>;
 }
 
 export interface WorktreeAgentGateway {
