@@ -1,6 +1,5 @@
 import { join } from "node:path";
 import {
-	DEFAULT_MERGE_TARGET,
 	WORKTREE_ROOT_DIRECTORY_NAME,
 	type WorktreeAutocompleteItem,
 	type WorktreeCleanupRequest,
@@ -31,11 +30,17 @@ export function resolveWorktreePath(homeDirectory: string, repoName: string, bra
 	return join(homeDirectory, WORKTREE_ROOT_DIRECTORY_NAME, repoName, branchName);
 }
 
-export function buildCleanupMergePrompt(branchName: string, mergeTarget: string): string {
+export function buildCleanupMergePrompt(
+	branchName: string,
+	mergeTarget: string,
+	mainWorktreePath: string,
+): string {
 	return [
-		`Merge the current branch \`${branchName}\` into \`${mergeTarget}\`.`,
-		"Use bash tool calls in the current worktree to perform the merge.",
-		"If conflicts appear, resolve them naturally in the session before finishing.",
+		`Merge the branch \`${branchName}\` into \`${mergeTarget}\`.`,
+		`The merge must happen in the main worktree at \`${mainWorktreePath}\` (the current worktree has \`${branchName}\` checked out, so it cannot also have \`${mergeTarget}\` checked out).`,
+		`Run git from there using \`git -C ${mainWorktreePath} ...\` (e.g. \`git -C ${mainWorktreePath} checkout ${mergeTarget} && git -C ${mainWorktreePath} merge --no-ff ${branchName}\`).`,
+		"Use bash tool calls to perform the merge. If conflicts appear, resolve them naturally in the session before finishing.",
+		"Do not delete the worktree or branch — the /worktree cleanup command will do that after verifying the merge landed.",
 	].join("\n");
 }
 
@@ -81,7 +86,9 @@ export function parseWorktreeCommand(args: string): ParsedWorktreeCommand {
 			ok: true,
 			command: {
 				kind: "cleanup",
-				request: { mergeTarget: rest[0] ?? DEFAULT_MERGE_TARGET },
+				// Leave undefined when not supplied so the controller can resolve
+				// the repo's actual default branch at runtime.
+				request: { mergeTarget: rest[0] },
 			},
 		};
 	}

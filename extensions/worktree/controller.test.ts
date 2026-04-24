@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import type { WorktreeDependencies, WorktreeInfo } from "./contracts.ts";
-import { DEFAULT_MERGE_TARGET } from "./contracts.ts";
 import { buildCleanupMergePrompt, resolveWorktreePath } from "./command-surface.ts";
 import { createWorktreeController } from "./controller.ts";
 
@@ -32,6 +31,8 @@ function createDependencies() {
 			addWorktree: vi.fn(async () => undefined),
 			removeWorktree: vi.fn(async () => undefined),
 			deleteBranch: vi.fn(async () => undefined),
+			isAncestor: vi.fn(async () => true),
+			detectDefaultBranch: vi.fn(async () => "main"),
 		},
 		sessions: {
 			continueRecent: vi.fn(async () => "/sessions/worktree-recent.jsonl"),
@@ -45,7 +46,6 @@ function createDependencies() {
 			chooseContextTransfer: vi.fn(async () => "fresh-session"),
 			choosePendingChanges: vi.fn(async () => "leave-changes"),
 			notify: vi.fn(),
-			waitForIdle: vi.fn(async () => undefined),
 			switchSession: vi.fn(async () => ({ cancelled: false })),
 		},
 	};
@@ -181,7 +181,7 @@ describe("Worktree controller", () => {
 	});
 
 	describe("cleanup", () => {
-		it("asks the agent to merge into main, waits for idle, and returns control when the worktree stays dirty after merge", async () => {
+		it("asks the agent to merge into the resolved default branch and stops without destruction when the worktree stays dirty after merge", async () => {
 			const { dependencies, mainRepo, currentWorktree } = createDependencies();
 			dependencies.env.cwd = currentWorktree.path;
 			vi.mocked(dependencies.git.getCurrentBranch).mockResolvedValueOnce(currentWorktree.branch);
@@ -189,28 +189,55 @@ describe("Worktree controller", () => {
 			vi.mocked(dependencies.git.getStatusPorcelain).mockResolvedValueOnce("UU extensions/worktree/index.ts\n");
 
 			const controller = createWorktreeController(dependencies);
-			await controller.cleanup({ mergeTarget: DEFAULT_MERGE_TARGET });
+			await controller.cleanup({});
 
+			expect(dependencies.git.detectDefaultBranch).toHaveBeenCalledWith(mainRepo.path);
 			expect(dependencies.agent.sendMergeInstruction).toHaveBeenCalledWith(
-				buildCleanupMergePrompt(currentWorktree.branch, DEFAULT_MERGE_TARGET),
+				buildCleanupMergePrompt(currentWorktree.branch, "main", mainRepo.path),
 			);
-			expect(dependencies.runtime.waitForIdle).toHaveBeenCalled();
+			expect(dependencies.runtime.notify).toHaveBeenCalled();
+			expect(dependencies.git.isAncestor).not.toHaveBeenCalled();
+			expect(dependencies.git.removeWorktree).not.toHaveBeenCalled();
+			expect(dependencies.git.deleteBranch).not.toHaveBeenCalled();
+		});
+
+		it("aborts cleanup without removing anything when the branch is not actually merged into the target", async () => {
+			const { dependencies, mainRepo, currentWorktree } = createDependencies();
+			dependencies.env.cwd = currentWorktree.path;
+			vi.mocked(dependencies.git.getCurrentBranch).mockResolvedValueOnce(currentWorktree.branch);
+			vi.mocked(dependencies.git.listWorktrees).mockResolvedValueOnce([mainRepo, currentWorktree]);
+			vi.mocked(dependencies.git.getStatusPorcelain).mockResolvedValueOnce("");
+			vi.mocked(dependencies.git.isAncestor).mockResolvedValueOnce(false);
+
+			const controller = createWorktreeController(dependencies);
+			await controller.cleanup({ mergeTarget: "release/1.2" });
+
+			expect(dependencies.git.isAncestor).toHaveBeenCalledWith({
+				cwd: mainRepo.path,
+				ancestor: currentWorktree.branch,
+				descendant: "release/1.2",
+			});
 			expect(dependencies.runtime.notify).toHaveBeenCalled();
 			expect(dependencies.git.removeWorktree).not.toHaveBeenCalled();
 			expect(dependencies.git.deleteBranch).not.toHaveBeenCalled();
 		});
 
-		it("removes the worktree, deletes the branch with -d semantics, and switches to a fresh session in the main repo when cleanup finishes cleanly", async () => {
+		it("verifies the merge, removes the worktree, force-deletes the branch, and switches to a fresh main session when cleanup finishes cleanly", async () => {
 			const { dependencies, mainRepo, currentWorktree } = createDependencies();
 			dependencies.env.cwd = currentWorktree.path;
 			vi.mocked(dependencies.git.getCurrentBranch).mockResolvedValueOnce(currentWorktree.branch);
-			vi.mocked(dependencies.git.listWorktrees).mockResolvedValueOnce([mainRepo, currentWorktree]);
+			vi.mocked(dependencies.git.listWorktrees).mockResolvedValue([mainRepo, currentWorktree]);
 			vi.mocked(dependencies.git.getStatusPorcelain).mockResolvedValueOnce("");
 			vi.mocked(dependencies.sessions.create).mockResolvedValueOnce("/sessions/back-in-main.jsonl");
 
 			const controller = createWorktreeController(dependencies);
 			await controller.cleanup({ mergeTarget: "release/1.2" });
 
+			expect(dependencies.git.isAncestor).toHaveBeenCalledWith({
+				cwd: mainRepo.path,
+				ancestor: currentWorktree.branch,
+				descendant: "release/1.2",
+			});
 			expect(dependencies.git.removeWorktree).toHaveBeenCalledWith({
 				cwd: mainRepo.path,
 				worktreePath: currentWorktree.path,
@@ -218,10 +245,26 @@ describe("Worktree controller", () => {
 			expect(dependencies.git.deleteBranch).toHaveBeenCalledWith({
 				cwd: mainRepo.path,
 				branchName: currentWorktree.branch,
-				force: false,
+				force: true,
 			});
 			expect(dependencies.sessions.create).toHaveBeenCalledWith(mainRepo.path);
 			expect(dependencies.runtime.switchSession).toHaveBeenCalledWith("/sessions/back-in-main.jsonl");
+		});
+
+		it("falls back to the configured fallback when the repo has no detectable default branch and the user did not provide one", async () => {
+			const { dependencies, mainRepo, currentWorktree } = createDependencies();
+			dependencies.env.cwd = currentWorktree.path;
+			vi.mocked(dependencies.git.getCurrentBranch).mockResolvedValueOnce(currentWorktree.branch);
+			vi.mocked(dependencies.git.listWorktrees).mockResolvedValue([mainRepo, currentWorktree]);
+			vi.mocked(dependencies.git.getStatusPorcelain).mockResolvedValueOnce("");
+			vi.mocked(dependencies.git.detectDefaultBranch).mockResolvedValueOnce(undefined);
+
+			const controller = createWorktreeController(dependencies);
+			await controller.cleanup({});
+
+			expect(dependencies.agent.sendMergeInstruction).toHaveBeenCalledWith(
+				buildCleanupMergePrompt(currentWorktree.branch, "main", mainRepo.path),
+			);
 		});
 	});
 });

@@ -34,6 +34,10 @@ function registerExtension() {
 			registeredName = name;
 			registeredCommand = command;
 		},
+		// The extension subscribes to agent_start / agent_end at init to
+		// implement reliable wait-for-turn-completion.
+		on: vi.fn(),
+		sendUserMessage: vi.fn(),
 	} as never);
 
 	if (!registeredCommand || !registeredName) {

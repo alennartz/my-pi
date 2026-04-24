@@ -200,10 +200,54 @@ function createGitClient() {
 		async deleteBranch(input: { cwd: string; branchName: string; force: boolean }) {
 			runGitVoid(["branch", input.force ? "-D" : "-d", input.branchName], input.cwd);
 		},
+		async isAncestor(input: { cwd: string; ancestor: string; descendant: string }) {
+			try {
+				execSync(
+					`git merge-base --is-ancestor ${shellQuote(input.ancestor)} ${shellQuote(input.descendant)}`,
+					{ cwd: input.cwd, encoding: "utf8", stdio: ["ignore", "ignore", "ignore"] },
+				);
+				return true;
+			} catch {
+				// Exit 1 = not an ancestor; any other failure (bad ref, etc.) is
+				// also "not provably merged", which is the safe answer here.
+				return false;
+			}
+		},
+		async detectDefaultBranch(cwd: string) {
+			// 1. origin/HEAD if a remote default is configured.
+			try {
+				const symbolic = runGit(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd);
+				if (symbolic.startsWith("origin/")) {
+					const name = symbolic.slice("origin/".length);
+					if (name) return name;
+				}
+			} catch {
+				// no origin/HEAD; fall through
+			}
+			// 2. init.defaultBranch from git config.
+			try {
+				const configured = runGit(["config", "--get", "init.defaultBranch"], cwd);
+				if (configured) {
+					const exists = listGitBranches(cwd).includes(configured);
+					if (exists) return configured;
+				}
+			} catch {
+				// no config; fall through
+			}
+			// 3. probe common names locally.
+			const branches = listGitBranches(cwd);
+			for (const candidate of ["main", "master", "trunk", "develop"]) {
+				if (branches.includes(candidate)) return candidate;
+			}
+			return undefined;
+		},
 	};
 }
 
-function createDependencies(pi: ExtensionAPI, ctx: ExtensionCommandContext): WorktreeDependencies {
+function createDependencies(
+	ctx: ExtensionCommandContext,
+	sendUserMessageAndAwaitTurn: (message: string) => Promise<void>,
+): WorktreeDependencies {
 	const commandCwd = ctx.cwd ?? process.cwd();
 	const repoRoot = resolveRepoRoot(commandCwd);
 	const sessionDir = ctx.sessionManager?.getSessionDir?.();
@@ -241,20 +285,13 @@ function createDependencies(pi: ExtensionAPI, ctx: ExtensionCommandContext): Wor
 			},
 		},
 		agent: {
-			async sendMergeInstruction(message: string) {
-				pi.sendUserMessage(message);
-			},
+			sendMergeInstruction: sendUserMessageAndAwaitTurn,
 		},
 		runtime: {
 			chooseContextTransfer: () => chooseContextTransfer(ctx),
 			choosePendingChanges: () => choosePendingChanges(ctx),
 			notify(message, level) {
 				ctx.ui.notify(message, level);
-			},
-			async waitForIdle() {
-				if (typeof ctx.waitForIdle === "function") {
-					await ctx.waitForIdle();
-				}
 			},
 			async switchSession(sessionFile: string) {
 				if (typeof ctx.switchSession === "function") {
@@ -271,6 +308,54 @@ function toAutocompleteItems(items: ReturnType<typeof getWorktreeArgumentComplet
 }
 
 export default function worktreeExtension(pi: ExtensionAPI) {
+	// --- Reliable wait-for-agent-turn ---
+	//
+	// `pi.sendUserMessage` is fire-and-forget from the extension's perspective:
+	// the runner wraps the underlying async send as `(...).catch(...)` without
+	// returning the promise. Calling any "is the agent idle?" probe immediately
+	// after therefore races — the queued message may not yet have transitioned
+	// the agent into a streaming state.
+	//
+	// Instead we observe `agent_start` / `agent_end` events. We pre-arm the
+	// start barrier BEFORE sending so the start event can't fire and be missed,
+	// then wait for the matching end event. This works as long as the command
+	// handler runs while the agent is idle (which is when slash commands fire).
+	let agentRunning = false;
+	const startWaiters: Array<() => void> = [];
+	const endWaiters: Array<() => void> = [];
+
+	pi.on("agent_start", () => {
+		agentRunning = true;
+		const pending = startWaiters.splice(0);
+		for (const resolve of pending) resolve();
+	});
+	pi.on("agent_end", () => {
+		agentRunning = false;
+		const pending = endWaiters.splice(0);
+		for (const resolve of pending) resolve();
+	});
+
+	async function sendUserMessageAndAwaitTurn(message: string): Promise<void> {
+		// This helper assumes the caller is running OUTSIDE an agent turn — i.e.
+		// from a slash-command handler, which pi dispatches before kicking off
+		// `agent.prompt`. If we're somehow already inside a turn (e.g. invoked
+		// from a tool call), waiting for `agent_end` would deadlock: the current
+		// turn cannot end until the tool returns, and the tool is us. Fail loud
+		// rather than hang.
+		if (agentRunning) {
+			throw new Error(
+				"worktree: sendUserMessageAndAwaitTurn called while an agent turn is in flight. " +
+					"This helper must run from a slash-command handler, not from inside a tool call.",
+			);
+		}
+		// Arm BOTH barriers before firing so we can't miss `agent_start`.
+		const startBarrier = new Promise<void>((resolve) => startWaiters.push(resolve));
+		const endBarrier = new Promise<void>((resolve) => endWaiters.push(resolve));
+		pi.sendUserMessage(message);
+		await startBarrier;
+		await endBarrier;
+	}
+
 	pi.registerCommand("worktree", {
 		description: "Create, resume, and clean up git worktree sessions",
 		getArgumentCompletions: (prefix) => {
@@ -283,7 +368,9 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const controller = createWorktreeController(createDependencies(pi, ctx));
+			const controller = createWorktreeController(
+				createDependencies(ctx, sendUserMessageAndAwaitTurn),
+			);
 			if (parsed.command.kind === "create") {
 				await controller.create(parsed.command.request);
 				return;

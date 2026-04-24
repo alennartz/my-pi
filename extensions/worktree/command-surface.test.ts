@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_MERGE_TARGET } from "./contracts.ts";
 import {
 	buildCleanupMergePrompt,
 	getWorktreeArgumentCompletions,
@@ -44,13 +43,23 @@ describe("/worktree command surface", () => {
 		});
 	});
 
-	it("defaults cleanup to main when no merge target is provided", () => {
+	it("leaves the merge target undefined when not provided so the controller can detect the repo default", () => {
 		expect(parseWorktreeCommand("cleanup")).toEqual({
 			ok: true,
 			command: {
 				kind: "cleanup",
 				request: {
-					mergeTarget: DEFAULT_MERGE_TARGET,
+					mergeTarget: undefined,
+				},
+			},
+		});
+
+		expect(parseWorktreeCommand("cleanup release/1.2")).toEqual({
+			ok: true,
+			command: {
+				kind: "cleanup",
+				request: {
+					mergeTarget: "release/1.2",
 				},
 			},
 		});
@@ -108,10 +117,12 @@ describe("/worktree command surface", () => {
 		);
 	});
 
-	it("builds a merge instruction that tells the agent to merge the current branch into the chosen target", () => {
-		const prompt = buildCleanupMergePrompt("feature/worktree", "release/1.2");
+	it("builds a merge instruction that names the source branch, the target, and the main worktree path to run git from", () => {
+		const prompt = buildCleanupMergePrompt("feature/worktree", "release/1.2", "/repo/main");
 		expect(prompt).toContain("feature/worktree");
 		expect(prompt).toContain("release/1.2");
+		expect(prompt).toContain("/repo/main");
+		expect(prompt).toContain("git -C /repo/main");
 		expect(prompt).toContain("bash tool calls");
 	});
 });
