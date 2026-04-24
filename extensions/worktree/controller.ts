@@ -85,25 +85,34 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 
 			const baseBranch = request.baseBranch ?? await git.getCurrentBranch(env.cwd);
 			const worktreePath = resolveWorktreePath(env.homeDirectory, env.repoName, request.branchName);
+			// If the branch already exists locally, attach a worktree to it
+			// instead of asking git to create a new branch (which would fail).
+			const createBranch = !(await git.branchExists({
+				cwd: env.cwd,
+				branchName: request.branchName,
+			}));
 			try {
 				await git.addWorktree({
 					cwd: env.cwd,
 					path: worktreePath,
 					branchName: request.branchName,
 					baseBranch,
+					createBranch,
 				});
 
 				if (stashCreated) {
 					await git.stashPop(worktreePath);
 				}
 			} catch (error) {
-				if (stashCreated) {
-					runtime.notify(
-						"Worktree creation failed. Your tracked changes are saved in the git stash — run `git stash pop` to recover them.",
-						"warning",
-					);
-				}
-				throw error;
+				const detail = error instanceof Error ? error.message : String(error);
+				const stashHint = stashCreated
+					? " Your tracked changes are saved in the git stash — run `git stash pop` to recover them."
+					: "";
+				runtime.notify(
+					`Failed to create worktree for '${request.branchName}': ${detail}.${stashHint}`,
+					"error",
+				);
+				return;
 			}
 
 			const sessionFile = contextTransfer === "fresh-session"

@@ -41,11 +41,27 @@ export interface WorktreeGitClient {
 	getStatusPorcelain(cwd: string): Promise<string>;
 	stashPush(cwd: string): Promise<boolean>;
 	stashPop(cwd: string): Promise<void>;
+	/**
+	 * Returns true when a local branch with the given name already exists.
+	 * Callers use this to decide whether to create a fresh branch with
+	 * `addWorktree({ createBranch: true, ... })` or attach an existing one.
+	 */
+	branchExists(input: { cwd: string; branchName: string }): Promise<boolean>;
 	addWorktree(input: {
 		cwd: string;
 		path: string;
 		branchName: string;
+		/**
+		 * Used only when `createBranch` is true. Ignored when attaching an
+		 * existing branch (the worktree will be at that branch's tip).
+		 */
 		baseBranch: string;
+		/**
+		 * When true, runs `git worktree add <path> -b <branchName> <baseBranch>`
+		 * (creates a new branch). When false, runs
+		 * `git worktree add <path> <branchName>` (attaches the existing branch).
+		 */
+		createBranch: boolean;
 	}): Promise<void>;
 	removeWorktree(input: {
 		cwd: string;

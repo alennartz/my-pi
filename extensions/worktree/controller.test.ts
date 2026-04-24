@@ -28,6 +28,7 @@ function createDependencies() {
 			getStatusPorcelain: vi.fn(async () => ""),
 			stashPush: vi.fn(async () => true),
 			stashPop: vi.fn(async () => undefined),
+			branchExists: vi.fn(async () => false),
 			addWorktree: vi.fn(async () => undefined),
 			removeWorktree: vi.fn(async () => undefined),
 			deleteBranch: vi.fn(async () => undefined),
@@ -120,10 +121,51 @@ describe("Worktree controller", () => {
 				path: worktreePath,
 				branchName: "feature/worktree",
 				baseBranch: "main",
+				createBranch: true,
 			});
 			expect(dependencies.sessions.create).toHaveBeenCalledWith(worktreePath);
 			expect(dependencies.sessions.forkFrom).not.toHaveBeenCalled();
 			expect(dependencies.runtime.switchSession).toHaveBeenCalledWith("/sessions/new.jsonl");
+		});
+
+		it("attaches a worktree to an existing branch instead of creating a new one when the branch already exists locally", async () => {
+			const { dependencies } = createDependencies();
+			vi.mocked(dependencies.git.branchExists).mockResolvedValueOnce(true);
+			vi.mocked(dependencies.runtime.chooseContextTransfer).mockResolvedValueOnce("fresh-session");
+			vi.mocked(dependencies.git.getStatusPorcelain).mockResolvedValueOnce("");
+
+			const controller = createWorktreeController(dependencies);
+			await controller.create({ branchName: "test1" });
+
+			const worktreePath = resolveWorktreePath("/home/test", "my-pi", "test1");
+			expect(dependencies.git.addWorktree).toHaveBeenCalledWith(
+				expect.objectContaining({
+					path: worktreePath,
+					branchName: "test1",
+					createBranch: false,
+				}),
+			);
+			expect(dependencies.runtime.switchSession).toHaveBeenCalledWith("/sessions/new.jsonl");
+		});
+
+		it("surfaces git errors via notify and returns without throwing when worktree creation fails", async () => {
+			const { dependencies } = createDependencies();
+			vi.mocked(dependencies.runtime.chooseContextTransfer).mockResolvedValueOnce("fresh-session");
+			vi.mocked(dependencies.git.getStatusPorcelain).mockResolvedValueOnce("");
+			vi.mocked(dependencies.git.addWorktree).mockRejectedValueOnce(
+				new Error("fatal: a branch named 'feature/worktree' already exists"),
+			);
+
+			const controller = createWorktreeController(dependencies);
+			await expect(
+				controller.create({ branchName: "feature/worktree" }),
+			).resolves.toBeUndefined();
+
+			expect(dependencies.runtime.notify).toHaveBeenCalledWith(
+				expect.stringContaining("feature/worktree"),
+				"error",
+			);
+			expect(dependencies.runtime.switchSession).not.toHaveBeenCalled();
 		});
 
 		it("returns without side effects when the user cancels the context-transfer prompt for a new worktree", async () => {
@@ -173,6 +215,7 @@ describe("Worktree controller", () => {
 				path: worktreePath,
 				branchName: "feature/worktree",
 				baseBranch: "release/1.2",
+				createBranch: true,
 			});
 			expect(dependencies.git.stashPop).toHaveBeenCalledWith(worktreePath);
 			expect(dependencies.sessions.forkFrom).toHaveBeenCalledWith("/sessions/current.jsonl", worktreePath);

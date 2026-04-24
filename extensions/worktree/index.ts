@@ -183,16 +183,29 @@ function createGitClient() {
 		async stashPop(cwd: string) {
 			runGitVoid(["stash", "pop"], cwd);
 		},
-		async addWorktree(input: { cwd: string; path: string; branchName: string; baseBranch: string }) {
+		async branchExists(input: { cwd: string; branchName: string }) {
+			try {
+				execSync(
+					`git show-ref --verify --quiet ${shellQuote(`refs/heads/${input.branchName}`)}`,
+					{ cwd: input.cwd, stdio: ["ignore", "ignore", "ignore"] },
+				);
+				return true;
+			} catch {
+				return false;
+			}
+		},
+		async addWorktree(input: {
+			cwd: string;
+			path: string;
+			branchName: string;
+			baseBranch: string;
+			createBranch: boolean;
+		}) {
 			mkdirSync(dirname(input.path), { recursive: true });
-			runGitVoid([
-				"worktree",
-				"add",
-				input.path,
-				"-b",
-				input.branchName,
-				input.baseBranch,
-			], input.cwd);
+			const args = input.createBranch
+				? ["worktree", "add", input.path, "-b", input.branchName, input.baseBranch]
+				: ["worktree", "add", input.path, input.branchName];
+			runGitVoid(args, input.cwd);
 		},
 		async removeWorktree(input: { cwd: string; worktreePath: string }) {
 			runGitVoid(["worktree", "remove", input.worktreePath], input.cwd);
