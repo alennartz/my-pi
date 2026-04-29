@@ -46,6 +46,7 @@ If you need clarification or encounter ambiguity, use `send(to='parent', expectR
 4. **Read `docs/reviews/<topic>.md`** and `docs/reviews/<topic>-tests.md` if they exist — findings that shape what to test or deliberately avoid.
 5. **Read `tools/manual-test/PLAN.md` and `tools/manual-test/README.md`** if they exist. Everything you need to know about this repo's primary user journeys and existing tooling is there.
 6. **Identify what this repo produces** and how a human exercises it (browser, CLI, HTTP client, VS Code host, …). If genuinely unclear, ask the parent agent.
+7. **Treat focus hints as a seed, not a fence.** Hints from the orchestrator or user point at what matters most — they do not enumerate the full test scope. For each hint, identify the immediately adjacent flow concerns and add the obvious ones to *Topic-Specific Tests*: what triggered this surface, what cleans up after it, what sibling surfaces share state with it, what state is left behind. The brainstorm and plan are the authority on scope; hints sharpen focus within that scope, they don't replace it.
 
 ### 1. Bootstrap on First Run (one-time)
 
@@ -83,11 +84,19 @@ noted here too.
 - New: <new tools introduced in this run>
 - Improved: <existing tools generalized or hardened this run>
 
+## Harness Limitations
+
+What's stubbed/synthetic in this run's setup, and which planned tests are
+weakened by those gaps — i.e. classes of bug this harness structurally
+cannot surface. Empty if the harness exercises the real thing.
+
 ## Results
 
 For each item from Smoke Suite and Topic-Specific Tests: what was run, what
-was observed, verdict — pass | fixed-inline | open. Fixed-inline entries
-include a one- or two-sentence fix note for cleanup's DR consideration.
+was observed, structural verdict — pass | fixed-inline | open — and a
+one-line coherence verdict (looks coherent | looks off because…) for any
+UI-bearing or user-facing journey. Fixed-inline entries include a one- or
+two-sentence fix note for cleanup's DR consideration.
 
 ## Plan Updates
 
@@ -102,7 +111,17 @@ items. Empty if everything passed or was fixed.
 
 Commit once drafted: `docs: manual-testing plan for <topic>`.
 
-### 3. Prepare Tooling
+### 3. Assess Harness Limitations
+
+Before running anything, write a short *Harness Limitations* note in the artifact (add the section if missing). For the tools and drivers selected in the next step, record:
+
+- What's stubbed, mocked, or synthetic (fixtures standing in for real data, dead signals standing in for live ones, single-user runs standing in for concurrency, …).
+- Which planned tests are **weakened** by those gaps — i.e. which classes of bug this harness structurally cannot surface (realistic-content layout issues, timing/race behavior, real-load failures, cross-session state, …).
+- Whether any of those weakened tests cover the topic's primary behavior. If yes, escalate via `send(to='parent', expectResponse=true)` before proceeding — don't silently accept a harness that can't see the bugs that matter.
+
+This is a sanity check on the test setup itself, not a re-test. One short paragraph or bullet list is enough.
+
+### 4. Prepare Tooling
 
 For each journey in the Smoke Suite and each Topic-Specific Test:
 
@@ -127,7 +146,7 @@ For each journey in the Smoke Suite and each Topic-Specific Test:
    - Parameterized for reuse — no topic-specific hard-coding.
    - Registered in `tools/manual-test/README.md`.
 
-### 4. Execute Tests
+### 5. Execute Tests
 
 Run the Smoke Suite first, then Topic-Specific Tests. For each, record in *Results*:
 
@@ -135,14 +154,21 @@ Run the Smoke Suite first, then Topic-Specific Tests. For each, record in *Resul
 - What was observed.
 - Verdict: **pass**, **fixed-inline**, or **open**.
 
+#### Coherence Pass
+
+Structural checks (element exists, label matches, status code is 200, trace contains expected event) confirm conformance, not coherence. After the structural checks for any UI-bearing or user-facing journey, do a coherence pass: look at the produced artifact as a whole — screenshot, terminal session, response body, rendered output — and judge it against the user-facing intent in the brainstorm and plan, not against the element list.
+
+Record a one-line verdict per journey: **looks coherent** or **looks off because…**. A coherent-looking off-note is a finding — fix inline if obvious, log in *Open Issues* otherwise. This is a sanity check, not a re-test; don't re-run the journey, just look.
+
 #### When a Test Fails
+
 
 - **Fix inline** when the root cause is clear, the fix is consistent with the architecture in `docs/plans/<topic>.md`, and the fix is localized and low-complexity. Apply, commit (`fix: <short description> (manual-testing)`), re-run, mark `fixed-inline`.
 - **Escalate** when the failure suggests a fundamental architectural flaw, would require a high-complexity fix, or is ambiguous. Log in *Open Issues* with observation, suspected cause, and why you're not fixing inline. Use `send(to='parent', expectResponse=true)` only if you need an answer to continue.
 
 Keep iterating until every item is `pass`, `fixed-inline`, or logged in *Open Issues* with a clear reason.
 
-### 5. Update the Persistent Plan
+### 6. Update the Persistent Plan
 
 If this topic introduced, materially changed, or retired a primary user journey, update `tools/manual-test/PLAN.md` accordingly:
 
@@ -152,12 +178,13 @@ If this topic introduced, materially changed, or retired a primary user journey,
 
 Not every topic-specific test belongs in `PLAN.md`. Promote only genuine primary journeys — the plan stays focused. Record every change in the artifact's *Plan Updates* section.
 
-### 6. Finalize
+### 7. Finalize
 
 1. Verify *Tools* reflects reality and `tools/manual-test/README.md` lists every tool.
-2. Verify *Results* has an entry for every item in Smoke Suite and Topic-Specific Tests.
-3. Verify *Plan Updates* is populated or explicitly empty.
-4. Verify *Open Issues* is populated or explicitly empty.
+2. Verify *Harness Limitations* is populated or explicitly empty.
+3. Verify *Results* has an entry for every item in Smoke Suite and Topic-Specific Tests, with a coherence verdict where applicable.
+4. Verify *Plan Updates* is populated or explicitly empty.
+5. Verify *Open Issues* is populated or explicitly empty.
 5. Commit: `docs: manual-testing results for <topic>` — artifact + `PLAN.md` updates + final README edits. Inline-fix commits from step 4 stay as their own commits.
 
 ## Key Principles
@@ -166,6 +193,8 @@ Not every topic-specific test belongs in `PLAN.md`. Promote only genuine primary
 - **Primary journeys only in `PLAN.md`.** The plan's value is focus. Topic-specific edge cases live in the per-topic artifact, not the persistent plan.
 - **Accumulate tooling, don't discard it.** Generalize instead of fork, document every tool, extend over replace.
 - **Fix inline when obvious, escalate when structural.** The bar is architectural viability, complexity, or ambiguity — not ordinary bugs.
-- **Upstream artifacts scope topic-specific tests.** Don't invent user behaviors beyond what brainstorm/plan/reviews imply. Focus hints narrow further.
+- **Conformance is not coherence.** Element-level checks confirm the parts exist; the coherence pass confirms the whole holds together against user-facing intent. Both are required for UI-bearing journeys.
+- **Interrogate the harness, don't trust it.** A test setup that can't surface the bugs that matter is a finding, not a workspace. Name the gaps before running.
+- **Upstream artifacts scope topic-specific tests.** Don't invent user behaviors beyond what brainstorm/plan/reviews imply. Focus hints are a seed within that scope, not a fence around it — expand one ring outward to adjacent flows (triggers, cleanup, siblings, residual state).
 - **Do not edit `codemap.md`.** Record what changed in the artifact; cleanup updates the codemap using that as input.
 - **Artifact first, then execute.** Drafting before running forces deliberate scope and gives the orchestrator something to audit if the skill stalls.
