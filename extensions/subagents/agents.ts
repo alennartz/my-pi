@@ -256,7 +256,7 @@ export function buildAgentArgs(
 	modelOverride?: string,
 ): string[] {
 	const args: string[] = resumeSessionFile ? ["--session", resumeSessionFile] : ["--session-dir", sessionDir];
-	const model = agent?.model ?? modelOverride;
+	const model = modelOverride ?? agent?.model;
 	if (model) args.push("--model", model);
 	if (agent?.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 	if (skillPaths.length > 0) {

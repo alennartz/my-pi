@@ -409,6 +409,7 @@ export default function (pi: ExtensionAPI) {
 			const maxModels = 30;
 			const listed = modelIds.slice(0, maxModels);
 			const remaining = modelIds.length - listed.length;
+
 			lines.push(
 				"## Available Models",
 				"",
@@ -605,12 +606,15 @@ export default function (pi: ExtensionAPI) {
 			const discovery = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined);
 			const allAgentConfigs = discovery.agents;
 
-			const availableModelIds = new Set(
-				ctx.modelRegistry
-					.getAvailable()
-					.map((m: any) => m?.id)
-					.filter((id: any): id is string => typeof id === "string" && id.length > 0),
-			);
+			// Available models — used for both validation and spawn-time resolution.
+			// getAvailable() returns only models with configured auth, which is the
+			// right set for disambiguation: if a bare id like "gpt-5.4" matches both
+			// a built-in provider and azure-foundry, only the one with auth is valid.
+			const availableModels: any[] = ctx.modelRegistry.getAvailable();
+			const isValidModelRef = (model: string) =>
+				availableModels.some(
+					(m: any) => m?.id === model || `${m?.provider}/${m?.id}` === model,
+				);
 
 			// Validate agent definitions and model overrides
 			for (const a of params.agents) {
@@ -627,8 +631,11 @@ export default function (pi: ExtensionAPI) {
 
 				if (a.model) {
 					// Specialist-pinned model always wins; only validate override when it can actually apply.
-					if (!foundConfig?.model && !availableModelIds.has(a.model)) {
-						const available = Array.from(availableModelIds).sort();
+					if (!foundConfig?.model && !isValidModelRef(a.model)) {
+						const available = availableModels
+							.map((m: any) => `${m?.provider}/${m?.id}`)
+							.filter(Boolean)
+							.sort();
 						const preview = available.length > 0 ? available.slice(0, 20).join(", ") : "none";
 						const more = available.length > 20 ? `, ... (+${available.length - 20} more)` : "";
 						throw new Error(
@@ -666,11 +673,27 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Map params to RegularAgentSpec[]
-			const agentSpecs: RegularAgentSpec[] = params.agents.map(a => ({
-				kind: "agent" as const,
-				...a,
-			}));
+			// Map params to RegularAgentSpec[], resolving bare model ids to provider/id
+			// so the child process gets an unambiguous --model arg. resolveCliModel in
+			// the child uses getAll() + find() (first match), which picks built-in
+			// providers before extension providers. By resolving here against
+			// getAvailable() (auth-filtered), we always pick the provider that's
+			// actually configured, regardless of ordering in getAll().
+			const agentSpecs: RegularAgentSpec[] = params.agents.map(a => {
+				const agentConfig = a.agent ? allAgentConfigs.find((c) => c.name === a.agent) : undefined;
+				// Agent-pinned model wins over tool override — resolve whichever applies.
+				const rawModel = agentConfig?.model ?? a.model;
+				let model: string | undefined = rawModel;
+				if (model) {
+					const resolved = availableModels.find(
+						(m: any) => m?.id === model || `${m?.provider}/${m?.id}` === model,
+					);
+					if (resolved?.provider && resolved?.id) {
+						model = `${resolved.provider}/${resolved.id}`;
+					}
+				}
+				return { kind: "agent" as const, ...a, model };
+			});
 
 			await ensureWidget(ctx);
 			const ack = await mgr.start(agentSpecs, allAgentConfigs);
@@ -1337,7 +1360,6 @@ function formatAgentStatusDetail(s: import("./agent-set.js").AgentStatus): strin
 	const lines = [
 		`Agent: ${s.id}`,
 		`State: ${s.state}`,
-		`Task: ${s.task}`,
 		`Channels: ${s.channels.join(", ")}`,
 	];
 	if (s.agentDef) lines.push(`Agent definition: ${s.agentDef}`);
