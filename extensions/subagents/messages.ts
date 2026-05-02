@@ -20,6 +20,12 @@ export interface AgentCompleteData {
 	output?: string;
 	error?: string;
 	sessionId?: string;
+	/**
+	 * True iff an <agent_idle> notification was already delivered to the parent
+	 * for this agent (i.e. it idled or crashed on its own). Used by teardown
+	 * serializers to avoid re-emitting output the model has already seen.
+	 */
+	alreadyNotified?: boolean;
 }
 
 const RESURRECT_HINT_SINGLE = "Pass session_id to the resurrect tool to bring this agent back online with its prior conversation.";
@@ -74,6 +80,77 @@ function serializeAgentForXml(agent: AgentCompleteData): string {
 
 export function serializeAgentComplete(data: AgentCompleteData): string {
 	return serializeAgentForXml(data);
+}
+
+/**
+ * Teardown report for a single agent. Distinct element name from <agent_idle>
+ * so the model recognizes the lifecycle event. When the agent already idled
+ * (alreadyNotified=true), output is omitted — the model has already seen it
+ * via the prior <agent_idle> notification. When an agent is torn down while
+ * still running (no prior idle notification), we still surface its last output
+ * / error so it isn't lost.
+ */
+export function serializeAgentTorndown(data: AgentCompleteData): string {
+	const sessionAttr = data.sessionId ? ` session_id="${escapeXml(data.sessionId)}"` : "";
+	const hint = data.sessionId ? `<hint>${RESURRECT_HINT_SINGLE}</hint>` : "";
+	const openTag = `<agent_torn_down id="${escapeXml(data.id)}" status="${data.status}"${sessionAttr}>`;
+	if (data.alreadyNotified) {
+		return hint ? `${openTag}\n${hint}\n</agent_torn_down>` : `${openTag}\n</agent_torn_down>`;
+	}
+	// Not yet notified — include body.
+	const bodyParts: string[] = [];
+	if (data.status === "failed") {
+		if (data.error) bodyParts.push(`<error>${escapeXml(data.error)}</error>`);
+	} else {
+		bodyParts.push(data.output ?? "(no output)");
+	}
+	if (hint) bodyParts.push(hint);
+	return `${openTag}\n${bodyParts.join("\n")}\n</agent_torn_down>`;
+}
+
+/**
+ * Teardown report for the full agent group. Mirrors <group_complete> but uses
+ * a distinct element so the model recognizes the lifecycle event. Per-agent
+ * entries are slim by default (id/status/session_id) since each agent already
+ * had an individual <agent_idle> notification when it settled. For any agent
+ * that was torn down before it idled, its last output / error is included.
+ */
+export function serializeGroupTorndown(data: ActiveAgentsCompleteData): string {
+	const summary = (() => {
+		const counts: Record<string, number> = {};
+		for (const a of data.agents) {
+			counts[a.status] = (counts[a.status] || 0) + 1;
+		}
+		return Object.entries(counts)
+			.map(([status, count]) => `${count} ${status}`)
+			.join(", ");
+	})();
+
+	const lines: string[] = ["<group_torn_down>"];
+	lines.push(`  <summary>${escapeXml(summary)}</summary>`);
+	let anySessionId = false;
+	for (const agent of data.agents) {
+		const sessionAttr = agent.sessionId ? ` session_id="${escapeXml(agent.sessionId)}"` : "";
+		if (agent.sessionId) anySessionId = true;
+		if (agent.alreadyNotified) {
+			lines.push(`  <agent id="${escapeXml(agent.id)}" status="${agent.status}"${sessionAttr} />`);
+			continue;
+		}
+		// Not yet notified — include body so output/error isn't lost.
+		lines.push(`  <agent id="${escapeXml(agent.id)}" status="${agent.status}"${sessionAttr}>`);
+		if (agent.status === "failed") {
+			if (agent.error) lines.push(`    <error>${escapeXml(agent.error)}</error>`);
+		} else {
+			lines.push(`    <output>${escapeXml(agent.output ?? "(no output)")}</output>`);
+		}
+		lines.push(`  </agent>`);
+	}
+	if (anySessionId) {
+		lines.push(`  <hint>${RESURRECT_HINT_GROUP}</hint>`);
+	}
+	lines.push(`  <usage input="${escapeXml(data.usage.input)}" output="${escapeXml(data.usage.output)}" cost="${escapeXml(data.usage.cost)}" />`);
+	lines.push("</group_torn_down>");
+	return lines.join("\n");
 }
 
 export function serializeGroupComplete(data: ActiveAgentsCompleteData): string {

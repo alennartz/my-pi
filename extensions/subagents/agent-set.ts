@@ -18,8 +18,8 @@ import { type Topology, buildTopology, addToTopology, removeFromTopology } from 
 import {
 	serializeSubagentIdentity,
 	serializeAgentMessage,
-	serializeGroupComplete,
-	serializeAgentComplete,
+	serializeGroupTorndown,
+	serializeAgentTorndown,
 	type ActiveAgentsCompleteData,
 	type AgentCompleteData,
 	type BrokerResponse,
@@ -54,6 +54,13 @@ interface AgentEntry {
 	sessionFile?: string;
 	sessionId?: string;
 	kind: AgentSpec["kind"];
+	/**
+	 * True once an <agent_idle> notification has been delivered to the parent
+	 * for this agent (set right before onAgentComplete fires). Drives the slim
+	 * vs. full body shape in teardown reports — already-notified agents don't
+	 * need their output re-emitted.
+	 */
+	completionNotified: boolean;
 }
 
 export interface SubagentManagerOptions {
@@ -108,6 +115,7 @@ export class SubagentManager {
 			output: e.status.lastOutput,
 			error: e.status.state === "failed" ? (e.rpc.stderr || "Process crashed") : undefined,
 			sessionId: e.sessionId,
+			alreadyNotified: e.completionNotified,
 		}));
 
 		const usage = this.aggregateUsage();
@@ -268,6 +276,7 @@ export class SubagentManager {
 				rpc,
 				status,
 				kind: agentSpec.kind,
+				completionNotified: false,
 			};
 
 			newEntries.push(entry);
@@ -349,7 +358,7 @@ export class SubagentManager {
 
 	private async teardownAll(): Promise<{ report: string; empty: boolean }> {
 		const report = this.getCompletionReport();
-		const xml = serializeGroupComplete(report);
+		const xml = serializeGroupTorndown(report);
 
 		for (const entry of this.entries) {
 			if (this.persistence) {
@@ -388,15 +397,19 @@ export class SubagentManager {
 
 		const entry = this.entries[entryIdx];
 
-		// Build single-agent report before stopping
+		// Build single-agent teardown report before stopping. If the agent already
+		// idled/failed on its own, the parent has already received the full
+		// <agent_idle> notification — the teardown report stays slim and just
+		// surfaces session_id + resurrection hint.
 		const data: AgentCompleteData = {
 			id: entry.id,
 			status: entry.status.state === "failed" ? "failed" : "idle",
 			output: entry.status.lastOutput,
 			error: entry.status.state === "failed" ? (entry.rpc.stderr || "Process crashed") : undefined,
 			sessionId: entry.sessionId,
+			alreadyNotified: entry.completionNotified,
 		};
-		const xml = serializeAgentComplete(data);
+		const xml = serializeAgentTorndown(data);
 
 		// Remove from entries before stopping — prevents monitorExit from
 		// seeing the SIGTERM exit code and firing a spurious crash notification.
@@ -576,6 +589,7 @@ export class SubagentManager {
 				entry.status.state = "idle";
 				entry.status.lastActivity = undefined;
 				this.opts.onUpdate();
+				entry.completionNotified = true;
 				this.opts.onAgentComplete(entry.id, this.allDone());
 			}
 		}
@@ -592,6 +606,7 @@ export class SubagentManager {
 						this.broker.agentCrashed(entry.id);
 					}
 					this.opts.onUpdate();
+					entry.completionNotified = true;
 					this.opts.onAgentComplete(entry.id, this.allDone());
 				}
 			}

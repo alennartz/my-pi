@@ -1015,7 +1015,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Remove an agent or tear down all agents. Returns a completion report.",
 		promptGuidelines: [
 			"Call when an agent or all agents are no longer needed. Idle agents remain fully functional — you can send new messages to restart work or use agents as persistent specialists.",
-			"With an agent id: removes that single agent and returns its completion report. Without: tears down all active agents and returns a <group_complete> summary with aggregate usage.",
+			"With an agent id: removes that single agent and returns an <agent_torn_down> report. Without: tears down all active agents and returns a <group_torn_down> summary with aggregate usage. The teardown report is slim for agents that already idled (the model already received their full <agent_idle> notification) — it surfaces session_id and a resurrection hint, but not the output. Agents torn down while still running include their last output/error so it isn't lost.",
 			"When the last agent is removed (either explicitly or via full teardown), infrastructure is cleaned up automatically.",
 		],
 		parameters: Type.Object({
@@ -1070,7 +1070,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Resurrect",
 		description: "Bring a previously-torn-down subagent back online from its session file.",
 		promptGuidelines: [
-			"Revives an agent that was previously torn down — pass the `session_id` surfaced in a prior `<agent_idle>` or `<group_complete>` teardown report.",
+			"Revives an agent that was previously torn down — pass the `session_id` surfaced in a prior `<agent_idle>`, `<agent_torn_down>`, or `<group_torn_down>` report.",
 			"The resurrected agent inherits its persona, model, and tool set from the resumed session — none of those can be changed here. Only `id`, `channels`, and `task` are re-declared.",
 			"Channels must be re-declared fresh because siblings from the prior generation may no longer exist. Parent is always implicitly available.",
 			"Resurrection is non-blocking — the agent picks up the new task and any prior conversation history is visible to it. Results arrive later as notifications, same as `subagent`/`fork`.",
