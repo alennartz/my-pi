@@ -1,0 +1,1 @@
+../../ux-design/references/ai-slop-blacklist.md
