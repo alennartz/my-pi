@@ -89,6 +89,48 @@ export function appendAgentRemoved(
 	} satisfies AgentLifecycleEvent);
 }
 
+/**
+ * Scan the raw JSONL log for any `agent_added` event matching `sessionId`,
+ * regardless of whether it was subsequently removed. Used by `resurrect` to
+ * recover the original persona name for a torn-down agent (which is no longer
+ * present in `loadPersistedAgents`'s live-agents view).
+ */
+export function findAgentRecordBySessionId(
+	parentSessionFile: string,
+	sessionId: string,
+): PersistedAgentRecord | undefined {
+	const paths = getPersistencePaths(parentSessionFile);
+	if (!fs.existsSync(paths.logFile)) return undefined;
+	let contents: string;
+	try {
+		contents = fs.readFileSync(paths.logFile, "utf8");
+	} catch {
+		return undefined;
+	}
+	for (const line of contents.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		let event: AgentLifecycleEvent;
+		try {
+			event = JSON.parse(trimmed);
+		} catch {
+			continue;
+		}
+		if (event.type === "agent_added" && event.sessionId === sessionId) {
+			return {
+				id: event.id,
+				kind: event.kind,
+				task: event.task,
+				channels: event.channels,
+				agent: event.agent,
+				sessionFile: event.sessionFile,
+				sessionId: event.sessionId,
+			};
+		}
+	}
+	return undefined;
+}
+
 export function loadPersistedAgents(parentSessionFile: string): {
 	paths: PersistencePaths;
 	agents: PersistedAgentRecord[];

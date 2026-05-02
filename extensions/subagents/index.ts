@@ -1083,9 +1083,18 @@ export default function (pi: ExtensionAPI) {
 				throw new Error(`No session found with id ${params.sessionId}.`);
 			}
 
+			// Recover the original persona name from the persistence log so that
+			// `start()` re-applies its tool restrictions (PI_PARENT_LINK.tools).
+			// Tool gating lives in env, not in the resumed session bundle, so
+			// without this the resurrected agent would silently get the full
+			// default tool surface — contradicting the prompt guideline that
+			// promises the resumed session's tool set is inherited.
+			const persistedAgent = mgr.findPersistedAgentName(params.sessionId);
+
 			const spec: RegularAgentSpec = {
 				kind: "agent",
 				id: params.id,
+				agent: persistedAgent,
 				task: params.task,
 				channels: params.channels,
 				resumeSessionFile: resolved,

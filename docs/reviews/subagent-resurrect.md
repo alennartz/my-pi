@@ -15,7 +15,7 @@ Plan adherence is strong: every step landed as described, and the XML/serializer
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/index.ts:1083-1090` (resurrect tool spec build); interacts with `extensions/subagents/agent-set.ts:241-244` (PI_PARENT_LINK construction)
-- **Status:** open
+- **Status:** resolved
 
 Tool gating for child agents is enforced at process spawn time via `PI_PARENT_LINK.tools` (`index.ts:221`), which `start()` populates from `agentConfig?.tools` (`agent-set.ts:241-244`). On the normal `subagent` path, `agentConfig` is found by name (`agentSpec.agent`) and the persona's tool list ends up in the env payload, restricting the child.
 
@@ -32,7 +32,7 @@ Risk: a torn-down `scout` (read-only) brought back via `resurrect` would have wr
 - **Category:** plan deviation
 - **Severity:** nit
 - **Location:** `docs/plans/subagent-resurrect.md` (Architecture / Impacted Modules, `index.ts` bullet)
-- **Status:** open
+- **Status:** resolved
 
 The Impacted Modules subsection says: *"Extend the teardown tool's plain-text wrapper to append a one-line discovery hint pointing at `resurrect`."* The teardown tool has no plain-text wrapper — it returns the XML report directly. The Interfaces subsection later converges on "a single prose `<hint>` child element ... once per teardown call" inside the XML, which is what the implementation does (`messages.ts:65-70` and `messages.ts:97-100`). Implementation is correct; the Architecture bullet is just stale relative to the Interfaces decision. Worth fixing in the plan during cleanup so the doc is internally consistent. No code change needed.
 
@@ -41,7 +41,7 @@ The Impacted Modules subsection says: *"Extend the teardown tool's plain-text wr
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/agent-set.ts:471-473`
-- **Status:** open
+- **Status:** resolved
 
 `resolveSessionFile` returns the first session filename that `.includes(sessionId)`. Because the input is always a full UUID surfaced from a teardown report and session filenames are themselves UUID-derived, real-world collisions are essentially impossible. But this is a substring match against arbitrary directory contents — if any non-session file ever lands in `<parent>.subagents/sessions/` whose name happens to include the UUID as a substring, it would be returned and then handed to pi as a `--session` argument. A stricter match (e.g. exact basename `${sessionId}.json` or whatever pi's actual naming convention is) would close that off. Low risk; flagging because the plan called out this exact resolver as an implementation choice and stricter is cheap.
 

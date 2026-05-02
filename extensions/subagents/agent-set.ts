@@ -13,7 +13,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { RpcChild } from "./rpc-child.js";
 import { Broker } from "./broker.js";
 import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs } from "./agents.js";
-import { ensurePersistence, appendAgentAdded, appendAgentRemoved, loadPersistedAgents, getPersistencePaths, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
+import { ensurePersistence, appendAgentAdded, appendAgentRemoved, findAgentRecordBySessionId, loadPersistedAgents, getPersistencePaths, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
 import { type Topology, buildTopology, addToTopology, removeFromTopology } from "./channels.js";
 import {
 	serializeSubagentIdentity,
@@ -471,11 +471,29 @@ export class SubagentManager {
 		if (!fs.existsSync(sessionsDir)) return undefined;
 		try {
 			const entries = fs.readdirSync(sessionsDir);
-			const match = entries.find((name) => name.includes(sessionId));
+			// Match pi's session-file convention: `<timestamp>_<uuid>.jsonl`.
+			// Stricter than `includes` so we don't accidentally return a sibling
+			// `<timestamp>_<uuid>.subagents` directory or any unrelated file that
+			// happens to contain the UUID as a substring.
+			const suffix = `_${sessionId}.jsonl`;
+			const match = entries.find((name) => name.endsWith(suffix));
 			return match ? path.join(sessionsDir, match) : undefined;
 		} catch {
 			return undefined;
 		}
+	}
+
+	/**
+	 * Resolves a session UUID to the original agent persona name (e.g. "scout"),
+	 * by scanning the parent's raw lifecycle JSONL for an `agent_added` event
+	 * with this sessionId. Works even after the agent has been torn down.
+	 * Returns `undefined` if the parent has no persistence log, no matching
+	 * record exists, or the record had no persona (default agent).
+	 */
+	findPersistedAgentName(sessionId: string): string | undefined {
+		const parentSessionFile = this.opts.parentSessionFile;
+		if (!parentSessionFile) return undefined;
+		return findAgentRecordBySessionId(parentSessionFile, sessionId)?.agent;
 	}
 
 	// ─── Internal ────────────────────────────────────────────────────────

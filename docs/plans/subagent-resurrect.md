@@ -10,7 +10,7 @@ Add a `resurrect` tool to the subagents extension that brings a torn-down subage
 
 **Subagents extension** (`extensions/subagents/`) — only module touched.
 
-- `index.ts` — register a new `resurrect` tool. Extend the teardown tool's plain-text wrapper to append a one-line discovery hint pointing at `resurrect`.
+- `index.ts` — register a new `resurrect` tool. Discovery hint pointing at `resurrect` is emitted as a `<hint>` child element inside the teardown XML (see Interfaces below); no plain-text wrapper exists on the teardown tool.
 - `messages.ts` — extend `AgentCompleteData` with an optional `sessionId` field. Update `serializeAgentComplete` (single) and `serializeGroupComplete` (bulk) to include the UUID as a `session_id` attribute on each agent's tag.
 - `agent-set.ts` — populate `AgentCompleteData.sessionId` when building completion reports. Add a `resurrect` method (or equivalent code path through `start()`) that takes a session UUID, resolves it to a child session file path, validates, and constructs a `RegularAgentSpec` with `resumeSessionFile` set. Add a helper to check whether a given UUID is currently held by a live agent.
 - `persistence.ts` — no schema change needed; `PersistedAgentRecord` already tracks both `sessionFile` and `sessionId`. May expose a small lookup helper if used by the resolver.
