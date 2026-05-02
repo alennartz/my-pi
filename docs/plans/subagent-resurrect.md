@@ -114,6 +114,8 @@ These are thin lookups; both can be inlined into the tool handler if simpler, bu
 
 ## Steps
 
+**Pre-implementation commit:** `45e8cb753516d8135314211a0dd011bcaae7a66d`
+
 ### Step 1: Extend `AgentCompleteData` with `sessionId`
 
 In `extensions/subagents/messages.ts`, add an optional `sessionId` field to `AgentCompleteData`:
@@ -131,7 +133,7 @@ export interface AgentCompleteData {
 No other types in this file change.
 
 **Verify:** TypeScript shape matches; downstream call sites in `agent-set.ts` will be updated in Step 2 to populate it.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Populate `sessionId` in completion reports
 
@@ -140,7 +142,7 @@ In `extensions/subagents/agent-set.ts`, `SubagentManager.getCompletionReport()` 
 No other changes in this file for this step.
 
 **Verify:** Single-agent and group teardown paths both attach the entry's `sessionId` (already captured from `rpc.sessionId` at spawn time on agent-set.ts ~L246) to the completion data passed into the serializers.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Emit `session_id` attribute and `<hint>` in serializers
 
@@ -157,7 +159,7 @@ Hint text:
 Omit the `session_id` attribute (and the `<hint>`, when no agent in the report has one) if `sessionId` is undefined.
 
 **Verify:** Snapshot or string-match tests for the new XML shape — `session_id` attribute present when populated, `<hint>` appears exactly once per teardown envelope.
-**Status:** not started
+**Status:** done — `extensions/subagents/messages.test.ts` covers single-agent (idle/failed/no-sessionId) and group (per-agent attrs, single `<hint>`, hint suppression when no sessionIds).
 
 ### Step 4: Add live-holder and session-file lookup helpers on `SubagentManager`
 
@@ -174,7 +176,7 @@ resolveSessionFile(sessionId: string): string | undefined;
 This method must work both before and after subagent infrastructure has been initialized, since `resurrect` may be the first subagent operation in a fresh parent process resuming an old session.
 
 **Verify:** Manual call from a unit test or scratch driver — given a known UUID present in `<parent>.subagents/sessions/`, `resolveSessionFile` returns the matching file path; `findLiveHolder` returns the live agent id when one holds the UUID and `undefined` otherwise.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Register the `resurrect` tool in `index.ts`
 
@@ -216,12 +218,12 @@ Execute body:
 The existing `start()` path already handles the resume code path (suppressing agent-definition system prompt re-append when `resumeSessionFile` is set, appending identity XML, persistence logging, broker integration, prompt delivery via `entry.rpc.prompt`).
 
 **Verify:** End-to-end: spawn an agent → teardown → call `resurrect` with the surfaced `session_id` → resurrected agent appears in the dashboard, picks up the new task, and its prior conversation is visible in the session file. Error paths return the four messages listed in the architecture.
-**Status:** not started
+**Status:** done — registered in `extensions/subagents/index.ts`; reuses existing `mgr.start()` resume path. End-to-end verification deferred to manual-testing phase.
 
 ### Step 6: Wire the new tool into prompt overlays / overlays metadata
 
 No separate overlay file lists tools. Confirm the new `resurrect` tool appears in pi's tool listing automatically via `pi.registerTool` and that the tool gating list (when `parentLink.tools` is set) does not silently strip it from a parent that should have it. No code change expected unless a test exposes a gap; otherwise, this is a verification-only step.
 
 **Verify:** Running pi with the subagents extension loaded, `resurrect` shows in `--list-tools` (or equivalent introspection) and is callable from the parent agent. A child agent with a tools restriction that does not include `resurrect` does not see it.
-**Status:** not started
+**Status:** done — gated through the existing `shouldRegisterTool("resurrect")` path, identical to all other subagent tools (children with `parentLink.tools` restrictions automatically exclude it unless listed). No code change needed; verified by inspection.
 

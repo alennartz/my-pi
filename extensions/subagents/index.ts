@@ -10,6 +10,7 @@
  */
 
 import * as net from "node:net";
+import * as fs from "node:fs";
 import * as crypto from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -28,6 +29,7 @@ import type { TUI } from "@mariozechner/pi-tui";
 import { detect } from "@pimote/panels";
 import type { PanelHandle, Card, CardColor } from "@pimote/panels";
 import { SubagentManager } from "./agent-set.js";
+import { getPersistencePaths } from "./persistence.js";
 import { SubagentDashboard } from "./widget.js";
 import type { AgentStatus, AgentState } from "./agent-set.js";
 import {
@@ -1034,6 +1036,78 @@ export default function (pi: ExtensionAPI) {
 			const label = params.agent ? `Agent "${params.agent}" removed.` : "All agents terminated.";
 			return {
 				content: [{ type: "text", text: `${label}\n\n${report}` }],
+			};
+		},
+	});
+
+	// ─── Tool: resurrect ─────────────────────────────────────────────────
+
+	if (shouldRegisterTool("resurrect")) pi.registerTool({
+		name: "resurrect",
+		label: "Resurrect",
+		description: "Bring a previously-torn-down subagent back online from its session file.",
+		promptGuidelines: [
+			"Revives an agent that was previously torn down — pass the `session_id` surfaced in a prior `<agent_idle>` or `<group_complete>` teardown report.",
+			"The resurrected agent inherits its persona, model, and tool set from the resumed session — none of those can be changed here. Only `id`, `channels`, and `task` are re-declared.",
+			"Channels must be re-declared fresh because siblings from the prior generation may no longer exist. Parent is always implicitly available.",
+			"Resurrection is non-blocking — the agent picks up the new task and any prior conversation history is visible to it. Results arrive later as notifications, same as `subagent`/`fork`.",
+		],
+		parameters: Type.Object({
+			id: Type.String({ description: "Unique identifier for the resurrected agent among the parent's active agents" }),
+			sessionId: Type.String({ description: "session_id surfaced by a prior teardown report" }),
+			channels: Type.Array(Type.String(), { description: "Peer agent ids this agent can send to (re-declared fresh; siblings from the prior generation may not exist)" }),
+			task: Type.String({ description: "Directive the agent runs on resurrection" }),
+		}),
+
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const mgr = ensureManager(ctx);
+
+			if (mgr.getAgentStatus(params.id)) {
+				throw new Error(`Agent id "${params.id}" already exists`);
+			}
+
+			const holder = mgr.findLiveHolder(params.sessionId);
+			if (holder) {
+				throw new Error(`Session ${params.sessionId} is currently held by live agent ${holder}; teardown that agent first or use a different one.`);
+			}
+
+			const resolved = mgr.resolveSessionFile(params.sessionId);
+			if (!resolved) {
+				const parentSessionFile = ctx.sessionManager.getSessionFile();
+				const childSessionsDir = parentSessionFile
+					? getPersistencePaths(parentSessionFile).childSessionsDir
+					: undefined;
+				if (!childSessionsDir || !fs.existsSync(childSessionsDir)) {
+					throw new Error("No subagent infrastructure for this parent session — nothing to resurrect.");
+				}
+				throw new Error(`No session found with id ${params.sessionId}.`);
+			}
+
+			const spec: RegularAgentSpec = {
+				kind: "agent",
+				id: params.id,
+				task: params.task,
+				channels: params.channels,
+				resumeSessionFile: resolved,
+			};
+
+			await ensureWidget(ctx);
+			const ack = await mgr.start([spec], discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined).agents);
+			await ensureParentBrokerClient();
+
+			const statuses = mgr.getAgentStatuses();
+			if (dashboard && tuiRef) {
+				dashboard.update(statuses);
+				tuiRef.requestRender();
+			}
+			if (panelHandle) {
+				panelHandle.updateCards(statusesToCards(statuses));
+			}
+
+			stopSequences.addOnce("<agent_idle");
+
+			return {
+				content: [{ type: "text", text: ack }],
 			};
 		},
 	});

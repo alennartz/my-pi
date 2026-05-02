@@ -19,7 +19,11 @@ export interface AgentCompleteData {
 	status: "idle" | "failed";
 	output?: string;
 	error?: string;
+	sessionId?: string;
 }
+
+const RESURRECT_HINT_SINGLE = "Pass session_id to the resurrect tool to bring this agent back online with its prior conversation.";
+const RESURRECT_HINT_GROUP = "Pass any session_id above to the resurrect tool to bring an agent back online with its prior conversation.";
 
 export interface UsageData {
 	input: string;
@@ -58,12 +62,14 @@ export function serializeAgentMessage(data: AgentMessageData): string {
 }
 
 function serializeAgentForXml(agent: AgentCompleteData): string {
+	const sessionAttr = agent.sessionId ? ` session_id="${escapeXml(agent.sessionId)}"` : "";
+	const hint = agent.sessionId ? `<hint>${RESURRECT_HINT_SINGLE}</hint>\n` : "";
 	if (agent.status === "failed") {
 		const errorContent = agent.error ? `\n<error>${agent.error}</error>\n` : "";
-		return `<agent_idle id="${escapeXml(agent.id)}" status="failed">${errorContent}</agent_idle>`;
+		return `<agent_idle id="${escapeXml(agent.id)}" status="failed"${sessionAttr}>${errorContent}${hint}</agent_idle>`;
 	}
 	const output = agent.output ?? "(no output)";
-	return `<agent_idle id="${escapeXml(agent.id)}" status="idle">\n${output}\n</agent_idle>`;
+	return `<agent_idle id="${escapeXml(agent.id)}" status="idle"${sessionAttr}>\n${output}\n${hint}</agent_idle>`;
 }
 
 export function serializeAgentComplete(data: AgentCompleteData): string {
@@ -83,8 +89,14 @@ export function serializeGroupComplete(data: ActiveAgentsCompleteData): string {
 
 	const lines: string[] = ["<group_complete>"];
 	lines.push(`  <summary>${escapeXml(summary)}</summary>`);
+	let anySessionId = false;
 	for (const agent of data.agents) {
-		lines.push(`  <agent id="${escapeXml(agent.id)}" status="${agent.status}" />`);
+		const sessionAttr = agent.sessionId ? ` session_id="${escapeXml(agent.sessionId)}"` : "";
+		if (agent.sessionId) anySessionId = true;
+		lines.push(`  <agent id="${escapeXml(agent.id)}" status="${agent.status}"${sessionAttr} />`);
+	}
+	if (anySessionId) {
+		lines.push(`  <hint>${RESURRECT_HINT_GROUP}</hint>`);
 	}
 	lines.push(`  <usage input="${escapeXml(data.usage.input)}" output="${escapeXml(data.usage.output)}" cost="${escapeXml(data.usage.cost)}" />`);
 	lines.push("</group_complete>");

@@ -13,7 +13,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { RpcChild } from "./rpc-child.js";
 import { Broker } from "./broker.js";
 import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs } from "./agents.js";
-import { ensurePersistence, appendAgentAdded, appendAgentRemoved, loadPersistedAgents, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
+import { ensurePersistence, appendAgentAdded, appendAgentRemoved, loadPersistedAgents, getPersistencePaths, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
 import { type Topology, buildTopology, addToTopology, removeFromTopology } from "./channels.js";
 import {
 	serializeSubagentIdentity,
@@ -107,6 +107,7 @@ export class SubagentManager {
 			status: e.status.state === "failed" ? "failed" : "idle",
 			output: e.status.lastOutput,
 			error: e.status.state === "failed" ? (e.rpc.stderr || "Process crashed") : undefined,
+			sessionId: e.sessionId,
 		}));
 
 		const usage = this.aggregateUsage();
@@ -393,6 +394,7 @@ export class SubagentManager {
 			status: entry.status.state === "failed" ? "failed" : "idle",
 			output: entry.status.lastOutput,
 			error: entry.status.state === "failed" ? (entry.rpc.stderr || "Process crashed") : undefined,
+			sessionId: entry.sessionId,
 		};
 		const xml = serializeAgentComplete(data);
 
@@ -447,6 +449,33 @@ export class SubagentManager {
 
 	getBroker(): Broker | null {
 		return this.broker;
+	}
+
+	/** Returns the live agent's id holding this session UUID, or undefined. */
+	findLiveHolder(sessionId: string): string | undefined {
+		return this.entries.find((e) => e.sessionId === sessionId)?.id;
+	}
+
+	/**
+	 * Resolves a session UUID to a child session file path within this parent's
+	 * sessions dir. Returns undefined if not found or the directory does not exist.
+	 * Works whether or not subagent infrastructure has been initialized yet.
+	 */
+	resolveSessionFile(sessionId: string): string | undefined {
+		let sessionsDir = this.sessionDir;
+		if (!sessionsDir) {
+			const parentSessionFile = this.opts.parentSessionFile;
+			if (!parentSessionFile) return undefined;
+			sessionsDir = getPersistencePaths(parentSessionFile).childSessionsDir;
+		}
+		if (!fs.existsSync(sessionsDir)) return undefined;
+		try {
+			const entries = fs.readdirSync(sessionsDir);
+			const match = entries.find((name) => name.includes(sessionId));
+			return match ? path.join(sessionsDir, match) : undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	// ─── Internal ────────────────────────────────────────────────────────
