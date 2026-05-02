@@ -159,7 +159,8 @@ Hint text:
 Omit the `session_id` attribute (and the `<hint>`, when no agent in the report has one) if `sessionId` is undefined.
 
 **Verify:** Snapshot or string-match tests for the new XML shape — `session_id` attribute present when populated, `<hint>` appears exactly once per teardown envelope.
-**Status:** done — `extensions/subagents/messages.test.ts` covers single-agent (idle/failed/no-sessionId) and group (per-agent attrs, single `<hint>`, hint suppression when no sessionIds).
+**Status:** done
+**Notes:** `extensions/subagents/messages.test.ts` covers single-agent (idle/failed/no-sessionId) and group (per-agent attrs, single `<hint>`, hint suppression when no sessionIds).
 
 ### Step 4: Add live-holder and session-file lookup helpers on `SubagentManager`
 
@@ -218,12 +219,14 @@ Execute body:
 The existing `start()` path already handles the resume code path (suppressing agent-definition system prompt re-append when `resumeSessionFile` is set, appending identity XML, persistence logging, broker integration, prompt delivery via `entry.rpc.prompt`).
 
 **Verify:** End-to-end: spawn an agent → teardown → call `resurrect` with the surfaced `session_id` → resurrected agent appears in the dashboard, picks up the new task, and its prior conversation is visible in the session file. Error paths return the four messages listed in the architecture.
-**Status:** done — registered in `extensions/subagents/index.ts`; reuses existing `mgr.start()` resume path. End-to-end verification deferred to manual-testing phase.
+**Status:** done
+**Notes:** Registered in `extensions/subagents/index.ts`; reuses existing `mgr.start()` resume path. End-to-end verification deferred to manual-testing phase.
 
 ### Step 6: Wire the new tool into prompt overlays / overlays metadata
 
 No separate overlay file lists tools. Confirm the new `resurrect` tool appears in pi's tool listing automatically via `pi.registerTool` and that the tool gating list (when `parentLink.tools` is set) does not silently strip it from a parent that should have it. No code change expected unless a test exposes a gap; otherwise, this is a verification-only step.
 
 **Verify:** Running pi with the subagents extension loaded, `resurrect` shows in `--list-tools` (or equivalent introspection) and is callable from the parent agent. A child agent with a tools restriction that does not include `resurrect` does not see it.
-**Status:** done — gated through the existing `shouldRegisterTool("resurrect")` path, identical to all other subagent tools (children with `parentLink.tools` restrictions automatically exclude it unless listed). No code change needed; verified by inspection.
+**Status:** done
+**Notes:** Gated through the existing `shouldRegisterTool("resurrect")` path, identical to all other subagent tools (children with `parentLink.tools` restrictions automatically exclude it unless listed). No code change needed; verified by inspection.
 
