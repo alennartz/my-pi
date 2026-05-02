@@ -105,3 +105,9 @@ These are thin lookups; both can be inlined into the tool handler if simpler, bu
 - `"No session found with id <uuid>."`
 - `"Session <uuid> is currently held by live agent <id>; teardown that agent first or use a different one."`
 - `"Agent id <id> is already in use; pick a different id."`
+
+## Tests
+
+> **Skipped.** No tests were written upfront. Follow red-green TDD as you implement —
+> write a focused failing test, make it pass, move on. Aim for component-boundary
+> behavioral tests (inputs, outputs, observable effects), not exhaustive coverage.
