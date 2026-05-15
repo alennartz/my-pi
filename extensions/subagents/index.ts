@@ -41,6 +41,7 @@ import {
 } from "./messages.js";
 import { createStopSequenceManager } from "./stop-sequences.js";
 import { NotificationQueue } from "./notification-queue.js";
+import { formatSpawnToolResult } from "./tool-result.js";
 
 // ─── Delivery mode flag ──────────────────────────────────────────────────────
 //
@@ -715,7 +716,7 @@ export default function (pi: ExtensionAPI) {
 				const ids = params.agents.map((a) => a.id);
 				const waitResult = await awaitAgentCompletion(ids, mgr, signal);
 				return {
-					content: [{ type: "text", text: `${ack}\n\n${waitResult}` }],
+					content: [{ type: "text", text: formatSpawnToolResult(waitResult) }],
 				};
 			}
 
@@ -804,7 +805,7 @@ export default function (pi: ExtensionAPI) {
 			if (params.await) {
 				const waitResult = await awaitAgentCompletion([params.id], mgr, signal);
 				return {
-					content: [{ type: "text", text: `${ack}\n\n${waitResult}` }],
+					content: [{ type: "text", text: formatSpawnToolResult(waitResult) }],
 				};
 			}
 
