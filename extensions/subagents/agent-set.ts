@@ -12,8 +12,8 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { RpcChild } from "./rpc-child.js";
 import { Broker } from "./broker.js";
-import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs } from "./agents.js";
-import { ensurePersistence, appendAgentAdded, appendAgentRemoved, findAgentRecordBySessionId, loadPersistedAgents, getPersistencePaths, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
+import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs, isValidCwd } from "./agents.js";
+import { ensurePersistence, appendAgentAdded, appendAgentRemoved, findAgentRecordBySessionId, loadPersistedAgents, getPersistencePaths, pruneInvalidPersistedAgents, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
 import { type Topology, buildTopology, addToTopology, removeFromTopology } from "./channels.js";
 import {
 	serializeSubagentIdentity,
@@ -54,6 +54,7 @@ interface AgentEntry {
 	sessionFile?: string;
 	sessionId?: string;
 	kind: AgentSpec["kind"];
+	cwd?: string;
 	/**
 	 * True once an <agent_idle> notification has been delivered to the parent
 	 * for this agent (set right before onAgentComplete fires). Drives the slim
@@ -249,8 +250,9 @@ export class SubagentManager {
 				...(agentConfig?.tools ? { tools: agentConfig.tools } : {}),
 			});
 
+			const specCwd = agentSpec.kind === "agent" ? (agentSpec.cwd ?? cwd) : cwd;
 			const rpc = new RpcChild({
-				cwd,
+				cwd: specCwd,
 				env: { PI_PARENT_LINK: envPayload },
 				args,
 			});
@@ -276,6 +278,7 @@ export class SubagentManager {
 				rpc,
 				status,
 				kind: agentSpec.kind,
+				cwd: agentSpec.kind === "agent" ? agentSpec.cwd : undefined,
 				completionNotified: false,
 			};
 
@@ -301,6 +304,7 @@ export class SubagentManager {
 					agent: entry.agentDef,
 					sessionFile: entry.sessionFile,
 					sessionId: entry.sessionId,
+					cwd: entry.cwd,
 				});
 			}
 		}
@@ -338,11 +342,14 @@ export class SubagentManager {
 		const persisted = loadPersistedAgents(parentSessionFile);
 		if (!persisted || persisted.agents.length === 0) return;
 
+		const survivors = pruneInvalidPersistedAgents(persisted.paths, persisted.agents, isValidCwd);
+		if (survivors.length === 0) return;
+
 		this.persistence = persisted.paths;
 		this.sessionDir = persisted.paths.childSessionsDir;
 		this.restoring = true;
 		try {
-			const restored = persisted.agents.map((agent) => this.toRestoreSpec(agent));
+			const restored = survivors.map((agent) => this.toRestoreSpec(agent));
 			await this.start(restored, agentConfigs);
 		} finally {
 			this.restoring = false;
@@ -559,6 +566,7 @@ export class SubagentManager {
 			task: agent.task,
 			channels: agent.channels,
 			resumeSessionFile: agent.sessionFile,
+			cwd: agent.cwd,
 		};
 	}
 

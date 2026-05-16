@@ -154,11 +154,27 @@ export function findAgentRecordBySessionId(
  * back to the parent's cwd) is worse than a visibly missing one.
  */
 export function pruneInvalidPersistedAgents(
-	_paths: PersistencePaths,
-	_agents: PersistedAgentRecord[],
-	_isCwdValid: (absPath: string) => boolean,
+	paths: PersistencePaths,
+	agents: PersistedAgentRecord[],
+	isCwdValid: (absPath: string) => boolean,
 ): PersistedAgentRecord[] {
-	throw new Error("not implemented");
+	const kept: PersistedAgentRecord[] = [];
+	for (const record of agents) {
+		if (record.cwd === undefined) {
+			kept.push(record);
+			continue;
+		}
+		if (isCwdValid(record.cwd)) {
+			kept.push(record);
+			continue;
+		}
+		appendAgentRemoved(paths, {
+			id: record.id,
+			sessionFile: record.sessionFile,
+			sessionId: record.sessionId,
+		});
+	}
+	return kept;
 }
 
 export function loadPersistedAgents(parentSessionFile: string): {

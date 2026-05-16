@@ -70,8 +70,12 @@ export interface AgentCwdInput {
  * expected to pass an absolute path — this is not a path-resolver, just a
  * filesystem check.
  */
-export function isValidCwd(_absPath: string): boolean {
-	throw new Error("not implemented");
+export function isValidCwd(absPath: string): boolean {
+	try {
+		return fs.statSync(absPath).isDirectory();
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -91,10 +95,23 @@ export function isValidCwd(_absPath: string): boolean {
  * failed validation.
  */
 export function resolveAgentCwds(
-	_agents: AgentCwdInput[],
-	_parentCwd: string,
+	agents: AgentCwdInput[],
+	parentCwd: string,
 ): Map<string, string> {
-	throw new Error("not implemented");
+	const result = new Map<string, string>();
+	for (const agent of agents) {
+		if (agent.cwd === undefined) continue;
+		const resolved = path.isAbsolute(agent.cwd)
+			? agent.cwd
+			: path.resolve(parentCwd, agent.cwd);
+		if (!isValidCwd(resolved)) {
+			throw new Error(
+				`Agent "${agent.id}" has invalid cwd: "${resolved}" does not exist or is not a directory`,
+			);
+		}
+		result.set(agent.id, resolved);
+	}
+	return result;
 }
 
 export interface AgentDiscoveryResult {

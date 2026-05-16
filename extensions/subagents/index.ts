@@ -22,6 +22,7 @@ import {
 	discoverAgents,
 	discoverPackageAgents,
 	resolveSkillPaths,
+	resolveAgentCwds,
 	formatAgentList,
 } from "./agents.js";
 
@@ -672,6 +673,13 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
+			// Resolve and validate per-agent cwd overrides. Throws atomically on
+			// any invalid cwd before any RpcChild is constructed.
+			const resolvedCwds = resolveAgentCwds(
+				params.agents.map((a) => ({ id: a.id, cwd: a.cwd })),
+				ctx.cwd,
+			);
+
 			// Resolve skill paths for agents that declare skills
 			const commands = pi.getCommands();
 			for (const a of params.agents) {
@@ -705,7 +713,7 @@ export default function (pi: ExtensionAPI) {
 						model = `${resolved.provider}/${resolved.id}`;
 					}
 				}
-				return { kind: "agent" as const, ...a, model };
+				return { kind: "agent" as const, ...a, model, cwd: resolvedCwds.get(a.id) };
 			});
 
 			await ensureWidget(ctx);

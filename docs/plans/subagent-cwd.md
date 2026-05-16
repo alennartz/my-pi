@@ -161,6 +161,8 @@ No DR supersessions.
 
 ## Steps
 
+**Pre-implementation commit:** `8a262ca6ac92df2fc0fd848b60e4512df2ccbdcb`
+
 ### Step 1: Implement `isValidCwd` in `agents.ts`
 
 Replace the `throw new Error("not implemented")` body of `isValidCwd(absPath: string): boolean` in `extensions/subagents/agents.ts` with a real implementation. Use `fs.statSync` in a try/catch: return `true` iff the path exists and `stat.isDirectory()` is true; return `false` on any thrown error (ENOENT, EACCES, etc.) or non-directory result. Add the necessary `fs` symbol — `fs` is already imported at the top of the file.
@@ -168,7 +170,7 @@ Replace the `throw new Error("not implemented")` body of `isValidCwd(absPath: st
 The function does **not** resolve or normalize its input. Callers pass an absolute path. This is shared between spawn-time (`resolveAgentCwds`) and restore-time (`pruneInvalidPersistedAgents`).
 
 **Verify:** `pnpm vitest run extensions/subagents/cwd.test.ts -t isValidCwd` — all three cases pass (existing dir → true, missing → false, file → false).
-**Status:** not started
+**Status:** done
 
 ### Step 2: Implement `resolveAgentCwds` in `agents.ts`
 
@@ -187,7 +189,7 @@ Behavior:
 Validation is **batch-atomic**: a throw on any agent prevents partial returns (loop hasn't returned yet — the throw is the exit). Tests rely on the error message containing both the agent id and the resolved absolute path, and on relative inputs producing the *resolved* absolute path in the error.
 
 **Verify:** `pnpm vitest run extensions/subagents/cwd.test.ts` — full file passes (10 `resolveAgentCwds` cases + 3 `isValidCwd` cases).
-**Status:** not started
+**Status:** done
 
 ### Step 3: Implement `pruneInvalidPersistedAgents` in `persistence.ts`
 
@@ -205,7 +207,7 @@ Behavior:
 No other side effects. Empty input → empty output, no log writes.
 
 **Verify:** `pnpm vitest run extensions/subagents/persistence.test.ts -t pruneInvalidPersistedAgents` — all six cases pass, including the round-trip check that a pruned agent does not reappear via `loadPersistedAgents`.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Persist cwd through `appendAgentAdded` in `agent-set.ts`
 
@@ -218,7 +220,7 @@ In `extensions/subagents/agent-set.ts`, the `AgentEntry` interface and the `star
 This is purely persistence wiring; spawn-time selection is the next step.
 
 **Verify:** `pnpm vitest run extensions/subagents/persistence.test.ts -t "cwd round-trip"` already passes from Step 3 (uses `appendAgentAdded` directly, not via `start`). Sanity-check this step by reading the diff: the new `cwd` field flows from `RegularAgentSpec.cwd` → `AgentEntry.cwd` → `PersistedAgentRecord.cwd`.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Spawn each child in its per-spec cwd in `agent-set.ts`
 
@@ -229,7 +231,7 @@ Replace `cwd` (the destructured `this.opts.cwd`) with `agentSpec.kind === "agent
 No other behavior changes — `RpcChild` already accepts a `cwd` string.
 
 **Verify:** Manual smoke (no unit test covers `RpcChild` construction directly). Add a temporary `console.log("[debug] spawning", agentSpec.id, "in", ...)` if needed, spawn a subagent with `cwd: "/tmp"` from a parent in this repo, confirm the child's pi sees `/tmp` as its cwd. Remove the log when satisfied. Existing test suites must still pass: `pnpm vitest run extensions/subagents/`.
-**Status:** not started
+**Status:** done
 
 ### Step 6: Wire cwd into restore specs in `agent-set.ts`
 
@@ -238,7 +240,7 @@ In `extensions/subagents/agent-set.ts`, the `toRestoreSpec(agent: PersistedAgent
 The fork branch is unchanged — `ForkAgentSpec` does not declare cwd.
 
 **Verify:** Inspect the diff; restored specs now carry `cwd`. Combined with Step 5's `agentSpec.cwd ?? cwd` selection in `start()`, a restored agent spawns in its original cwd. Behavioral verification happens in Step 7's restore-time validation test.
-**Status:** not started
+**Status:** done
 
 ### Step 7: Prune invalid persisted cwds during restore in `agent-set.ts`
 
@@ -256,7 +258,7 @@ In `extensions/subagents/agent-set.ts`, modify `restoreFromPersistence(agentConf
 This matches the architecture: invalid persisted cwds skip only the offending agent (not the batch), and `pruneInvalidPersistedAgents` emits `agent_removed` so the next restore cycle is consistent.
 
 **Verify:** Manual: persist an agent with `cwd: "/tmp/some-dir"`, delete the dir, restart the parent session, confirm that agent does not restore while the others do, and `agents.jsonl` shows an `agent_removed` event for it. The unit-test coverage of the prune primitive itself is satisfied by Step 3's `persistence.test.ts` cases.
-**Status:** not started
+**Status:** done
 
 ### Step 8: Resolve and validate cwds in the `subagent` tool handler
 
@@ -278,5 +280,5 @@ In `extensions/subagents/index.ts`, the `subagent` tool's `execute(...)` handler
 The `fork` and `resurrect` tool schemas remain unchanged — neither declares a `cwd` field, so TypeBox validation rejects any attempt to pass one (architecture: "no explicit guard needed").
 
 **Verify:** Manual end-to-end smoke matching the brainstorm use case: from a parent agent in this repo, spawn a subagent with `cwd: "/tmp"` and confirm a `bash pwd` tool call inside it reports `/tmp`. Then spawn with an invalid cwd and confirm the tool call fails atomically with an error message that names the offending agent id and the resolved path. Then spawn two agents in the same call where one is invalid and confirm neither spawns.
-**Status:** not started
+**Status:** done
 
