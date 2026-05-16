@@ -1,11 +1,10 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { createRequire, globalPaths } from "node:module";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext, SessionManager as SessionManagerType } from "@mariozechner/pi-coding-agent";
-import type { AutocompleteItem } from "@mariozechner/pi-tui";
+import { basename, dirname, join } from "node:path";
+import { SessionManager, type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { getWorktreeArgumentCompletions, parseWorktreeCommand } from "./command-surface.ts";
 import type {
 	PendingChangesChoice,
@@ -13,56 +12,6 @@ import type {
 	WorktreeInfo,
 } from "./contracts.ts";
 import { createWorktreeController } from "./controller.ts";
-
-const require = createRequire(import.meta.url);
-let cachedSessionManager: typeof SessionManagerType | undefined;
-
-function getPackageResolutionPaths(): string[] {
-	const paths = new Set<string>([process.cwd(), ...globalPaths]);
-	const nodePathEntries = process.env.NODE_PATH?.split(delimiter).filter(Boolean) ?? [];
-	for (const entry of nodePathEntries) {
-		paths.add(entry);
-	}
-
-	const execPrefix = dirname(dirname(process.execPath));
-	paths.add(join(execPrefix, "lib", "node_modules"));
-	paths.add(join(execPrefix, "lib", "node"));
-
-	try {
-		const npmRoot = execSync("npm root -g", { encoding: "utf8" }).trim();
-		if (npmRoot) {
-			paths.add(npmRoot);
-		}
-	} catch {
-		// Ignore npm resolution failures and fall back to the static search paths above.
-	}
-
-	const packageRoots = new Set<string>();
-	for (const basePath of paths) {
-		packageRoots.add(join(basePath, "@mariozechner", "pi-coding-agent"));
-		packageRoots.add(join(basePath, "node_modules", "@mariozechner", "pi-coding-agent"));
-	}
-
-	return [...packageRoots];
-}
-
-function loadSessionManager(): typeof SessionManagerType {
-	if (cachedSessionManager) {
-		return cachedSessionManager;
-	}
-	for (const packageRoot of getPackageResolutionPaths()) {
-		if (!existsSync(join(packageRoot, "package.json"))) {
-			continue;
-		}
-		try {
-			cachedSessionManager = require(packageRoot).SessionManager as typeof SessionManagerType;
-			return cachedSessionManager;
-		} catch {
-			continue;
-		}
-	}
-	throw new Error("Could not resolve @mariozechner/pi-coding-agent for worktree session management");
-}
 
 function listGitBranches(cwd: string): string[] {
 	try {
@@ -277,12 +226,10 @@ function createDependencies(
 		git: createGitClient(),
 		sessions: {
 			async continueRecent(cwd: string) {
-				const SessionManager = loadSessionManager();
 				const session = SessionManager.continueRecent(cwd, sessionDir);
 				return session?.getSessionFile();
 			},
 			async create(cwd: string) {
-				const SessionManager = loadSessionManager();
 				const manager = SessionManager.create(cwd, sessionDir);
 				// Force the session file to exist on disk so the persisted header (which
 				// records `cwd`) is what `SessionManager.open` will read when the runtime
@@ -296,7 +243,6 @@ function createDependencies(
 				return sessionFile;
 			},
 			async forkFrom(sourceSessionPath: string, targetCwd: string) {
-				const SessionManager = loadSessionManager();
 				const sessionFile = SessionManager.forkFrom(sourceSessionPath, targetCwd, sessionDir).getSessionFile();
 				if (!sessionFile) {
 					throw new Error(`Failed to fork a persisted session into ${targetCwd}`);

@@ -7,7 +7,7 @@ See [codemap.md](./codemap.md) for a full map of modules, responsibilities, depe
 ## Conventions
 
 - Skills are Markdown files following the pi skill format (YAML frontmatter + structured sections).
-- The extension uses TypeScript and imports from `@mariozechner/pi-ai` and `@mariozechner/pi-coding-agent`.
+- The extension uses TypeScript and imports from `@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent`.
 
 - **Never try to build, compile, or type-check this project.** Extensions are raw TypeScript loaded by pi at runtime — there is no build step, no `tsc`, no bundler. Editing the `.ts` files is the final step.
 - Agent definitions are Markdown files in `agents/` with YAML frontmatter (name, description, tools, model) and a system prompt body.

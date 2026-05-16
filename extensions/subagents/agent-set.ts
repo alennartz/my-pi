@@ -9,7 +9,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { RpcChild } from "./rpc-child.js";
 import { Broker } from "./broker.js";
 import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs } from "./agents.js";
@@ -354,6 +354,33 @@ export class SubagentManager {
 			return this.teardownSingle(agentId);
 		}
 		return this.teardownAll();
+	}
+
+	/**
+	 * Tear down OS resources (child processes + broker socket) without modifying
+	 * the persistence log. Used for graceful host shutdown, including
+	 * `session_shutdown` triggered by quit, reload, or session replacement: the
+	 * next `session_start` re-spawns the same logical agents via
+	 * `restoreFromPersistence`, which needs the log intact.
+	 *
+	 * Distinct from `teardownAll`, which is user-initiated agent removal and
+	 * therefore must call `appendAgentRemoved` so the agents do not come back
+	 * on the next restore cycle.
+	 */
+	async softShutdown(): Promise<void> {
+		// SIGTERM each child first — do NOT touch the persistence log.
+		await Promise.all(this.entries.map((e) => e.rpc.stop()));
+
+		if (this.broker) {
+			await this.broker.stop();
+			this.broker = null;
+		}
+
+		this.entries = [];
+		this.topology = null;
+		this.correlationToTarget.clear();
+		this.sessionDir = null;
+		this.persistence = null;
 	}
 
 	private async teardownAll(): Promise<{ report: string; empty: boolean }> {

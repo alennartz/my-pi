@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const IDLE_MARKER = "session-idle";
 const RESUME_MESSAGE = "session-resumed";

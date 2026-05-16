@@ -6,7 +6,7 @@
  * provider API differences internally.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export interface StopSequenceManager {
 	/** Add sequences that persist until explicitly removed. */

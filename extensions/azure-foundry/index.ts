@@ -27,8 +27,8 @@ import {
 	streamSimpleAnthropic,
 	streamSimpleOpenAICompletions,
 	streamSimpleOpenAIResponses,
-} from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // =============================================================================
 // Configuration (from env vars)
@@ -376,9 +376,16 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	// Register one provider per backend — each gets the correct api string
+	const FRIENDLY_NAMES: Record<Backend, string> = {
+		"anthropic-messages": "Azure Foundry (Anthropic Messages)",
+		"openai-responses": "Azure Foundry (OpenAI Responses)",
+		"openai-completions": "Azure Foundry (OpenAI Completions)",
+	};
+
 	for (const [backend, group] of byBackend) {
 		const cfg = BACKENDS[backend];
 		pi.registerProvider(`azure-foundry-${backend}`, {
+			name: FRIENDLY_NAMES[backend],
 			baseUrl: `${ENDPOINT}${cfg.basePath}`,
 			apiKey: "azure-foundry-dynamic",
 			api: backend,

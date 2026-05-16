@@ -1,5 +1,5 @@
-import { getAgentDir } from "@mariozechner/pi-coding-agent";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { discoverContextRoots } from "./discovery.ts";
 import { loadOverlayFiles } from "./parsing.ts";
 import { matchOverlay, sortMatchedOverlays } from "./matching.ts";

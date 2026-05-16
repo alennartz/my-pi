@@ -1,4 +1,4 @@
-import { createAgentSession, SessionManager, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, SessionManager, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 
 async function inspect(label: string, sm: any) {
   const loader = new DefaultResourceLoader(process.cwd());

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
  * Discover directories where model-prompt overlays may live.
  *
  * Mirrors pi's own context-file walk (see `loadProjectContextFiles` in
- * `@mariozechner/pi-coding-agent`): global agent dir first, then ancestor
+ * `@earendil-works/pi-coding-agent`): global agent dir first, then ancestor
  * directories from filesystem root down to cwd. Unlike context-file loading,
  * this walk does not require an AGENTS.md / CLAUDE.md anchor — overlays are
  * discovered on their own.

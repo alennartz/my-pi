@@ -13,8 +13,8 @@ import * as net from "node:net";
 import * as fs from "node:fs";
 import * as crypto from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import {
 	type AgentConfig,
 	type RegularAgentSpec,
@@ -25,7 +25,7 @@ import {
 	formatAgentList,
 } from "./agents.js";
 
-import type { TUI } from "@mariozechner/pi-tui";
+import type { TUI } from "@earendil-works/pi-tui";
 import { detect } from "@pimote/panels";
 import type { PanelHandle, Card, CardColor } from "@pimote/panels";
 import { SubagentManager } from "./agent-set.js";
@@ -346,7 +346,7 @@ export default function (pi: ExtensionAPI) {
 
 	let cachedPackageAgents: { user: AgentConfig[], project: AgentConfig[] } | null = null;
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		try {
 			cachedPackageAgents = await discoverPackageAgents(ctx.cwd);
 		} catch {
@@ -354,6 +354,12 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		if (parentLink) return;
+
+		// Persistence restore only makes sense for genuine resumes of a previous
+		// pi process. On startup we may legitimately have crash-dropped state to
+		// recover, but on "new" and "fork" the user is starting a fresh logical
+		// session and shouldn't inherit whatever agents the prior session had.
+		if (event.reason === "new" || event.reason === "fork") return;
 
 		const mgr = ensureManager(ctx);
 		const discovery = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined);
@@ -1251,12 +1257,19 @@ export default function (pi: ExtensionAPI) {
 	// ─── Cleanup on shutdown ─────────────────────────────────────────────
 
 	pi.on("session_shutdown", async () => {
+		// Always tear down OS resources. Pi reloads extensions with jiti
+		// `moduleCache: false`, so the new module instance gets fresh closures
+		// (`manager`, `brokerClient`, etc. all `null` again). Without an explicit
+		// SIGTERM here, the spawned `pi` RPC children would only die when GC
+		// eventually finalizes their `ChildProcess` refs in the dead module —
+		// racy, and during the window the new module's `restoreFromPersistence`
+		// has already spawned duplicates. `softShutdown()` SIGTERMs each child
+		// and stops the broker but leaves the persistence log intact so the next
+		// `session_start` can re-spawn the same logical agents via
+		// `restoreFromPersistence`.
 		queue.clear();
 		if (manager) {
-			const broker = manager.getBroker();
-			if (broker) {
-				await broker.stop();
-			}
+			await manager.softShutdown();
 			manager = null;
 		}
 		if (parentBrokerClient) {
