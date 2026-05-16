@@ -158,3 +158,125 @@ No DR supersessions.
 - An empty input list returns an empty array (no log writes).
 
 **Review status:** approved
+
+## Steps
+
+### Step 1: Implement `isValidCwd` in `agents.ts`
+
+Replace the `throw new Error("not implemented")` body of `isValidCwd(absPath: string): boolean` in `extensions/subagents/agents.ts` with a real implementation. Use `fs.statSync` in a try/catch: return `true` iff the path exists and `stat.isDirectory()` is true; return `false` on any thrown error (ENOENT, EACCES, etc.) or non-directory result. Add the necessary `fs` symbol — `fs` is already imported at the top of the file.
+
+The function does **not** resolve or normalize its input. Callers pass an absolute path. This is shared between spawn-time (`resolveAgentCwds`) and restore-time (`pruneInvalidPersistedAgents`).
+
+**Verify:** `pnpm vitest run extensions/subagents/cwd.test.ts -t isValidCwd` — all three cases pass (existing dir → true, missing → false, file → false).
+**Status:** not started
+
+### Step 2: Implement `resolveAgentCwds` in `agents.ts`
+
+Replace the stub body of `resolveAgentCwds(agents: AgentCwdInput[], parentCwd: string): Map<string, string>` in `extensions/subagents/agents.ts`. Use the existing `path` import (already at top of file).
+
+Behavior:
+
+1. Allocate `const result = new Map<string, string>()`.
+2. For each `agent` in `agents`:
+   - If `agent.cwd` is undefined, continue (omit from result map).
+   - Compute `const resolved = path.isAbsolute(agent.cwd) ? agent.cwd : path.resolve(parentCwd, agent.cwd)`.
+   - If `!isValidCwd(resolved)`, throw `new Error(\`Agent "${agent.id}" has invalid cwd: "${resolved}" does not exist or is not a directory\`)`.
+   - `result.set(agent.id, resolved)`.
+3. Return `result`.
+
+Validation is **batch-atomic**: a throw on any agent prevents partial returns (loop hasn't returned yet — the throw is the exit). Tests rely on the error message containing both the agent id and the resolved absolute path, and on relative inputs producing the *resolved* absolute path in the error.
+
+**Verify:** `pnpm vitest run extensions/subagents/cwd.test.ts` — full file passes (10 `resolveAgentCwds` cases + 3 `isValidCwd` cases).
+**Status:** not started
+
+### Step 3: Implement `pruneInvalidPersistedAgents` in `persistence.ts`
+
+Replace the stub body of `pruneInvalidPersistedAgents(paths, agents, isCwdValid)` in `extensions/subagents/persistence.ts`.
+
+Behavior:
+
+1. Allocate `const kept: PersistedAgentRecord[] = []`.
+2. For each `record` in `agents`:
+   - If `record.cwd === undefined`, push to `kept` (no validator call — tests assert this).
+   - Else if `isCwdValid(record.cwd)`, push to `kept`.
+   - Else (cwd present but invalid): do **not** push; call `appendAgentRemoved(paths, { id: record.id, sessionFile: record.sessionFile, sessionId: record.sessionId })`. The `agent_removed` event lets `loadPersistedAgents`'s replay logic cancel the prior `agent_added` so the dropped agent does not reappear on the next load.
+3. Return `kept`.
+
+No other side effects. Empty input → empty output, no log writes.
+
+**Verify:** `pnpm vitest run extensions/subagents/persistence.test.ts -t pruneInvalidPersistedAgents` — all six cases pass, including the round-trip check that a pruned agent does not reappear via `loadPersistedAgents`.
+**Status:** not started
+
+### Step 4: Persist cwd through `appendAgentAdded` in `agent-set.ts`
+
+In `extensions/subagents/agent-set.ts`, the `AgentEntry` interface and the `start()` method currently do not carry per-spec `cwd`. Wire it in:
+
+1. Add `cwd?: string` to the `AgentEntry` interface (alongside `sessionFile`, `sessionId`, `kind`).
+2. In the per-spec loop inside `start()`, when constructing the `AgentEntry`, set `cwd: agentSpec.kind === "agent" ? agentSpec.cwd : undefined` (fork specs intentionally have no cwd — see architecture).
+3. In the `appendAgentAdded` call (the block after `await Promise.all(newEntries.map((e) => e.rpc.start()))`), add `cwd: entry.cwd` to the record literal so persisted records round-trip the override.
+
+This is purely persistence wiring; spawn-time selection is the next step.
+
+**Verify:** `pnpm vitest run extensions/subagents/persistence.test.ts -t "cwd round-trip"` already passes from Step 3 (uses `appendAgentAdded` directly, not via `start`). Sanity-check this step by reading the diff: the new `cwd` field flows from `RegularAgentSpec.cwd` → `AgentEntry.cwd` → `PersistedAgentRecord.cwd`.
+**Status:** not started
+
+### Step 5: Spawn each child in its per-spec cwd in `agent-set.ts`
+
+In `extensions/subagents/agent-set.ts`, change the `new RpcChild({ cwd, env: ..., args })` call inside the per-spec loop of `start()` so the per-spec cwd takes precedence over the manager's default.
+
+Replace `cwd` (the destructured `this.opts.cwd`) with `agentSpec.kind === "agent" ? (agentSpec.cwd ?? cwd) : cwd`. Fork specs always inherit the manager's cwd (architecture: fork does not support cwd override).
+
+No other behavior changes — `RpcChild` already accepts a `cwd` string.
+
+**Verify:** Manual smoke (no unit test covers `RpcChild` construction directly). Add a temporary `console.log("[debug] spawning", agentSpec.id, "in", ...)` if needed, spawn a subagent with `cwd: "/tmp"` from a parent in this repo, confirm the child's pi sees `/tmp` as its cwd. Remove the log when satisfied. Existing test suites must still pass: `pnpm vitest run extensions/subagents/`.
+**Status:** not started
+
+### Step 6: Wire cwd into restore specs in `agent-set.ts`
+
+In `extensions/subagents/agent-set.ts`, the `toRestoreSpec(agent: PersistedAgentRecord): AgentSpec` method currently drops `cwd` when reconstituting a `RegularAgentSpec`. In the `kind === "agent"` branch (the trailing `return { kind: "agent", ... }` block), add `cwd: agent.cwd` to the returned object so restored specs flow through the same spawn-time selection added in Step 5.
+
+The fork branch is unchanged — `ForkAgentSpec` does not declare cwd.
+
+**Verify:** Inspect the diff; restored specs now carry `cwd`. Combined with Step 5's `agentSpec.cwd ?? cwd` selection in `start()`, a restored agent spawns in its original cwd. Behavioral verification happens in Step 7's restore-time validation test.
+**Status:** not started
+
+### Step 7: Prune invalid persisted cwds during restore in `agent-set.ts`
+
+In `extensions/subagents/agent-set.ts`, modify `restoreFromPersistence(agentConfigs: AgentConfig[])` so that before mapping persisted records to specs and calling `start`, it filters them through `pruneInvalidPersistedAgents`.
+
+1. Add `pruneInvalidPersistedAgents` to the existing import from `./persistence.js` and `isValidCwd` to the existing import from `./agents.js`.
+2. After `const persisted = loadPersistedAgents(parentSessionFile)` and the empty-check, insert:
+
+   ```ts
+   const survivors = pruneInvalidPersistedAgents(persisted.paths, persisted.agents, isValidCwd);
+   if (survivors.length === 0) return;
+   ```
+3. Replace the `persisted.agents.map(...)` call with `survivors.map(...)`.
+
+This matches the architecture: invalid persisted cwds skip only the offending agent (not the batch), and `pruneInvalidPersistedAgents` emits `agent_removed` so the next restore cycle is consistent.
+
+**Verify:** Manual: persist an agent with `cwd: "/tmp/some-dir"`, delete the dir, restart the parent session, confirm that agent does not restore while the others do, and `agents.jsonl` shows an `agent_removed` event for it. The unit-test coverage of the prune primitive itself is satisfied by Step 3's `persistence.test.ts` cases.
+**Status:** not started
+
+### Step 8: Resolve and validate cwds in the `subagent` tool handler
+
+In `extensions/subagents/index.ts`, the `subagent` tool's `execute(...)` handler already validates agent definitions, model overrides, and unique ids before constructing `agentSpecs`. Add a cwd resolution pass alongside those checks.
+
+1. Add `resolveAgentCwds` to the existing import from `./agents.js`.
+2. After the duplicate-id / existing-id check and before the skill-path resolution loop, insert a single resolver call:
+
+   ```ts
+   const resolvedCwds = resolveAgentCwds(
+       params.agents.map(a => ({ id: a.id, cwd: a.cwd })),
+       ctx.cwd,
+   );
+   ```
+
+   This throws synchronously on any invalid cwd, matching the architecture's all-or-nothing batch contract — the throw propagates out of `execute` and no `RpcChild` is constructed.
+3. When building `agentSpecs` (the `params.agents.map(a => ...)` block that produces `RegularAgentSpec[]`), include the resolved cwd: extend the returned literal with `cwd: resolvedCwds.get(a.id)` so each spec carries its absolute, validated path before reaching `mgr.start(...)`. Agents without a cwd get `undefined`, which falls through to `this.opts.cwd` in `agent-set.ts`.
+
+The `fork` and `resurrect` tool schemas remain unchanged — neither declares a `cwd` field, so TypeBox validation rejects any attempt to pass one (architecture: "no explicit guard needed").
+
+**Verify:** Manual end-to-end smoke matching the brainstorm use case: from a parent agent in this repo, spawn a subagent with `cwd: "/tmp"` and confirm a `bash pwd` tool call inside it reports `/tmp`. Then spawn with an invalid cwd and confirm the tool call fails atomically with an error message that names the offending agent id and the resolved path. Then spawn two agents in the same call where one is invalid and confirm neither spawns.
+**Status:** not started
+
