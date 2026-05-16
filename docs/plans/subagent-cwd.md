@@ -156,3 +156,5 @@ No DR supersessions.
 - Per-record failures are independent: one record's invalid `cwd` does not affect others in the batch.
 - For each dropped record, an `agent_removed` lifecycle event is appended to the log, so the dropped agent does not reappear in a subsequent `loadPersistedAgents` call.
 - An empty input list returns an empty array (no log writes).
+
+**Review status:** approved
