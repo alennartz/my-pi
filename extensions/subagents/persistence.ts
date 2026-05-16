@@ -152,6 +152,12 @@ export function findAgentRecordBySessionId(
  * the offending agent, it does not fail the batch. Mirrors the architecture's
  * "fail fast, don't be magic" stance: a silently relocated agent (falling
  * back to the parent's cwd) is worse than a visibly missing one.
+ *
+ * Note the asymmetry with spawn-time validation in `resolveAgentCwds`, which
+ * **is** batch-atomic (any invalid cwd → no agents in the batch spawn). At
+ * spawn time the caller can fix the input and retry the whole batch; at
+ * restore time there is no caller to retry, so failing the whole restore on
+ * one stale directory would be worse than dropping just that record.
  */
 export function pruneInvalidPersistedAgents(
 	paths: PersistencePaths,

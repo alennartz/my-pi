@@ -210,6 +210,16 @@ Avoid designs where agents form blocking rings. If A blocks on B, B must not blo
 - **Parent as mediator:** Agents only block on parent. Parent blocks on agents. No peer blocking. Simplest deadlock-free design.
 - **Mixed:** Fire-and-forget for peer communication, blocking only toward parent. Keeps the dependency graph acyclic.
 
+## Per-Agent Working Directory
+
+Each agent in a `subagent` call can take an optional `cwd` — the directory the child pi process boots in. Relative paths resolve against the parent's cwd; absolute paths are used as-is. Defaults to the parent's cwd. The agent's `AGENTS.md`, project agents, and project skills are discovered relative to its cwd, so it boots as if pi were freshly launched there.
+
+Validation is batch-atomic: if any agent's `cwd` doesn't exist or isn't a directory, the whole `subagent` call fails before any child is spawned.
+
+`fork` and `resurrect` do not accept `cwd`. Forks inherit the parent's cwd; resurrections reuse the cwd from the persisted session. If a persisted cwd has since been deleted, that agent is pruned at restore time with an `agent_removed` event rather than failing the whole restore.
+
+**When to use:** monorepos where workers should be scoped to a single package, worktree-based parallel branches where each agent operates in its own checkout, or any case where the agent's project context (AGENTS.md, skills, conventions) differs from the parent's.
+
 ## Recursive Subagents
 
 Any agent — including a child agent — can spawn its own subagents using the same `subagent` tool. The child has the full tool suite (`subagent`, `fork`, `send`, `respond`, `check_status`, `teardown`, `resurrect`, `await_agents`).
