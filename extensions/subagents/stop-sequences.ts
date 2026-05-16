@@ -32,54 +32,7 @@ export function createStopSequenceManager(pi: ExtensionAPI): StopSequenceManager
 		const model = ctx.model;
 		if (!model) return;
 
-		const payload = event.payload as any;
-
-		switch (model.api) {
-			// Anthropic
-			case "anthropic-messages":
-				payload.stop_sequences = mergeUnique(payload.stop_sequences, sequences);
-				break;
-
-			// OpenAI family
-			case "openai-completions":
-			case "openai-responses":
-			case "azure-openai-responses":
-			case "openai-codex-responses":
-				payload.stop = mergeUnique(payload.stop, sequences);
-				break;
-
-			// Google family
-			case "google-generative-ai":
-			case "google-vertex":
-			case "google-gemini-cli":
-				payload.generationConfig ??= {};
-				payload.generationConfig.stopSequences = mergeUnique(
-					payload.generationConfig.stopSequences,
-					sequences,
-				);
-				break;
-
-			// Bedrock (Anthropic-style under the hood)
-			case "bedrock-converse-stream":
-				payload.additionalModelRequestFields ??= {};
-				payload.additionalModelRequestFields.stop_sequences = mergeUnique(
-					payload.additionalModelRequestFields.stop_sequences,
-					sequences,
-				);
-				break;
-
-			// Mistral
-			case "mistral-conversations":
-				payload.stop = mergeUnique(payload.stop, sequences);
-				break;
-
-			default:
-				// Unknown API — try the OpenAI-style "stop" field as a best guess
-				payload.stop = mergeUnique(payload.stop, sequences);
-				break;
-		}
-
-		return payload;
+		return applyStopSequences(event.payload as any, model.api, sequences);
 	});
 
 	return {
@@ -97,6 +50,67 @@ export function createStopSequenceManager(pi: ExtensionAPI): StopSequenceManager
 			oneShot = [];
 		},
 	};
+}
+
+export function applyStopSequences(payload: any, api: string, sequences: string[]): any {
+	switch (api) {
+		// Anthropic
+		case "anthropic-messages":
+			payload.stop_sequences = mergeUnique(payload.stop_sequences, sequences);
+			break;
+
+		// OpenAI chat-completions style APIs support top-level `stop`
+		case "openai-completions":
+		case "mistral-conversations":
+			payload.stop = mergeUnique(payload.stop, sequences);
+			break;
+
+		// OpenAI Responses-family APIs reject top-level `stop`.
+		// Emulate the guard with a one-shot instruction instead.
+		case "openai-responses":
+		case "azure-openai-responses":
+		case "openai-codex-responses":
+			payload.instructions = appendStopInstruction(payload.instructions, sequences);
+			break;
+
+		// Google family
+		case "google-generative-ai":
+		case "google-vertex":
+		case "google-gemini-cli":
+			payload.generationConfig ??= {};
+			payload.generationConfig.stopSequences = mergeUnique(
+				payload.generationConfig.stopSequences,
+				sequences,
+			);
+			break;
+
+		// Bedrock (Anthropic-style under the hood)
+		case "bedrock-converse-stream":
+			payload.additionalModelRequestFields ??= {};
+			payload.additionalModelRequestFields.stop_sequences = mergeUnique(
+				payload.additionalModelRequestFields.stop_sequences,
+				sequences,
+			);
+			break;
+
+		default:
+			// Unknown API — try the OpenAI-style `stop` field as a best guess.
+			payload.stop = mergeUnique(payload.stop, sequences);
+			break;
+	}
+
+	return payload;
+}
+
+function appendStopInstruction(existing: string | null | undefined, sequences: string[]): string {
+	const markers = sequences.map((s) => `- ${s}`).join("\n");
+	const instruction = [
+		"System-delivered notification markers (not assistant output):",
+		markers,
+		"Do not emit, echo, simulate, or continue with any of those markers.",
+		"If your next token would begin one of them, end your response immediately before emitting it.",
+	].join("\n");
+	return existing && existing.trim().length > 0 ? `${existing}\n\n${instruction}` : instruction;
 }
 
 function mergeUnique(existing: string[] | undefined, additions: string[]): string[] {
