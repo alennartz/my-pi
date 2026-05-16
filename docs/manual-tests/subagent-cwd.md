@@ -67,12 +67,80 @@ resolution, validation, and propagation), so no escalation is needed.
 
 ## Results
 
-(Filled in below as each item runs.)
+### Smoke Suite
+
+- **J1 (spawn / message / teardown)** — exercised via T1 (cwd override
+  branch) and T6's `t6-default` (no-cwd legacy branch). Both spawned,
+  produced their `agent_idle` reports with `pwd` output, and tore down
+  cleanly via `teardown`. **Verdict: pass.** Coherence: looks coherent —
+  the no-cwd child reports the parent's cwd; the override child reports
+  its target dir; teardown surfaces `<agent_torn_down>` with a usable
+  `session_id`, exactly as documented.
+- **J2 (resurrect)** — exercised via T8 below. **Verdict: pass.**
+  Coherence: looks coherent — the resurrected child lands in the
+  recorded cwd without any re-spec from the caller.
+
+### Topic-Specific Tests
+
+- **T1 (absolute `cwd`)** — spawned `t1-abs` with
+  `cwd: "/tmp/subagent-cwd-fixtures/proj-a"`. Child's `pwd` reported
+  `/tmp/subagent-cwd-fixtures/proj-a`. **Verdict: pass.** Coherence:
+  looks coherent.
+- **T2 ("as if pi were freshly launched")** — same spawn as T1; child
+  also `head -1 AGENTS.md` and reported `SENTINEL-A: this is the
+  AGENTS.md for project A …`, i.e. the file inside the target cwd, not
+  the repo's own AGENTS.md. **Verdict: pass.** Coherence: looks
+  coherent — the project-context discovery did re-root at the new cwd.
+- **T3 (relative `cwd`)** — spawned `t3-rel` with `cwd:
+  "extensions/subagents"` from parent cwd `/home/alenna/repos/my-pi`.
+  Child's `pwd` reported `/home/alenna/repos/my-pi/extensions/subagents`.
+  Reinforced by `t-rel-bad`: a deliberately broken relative path
+  produced an error message naming the *resolved absolute* path
+  (`/home/alenna/repos/my-pi/no/such/relative/dir`), not the relative
+  input — confirms `path.resolve(parentCwd, …)` runs before validation.
+  **Verdict: pass.**
+- **T4 (invalid `cwd` — nonexistent path)** — spawn of `t4-bad` with
+  `cwd: "/tmp/subagent-cwd-fixtures/does-not-exist-xyz"` returned a tool
+  error: `Agent "t4-bad" has invalid cwd: "/tmp/subagent-cwd-fixtures/
+  does-not-exist-xyz" does not exist or is not a directory`. `check_status`
+  afterward reported no agents running. **Verdict: pass.** Coherence:
+  looks coherent — message identifies the agent id and the path that
+  failed; the atomic-batch promise holds.
+- **T5 (invalid `cwd` — path is a file)** — spawn of `t5-file` with
+  `cwd: "/tmp/subagent-cwd-fixtures/not-a-dir.txt"` returned the same
+  error shape (`does not exist or is not a directory`), confirming the
+  validator distinguishes file vs. directory via `stat.isDirectory()`.
+  **Verdict: pass.**
+- **T6 (mixed batch)** — single `subagent` call with three specs:
+  `t3-rel` (relative `cwd`), `t6-default` (no `cwd`), `t6-override`
+  (absolute `cwd`). All three spawned. Their `pwd` outputs matched
+  expectations exactly: parent cwd for the no-`cwd` child, resolved
+  override for the other two. **Verdict: pass.** Coherence: looks
+  coherent — the per-spec selection (`agentSpec.cwd ?? this.opts.cwd`)
+  routes each child independently with no cross-contamination.
+- **T7 (atomicity with valid + invalid)** — single `subagent` call with
+  `t7-valid` (valid absolute `cwd`) and `t7-invalid` (nonexistent
+  `cwd`). Tool error mentioned only the invalid spec; `check_status`
+  afterward reported no agents running, confirming the valid sibling was
+  not partially spawned. **Verdict: pass.** Coherence: looks coherent —
+  matches `resolveAgentCwds`'s synchronous-throw contract.
+- **T8 (persistence round-trip via resurrect)** — `t1-abs` torn down
+  produced `<agent_torn_down session_id="019e3163-…"/>`. Resurrected
+  as `t1-resurrected` with that session_id and a fresh task; child's
+  `pwd` still reported `/tmp/subagent-cwd-fixtures/proj-a`. **Verdict:
+  pass.** Coherence: looks coherent — confirms the persistence path
+  (`AgentEntry.cwd → PersistedAgentRecord.cwd → toRestoreSpec`) round-
+  trips intact and the restored child is rebooted in the recorded cwd.
 
 ## Plan Updates
 
-(Filled in at the end.)
+None. The persistent journeys in `tools/manual-test/PLAN.md` are
+unchanged — `cwd` is an additive optional parameter on J1's existing
+spawn surface, not a new primary journey. J1's description already covers
+"spawn one or more child agents via the `subagent` tool"; no rewrite is
+warranted.
 
 ## Open Issues
 
-(Filled in at the end.)
+None. Every smoke and topic-specific test passed; no items were fixed
+inline (because nothing was broken); no escalations.
