@@ -87,6 +87,33 @@ export class Broker {
 		this.cleanupAgent(agentId, "removed", `Agent "${agentId}" was removed`);
 	}
 
+	/**
+	 * Agent finished its turn (went idle) without crashing or being torn down.
+	 * If anyone was waiting on a blocking send TO this agent, that send is now
+	 * unblockable on its own — fail those correlations with a clear error so
+	 * the sender's send tool call returns instead of hanging forever.
+	 *
+	 * Unlike cleanupAgent, the agent remains alive and connected — only
+	 * correlations TARGETING it are failed. Correlations where this agent is
+	 * the sender (a blocking send it issued) are left intact; the responder is
+	 * still expected to respond.
+	 */
+	agentIdled(agentId: string): void {
+		for (const [corrId, pending] of this.pendingCorrelations) {
+			if (this.correlationTargets.get(corrId) === agentId) {
+				this.deadlockGraph.removeEdge(pending.from, agentId);
+				this.correlationTargets.delete(corrId);
+				this.writeTo(pending.fromSocket, {
+					type: "error",
+					correlationId: corrId,
+					error: `Agent "${agentId}" went idle without responding to your send. It either forgot to call respond, or chose not to. Its final output was delivered via <agent_idle>; treat that as the answer, or send a new message to prompt it again.`,
+				});
+				this.pendingCorrelations.delete(corrId);
+				this.onBlockingSendEnd?.(pending.from, corrId);
+			}
+		}
+	}
+
 	private cleanupAgent(agentId: string, reason: "crashed" | "removed", errorMessage: string): void {
 		this.removedAgents.set(agentId, reason);
 

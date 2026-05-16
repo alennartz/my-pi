@@ -588,6 +588,9 @@ export class SubagentManager {
 			if (entry.status.state !== "failed") {
 				entry.status.state = "idle";
 				entry.status.lastActivity = undefined;
+				// Unblock any blocking sends targeting this agent — it finished its
+				// turn without responding, so the sender would hang otherwise.
+				this.broker?.agentIdled(entry.id);
 				this.opts.onUpdate();
 				entry.completionNotified = true;
 				this.opts.onAgentComplete(entry.id, this.allDone());
