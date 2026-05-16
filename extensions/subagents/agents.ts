@@ -19,6 +19,13 @@ export interface RegularAgentSpec {
 	task: string;
 	channels?: string[];
 	resumeSessionFile?: string;
+	/**
+	 * Working directory for this agent. Always an absolute path once the spec
+	 * reaches `SubagentManager.start` — the tool handler resolves and validates
+	 * any user-supplied (possibly relative) path before spawn. Absent means
+	 * "use the manager's default" (the parent's cwd).
+	 */
+	cwd?: string;
 }
 
 export interface ForkAgentSpec {
@@ -43,6 +50,51 @@ export interface AgentConfig {
 	systemPrompt: string;
 	source: "user" | "project" | "package:user" | "package:project";
 	filePath: string;
+}
+
+/**
+ * Input shape for `resolveAgentCwds` — accepts just the fields it needs from
+ * an agent spec so callers can pass tool-call params directly without
+ * pre-shaping them into full `RegularAgentSpec` records.
+ */
+export interface AgentCwdInput {
+	id: string;
+	cwd?: string;
+}
+
+/**
+ * Predicate: does `absPath` point at an existing directory on disk?
+ *
+ * Shared primitive used by both the spawn-time resolver (`resolveAgentCwds`)
+ * and the restore-time pruner (`pruneInvalidPersistedAgents`). Caller is
+ * expected to pass an absolute path — this is not a path-resolver, just a
+ * filesystem check.
+ */
+export function isValidCwd(_absPath: string): boolean {
+	throw new Error("not implemented");
+}
+
+/**
+ * Resolve and validate the `cwd` of each agent in a spawn batch.
+ *
+ * For every input with a `cwd`:
+ *  - relative paths are resolved against `parentCwd`
+ *  - the resolved path must exist and be a directory
+ *
+ * Returns a Map keyed by agent id → resolved absolute path, containing only
+ * entries that supplied a `cwd`. Inputs without `cwd` are silently omitted
+ * (callers fall back to the manager's default at spawn time).
+ *
+ * Failure is **atomic for the batch**: if any agent's `cwd` is invalid, an
+ * Error is thrown and no entries are returned. The error message identifies
+ * the offending agent by id and includes the resolved absolute path that
+ * failed validation.
+ */
+export function resolveAgentCwds(
+	_agents: AgentCwdInput[],
+	_parentCwd: string,
+): Map<string, string> {
+	throw new Error("not implemented");
 }
 
 export interface AgentDiscoveryResult {

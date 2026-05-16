@@ -16,6 +16,12 @@ export interface PersistedAgentRecord {
 	agent?: string;
 	sessionFile: string;
 	sessionId?: string;
+	/**
+	 * Absolute path the agent was spawned in. Absent for legacy records (written
+	 * before this field existed) and for agents that used the parent's default
+	 * cwd at spawn time. On restore, absence is treated as "no override".
+	 */
+	cwd?: string;
 }
 
 export type AgentLifecycleEvent =
@@ -125,10 +131,34 @@ export function findAgentRecordBySessionId(
 				agent: event.agent,
 				sessionFile: event.sessionFile,
 				sessionId: event.sessionId,
+				cwd: event.cwd,
 			};
 		}
 	}
 	return undefined;
+}
+
+/**
+ * Filter a list of restored `PersistedAgentRecord` entries by re-validating
+ * each persisted `cwd` against the live filesystem.
+ *
+ * Records without a `cwd` (legacy or default-cwd agents) are always kept.
+ * Records whose `cwd` no longer exists or is not a directory are dropped,
+ * and an `agent_removed` lifecycle event is appended to the log for each
+ * dropped record — citing the invalid cwd as the reason — so the next
+ * restore cycle does not attempt them again.
+ *
+ * This is an **independent per-record check**: an invalid cwd skips only
+ * the offending agent, it does not fail the batch. Mirrors the architecture's
+ * "fail fast, don't be magic" stance: a silently relocated agent (falling
+ * back to the parent's cwd) is worse than a visibly missing one.
+ */
+export function pruneInvalidPersistedAgents(
+	_paths: PersistencePaths,
+	_agents: PersistedAgentRecord[],
+	_isCwdValid: (absPath: string) => boolean,
+): PersistedAgentRecord[] {
+	throw new Error("not implemented");
 }
 
 export function loadPersistedAgents(parentSessionFile: string): {
@@ -162,6 +192,7 @@ export function loadPersistedAgents(parentSessionFile: string): {
 				agent: event.agent,
 				sessionFile: event.sessionFile,
 				sessionId: event.sessionId,
+				cwd: event.cwd,
 			});
 		} else if (event.type === "agent_removed") {
 			const current = liveAgents.get(event.id);

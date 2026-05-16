@@ -104,3 +104,55 @@ The "as if pi were freshly launched there" promise covers everything the child p
 - **DR-016 (extension-level agent discovery via resource metadata)** is what makes the "as if freshly launched" semantics work for free — the child pi's `session_start` calls `discoverPackageAgents(ctx.cwd)` rooted in the new directory.
 
 No DR supersessions.
+
+## Tests
+
+**Pre-test-write commit:** `e125e50968df041bc1a64933e1707874adebdf2c`
+
+### Interface Files
+
+- `extensions/subagents/agents.ts` — added optional `cwd` to `RegularAgentSpec`; exported new `AgentCwdInput` shape, `isValidCwd(absPath)` predicate, and `resolveAgentCwds(agents, parentCwd)` batch-atomic resolver/validator. Stubs throw `not implemented`.
+- `extensions/subagents/persistence.ts` — added optional `cwd` to `PersistedAgentRecord`; plumbed cwd through `loadPersistedAgents` and `findAgentRecordBySessionId` read-back (the `agent_added` writer already spreads the full record); exported new `pruneInvalidPersistedAgents(paths, agents, isCwdValid)` for restore-time validation. Stub throws `not implemented`.
+- `extensions/subagents/index.ts` — added `cwd: Type.Optional(Type.String(...))` to the `subagent` tool's `AgentItem` schema with the description from the architecture.
+
+### Test Files
+
+- `extensions/subagents/cwd.test.ts` — exercises `isValidCwd` (directory / missing / file) and `resolveAgentCwds` (absolute pass-through, relative resolution against `parentCwd`, omission of cwd-less agents, batch atomicity on invalid entries, error messages identifying agent id and resolved path, empty batch).
+- `extensions/subagents/persistence.test.ts` — exercises the cwd round-trip through `appendAgentAdded` / `loadPersistedAgents` / `findAgentRecordBySessionId`, legacy log lines (no cwd field) restoring as cwd-less records, and `pruneInvalidPersistedAgents` (keeps valid, keeps cwd-less unconditionally without invoking the validator, drops invalid, independent per-record failures, emits `agent_removed` events that cancel the agent on next load, empty input).
+
+### Behaviors Covered
+
+#### `isValidCwd` (agents.ts)
+
+- Returns `true` for an existing directory at the given absolute path.
+- Returns `false` when the path does not exist.
+- Returns `false` when the path exists but is a file rather than a directory.
+
+#### `resolveAgentCwds` (agents.ts)
+
+- Returns an empty map when no input has a `cwd`.
+- Absolute paths that point at existing directories are returned unchanged in the result map, keyed by agent id.
+- Relative paths are resolved against `parentCwd` and the resulting absolute path is what appears in the map.
+- Agents without a `cwd` are omitted from the result map (so callers can use `agentSpec.cwd ?? this.opts.cwd` at spawn time).
+- A `cwd` that does not exist causes a throw whose message contains both the offending agent's id and the resolved (absolute) path that failed.
+- A `cwd` that exists but is not a directory (e.g. a file) causes a throw.
+- When a relative `cwd` is invalid, the error message references the resolved absolute path, not the relative input.
+- Validation is **atomic for the batch**: if any agent's `cwd` is invalid, the function throws and never returns a partial result map.
+- Validation covers every entry, not just the first — a later invalid entry still triggers a throw mentioning that entry's id.
+- An empty input batch returns an empty map.
+
+#### `PersistedAgentRecord` cwd round-trip (persistence.ts)
+
+- A record written with `cwd` via `appendAgentAdded` is loaded back through `loadPersistedAgents` with `cwd` intact.
+- A record written without `cwd` loads back with `cwd` undefined.
+- Legacy JSONL lines that pre-date the `cwd` field load successfully as records with `cwd` undefined (no override).
+- `findAgentRecordBySessionId` exposes the persisted `cwd` when present and returns undefined when absent.
+
+#### `pruneInvalidPersistedAgents` (persistence.ts)
+
+- Records whose persisted `cwd` still passes the `isCwdValid` predicate are kept.
+- Records with no `cwd` are kept unconditionally — the predicate is never invoked for them.
+- Records whose `cwd` no longer validates are dropped from the returned array.
+- Per-record failures are independent: one record's invalid `cwd` does not affect others in the batch.
+- For each dropped record, an `agent_removed` lifecycle event is appended to the log, so the dropped agent does not reappear in a subsequent `loadPersistedAgents` call.
+- An empty input list returns an empty array (no log writes).

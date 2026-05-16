@@ -587,6 +587,12 @@ export default function (pi: ExtensionAPI) {
 				description: "Peer agent ids this agent can send to (agent-to-agent only; parent is always allowed)",
 			}),
 		),
+		cwd: Type.Optional(Type.String({
+			description:
+				"Working directory for this agent. Relative paths resolve against the parent's cwd. " +
+				"Defaults to the parent's cwd. The subagent boots as if pi were freshly launched in this directory \u2014 " +
+				"its AGENTS.md, project agents, and project skills are discovered relative to it.",
+		})),
 	});
 
 	if (shouldRegisterTool("subagent")) pi.registerTool({
