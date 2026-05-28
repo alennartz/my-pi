@@ -160,6 +160,14 @@ interface ModelMeta {
 	contextWindow: number;
 	maxTokens: number;
 	cost: ModelCost;
+	/**
+	 * Anthropic only. Tells pi-ai to use adaptive thinking
+	 * (`thinking.type="adaptive"` + `output_config.effort`) instead of
+	 * budget-based thinking (`thinking.type="enabled"` + `budget_tokens`).
+	 * Required for Opus 4.6+, Opus 4.7, Sonnet 4.6 — Azure Foundry rejects the
+	 * older shape for these models.
+	 */
+	forceAdaptiveThinking?: boolean;
 }
 
 const ZERO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -184,13 +192,13 @@ const MODEL_CATALOG: Record<string, Partial<ModelMeta>> = {
 	"claude-sonnet-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
 		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
 	"claude-sonnet-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 64000,
-		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
+		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, forceAdaptiveThinking: true },
 	"claude-opus-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
 		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
 	"claude-opus-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
-		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
+		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, forceAdaptiveThinking: true },
 	"claude-opus-4-7": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
-		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
+		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, forceAdaptiveThinking: true },
 	"claude-haiku-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
 		cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 } },
 	// OpenAI — GPT-4.1 family
@@ -400,6 +408,9 @@ export default function (pi: ExtensionAPI) {
 					cost: meta.cost,
 					contextWindow: meta.contextWindow,
 					maxTokens: meta.maxTokens,
+					...(backend === "anthropic-messages" && meta.forceAdaptiveThinking
+						? { compat: { forceAdaptiveThinking: true } }
+						: {}),
 				};
 			}),
 
