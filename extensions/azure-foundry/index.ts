@@ -34,16 +34,35 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 // Configuration (from env vars)
 // =============================================================================
 
-function requireEnv(name: string): string {
-	const val = process.env[name];
-	if (!val) throw new Error(`azure-foundry: missing required env var ${name}`);
-	return val;
+const REQUIRED_ENV_VARS = [
+	"AZURE_FOUNDRY_ENDPOINT",
+	"AZURE_FOUNDRY_ACCOUNT",
+	"AZURE_FOUNDRY_RESOURCE_GROUP",
+] as const;
+
+interface FoundryConfig {
+	endpoint: string;
+	account: string;
+	resourceGroup: string;
+	subscription?: string;
 }
 
-const ENDPOINT = requireEnv("AZURE_FOUNDRY_ENDPOINT").replace(/\/+$/, "");
-const ACCOUNT = requireEnv("AZURE_FOUNDRY_ACCOUNT");
-const RESOURCE_GROUP = requireEnv("AZURE_FOUNDRY_RESOURCE_GROUP");
-const SUBSCRIPTION = process.env.AZURE_FOUNDRY_SUBSCRIPTION; // optional
+/**
+ * Resolve required configuration from env vars. Returns null (rather than
+ * throwing) when any required var is absent, so a misconfigured/absent Azure
+ * Foundry setup degrades to a no-op instead of crashing the entire pi CLI.
+ */
+function resolveConfig(): FoundryConfig | null {
+	const missing = REQUIRED_ENV_VARS.filter((name) => !process.env[name]);
+	if (missing.length > 0) return null;
+
+	return {
+		endpoint: process.env.AZURE_FOUNDRY_ENDPOINT!.replace(/\/+$/, ""),
+		account: process.env.AZURE_FOUNDRY_ACCOUNT!,
+		resourceGroup: process.env.AZURE_FOUNDRY_RESOURCE_GROUP!,
+		subscription: process.env.AZURE_FOUNDRY_SUBSCRIPTION, // optional
+	};
+}
 
 // =============================================================================
 // Azure AD Token Cache
@@ -294,11 +313,11 @@ function resolveBackend(format: string, capabilities: Record<string, string>): B
  * Discover deployments from the Azure AI Foundry resource via az CLI.
  * Filters to only chat-capable, successfully provisioned deployments.
  */
-function discoverDeployments(): Deployment[] {
-	const subArg = SUBSCRIPTION ? ` --subscription "${SUBSCRIPTION}"` : "";
+function discoverDeployments(config: FoundryConfig): Deployment[] {
+	const subArg = config.subscription ? ` --subscription "${config.subscription}"` : "";
 	const cmd =
 		`az cognitiveservices account deployment list` +
-		` -n ${ACCOUNT} -g ${RESOURCE_GROUP}${subArg} -o json`;
+		` -n ${config.account} -g ${config.resourceGroup}${subArg} -o json`;
 
 	let raw: string;
 	try {
@@ -374,7 +393,26 @@ function streamAzureFoundry(
 // =============================================================================
 
 export default function (pi: ExtensionAPI) {
-	const deployments = discoverDeployments();
+	const config = resolveConfig();
+	if (!config) {
+		// Required env vars absent — degrade to a no-op so pi can still start.
+		console.warn(
+			`azure-foundry: skipping registration — missing required env var(s): ${REQUIRED_ENV_VARS.filter(
+				(name) => !process.env[name],
+			).join(", ")}`,
+		);
+		return;
+	}
+
+	let deployments: Deployment[];
+	try {
+		deployments = discoverDeployments(config);
+	} catch (err) {
+		// Discovery failed (e.g. az CLI not logged in) — don't crash pi.
+		const msg = err instanceof Error ? err.message : String(err);
+		console.warn(`azure-foundry: skipping registration — ${msg}`);
+		return;
+	}
 	deploymentMap = new Map(deployments.map((d) => [d.deploymentName, d]));
 
 	// Group deployments by backend
@@ -396,7 +434,7 @@ export default function (pi: ExtensionAPI) {
 		const cfg = BACKENDS[backend];
 		pi.registerProvider(`azure-foundry-${backend}`, {
 			name: FRIENDLY_NAMES[backend],
-			baseUrl: `${ENDPOINT}${cfg.basePath}`,
+			baseUrl: `${config.endpoint}${cfg.basePath}`,
 			apiKey: "azure-foundry-dynamic",
 			api: backend,
 
