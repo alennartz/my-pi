@@ -596,6 +596,13 @@ export default function (pi: ExtensionAPI) {
 		})),
 	});
 
+	const ResurrectItem = Type.Object({
+		id: Type.String({ description: "Unique identifier for the resurrected agent among the parent's active agents" }),
+		sessionId: Type.String({ description: "session_id surfaced by a prior teardown report" }),
+		channels: Type.Array(Type.String(), { description: "Peer agent ids this agent can send to (re-declared fresh; siblings resurrected in the same batch are valid targets). Parent is always allowed." }),
+		task: Type.String({ description: "Directive the agent runs on resurrection" }),
+	});
+
 	if (shouldRegisterTool("subagent")) pi.registerTool({
 		name: "subagent",
 		label: "Subagents",
@@ -1091,61 +1098,84 @@ export default function (pi: ExtensionAPI) {
 		label: "Resurrect",
 		description: "Bring a previously-torn-down subagent back online from its session file.",
 		promptGuidelines: [
-			"Revives an agent that was previously torn down — pass the `session_id` surfaced in a prior `<agent_idle>`, `<agent_torn_down>`, or `<group_torn_down>` report.",
-			"The resurrected agent inherits its persona, model, and tool set from the resumed session — none of those can be changed here. Only `id`, `channels`, and `task` are re-declared.",
+			"Revives one or more agents that were previously torn down — pass the `session_id` surfaced in a prior `<agent_idle>`, `<agent_torn_down>`, or `<group_torn_down>` report for each.",
+			"Each resurrected agent inherits its persona, model, and tool set from the resumed session — none of those can be changed here. Only `id`, `channels`, and `task` are re-declared.",
 			"Channels must be re-declared fresh because siblings from the prior generation may no longer exist. Parent is always implicitly available.",
-			"Resurrection is non-blocking — the agent picks up the new task and any prior conversation history is visible to it. Results arrive later as notifications, same as `subagent`/`fork`.",
+			"To rebuild a mesh of agents that talked to each other, resurrect them in a single call: each agent may declare channels to its siblings in the same batch, since they all come online together.",
+			"Resurrection is non-blocking — each agent picks up its new task and any prior conversation history is visible to it. Results arrive later as notifications, same as `subagent`/`fork`.",
 		],
 		parameters: Type.Object({
-			id: Type.String({ description: "Unique identifier for the resurrected agent among the parent's active agents" }),
-			sessionId: Type.String({ description: "session_id surfaced by a prior teardown report" }),
-			channels: Type.Array(Type.String(), { description: "Peer agent ids this agent can send to (re-declared fresh; siblings from the prior generation may not exist)" }),
-			task: Type.String({ description: "Directive the agent runs on resurrection" }),
+			agents: Type.Array(ResurrectItem, { description: "Agents to resurrect from their session files. Resurrect a whole mesh in one call so siblings can declare channels to each other." }),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const mgr = ensureManager(ctx);
 
-			if (mgr.getAgentStatus(params.id)) {
-				throw new Error(`Agent id "${params.id}" already exists`);
+			if (params.agents.length === 0) {
+				throw new Error("Empty agents array — provide at least one agent to resurrect.");
 			}
 
-			const holder = mgr.findLiveHolder(params.sessionId);
-			if (holder) {
-				throw new Error(`Session ${params.sessionId} is currently held by live agent ${holder}; teardown that agent first or use a different one.`);
+			// Validate unique ids within the batch and against existing agents.
+			const existingIds = new Set(mgr.getAgentStatuses().map((s) => s.id));
+			const ids = params.agents.map((a) => a.id);
+			const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+			if (dupes.length > 0) {
+				throw new Error(`Duplicate agent ids: ${[...new Set(dupes)].join(", ")}`);
 			}
-
-			const resolved = mgr.resolveSessionFile(params.sessionId);
-			if (!resolved) {
-				const parentSessionFile = ctx.sessionManager.getSessionFile();
-				const childSessionsDir = parentSessionFile
-					? getPersistencePaths(parentSessionFile).childSessionsDir
-					: undefined;
-				if (!childSessionsDir || !fs.existsSync(childSessionsDir)) {
-					throw new Error("No subagent infrastructure for this parent session — nothing to resurrect.");
+			for (const id of ids) {
+				if (existingIds.has(id)) {
+					throw new Error(`Agent id "${id}" already exists`);
 				}
-				throw new Error(`No session found with id ${params.sessionId}.`);
 			}
 
-			// Recover the original persona name from the persistence log so that
-			// `start()` re-applies its tool restrictions (PI_PARENT_LINK.tools).
-			// Tool gating lives in env, not in the resumed session bundle, so
-			// without this the resurrected agent would silently get the full
-			// default tool surface — contradicting the prompt guideline that
-			// promises the resumed session's tool set is inherited.
-			const persistedAgent = mgr.findPersistedAgentName(params.sessionId);
+			// Reject reusing the same session twice in one batch.
+			const sessionIds = params.agents.map((a) => a.sessionId);
+			const dupeSessions = sessionIds.filter((s, i) => sessionIds.indexOf(s) !== i);
+			if (dupeSessions.length > 0) {
+				throw new Error(`Duplicate session ids in batch: ${[...new Set(dupeSessions)].join(", ")}`);
+			}
 
-			const spec: RegularAgentSpec = {
-				kind: "agent",
-				id: params.id,
-				agent: persistedAgent,
-				task: params.task,
-				channels: params.channels,
-				resumeSessionFile: resolved,
-			};
+			// Resolve and validate every agent atomically before starting any, so
+			// a single bad entry doesn't leave a half-resurrected mesh.
+			const specs: RegularAgentSpec[] = [];
+			for (const a of params.agents) {
+				const holder = mgr.findLiveHolder(a.sessionId);
+				if (holder) {
+					throw new Error(`Session ${a.sessionId} is currently held by live agent ${holder}; teardown that agent first or use a different one.`);
+				}
+
+				const resolved = mgr.resolveSessionFile(a.sessionId);
+				if (!resolved) {
+					const parentSessionFile = ctx.sessionManager.getSessionFile();
+					const childSessionsDir = parentSessionFile
+						? getPersistencePaths(parentSessionFile).childSessionsDir
+						: undefined;
+					if (!childSessionsDir || !fs.existsSync(childSessionsDir)) {
+						throw new Error("No subagent infrastructure for this parent session — nothing to resurrect.");
+					}
+					throw new Error(`No session found with id ${a.sessionId}.`);
+				}
+
+				// Recover the original persona name from the persistence log so that
+				// `start()` re-applies its tool restrictions (PI_PARENT_LINK.tools).
+				// Tool gating lives in env, not in the resumed session bundle, so
+				// without this the resurrected agent would silently get the full
+				// default tool surface — contradicting the prompt guideline that
+				// promises the resumed session's tool set is inherited.
+				const persistedAgent = mgr.findPersistedAgentName(a.sessionId);
+
+				specs.push({
+					kind: "agent",
+					id: a.id,
+					agent: persistedAgent,
+					task: a.task,
+					channels: a.channels,
+					resumeSessionFile: resolved,
+				});
+			}
 
 			await ensureWidget(ctx);
-			const ack = await mgr.start([spec], discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined).agents);
+			const ack = await mgr.start(specs, discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined).agents);
 			await ensureParentBrokerClient();
 
 			const statuses = mgr.getAgentStatuses();
