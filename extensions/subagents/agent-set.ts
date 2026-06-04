@@ -38,6 +38,13 @@ export interface AgentStatus {
 	usage: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number };
 	model?: string;
 	lastOutput?: string;
+	/**
+	 * Error message from the agent's last run, if it ended with stopReason
+	 * "error" (provider failure, exhausted retries, etc.) rather than a clean
+	 * completion. Propagated into the <agent_idle status="failed"> notification
+	 * so the parent sees why the agent failed instead of an empty idle report.
+	 */
+	lastError?: string;
 	pendingCorrelations: string[];
 	lastTurnInput: number;
 	contextWindow?: number;
@@ -125,7 +132,7 @@ export class SubagentManager {
 			id: e.id,
 			status: e.status.state === "failed" ? "failed" : "idle",
 			output: e.status.lastOutput,
-			error: e.status.state === "failed" ? (e.rpc.stderr || "Process crashed") : undefined,
+			error: e.status.state === "failed" ? (e.status.lastError || e.rpc.stderr || "Process crashed") : undefined,
 			sessionId: e.sessionId,
 			alreadyNotified: e.completionNotified,
 		}));
@@ -477,7 +484,7 @@ export class SubagentManager {
 			id: entry.id,
 			status: entry.status.state === "failed" ? "failed" : "idle",
 			output: entry.status.lastOutput,
-			error: entry.status.state === "failed" ? (entry.rpc.stderr || "Process crashed") : undefined,
+			error: entry.status.state === "failed" ? (entry.status.lastError || entry.rpc.stderr || "Process crashed") : undefined,
 			sessionId: entry.sessionId,
 			alreadyNotified: entry.completionNotified,
 		};
@@ -659,14 +666,39 @@ export class SubagentManager {
 
 		if (event.type === "agent_end") {
 			if (entry.status.state !== "failed") {
-				entry.status.state = "idle";
-				entry.status.lastActivity = undefined;
-				// Unblock any blocking sends targeting this agent — it finished its
-				// turn without responding, so the sender would hang otherwise.
-				this.broker?.agentIdled(entry.id);
-				this.opts.onUpdate();
-				entry.completionNotified = true;
-				this.opts.onAgentComplete(entry.id, this.allDone());
+				// Inspect the final assistant message: if the run ended with
+				// stopReason "error" (provider failure, exhausted retries, etc.)
+				// the agent did NOT complete cleanly — surface it as a failure so
+				// the parent gets the error instead of an empty <agent_idle>.
+				const msgs: any[] = Array.isArray(event.messages) ? event.messages : [];
+				let erroredMsg: any;
+				for (let i = msgs.length - 1; i >= 0; i--) {
+					if (msgs[i]?.role === "assistant") {
+						if (msgs[i]?.stopReason === "error") erroredMsg = msgs[i];
+						break;
+					}
+				}
+				if (erroredMsg) {
+					entry.status.state = "failed";
+					entry.status.lastError = erroredMsg.errorMessage || "Agent run ended with an error";
+					entry.status.lastActivity = undefined;
+					// Unblock any blocking sends targeting this agent. The process is
+					// still alive (it can be re-prompted), so treat like idle rather
+					// than a crash that removes the agent from the broker.
+					this.broker?.agentIdled(entry.id);
+					this.opts.onUpdate();
+					entry.completionNotified = true;
+					this.opts.onAgentComplete(entry.id, this.allDone());
+				} else {
+					entry.status.state = "idle";
+					entry.status.lastActivity = undefined;
+					// Unblock any blocking sends targeting this agent — it finished its
+					// turn without responding, so the sender would hang otherwise.
+					this.broker?.agentIdled(entry.id);
+					this.opts.onUpdate();
+					entry.completionNotified = true;
+					this.opts.onAgentComplete(entry.id, this.allDone());
+				}
 			}
 		}
 	}

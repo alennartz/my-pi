@@ -521,7 +521,7 @@ export default function (pi: ExtensionAPI) {
 					id: agentId,
 					status: status.state === "failed" ? "failed" : "idle",
 					output: status.lastOutput,
-					error: status.state === "failed" ? "Process crashed" : undefined,
+					error: status.state === "failed" ? (status.lastError || "Process crashed") : undefined,
 				};
 				let xml = serializeAgentComplete(data);
 				if (allDone) {
