@@ -261,7 +261,7 @@ const MODEL_CATALOG: Record<string, Partial<ModelMeta>> = {
 	"gpt-5.3-codex": { reasoning: true, input: ["text"], contextWindow: 400000, maxTokens: 128000,
 		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 } },
 	// OpenAI — GPT-5.4 family
-	"gpt-5.4": { reasoning: true, input: ["text", "image"], contextWindow: 1050000, maxTokens: 128000,
+	"gpt-5.4": { reasoning: true, input: ["text", "image"], contextWindow: 272000, maxTokens: 128000,
 		cost: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 } },
 	"gpt-5.4-pro": { reasoning: true, input: ["text", "image"], contextWindow: 1050000, maxTokens: 128000,
 		cost: { input: 30, output: 180, cacheRead: 30, cacheWrite: 0 } },
@@ -269,6 +269,11 @@ const MODEL_CATALOG: Record<string, Partial<ModelMeta>> = {
 		cost: { input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0 } },
 	"gpt-5.4-nano": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
 		cost: { input: 0.2, output: 1.25, cacheRead: 0.02, cacheWrite: 0 } },
+	// OpenAI — GPT-5.5 family
+	"gpt-5.5": { reasoning: true, input: ["text", "image"], contextWindow: 272000, maxTokens: 128000,
+		cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 } },
+	"gpt-5.5-pro": { reasoning: true, input: ["text", "image"], contextWindow: 1050000, maxTokens: 128000,
+		cost: { input: 30, output: 180, cacheRead: 30, cacheWrite: 0 } },
 };
 
 function lookupMeta(modelName: string): ModelMeta {
