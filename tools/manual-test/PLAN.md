@@ -84,3 +84,21 @@ development.
 
 **Driver:** TBD — needs a scratch git repo and a way to drive `/worktree`
 non-interactively.
+
+### J6: Parent session resume restores subagents with faithful status
+
+**What:** A parent pi process that had live subagents is killed and **resumed**
+(`pi --session <file>`). On resume, the subagents extension restores each child
+from its persisted session file. Verify restored agents show correct status:
+`state: idle` (not stuck `running`), and usage/cost/turns/model/lastOutput
+recomputed from the child's own session file, plus a correct `hasSubgroup` flag.
+
+**Why:** This path runs on every real-world pi restart that had subagents alive.
+Before the recompute change, restored agents were seeded `running`/zeroed and
+reported stale status until they happened to run another turn — silent status
+corruption in the widget, panel, and `check_status`. A regression here is
+invisible until a user notices their dashboard lying.
+
+**Driver:** `tools/manual-test/resume-restore/run.mjs` — drives a real
+`pi --mode rpc` through spawn → idle → kill → resume and asserts the restored
+`check_status` detail against an independent re-parse of the child session.

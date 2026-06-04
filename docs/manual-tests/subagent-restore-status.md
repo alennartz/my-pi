@@ -48,11 +48,82 @@ of seeding `running`/zeroed. End-to-end behaviors specific to this topic:
 
 ## Harness Limitations
 
-Populated in "Assess Harness Limitations" below before execution.
+- **Real LLM, real pi.** The harness drives genuine `pi --mode rpc` processes and
+  real model turns — nothing about the restore path is stubbed. Cost is a few
+  cheap turns per run; transient provider latency is absorbed by idle-boundary
+  re-drives.
+- **`hasSubgroup` rendering not RPC-observable.** The restored status is read via
+  the `check_status` tool, which surfaces state/model/lastOutput/usage/turns but
+  not the `hasSubgroup` boolean (that flag only appears on the widget/panel card,
+  rendered by a TUI component factory that RPC mode ignores). The harness
+  therefore verifies the flag's recompute *input* — the worker's own
+  `agents.jsonl` log that `childHasLiveSubagents` reads — but not its rendered
+  output. Weakened test: none of the topic's *primary* status fields depend on
+  this gap; `hasSubgroup`'s wiring is a one-line field copy verified by code
+  review (DR/review approved) and its input is exercised end-to-end here.
+- **Trigger gating (T4) is code-verified, not separately driven.** The
+  `reason: "new"/"fork"` suppression is a 2-line guard in `session_start`;
+  exercising it would require constructing a resume-with-fresh-reason scenario
+  that has no persistence to inherit anyway. Confirmed by inspection plus the
+  fact that every fresh spawn-phase parent (`reason: startup`) correctly starts
+  with no pre-existing agents.
+
+None of these gaps blind the harness to the topic's primary behavior (faithful
+recomputed status on resume), so no escalation was needed.
 
 ## Results
 
-Populated during execution.
+### Smoke Suite
+
+- **J1 — Subagent lifecycle (spawn + idle):** PASS. Every harness run's spawn
+  phase spawns a real `worker` subagent via the `subagent` tool, it completes a
+  turn and idles, and the persistence log + child session file land as expected.
+- **J6 — Parent session resume restores subagents with faithful status:** PASS.
+  Leaf run verdict PASS on all 8 checks; nested run verdict PASS on all 8 checks.
+  Coherence: **looks coherent** — the restored `check_status` detail reads exactly
+  as a human would expect for a finished agent (idle, model, last output, usage
+  with turn count), with no stale "running" or zeroed fields.
+
+### Topic-Specific Tests
+
+- **T1 — Restored agent shows `state: idle`, not stuck `running`:** PASS.
+  `check_status` after resume reported `State: idle` in both runs. The auto-resume
+  turn (parent continuing its original task) tried `teardown` and was correctly
+  blocked by the tool restriction, leaving the restored agent observable.
+- **T2 — Usage/cost/turns/model/lastOutput recomputed from the child session
+  file:** PASS. Restored values matched an independent re-parse ("oracle") of the
+  worker session exactly — leaf: `↑14096 ↓5 $0.0705 (1 turn)`, model
+  `claude-opus-4-8`, lastOutput `ACK`; nested: `↑53055 ↓189 $0.1492 (4 turns)`,
+  lastOutput recomputed to the worker's final message. `inputUsageMatchesOracle`,
+  `outputUsageMatchesOracle`, `turnsRecomputed`, `modelRecomputed`,
+  `lastOutputRecomputed`, `costRecomputed` all true.
+- **T3 — `hasSubgroup` recompute input present:** PASS. In `--nested` mode the
+  restored worker's own `agents.jsonl` contained its `helper` subagent
+  (`subgroupInput: true`); in the leaf run it was absent (`false`). Confirms the
+  input `childHasLiveSubagents` recomputes from is faithful after restore. (Flag
+  rendering itself not RPC-observable — see Harness Limitations.)
+- **T4 — Restore gated to genuine resumes (`new`/`fork` excluded):** PASS
+  (code-verified). The `session_start` handler returns before restore on
+  `reason: "new"/"fork"`; resumes use `reason: "startup"`/`"resume"`. A probe
+  confirmed resume fires with `reason: "startup"` and the gate lets it through.
+- **T5 — Residual broker state correctly empty:** PASS. The restored
+  `check_status` detail showed no "Pending correlations" line and no "Last
+  activity" line — `pendingCorrelations`, `waitingFor`, and `lastActivity` are
+  empty on the restored agent, as designed (transient broker state, gone on
+  restart).
+
+### Fixed inline
+
+None — all checks passed as built; no product changes were required.
+
+### Notable harness finding (not a product bug)
+
+The first harness drafts failed to restore because the spawned pi processes
+inherited `PI_PARENT_LINK` from the enclosing pi subagent, making them believe
+they were child agents (the `parentLink` guard short-circuits restore). The
+harness now scrubs `PI_PARENT_LINK`/`PI_CODING_AGENT`. This is purely a test-rig
+concern — it does **not** affect real pi restarts, where a top-level resume has
+no `PI_PARENT_LINK`.
 
 ## Plan Updates
 
@@ -63,4 +134,5 @@ Populated during execution.
 
 ## Open Issues
 
-Populated during execution.
+None. All Smoke Suite and Topic-Specific Tests passed; no escalations, no
+ambiguous findings, no user-decision items.
