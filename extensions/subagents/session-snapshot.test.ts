@@ -74,6 +74,20 @@ describe("parseSessionSnapshot — degenerate inputs", () => {
 		expect(() => parseSessionSnapshot(path.join(tmpRoot, "nope.jsonl"))).not.toThrow();
 	});
 
+	it("yields a zeroed snapshot for an unreadable file (directory path)", () => {
+		// A directory path makes fs.readFileSync throw EISDIR — the parser must
+		// treat any unreadable file as a zeroed snapshot, never propagate the error.
+		const snap = parseSessionSnapshot(tmpRoot);
+		expect(snap.usage).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 });
+		expect(snap.lastTurnInput).toBe(0);
+		expect(snap.model).toBeUndefined();
+		expect(snap.lastOutput).toBeUndefined();
+	});
+
+	it("does not throw on an unreadable file (directory path)", () => {
+		expect(() => parseSessionSnapshot(tmpRoot)).not.toThrow();
+	});
+
 	it("yields a zeroed snapshot for a session with no assistant messages", () => {
 		const file = writeSession([userLine("hello"), toolResultLine("some output")]);
 		const snap = parseSessionSnapshot(file);

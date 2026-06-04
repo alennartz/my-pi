@@ -154,9 +154,11 @@ resting state in between.
 
 #### `parseSessionSnapshot` (session-snapshot.ts)
 
-- **Degenerate inputs yield a zeroed snapshot, never throw.** Missing file, empty file, and a session with no assistant messages all produce `usage` all-zero, `turns: 0`, `lastTurnInput: 0`, and undefined `model`/`lastOutput`.
+- **Degenerate inputs yield a zeroed snapshot, never throw.** Missing file, empty file, an unreadable file (directory path → EISDIR), and a session with no assistant messages all produce `usage` all-zero, `turns: 0`, `lastTurnInput: 0`, and undefined `model`/`lastOutput`.
 - **Malformed lines are skipped individually.** A non-JSON line does not abort the parse; surrounding valid assistant data is still captured.
 - **Cumulative usage sums over every assistant message.** `input`/`output`/`cacheRead`/`cacheWrite`/`cost` are summed across all assistant messages; `turns` counts assistant messages. Missing usage sub-fields count as zero. An assistant message with no usage block still counts as a turn (zero contribution). Usage on non-assistant messages (user/toolResult) is ignored.
 - **`model` and `lastOutput` reflect the last assistant message in file order.** When the last assistant message has multiple text parts, `lastOutput` is its last text part. When the last assistant message has no text part, `lastOutput` keeps the previous assistant message's text (or stays undefined if none ever had text), while `model` still comes from that last assistant message.
 - **`lastTurnInput` is derived from the last assistant turn** as `input + cacheRead + cacheWrite`, excluding output tokens; a last assistant message with no usage block yields `lastTurnInput: 0`.
 - **Non-assistant noise is filtered.** User, toolResult, session, and marker lines are ignored while assistant usage/model/output are still captured correctly.
+
+**Review status:** approved
