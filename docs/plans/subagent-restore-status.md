@@ -1,0 +1,139 @@
+# Plan: Subagent Status Recomputation on Session Resume
+
+## Context
+
+When a parent pi session is resumed, the subagents extension re-spawns its child agents from their persisted session files via `restoreFromPersistence`. Every restored agent is currently seeded with `state: "running"` and zeroed runtime status (usage, model, lastOutput), so the widget, panel cards, and `check_status` all report stale/incorrect status until the agent happens to run another turn. This change makes restored status faithful by recomputing every UI/status-facing field from the source of truth — the child's own session file — rather than trusting the seed or replicating a snapshot into our persistence log.
+
+(No brainstorm file — the design was settled through investigation conversation. See DR-014, DR-033 for prior persistence/restore decisions this builds on.)
+
+## Architecture
+
+### Impacted Modules
+
+**Subagents** (`extensions/subagents/`) — the only module touched.
+
+- `agent-set.ts` (`SubagentManager`): the restore path stops asserting a fabricated status. Today `start()` unconditionally seeds `status.state = "running"` and zeroed `usage`. For restored entries (the `this.restoring` branch), it instead seeds from a recomputed snapshot of the child session file, with `state: "idle"`. Fresh-spawn behavior is unchanged (still `running`, since a task prompt is about to drive a turn).
+- New dependency on the `session-snapshot` module (below) for the parse.
+- Reuses existing `persistence.getPersistencePaths` + `loadPersistedAgents` to recompute `hasSubgroup` from the child's own subagent log.
+
+Two design invariants this preserves:
+
+- **No idle-marker coupling.** The `session-resume` extension owns the `session-idle`/`session-resumed` protocol and decides whether a resumed child runs. Subagents must not read or interpret that marker. Seeding `idle` and letting the child's emitted `agent_start`/`agent_end` events drive the transition keeps the two extensions decoupled: an idle-at-shutdown child stays idle (no events arrive); a child with pending work auto-resumes, emits `agent_start`, and the parent flips it to `running` naturally.
+- **Recompute over replicate** (extends DR-033). The session file is the source of truth for runtime status. We do not add usage/model/output fields to `PersistedAgentRecord`; that would duplicate data that can drift. The marginal cost of re-parsing is negligible because the resumed child *already* reads and replays its entire session file on resume — the parent's extra single pass is strictly cheaper than what the child does anyway.
+
+### New Modules
+
+**session-snapshot** (`extensions/subagents/session-snapshot.ts`)
+
+Purpose: reconstruct the runtime-status fields of an agent from its persisted pi session JSONL file, in a single forward pass.
+
+Responsibilities:
+- Read the session file line by line.
+- Cheaply pre-filter each line by substring before parsing, so the large lines (`toolResult` payloads, embedded images, user content) are skipped without a full `JSON.parse`. Only lines that look like assistant messages and session/marker lines are parsed.
+- Accumulate cumulative usage across all assistant messages (inherently requires visiting every assistant line — a tail read cannot produce correct totals).
+- Capture the last assistant message's model and text, and that turn's input-side token count.
+
+Dependencies: Node `fs` only. No dependency on `pi`'s session-manager API (the file is parsed directly, as `persistence.ts` already does for the lifecycle log). Pure and synchronous — trivially unit-testable with fixtures.
+
+Location: alongside the other Subagents helper modules.
+
+### Interfaces
+
+#### `session-snapshot.ts`
+
+```ts
+export interface SessionSnapshot {
+  /** Cumulative usage summed over every assistant message in the session. */
+  usage: {
+    input: number;        // sum of usage.input
+    output: number;       // sum of usage.output
+    cacheRead: number;    // sum of usage.cacheRead
+    cacheWrite: number;   // sum of usage.cacheWrite
+    cost: number;         // sum of usage.cost.total
+    turns: number;        // count of assistant messages
+  };
+  /** Model id of the last assistant message, if any. */
+  model?: string;
+  /** Text of the last assistant message's last text part, if any. */
+  lastOutput?: string;
+  /** Input-side tokens of the last assistant turn: input + cacheRead + cacheWrite. */
+  lastTurnInput: number;
+}
+
+/**
+ * Parse a pi session JSONL file into a status snapshot via a single forward pass.
+ *
+ * Behavioral contract:
+ * - A missing, empty, or unreadable file yields a zeroed snapshot
+ *   ({ usage: all-zero, turns: 0, lastTurnInput: 0 }, no model/lastOutput) — never throws.
+ * - Malformed (non-JSON) lines are skipped individually; a single bad line does
+ *   not abort the parse.
+ * - Only assistant messages contribute to usage. usage.turns equals the number of
+ *   assistant messages seen.
+ * - model and lastOutput reflect the LAST assistant message in file order. If the
+ *   last assistant message has no text part, lastOutput is left at the previous
+ *   value (or undefined if none). model is taken from that same last assistant message.
+ * - lastTurnInput is derived from the last assistant message's usage as
+ *   (input ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0).
+ * - Lines that cannot be an assistant message (cheap substring check fails) are
+ *   skipped without JSON parsing, so large toolResult/image lines cost ~nothing.
+ */
+export function parseSessionSnapshot(sessionFile: string): SessionSnapshot;
+```
+
+Session-file entry shapes the parser must handle (observed format, pi `--mode rpc` session JSONL):
+
+```jsonc
+// assistant message line (the only kind that contributes to usage)
+{ "type": "message",
+  "message": {
+    "role": "assistant",
+    "model": "claude-opus-4-8",
+    "content": [ { "type": "text", "text": "..." }, ... ],
+    "usage": { "input": 2, "output": 408, "cacheRead": 40475,
+               "cacheWrite": 2086, "cost": { "total": 0.0434 } } } }
+
+// non-assistant lines (skipped via substring pre-filter):
+// { "type": "message", "message": { "role": "user", ... } }
+// { "type": "message", "message": { "role": "toolResult", ... } }   // often the largest
+// { "type": "session", ... } / model_change / thinking_level_change / custom markers
+```
+
+#### `agent-set.ts` restore seeding (contract change)
+
+The restore path seeds the `AgentStatus` from the snapshot instead of zeros, and uses `state: "idle"`:
+
+```
+on restore (this.restoring === true), for each restored entry with a known session file:
+  snap   = parseSessionSnapshot(sessionFile)
+  status = {
+    ...identity fields (id, agentDef, task, channels) as today,
+    state:          "idle",                                   // was "running"
+    usage:          snap.usage,                               // was all-zero
+    model:          snap.model,                               // was undefined
+    lastOutput:     snap.lastOutput,                          // was undefined
+    lastTurnInput:  snap.lastTurnInput,                       // was 0
+    contextWindow:  snap.model ? resolveContextWindow(snap.model) : undefined,
+    hasSubgroup:    childHasLiveSubagents(sessionFile),       // was false
+    lastActivity:   undefined,                                // transient — correctly empty
+    pendingCorrelations: [],                                  // broker state — gone on restart
+    waitingFor:     [],                                       // broker state — gone on restart
+  }
+```
+
+`childHasLiveSubagents(sessionFile)` recomputes the subgroup flag from the child's own
+persistence log without replication:
+
+```
+childHasLiveSubagents(childSessionFile):
+  paths = getPersistencePaths(childSessionFile)         // existing persistence helper
+  loaded = loadPersistedAgents(childSessionFile)        // existing; null if no log
+  return loaded !== null && loaded.agents.length > 0
+```
+
+Fresh-spawn seeding (the `!this.restoring` path) is unchanged: `state: "running"`, zeroed usage, fields populated by the live RPC event stream as turns run.
+
+Event-driven transitions are unchanged: when a restored child auto-resumes (driven by its
+own `session-resume` extension), `handleRpcEvent` receives `agent_start` → `state = "running"`,
+then `agent_end` → `state = "idle"`, exactly as for a live agent. The `idle` seed is the correct
+resting state in between.
