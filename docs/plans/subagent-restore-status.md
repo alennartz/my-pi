@@ -162,3 +162,67 @@ resting state in between.
 - **Non-assistant noise is filtered.** User, toolResult, session, and marker lines are ignored while assistant usage/model/output are still captured correctly.
 
 **Review status:** approved
+
+## Steps
+
+### Step 1: Implement `parseSessionSnapshot` in `session-snapshot.ts`
+
+Replace the `throw new Error("not implemented")` stub body of `parseSessionSnapshot(_sessionFile: string)` in `extensions/subagents/session-snapshot.ts` with a real single-forward-pass parser. The exported `SessionSnapshot` interface and the function signature are already defined and immutable — only the body changes (rename `_sessionFile` → `sessionFile`).
+
+Behavior to satisfy (per the docstring contract and `session-snapshot.test.ts`):
+
+- Read the file with `fs.readFileSync(sessionFile, "utf8")` inside a `try/catch`. Any read failure (missing file → ENOENT, directory path → EISDIR, unreadable) returns a zeroed snapshot: `usage` all-zero with `turns: 0`, `lastTurnInput: 0`, no `model`, no `lastOutput`. Never throws.
+- Split on `\n`, skip empty/whitespace-only lines.
+- **Cheap substring pre-filter before `JSON.parse`:** only attempt to parse a line that can be an assistant message. A line that does not contain the assistant-role marker substring (e.g. `"role":"assistant"`) is skipped without parsing, so large `toolResult`/image lines cost ~nothing. Note session lines use compact JSON (no spaces), matching the test fixtures' `JSON.stringify` output — choose a substring that holds for that format.
+- Wrap each per-line `JSON.parse` in `try/catch`; a malformed line is skipped individually and does not abort the pass.
+- For each parsed line, confirm it is an assistant message (`line.type === "message" && line.message?.role === "assistant"`) before treating it as a turn — the substring pre-filter is a fast reject, not proof.
+- For every assistant message: increment `usage.turns`; add `usage.input`, `usage.output`, `usage.cacheRead`, `usage.cacheWrite` (each `?? 0`) and `usage.cost?.total ?? 0` into the running totals. An assistant message with no `usage` block still counts as a turn with zero contribution.
+- Track the last assistant message in file order: set `model` from its `message.model` (even if it has no text). For `lastOutput`, scan that message's `content` for `type === "text"` parts and take the **last** text part; if the message has no text part, leave `lastOutput` at its previous value (do not clear it).
+- Set `lastTurnInput` from the last assistant message's usage as `(input ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0)`, excluding output. A last assistant message with no usage block yields `lastTurnInput: 0`.
+- Ignore usage/model/text on any non-assistant message (user, toolResult, session, marker lines).
+
+**Verify:** `npx vitest run extensions/subagents/session-snapshot.test.ts` passes all cases (degenerate inputs, malformed lines, cumulative usage, last-assistant capture, lastTurnInput, non-assistant noise).
+**Status:** not started
+
+### Step 2: Add `childHasLiveSubagents` helper and snapshot-based restore seeding in `agent-set.ts`
+
+Two changes in `extensions/subagents/agent-set.ts`:
+
+**(a) Import the snapshot parser.** Add `import { parseSessionSnapshot } from "./session-snapshot.js";` alongside the existing module imports.
+
+**(b) Add a private helper** `childHasLiveSubagents(childSessionFile: string): boolean` on `SubagentManager` that recomputes the subgroup flag from the child's own persistence log without replication:
+
+```ts
+private childHasLiveSubagents(childSessionFile: string): boolean
+```
+
+It calls the existing `loadPersistedAgents(childSessionFile)` and returns `loaded !== null && loaded.agents.length > 0`. (`getPersistencePaths` is already imported and is invoked internally by `loadPersistedAgents`; no separate call is needed beyond what the contract in the architecture sketches.)
+
+**(c) Branch the status seed in `start()`.** In the per-agent loop where `const status: AgentStatus = { state: "running", ... }` is built, the session file for a restored agent is available from `agentSpec.resumeSessionFile` (set for both `kind: "agent"` and `kind: "fork"` restore specs by `toRestoreSpec`). When `this.restoring` is true and a session file path is known, build the status from a snapshot instead of the fresh-spawn defaults:
+
+```
+const restoreFile = this.restoring ? agentSpec.resumeSessionFile : undefined;
+if (restoreFile) {
+  const snap = parseSessionSnapshot(restoreFile);
+  status = {
+    id, agentDef, task, channels,           // identity fields, same as fresh path
+    state: "idle",                           // was "running"
+    usage: snap.usage,
+    model: snap.model,
+    lastOutput: snap.lastOutput,
+    lastTurnInput: snap.lastTurnInput,
+    contextWindow: snap.model ? this.opts.resolveContextWindow(snap.model) : undefined,
+    hasSubgroup: this.childHasLiveSubagents(restoreFile),
+    pendingCorrelations: [],
+    waitingFor: [],
+    // lastActivity left undefined (transient)
+  };
+}
+```
+
+Keep the existing fresh-spawn object (`state: "running"`, zeroed `usage`, `hasSubgroup: false`, etc.) as the `!this.restoring` path unchanged. The identity fields (`id`, `agentDef`, `task`, `channels`) are computed identically in both branches — factor them so both objects stay in sync, or duplicate them; either is fine as long as the only differences are the snapshot-derived fields and `state`.
+
+Do **not** touch: the fresh-spawn task-prompt suppression (`if (!this.restoring)`), `appendAgentAdded` gating, event-driven transitions in `handleRpcEvent` (a restored child that auto-resumes still flips `idle → running` on `agent_start` and back on `agent_end`), or `PersistedAgentRecord` (no new fields — recompute over replicate).
+
+**Verify:** Code reads correctly against the architecture's restore-seeding contract. No type-check step exists for this project (extensions are raw TS loaded at runtime); confirm by inspection that the restore branch produces an `AgentStatus` with every required field, that `state` is `"idle"`, and that the fresh-spawn path is unchanged in behavior. Existing `session-snapshot.test.ts` still passes (Step 1 unaffected).
+**Status:** not started
