@@ -165,6 +165,8 @@ resting state in between.
 
 ## Steps
 
+**Pre-implementation commit:** `a3edd787e5ddb7e7f0846e328239da4debe20875`
+
 ### Step 1: Implement `parseSessionSnapshot` in `session-snapshot.ts`
 
 Replace the `throw new Error("not implemented")` stub body of `parseSessionSnapshot(_sessionFile: string)` in `extensions/subagents/session-snapshot.ts` with a real single-forward-pass parser. The exported `SessionSnapshot` interface and the function signature are already defined and immutable — only the body changes (rename `_sessionFile` → `sessionFile`).
@@ -182,7 +184,7 @@ Behavior to satisfy (per the docstring contract and `session-snapshot.test.ts`):
 - Ignore usage/model/text on any non-assistant message (user, toolResult, session, marker lines).
 
 **Verify:** `npx vitest run extensions/subagents/session-snapshot.test.ts` passes all cases (degenerate inputs, malformed lines, cumulative usage, last-assistant capture, lastTurnInput, non-assistant noise).
-**Status:** not started
+**Status:** done
 
 ### Step 2: Add `childHasLiveSubagents` helper and snapshot-based restore seeding in `agent-set.ts`
 
@@ -225,4 +227,4 @@ Keep the existing fresh-spawn object (`state: "running"`, zeroed `usage`, `hasSu
 Do **not** touch: the fresh-spawn task-prompt suppression (`if (!this.restoring)`), `appendAgentAdded` gating, event-driven transitions in `handleRpcEvent` (a restored child that auto-resumes still flips `idle → running` on `agent_start` and back on `agent_end`), or `PersistedAgentRecord` (no new fields — recompute over replicate).
 
 **Verify:** Code reads correctly against the architecture's restore-seeding contract. No type-check step exists for this project (extensions are raw TS loaded at runtime); confirm by inspection that the restore branch produces an `AgentStatus` with every required field, that `state` is `"idle"`, and that the fresh-spawn path is unchanged in behavior. Existing `session-snapshot.test.ts` still passes (Step 1 unaffected).
-**Status:** not started
+**Status:** done

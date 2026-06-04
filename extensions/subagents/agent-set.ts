@@ -15,6 +15,7 @@ import { Broker } from "./broker.js";
 import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs, isValidCwd } from "./agents.js";
 import { ensurePersistence, appendAgentAdded, appendAgentRemoved, findAgentRecordBySessionId, loadPersistedAgents, getPersistencePaths, pruneInvalidPersistedAgents, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
 import { type Topology, buildTopology, addToTopology, removeFromTopology } from "./channels.js";
+import { parseSessionSnapshot } from "./session-snapshot.js";
 import {
 	serializeSubagentIdentity,
 	serializeAgentMessage,
@@ -107,6 +108,16 @@ export class SubagentManager {
 		if (!entry) throw new Error(`Unknown agent: "${agentId}"`);
 		if (entry.status.state === "failed") return;
 		await entry.rpc.abort();
+	}
+
+	/**
+	 * Recompute the subgroup flag for a restored child from its own persistence
+	 * log, without replicating the flag into our own records (recompute over
+	 * replicate). Returns true iff the child has at least one persisted subagent.
+	 */
+	private childHasLiveSubagents(childSessionFile: string): boolean {
+		const loaded = loadPersistedAgents(childSessionFile);
+		return loaded !== null && loaded.agents.length > 0;
 	}
 
 	private getCompletionReport(): ActiveAgentsCompleteData {
@@ -257,18 +268,45 @@ export class SubagentManager {
 				args,
 			});
 
-			const status: AgentStatus = {
+			// Identity fields are computed identically for fresh spawns and restores.
+			const identity = {
 				id: agentSpec.id,
-				state: "running",
 				agentDef: agentSpec.kind === "agent" ? agentSpec.agent : undefined,
 				task: agentSpec.task,
 				channels: allChannels,
-				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
-				pendingCorrelations: [],
-				lastTurnInput: 0,
-				hasSubgroup: false,
-				waitingFor: [],
 			};
+
+			const restoreFile = this.restoring ? agentSpec.resumeSessionFile : undefined;
+			let status: AgentStatus;
+			if (restoreFile) {
+				// Restore path: recompute faithful status from the child's own
+				// session file rather than seeding a fabricated "running"/zeroed
+				// state. Seed "idle"; event-driven transitions flip it to
+				// "running" if the child auto-resumes.
+				const snap = parseSessionSnapshot(restoreFile);
+				status = {
+					...identity,
+					state: "idle",
+					usage: snap.usage,
+					model: snap.model,
+					lastOutput: snap.lastOutput,
+					lastTurnInput: snap.lastTurnInput,
+					contextWindow: snap.model ? this.opts.resolveContextWindow(snap.model) : undefined,
+					hasSubgroup: this.childHasLiveSubagents(restoreFile),
+					pendingCorrelations: [],
+					waitingFor: [],
+				};
+			} else {
+				status = {
+					...identity,
+					state: "running",
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
+					pendingCorrelations: [],
+					lastTurnInput: 0,
+					hasSubgroup: false,
+					waitingFor: [],
+				};
+			}
 
 			const entry: AgentEntry = {
 				id: agentSpec.id,
