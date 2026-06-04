@@ -137,3 +137,26 @@ Event-driven transitions are unchanged: when a restored child auto-resumes (driv
 own `session-resume` extension), `handleRpcEvent` receives `agent_start` → `state = "running"`,
 then `agent_end` → `state = "idle"`, exactly as for a live agent. The `idle` seed is the correct
 resting state in between.
+
+## Tests
+
+**Pre-test-write commit:** `ac24d03f801fdec0abdd699a7f08b711794150c5`
+
+### Interface Files
+
+- `extensions/subagents/session-snapshot.ts` — defines the `SessionSnapshot` interface (cumulative usage, last-message model/output, last-turn input tokens) and the `parseSessionSnapshot(sessionFile)` function signature with its full behavioral contract documented in the docstring. Implementation is a `throw new Error("not implemented")` stub.
+
+### Test Files
+
+- `extensions/subagents/session-snapshot.test.ts` — fixture-based behavioral tests for `parseSessionSnapshot`. Each test writes a synthetic pi session JSONL file to a temp dir and asserts on the returned snapshot. Covers degenerate inputs, malformed lines, cumulative usage, last-assistant-message capture, last-turn input derivation, and non-assistant noise filtering.
+
+### Behaviors Covered
+
+#### `parseSessionSnapshot` (session-snapshot.ts)
+
+- **Degenerate inputs yield a zeroed snapshot, never throw.** Missing file, empty file, and a session with no assistant messages all produce `usage` all-zero, `turns: 0`, `lastTurnInput: 0`, and undefined `model`/`lastOutput`.
+- **Malformed lines are skipped individually.** A non-JSON line does not abort the parse; surrounding valid assistant data is still captured.
+- **Cumulative usage sums over every assistant message.** `input`/`output`/`cacheRead`/`cacheWrite`/`cost` are summed across all assistant messages; `turns` counts assistant messages. Missing usage sub-fields count as zero. An assistant message with no usage block still counts as a turn (zero contribution). Usage on non-assistant messages (user/toolResult) is ignored.
+- **`model` and `lastOutput` reflect the last assistant message in file order.** When the last assistant message has multiple text parts, `lastOutput` is its last text part. When the last assistant message has no text part, `lastOutput` keeps the previous assistant message's text (or stays undefined if none ever had text), while `model` still comes from that last assistant message.
+- **`lastTurnInput` is derived from the last assistant turn** as `input + cacheRead + cacheWrite`, excluding output tokens; a last assistant message with no usage block yields `lastTurnInput: 0`.
+- **Non-assistant noise is filtered.** User, toolResult, session, and marker lines are ignored while assistant usage/model/output are still captured correctly.
