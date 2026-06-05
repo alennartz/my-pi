@@ -1,6 +1,6 @@
 ---
 name: ux-review
-description: "Audit an existing UI surface for design quality — visual hierarchy, consistency, ergonomics, anti-patterns, design system adherence — and produce a priority-grouped findings document with concrete fixes. Tech-agnostic: assesses what the design *is*, not how it's implemented. Use when the user asks to review the design of a screen, audit an existing app for slop or inconsistency, check whether an implementation is faithful to a prior brief, or get a ship-readiness verdict on the visual quality of a feature. Triggers: 'audit the design of…', 'review this UI', 'is this ready to ship visually', 'check this against our brief', 'find the design slop in…'."
+description: "Audit an existing UI surface for design quality — visual hierarchy, consistency, ergonomics, anti-patterns, design system adherence — and produce a priority-grouped findings document with concrete fixes. Tech-agnostic: assesses what the design *is*, not how it's implemented. Use when the user asks to review the design of a screen, audit an existing app for slop or inconsistency, or get a ship-readiness verdict on the visual quality of a feature. Optional focus area scopes the audit; without one, audit the whole UI in scope. Triggers: 'audit the design of…', 'review this UI', 'is this ready to ship visually', 'find the design slop in…'."
 ---
 
 # UX Review
@@ -16,25 +16,23 @@ To audit, you need *something to look at*:
 - Screenshots / mockups in the working directory
 - A live URL the user has running locally or publicly
 - Component files / styling files in the codebase (read for visual signal — palette, type, spacing — not for implementation correctness)
-- A prior `docs/designs/<topic>.md` brief, if one exists, to audit against
 
 If none of these are available, ask the user to point you at something. Do not audit from a verbal description alone — too much guesswork.
 
 ## References
 
-Load these only when actively useful. The blacklist, dials, tracks, and brief-template are shared with the `ux-design` skill (symlinked into this skill's `references/` directory) so the vocabulary stays unified across creation and review.
+Load these only when actively useful. The blacklist, dials, and tracks are shared with the `ux-design` skill (symlinked into this skill's `references/` directory) so the vocabulary stays unified across creation and review.
 
 - [references/ai-slop-blacklist.md](references/ai-slop-blacklist.md) — banned patterns to check the surface against. The most-loaded reference during audits.
 - [references/dial-definitions.md](references/dial-definitions.md) — when assessing whether a surface's density / motion / formality match its track and audience.
 - [references/track-defaults.md](references/track-defaults.md) — when the surface's track is unclear and you need to figure out what it's aiming at.
-- [references/brief-template.md](references/brief-template.md) — when auditing implementation faithfulness against a prior brief; the brief's section structure tells you what to compare.
 
 ## Workflow
 
 ```text
 Audit progress:
-- [ ] Step 1: Establish what's being audited (which surfaces, which screens)
-- [ ] Step 2: Read any existing design brief in docs/designs/ to know intended direction
+- [ ] Step 1: Establish what's being audited (which surfaces, any focus area)
+- [ ] Step 2: Figure out the surface's apparent intent — what it's aiming at
 - [ ] Step 3: Run priority categories against the surface(s)
 - [ ] Step 4: Group findings by priority, then by surface
 - [ ] Step 5: Write docs/designs/<topic>-audit.md with findings + concrete fixes
@@ -43,13 +41,13 @@ Audit progress:
 
 ### Step 1 — Scope
 
-Be explicit about scope. If the user says "audit the dashboard," confirm which screens count — main view only, or also settings/account/billing? Limit the audit to confirmed scope; expanding mid-audit produces noise.
+Take scope from how the user framed it. "Audit this app" or "review the UI" means everything reachable — don't narrow it. "Audit the dashboard" means the dashboard and its sub-surfaces. A focus area ("check spacing consistency," "audit the nav") narrows what you're looking *for*, not what you're looking *at*, unless the user pairs it with a surface.
 
-### Step 2 — Read prior brief if any
+Only ask for clarification when scope is genuinely ambiguous — not as a reflex. Don't expand mid-audit; if you notice issues outside scope, note them in passing and offer a separate audit.
 
-If `docs/designs/<topic>.md` exists from the `ux-designer` agent, read it. The audit becomes "is the implementation faithful to the brief, and where it has diverged, was the divergence justified?" That's a sharper audit than auditing in a vacuum.
+### Step 2 — Read the surface's intent
 
-If no prior brief exists, audit against the design's apparent intent — figure out what track and dial settings the surface seems to be aiming at, then assess against that.
+Figure out what the surface is aiming at: what track it sits in, what dial settings it seems to want, what audience it serves. Assess against that intent, not against your taste in isolation. Existing styling files, brand assets, and any product context in `README.md` / `AGENTS.md` are fair game for signal.
 
 ### Step 3 — Priority categories
 
@@ -90,7 +88,7 @@ Example:
 
 ### Step 5 — Write the audit file
 
-Path: `docs/designs/<topic>-audit.md` where `<topic>` matches any prior brief, or describes the audit scope if not.
+Path: `docs/designs/<topic>-audit.md` where `<topic>` describes the audit scope (e.g. `dashboard-audit.md`, `app-audit.md`, `nav-audit.md`).
 
 Top of the file:
 - One-sentence summary of what was audited

@@ -1,1 +1,0 @@
-../../ux-design/references/brief-template.md

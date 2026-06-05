@@ -81,8 +81,6 @@ Practical guidance for common tasks:
 - **New surface, existing app** → orient first; usually skip track-defaults (the existing brief or codebase establishes track); load reference-study only if expanding the reference set; brief-template + relevant blacklist sections to document.
 - **Iterate on an existing brief based on user pushback** → read the existing brief; load only the references for the sections being changed (often just the blacklist).
 
-For design *reviews* of existing UIs (rather than direction-setting for new ones), use the `ux-review` skill instead — different posture, different output, different agent (`ux-reviewer`).
-
 ## Gotchas
 
 - **Don't ask the user to choose dials, palettes, or aesthetic direction.** That's your job. Decide and explain. Asking betrays the agent's purpose.
