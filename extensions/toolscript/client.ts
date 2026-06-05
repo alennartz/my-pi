@@ -26,9 +26,27 @@ export class ToolscriptClient {
 	private transport: StdioClientTransport | null = null;
 	private running = false;
 	private restartPromise: Promise<void> | null = null;
+	private stderrTail: string[] = [];
 
 	constructor(cwd: string) {
 		this.cwd = cwd;
+	}
+
+	/** Keep a bounded tail of child stderr so it can be surfaced on errors
+	 * instead of being inherited straight into pi's console. */
+	private captureStderr(text: string): void {
+		for (const line of text.split(/\r?\n/)) {
+			if (line.length === 0) continue;
+			this.stderrTail.push(line);
+		}
+		if (this.stderrTail.length > 50) {
+			this.stderrTail.splice(0, this.stderrTail.length - 50);
+		}
+	}
+
+	private stderrSnippet(): string {
+		if (this.stderrTail.length === 0) return "";
+		return `\n--- toolscript stderr (last ${this.stderrTail.length} lines) ---\n${this.stderrTail.join("\n")}`;
 	}
 
 	async start(): Promise<StartResult> {
@@ -57,7 +75,10 @@ export class ToolscriptClient {
 			command: binary,
 			args,
 			cwd: this.cwd,
-			stderr: "inherit",
+			// Capture child stderr rather than inheriting it into pi's console.
+			// The upstream MCP server's startup logs are noise; we buffer them and
+			// only surface them when a call or boot actually fails.
+			stderr: "pipe",
 		});
 
 		this.client = new Client({ name: "pi-toolscript", version: "1.0.0" });
@@ -70,6 +91,14 @@ export class ToolscriptClient {
 		// Connect (spawns child process, performs MCP initialize handshake)
 		await this.client.connect(this.transport);
 		this.running = true;
+
+		// Drain captured stderr into a bounded buffer.
+		const errStream = this.transport.stderr;
+		if (errStream) {
+			errStream.on("data", (chunk: Buffer) => {
+				this.captureStderr(chunk.toString());
+			});
+		}
 
 		// Get instructions
 		const instructions = this.client.getInstructions() ?? "";
@@ -97,7 +126,7 @@ export class ToolscriptClient {
 				await this.restartPromise;
 			} catch (err) {
 				return {
-					content: `toolscript crashed and could not be restarted: ${err instanceof Error ? err.message : String(err)}`,
+					content: `toolscript crashed and could not be restarted: ${err instanceof Error ? err.message : String(err)}${this.stderrSnippet()}`,
 					isError: true,
 				};
 			}
@@ -126,7 +155,7 @@ export class ToolscriptClient {
 			};
 		} catch (err) {
 			return {
-				content: `toolscript call failed: ${err instanceof Error ? err.message : String(err)}`,
+				content: `toolscript call failed: ${err instanceof Error ? err.message : String(err)}${this.stderrSnippet()}`,
 				isError: true,
 			};
 		}
