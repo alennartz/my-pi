@@ -370,7 +370,7 @@ export default function (pi: ExtensionAPI) {
 				const meta = lookupMeta(d.modelName);
 				return {
 					id: d.deploymentName,
-					name: `Foundry ${d.deploymentName}`,
+					name: d.deploymentName,
 					reasoning: meta.reasoning,
 					input: meta.input,
 					cost: meta.cost,
