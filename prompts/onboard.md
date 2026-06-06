@@ -18,6 +18,17 @@ This is **alenna-pi**, a personal [pi coding agent](https://github.com/badlogic/
 - **User edit tool** — `user_edit` opens a file in pi's built-in editor so the user can manually edit it. Supports existing files and new file creation.
 - **TUI components** — reusable UI primitives like `numbered-select` (keyboard-driven select dialog with inline annotation).
 
+## Coding Principles
+
+This package ships a set of general engineering principles in [`conventions/coding-principles.md`](../conventions/coding-principles.md) — a stance on pure functions, deliberate mutation points, globals, closures, naming, and one-function-per-business-operation. Unlike the behavioral conventions below, these are not model-specific overlays; they belong in the base `AGENTS.md`.
+
+Read that file and offer to install its contents into either:
+
+1. **Project-level** — append to this project's `./AGENTS.md` (applies in this repo)
+2. **Global** — append to `~/.pi/agent/AGENTS.md` (applies in all sessions)
+
+If the target file already contains a `## Coding Principles (Always Follow)` section, ask before overwriting; otherwise append.
+
 ## Behavioral Conventions
 
 This package recommends a behavioral convention — a rule that shapes how the agent works. To keep it Claude-only, install it in an `AGENTS.claude.md` overlay with model frontmatter.

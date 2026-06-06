@@ -166,3 +166,26 @@ Extension that discovers AGENTS.*.md overlay files, matches them against the act
 
 **Files:**
 - `extensions/model-prompt-overlays/**`
+
+### Prompts
+
+Slash-command prompts distributed with the package.
+
+**Responsibilities:** `onboard` introduces the package, offers to install behavioral conventions (model-specific overlays) and coding principles (base AGENTS.md content); `tidy` runs repo tidying.
+
+**Dependencies:** consumes `conventions/` for content to install.
+
+**Files:**
+- `prompts/onboard.md`
+- `prompts/tidy.md`
+
+### Conventions
+
+Reusable convention content the onboard prompt offers to install into the user's `AGENTS.md`.
+
+**Responsibilities:** house general engineering stances that aren't model-specific overlays — currently the coding principles (pure functions, deliberate mutation, globals, closure lifecycle, naming, one-function-per-business-operation).
+
+**Dependencies:** none; content is plain Markdown read by `onboard`.
+
+**Files:**
+- `conventions/coding-principles.md`
