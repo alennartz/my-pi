@@ -14,7 +14,9 @@ export default function modelPromptOverlays(pi: ExtensionAPI) {
 		const modelId = ctx.model?.id;
 		if (!modelId) return undefined;
 
-		const roots = discoverContextRoots(ctx.cwd, getAgentDir());
+		// Project-local ancestor overlays only load when the project is trusted;
+		// the global agent dir always applies.
+		const roots = discoverContextRoots(ctx.cwd, getAgentDir(), ctx.isProjectTrusted());
 
 		const allMatched: IndexedMatchedOverlay[] = [];
 

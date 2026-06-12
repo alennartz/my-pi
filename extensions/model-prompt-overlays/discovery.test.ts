@@ -28,7 +28,7 @@ describe("discoverContextRoots", () => {
 		const agentDir = createTemp();
 		const cwd = createTemp();
 
-		const roots = discoverContextRoots(cwd, agentDir);
+		const roots = discoverContextRoots(cwd, agentDir, true);
 		expect(roots[0]).toBe(resolve(agentDir));
 	});
 
@@ -37,7 +37,7 @@ describe("discoverContextRoots", () => {
 		const agentDir = createTemp();
 		const cwd = createTemp();
 
-		const roots = discoverContextRoots(cwd, agentDir);
+		const roots = discoverContextRoots(cwd, agentDir, true);
 		expect(roots).toContain(resolve(agentDir));
 		expect(roots).toContain(resolve(cwd));
 	});
@@ -49,7 +49,7 @@ describe("discoverContextRoots", () => {
 		mkdirSync(deep, { recursive: true });
 
 		const agentDir = createTemp();
-		const roots = discoverContextRoots(deep, agentDir);
+		const roots = discoverContextRoots(deep, agentDir, true);
 
 		// Global agent dir is first; then ancestors in farthest → nearest order
 		// up through cwd. Find the indices of our known dirs and assert order.
@@ -68,7 +68,7 @@ describe("discoverContextRoots", () => {
 		const agentDir = createTemp();
 		const cwd = createTemp();
 
-		const roots = discoverContextRoots(cwd, agentDir);
+		const roots = discoverContextRoots(cwd, agentDir, true);
 		expect(roots).toContain(resolve(cwd));
 	});
 
@@ -77,7 +77,7 @@ describe("discoverContextRoots", () => {
 		const cwd = join(agentDir, "sub");
 		mkdirSync(cwd, { recursive: true });
 
-		const roots = discoverContextRoots(cwd, agentDir);
+		const roots = discoverContextRoots(cwd, agentDir, true);
 		const matches = roots.filter((r) => r === resolve(agentDir));
 		expect(matches.length).toBe(1);
 		// Still placed in the "global" slot (first).
@@ -88,7 +88,18 @@ describe("discoverContextRoots", () => {
 		const agentDir = createTemp();
 		const cwd = createTemp();
 
-		const roots = discoverContextRoots(cwd, agentDir);
+		const roots = discoverContextRoots(cwd, agentDir, true);
 		expect(roots).toContain(resolve("/"));
+	});
+
+	it("returns only the global agent dir when ancestors are excluded", () => {
+		// When the project is untrusted, callers pass includeAncestors=false:
+		// project-local ancestor roots must not load, but the global dir still does.
+		const agentDir = createTemp();
+		const cwd = createTemp();
+
+		const roots = discoverContextRoots(cwd, agentDir, false);
+		expect(roots).toEqual([resolve(agentDir)]);
+		expect(roots).not.toContain(resolve(cwd));
 	});
 });

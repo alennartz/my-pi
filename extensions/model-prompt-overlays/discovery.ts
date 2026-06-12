@@ -11,8 +11,13 @@ import { resolve } from "node:path";
  *
  * The returned list is ordered farthest → nearest so overlay precedence can
  * be decided by index.
+ *
+ * The global agent dir is always included. Project-local ancestor roots
+ * (project dir and its ancestors up from the filesystem root) are only walked
+ * when `includeAncestors` is true — callers gate this on project trust, since
+ * ancestor overlays are project-local resources that must not load untrusted.
  */
-export function discoverContextRoots(cwd: string, agentDir: string): string[] {
+export function discoverContextRoots(cwd: string, agentDir: string, includeAncestors: boolean): string[] {
 	const roots: string[] = [];
 	const seen = new Set<string>();
 
@@ -23,8 +28,10 @@ export function discoverContextRoots(cwd: string, agentDir: string): string[] {
 		else roots.unshift(dir);
 	};
 
-	// 1. Global agent dir always comes first.
+	// 1. Global agent dir always comes first (not project-local, always trusted).
 	addRoot(resolve(agentDir), "append");
+
+	if (!includeAncestors) return roots;
 
 	// 2. Ancestor walk: filesystem root → cwd (farthest first).
 	const ancestors: string[] = [];

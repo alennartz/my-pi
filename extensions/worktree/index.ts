@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { SessionManager, type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
-import { getWorktreeArgumentCompletions, parseWorktreeCommand } from "./command-surface.ts";
+import { getWorktreeArgumentCompletions, isWorktreePath, parseWorktreeCommand } from "./command-surface.ts";
 import type {
 	PendingChangesChoice,
 	WorktreeDependencies,
@@ -280,6 +280,18 @@ function toAutocompleteItems(items: ReturnType<typeof getWorktreeArgumentComplet
 }
 
 export default function worktreeExtension(pi: ExtensionAPI) {
+	// Auto-trust worktree directories. A worktree is a checkout of a repo the
+	// user already trusted, so switching cwd into one on `/worktree create`
+	// should not re-prompt for project trust. Other paths fall through
+	// ("undecided") to pi's normal trust resolution.
+	pi.on("project_trust", (event) => {
+		const home = process.env.HOME ?? homedir();
+		if (isWorktreePath(event.cwd, home)) {
+			return { trusted: "yes", remember: false };
+		}
+		return { trusted: "undecided" };
+	});
+
 	// --- Reliable wait-for-agent-turn ---
 	//
 	// `pi.sendUserMessage` is fire-and-forget from the extension's perspective:

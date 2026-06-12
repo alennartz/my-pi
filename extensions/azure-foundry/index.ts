@@ -23,6 +23,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getModel } from "@earendil-works/pi-ai";
 
 // =============================================================================
 // Configuration (from env vars)
@@ -157,7 +158,7 @@ const BACKENDS: Record<Backend, BackendConfig> = {
 };
 
 // =============================================================================
-// Known Model Metadata Catalog
+// Model Metadata (delegated to pi-ai's bundled catalog)
 // =============================================================================
 
 /** Per-million-token cost rates (matches pi-ai's Model.cost format). */
@@ -195,86 +196,35 @@ const DEFAULTS: ModelMeta = {
 };
 
 /**
- * Known model metadata, keyed by the model name from the deployment API
- * (properties.model.name). Add entries here when new model families are
- * deployed — unknown models get conservative defaults.
- *
- * Cost rates are $ per million tokens, matching pi-ai's built-in model data.
+ * pi-ai model providers that carry the correct metadata for each Foundry
+ * backend. Azure Foundry's OpenAI deployments use `azure-openai-responses`,
+ * whose context windows match Azure (e.g. GPT-5.4/5.5 = 1,050,000) rather than
+ * OpenAI's smaller public limits. Anthropic deployments use `anthropic`.
  */
-const MODEL_CATALOG: Record<string, Partial<ModelMeta>> = {
-	// Anthropic
-	"claude-sonnet-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
-		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
-	"claude-sonnet-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 64000,
-		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, forceAdaptiveThinking: true },
-	"claude-opus-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
-		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
-	"claude-opus-4-6": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
-		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, forceAdaptiveThinking: true },
-	"claude-opus-4-7": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
-		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, forceAdaptiveThinking: true },
-	"claude-opus-4-8": { reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 128000,
-		cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, forceAdaptiveThinking: true },
-	"claude-haiku-4-5": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 64000,
-		cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 } },
-	// OpenAI — GPT-4.1 family
-	"gpt-4.1": { reasoning: false, input: ["text", "image"], contextWindow: 1047576, maxTokens: 32768,
-		cost: { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 0 } },
-	"gpt-4.1-mini": { reasoning: false, input: ["text", "image"], contextWindow: 1047576, maxTokens: 32768,
-		cost: { input: 0.4, output: 1.6, cacheRead: 0.1, cacheWrite: 0 } },
-	"gpt-4.1-nano": { reasoning: false, input: ["text", "image"], contextWindow: 1047576, maxTokens: 32768,
-		cost: { input: 0.1, output: 0.4, cacheRead: 0.025, cacheWrite: 0 } },
-	// OpenAI — O-series reasoning
-	"o3": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 100000,
-		cost: { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 0 } },
-	"o3-pro": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 100000,
-		cost: { input: 20, output: 80, cacheRead: 20, cacheWrite: 0 } },
-	"o3-mini": { reasoning: true, input: ["text"], contextWindow: 200000, maxTokens: 100000,
-		cost: { input: 1.1, output: 4.4, cacheRead: 0.55, cacheWrite: 0 } },
-	"o4-mini": { reasoning: true, input: ["text", "image"], contextWindow: 200000, maxTokens: 100000,
-		cost: { input: 1.1, output: 4.4, cacheRead: 0.275, cacheWrite: 0 } },
-	// OpenAI — GPT-5 family
-	"gpt-5": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
-		cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 } },
-	"gpt-5-pro": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 272000,
-		cost: { input: 15, output: 120, cacheRead: 15, cacheWrite: 0 } },
-	"gpt-5-mini": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
-		cost: { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 } },
-	"gpt-5-nano": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
-		cost: { input: 0.05, output: 0.4, cacheRead: 0.005, cacheWrite: 0 } },
-	// OpenAI — GPT-5.1
-	"gpt-5.1": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
-		cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 } },
-	// OpenAI — GPT-5.2 family
-	"gpt-5.2": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
-		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 } },
-	"gpt-5.2-pro": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
-		cost: { input: 21, output: 168, cacheRead: 21, cacheWrite: 0 } },
-	"gpt-5.2-codex": { reasoning: true, input: ["text"], contextWindow: 400000, maxTokens: 128000,
-		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 } },
-	// OpenAI — GPT-5.3
-	"gpt-5.3-codex": { reasoning: true, input: ["text"], contextWindow: 400000, maxTokens: 128000,
-		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 } },
-	// OpenAI — GPT-5.4 family
-	"gpt-5.4": { reasoning: true, input: ["text", "image"], contextWindow: 272000, maxTokens: 128000,
-		cost: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 } },
-	"gpt-5.4-pro": { reasoning: true, input: ["text", "image"], contextWindow: 1050000, maxTokens: 128000,
-		cost: { input: 30, output: 180, cacheRead: 30, cacheWrite: 0 } },
-	"gpt-5.4-mini": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
-		cost: { input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0 } },
-	"gpt-5.4-nano": { reasoning: true, input: ["text", "image"], contextWindow: 400000, maxTokens: 128000,
-		cost: { input: 0.2, output: 1.25, cacheRead: 0.02, cacheWrite: 0 } },
-	// OpenAI — GPT-5.5 family
-	"gpt-5.5": { reasoning: true, input: ["text", "image"], contextWindow: 272000, maxTokens: 128000,
-		cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 } },
-	"gpt-5.5-pro": { reasoning: true, input: ["text", "image"], contextWindow: 1050000, maxTokens: 128000,
-		cost: { input: 30, output: 180, cacheRead: 30, cacheWrite: 0 } },
+const PI_AI_PROVIDER: Record<Backend, "anthropic" | "azure-openai-responses"> = {
+	"anthropic-messages": "anthropic",
+	"openai-responses": "azure-openai-responses",
+	"openai-completions": "azure-openai-responses",
 };
 
-function lookupMeta(modelName: string): ModelMeta {
-	const override = MODEL_CATALOG[modelName];
-	if (!override) return { ...DEFAULTS };
-	return { ...DEFAULTS, ...override };
+/**
+ * Resolve model metadata from pi-ai's built-in catalog, keyed by the model name
+ * from the deployment API (properties.model.name) under the backend's provider.
+ * Unknown models fall back to conservative defaults. Delegating to pi-ai keeps
+ * cost / context / adaptive-thinking data in sync with the bundled model data
+ * instead of a hand-maintained table that silently drifts from upstream.
+ */
+function lookupMeta(backend: Backend, modelName: string): ModelMeta {
+	const model = getModel(PI_AI_PROVIDER[backend], modelName as never);
+	if (!model) return { ...DEFAULTS };
+	return {
+		reasoning: model.reasoning ?? false,
+		input: model.input as ("text" | "image")[],
+		contextWindow: model.contextWindow,
+		maxTokens: model.maxTokens,
+		cost: model.cost,
+		forceAdaptiveThinking: model.compat?.forceAdaptiveThinking,
+	};
 }
 
 // Deployment discovery now lives in foundry-helper.mjs (refresh-deployments),
@@ -367,7 +317,7 @@ export default function (pi: ExtensionAPI) {
 			api: backend,
 
 			models: group.map((d) => {
-				const meta = lookupMeta(d.modelName);
+				const meta = lookupMeta(backend, d.modelName);
 				return {
 					id: d.deploymentName,
 					name: d.deploymentName,

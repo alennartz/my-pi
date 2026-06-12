@@ -318,6 +318,7 @@ export function resolveSkillPaths(
  * Build CLI args for spawning a pi child process for this agent.
  */
 export function buildAgentArgs(
+	agentId: string,
 	agent: AgentConfig | undefined,
 	skillPaths: string[],
 	sessionDir: string,
@@ -325,6 +326,8 @@ export function buildAgentArgs(
 	modelOverride?: string,
 ): string[] {
 	const args: string[] = resumeSessionFile ? ["--session", resumeSessionFile] : ["--session-dir", sessionDir];
+	// Give the child session a greppable display name (e.g. in `pi-ps`).
+	args.push("--name", agentId);
 	const model = modelOverride ?? agent?.model;
 	if (model) args.push("--model", model);
 	if (agent?.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
@@ -353,6 +356,8 @@ export function buildForkArgs(spec: ForkAgentSpec, sessionDir: string): string[]
 			"--session-dir", sessionDir,
 			"--thinking", spec.thinkingLevel,
 		];
+	// Give the child session a greppable display name (e.g. in `pi-ps`).
+	args.push("--name", spec.id);
 	if (spec.tools.length > 0) {
 		args.push("--tools", spec.tools.join(","));
 	}

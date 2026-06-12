@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import {
 	WORKTREE_ROOT_DIRECTORY_NAME,
 	type WorktreeAutocompleteItem,
@@ -28,6 +28,19 @@ export type ParsedWorktreeCommand =
 
 export function resolveWorktreePath(homeDirectory: string, repoName: string, branchName: string): string {
 	return join(homeDirectory, WORKTREE_ROOT_DIRECTORY_NAME, repoName, branchName);
+}
+
+/**
+ * True when `cwd` is the centralized worktree root or any directory beneath it.
+ * Worktrees are checkouts of an already-trusted repo, so the extension uses
+ * this to auto-trust them and avoid a project-trust prompt on every
+ * `/worktree create` cwd switch. Uses path containment (not string prefix) so
+ * a sibling like `<home>/.git-worktrees-evil` does not match.
+ */
+export function isWorktreePath(cwd: string, homeDirectory: string): boolean {
+	const root = join(homeDirectory, WORKTREE_ROOT_DIRECTORY_NAME);
+	const rel = relative(root, cwd);
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 export function buildCleanupMergePrompt(

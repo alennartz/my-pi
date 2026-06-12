@@ -550,13 +550,7 @@ export default function (pi: ExtensionAPI) {
 	async function ensureWidget(ctx: ToolCtx): Promise<void> {
 		if (dashboard || panelHandle || parentLink) return;
 
-		// Detect TUI: custom() returns undefined in RPC mode, resolves immediately otherwise
-		const hasTUI = (await ctx.ui.custom(
-			(_tui, _theme, _kb, done) => { done(true); return { render: () => [] }; },
-			{ overlay: true },
-		)) !== undefined;
-
-		if (hasTUI) {
+		if (ctx.mode === "tui") {
 			ctx.ui.setWidget("subagents", (tui, theme) => {
 				tuiRef = tui;
 				dashboard = new SubagentDashboard(theme);

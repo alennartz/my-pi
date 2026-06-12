@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildCleanupMergePrompt,
 	getWorktreeArgumentCompletions,
+	isWorktreePath,
 	parseWorktreeCommand,
 	resolveWorktreePath,
 } from "./command-surface.ts";
@@ -124,5 +125,25 @@ describe("/worktree command surface", () => {
 		expect(prompt).toContain("/repo/main");
 		expect(prompt).toContain("git -C /repo/main");
 		expect(prompt).toContain("bash tool calls");
+	});
+
+	describe("isWorktreePath", () => {
+		const home = "/home/alenna";
+
+		it("matches a worktree directory beneath the centralized root", () => {
+			expect(isWorktreePath("/home/alenna/.git-worktrees/my-pi/feature/worktree", home)).toBe(true);
+		});
+
+		it("matches the worktree root itself", () => {
+			expect(isWorktreePath("/home/alenna/.git-worktrees", home)).toBe(true);
+		});
+
+		it("does not match an ordinary project directory", () => {
+			expect(isWorktreePath("/home/alenna/repos/my-pi", home)).toBe(false);
+		});
+
+		it("does not match a sibling that shares the root name as a prefix", () => {
+			expect(isWorktreePath("/home/alenna/.git-worktrees-evil/x", home)).toBe(false);
+		});
 	});
 });

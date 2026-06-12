@@ -246,6 +246,7 @@ export class SubagentManager {
 				agentConfig = agentSpec.agent ? agentConfigs.find((a) => a.name === agentSpec.agent) : undefined;
 				const agentSkillPaths = skillPaths.get(agentSpec.id) ?? [];
 				args = buildAgentArgs(
+					agentSpec.id,
 					agentConfig,
 					agentSkillPaths,
 					this.sessionDir!,
