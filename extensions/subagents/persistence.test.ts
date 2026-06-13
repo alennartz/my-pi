@@ -173,3 +173,42 @@ describe("pruneInvalidPersistedAgents", () => {
 		expect(pruneInvalidPersistedAgents(paths, [], () => true)).toEqual([]);
 	});
 });
+
+describe("PersistedAgentRecord fork tools/skillPaths round-trip", () => {
+	it("preserves tools and skillPaths through appendAgentAdded → loadPersistedAgents", () => {
+		appendAgentAdded(paths, baseRecord({
+			id: "clone",
+			kind: "fork",
+			tools: ["read", "bash"],
+			skillPaths: ["/skills/debugging/SKILL.md"],
+		}));
+
+		const loaded = loadPersistedAgents(parentSessionFile);
+		expect(loaded).not.toBeNull();
+		const record = loaded!.agents.find((a) => a.id === "clone");
+		expect(record?.tools).toEqual(["read", "bash"]);
+		expect(record?.skillPaths).toEqual(["/skills/debugging/SKILL.md"]);
+	});
+
+	it("preserves tools and skillPaths through findAgentRecordBySessionId", () => {
+		const sessionId = "22222222-2222-4222-8222-222222222222";
+		appendAgentAdded(paths, baseRecord({
+			id: "clone",
+			kind: "fork",
+			sessionId,
+			tools: ["read"],
+			skillPaths: ["/skills/x/SKILL.md"],
+		}));
+
+		const record = findAgentRecordBySessionId(parentSessionFile, sessionId);
+		expect(record?.tools).toEqual(["read"]);
+		expect(record?.skillPaths).toEqual(["/skills/x/SKILL.md"]);
+	});
+
+	it("leaves tools/skillPaths undefined for legacy records", () => {
+		appendAgentAdded(paths, baseRecord());
+		const loaded = loadPersistedAgents(parentSessionFile);
+		expect(loaded!.agents[0]!.tools).toBeUndefined();
+		expect(loaded!.agents[0]!.skillPaths).toBeUndefined();
+	});
+});

@@ -88,11 +88,10 @@ export class ToolscriptClient {
 			this.running = false;
 		};
 
-		// Connect (spawns child process, performs MCP initialize handshake)
-		await this.client.connect(this.transport);
-		this.running = true;
-
-		// Drain captured stderr into a bounded buffer.
+		// Drain captured stderr into a bounded buffer. The transport returns the
+		// stderr PassThrough immediately (before start), so attaching here —
+		// before connect — captures boot output too; otherwise stderr from a
+		// failed boot would be lost.
 		const errStream = this.transport.stderr;
 		if (errStream) {
 			errStream.on("data", (chunk: Buffer) => {
@@ -100,18 +99,33 @@ export class ToolscriptClient {
 			});
 		}
 
-		// Get instructions
-		const instructions = this.client.getInstructions() ?? "";
+		// Connect (spawns child process, performs MCP initialize handshake)
+		await this.client.connect(this.transport);
 
-		// List tools
-		const toolsResult = await this.client.listTools();
-		const tools: McpToolDef[] = toolsResult.tools.map((tool) => ({
-			name: tool.name,
-			description: tool.description ?? "",
-			inputSchema: tool.inputSchema,
-		}));
+		try {
+			// Get instructions
+			const instructions = this.client.getInstructions() ?? "";
 
-		return { tools, instructions };
+			// List tools
+			const toolsResult = await this.client.listTools();
+			const tools: McpToolDef[] = toolsResult.tools.map((tool) => ({
+				name: tool.name,
+				description: tool.description ?? "",
+				inputSchema: tool.inputSchema,
+			}));
+
+			// Only mark running once boot fully succeeded — a partially booted
+			// client must not look healthy to the restart machinery in callTool.
+			this.running = true;
+			return { tools, instructions };
+		} catch (err) {
+			// Boot failed after the child was spawned — tear it down so the
+			// process doesn't outlive the failed start.
+			try {
+				await this.client.close();
+			} catch {}
+			throw err;
+		}
 	}
 
 	async callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
@@ -162,10 +176,14 @@ export class ToolscriptClient {
 	}
 
 	async stop(): Promise<void> {
-		if (!this.running) return;
-		if (this.client) {
-			await this.client.close();
-		}
+		// Close unconditionally (best-effort). Gating on `running` would skip
+		// cleanup in exactly the cases that need it most — a crashed process or
+		// a partially failed boot can still hold a live child.
 		this.running = false;
+		if (this.client) {
+			try {
+				await this.client.close();
+			} catch {}
+		}
 	}
 }

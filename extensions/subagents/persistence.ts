@@ -22,6 +22,16 @@ export interface PersistedAgentRecord {
 	 * cwd at spawn time. On restore, absence is treated as "no override".
 	 */
 	cwd?: string;
+	/**
+	 * Fork-only: tool restriction captured at fork time. Absent for regular
+	 * agents (whose tools come from their persona) and for legacy records.
+	 */
+	tools?: string[];
+	/**
+	 * Fork-only: resolved skill paths captured at fork time. Absent for regular
+	 * agents and for legacy records.
+	 */
+	skillPaths?: string[];
 }
 
 export type AgentLifecycleEvent =
@@ -132,6 +142,8 @@ export function findAgentRecordBySessionId(
 				sessionFile: event.sessionFile,
 				sessionId: event.sessionId,
 				cwd: event.cwd,
+				tools: event.tools,
+				skillPaths: event.skillPaths,
 			};
 		}
 	}
@@ -215,6 +227,8 @@ export function loadPersistedAgents(parentSessionFile: string): {
 				sessionFile: event.sessionFile,
 				sessionId: event.sessionId,
 				cwd: event.cwd,
+				tools: event.tools,
+				skillPaths: event.skillPaths,
 			});
 		} else if (event.type === "agent_removed") {
 			const current = liveAgents.get(event.id);

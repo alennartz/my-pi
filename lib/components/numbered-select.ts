@@ -47,7 +47,8 @@ class NumberedSelectComponent implements Component, Focusable {
 	private theme: Theme;
 	private options: NumberedSelectOption[];
 	private title: string;
-	private done: (result: NumberedSelectResult | undefined) => void;
+	/** Resolves the custom-UI promise: a result on selection, null on cancel. */
+	private done: (result: NumberedSelectResult | null) => void;
 
 	// Focusable
 	private _focused = false;
@@ -64,7 +65,7 @@ class NumberedSelectComponent implements Component, Focusable {
 		theme: Theme,
 		title: string,
 		options: NumberedSelectOption[],
-		done: (result: NumberedSelectResult | undefined) => void,
+		done: (result: NumberedSelectResult | null) => void,
 	) {
 		this.tui = tui;
 		this.theme = theme;
@@ -87,7 +88,10 @@ class NumberedSelectComponent implements Component, Focusable {
 	}
 
 	private cancel(): void {
-		this.done(undefined);
+		// null (not undefined): ctx.ui.custom() resolves undefined when the
+		// environment can't render custom components at all, and the caller
+		// must distinguish "user cancelled" from "needs the select fallback".
+		this.done(null);
 	}
 
 	// -- Input handling -----------------------------------------------------
@@ -254,15 +258,18 @@ export async function showNumberedSelect(
 		throw new Error("showNumberedSelect: options must have 9 or fewer items");
 	}
 
-	// Try the custom TUI component first — returns the selection in TUI mode,
-	// undefined when the environment can't render custom components (RPC, pimote, etc.)
-	const customResult = await ctx.ui.custom<NumberedSelectResult | undefined>((tui, theme, _kb, done) => {
+	// Try the custom TUI component first. Three outcomes:
+	// - a result: the user selected an option
+	// - null: the user cancelled (Escape) — honor it, do NOT fall back
+	// - undefined: the environment can't render custom components (RPC,
+	//   pimote, etc.) — fall back to ctx.ui.select
+	const customResult = await ctx.ui.custom<NumberedSelectResult | null | undefined>((tui, theme, _kb, done) => {
 		const component = new NumberedSelectComponent(tui, theme, title, options, done);
 		return component;
 	});
 
 	if (customResult !== undefined) {
-		return customResult;
+		return customResult ?? undefined;
 	}
 
 	// Fallback: use ctx.ui.select() which works via the RPC bridge

@@ -24,13 +24,15 @@ export function createStopSequenceManager(pi: ExtensionAPI): StopSequenceManager
 	let oneShot: string[] = [];
 
 	pi.on("before_provider_request", (event, ctx) => {
-		// Collect active sequences and drain one-shots
-		const sequences = [...persistent, ...oneShot];
-		oneShot = [];
-		if (sequences.length === 0) return;
+		if (persistent.size === 0 && oneShot.length === 0) return;
 
+		// Drain one-shots only once we know we can apply them — if there's no
+		// model on this request, they must survive for the next one.
 		const model = ctx.model;
 		if (!model) return;
+
+		const sequences = [...persistent, ...oneShot];
+		oneShot = [];
 
 		return applyStopSequences(event.payload as any, model.api, sequences);
 	});

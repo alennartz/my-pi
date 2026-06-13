@@ -127,14 +127,17 @@ class BrokerClient {
 						continue;
 					}
 
-					// Correlation-based dispatch for response/error with correlationId
+					// Correlation-based dispatch for response/error with correlationId.
+					// Frames whose correlation has no waiter (e.g. the blocking send was
+					// aborted) are dropped — feeding them to the FIFO waiter queue would
+					// let a stale response resolve a later sendAndWait's ack.
 					if ((parsed.type === "response" || parsed.type === "error") && parsed.correlationId) {
 						const waiter = this.correlationWaiters.get(parsed.correlationId);
 						if (waiter) {
 							this.correlationWaiters.delete(parsed.correlationId);
 							waiter(parsed);
-							continue;
 						}
+						continue;
 					}
 
 					// Check waiters for solicited responses
@@ -882,6 +885,13 @@ export default function (pi: ExtensionAPI) {
 
 			const correlationId = params.expectResponse ? crypto.randomUUID() : undefined;
 
+			// Register the correlation waiter BEFORE writing the send. The broker
+			// forwards the message to the target before acking the sender, so a
+			// fast response can arrive in the same chunk as the send_ack — if the
+			// waiter isn't registered yet, that response is dropped and this tool
+			// call hangs forever.
+			const responsePromise = correlationId ? client.waitForResponse(correlationId) : null;
+
 			const resp = await client.sendAndWait({
 				type: "send",
 				from,
@@ -892,26 +902,31 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			if (resp.type === "error") {
+				if (correlationId) client.cancelWaitForResponse(correlationId);
 				throw new Error(resp.error);
 			}
 
-			if (params.expectResponse && correlationId) {
+			if (responsePromise && correlationId) {
 				// Race the blocking wait against the abort signal so Escape
 				// (or any other cancellation) can unblock the tool call.
 				const responseMsg = await new Promise<BrokerResponse>((resolve, reject) => {
-					if (signal?.aborted) {
-						client!.cancelWaitForResponse(correlationId!);
+					const cancel = () => {
+						client!.cancelWaitForResponse(correlationId);
+						// Tell the broker so the pending correlation doesn't go stale
+						// (a late respond would otherwise hit a dangling entry).
+						client!.write({ type: "cancel", correlationId });
 						reject(new Error("Cancelled"));
+					};
+
+					if (signal?.aborted) {
+						cancel();
 						return;
 					}
 
-					const onAbort = () => {
-						client!.cancelWaitForResponse(correlationId!);
-						reject(new Error("Cancelled"));
-					};
+					const onAbort = () => cancel();
 					signal?.addEventListener("abort", onAbort, { once: true });
 
-					client!.waitForResponse(correlationId!).then((msg) => {
+					responsePromise.then((msg) => {
 						signal?.removeEventListener("abort", onAbort);
 						resolve(msg);
 					});

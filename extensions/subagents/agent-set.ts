@@ -12,9 +12,9 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { RpcChild } from "./rpc-child.js";
 import { Broker } from "./broker.js";
-import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs, isValidCwd } from "./agents.js";
+import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs, isValidCwd, resolveSkillPaths } from "./agents.js";
 import { ensurePersistence, appendAgentAdded, appendAgentRemoved, findAgentRecordBySessionId, loadPersistedAgents, getPersistencePaths, pruneInvalidPersistedAgents, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
-import { type Topology, buildTopology, addToTopology, removeFromTopology } from "./channels.js";
+import { type Topology, buildTopology, addToTopology, removeFromTopology, validateTopology } from "./channels.js";
 import { parseSessionSnapshot } from "./session-snapshot.js";
 import {
 	serializeSubagentIdentity,
@@ -63,6 +63,10 @@ interface AgentEntry {
 	sessionId?: string;
 	kind: AgentSpec["kind"];
 	cwd?: string;
+	/** Fork-only: tool restriction captured at fork time, persisted for restore. */
+	forkTools?: string[];
+	/** Fork-only: resolved skill paths captured at fork time, persisted for restore. */
+	forkSkillPaths?: string[];
 	/**
 	 * True once an <agent_idle> notification has been delivered to the parent
 	 * for this agent (set right before onAgentComplete fires). Drives the slim
@@ -153,6 +157,15 @@ export class SubagentManager {
 		const { pi, cwd, skillPaths } = this.opts;
 		const isFirstCall = this.broker === null;
 
+		// "parent" is reserved: it names the orchestrator in the topology and on
+		// the broker. An agent registered under it would clobber the parent's
+		// broker connection and topology entry.
+		for (const a of agents) {
+			if (a.id === "parent") {
+				throw new Error('"parent" is a reserved agent id');
+			}
+		}
+
 		if (isFirstCall) {
 			const parentSessionFile = this.opts.parentSessionFile;
 			if (!parentSessionFile) {
@@ -166,6 +179,10 @@ export class SubagentManager {
 				id: a.id,
 				channels: a.kind === "agent" ? a.channels : undefined,
 			}));
+			const topologyError = validateTopology(specs);
+			if (topologyError) {
+				throw new Error(topologyError);
+			}
 			this.topology = buildTopology(specs);
 
 			// Start broker
@@ -244,7 +261,21 @@ export class SubagentManager {
 				// Fork inherits system prompt from session — no agentConfig append
 			} else {
 				agentConfig = agentSpec.agent ? agentConfigs.find((a) => a.name === agentSpec.agent) : undefined;
-				const agentSkillPaths = skillPaths.get(agentSpec.id) ?? [];
+				// Skill paths come from the subagent tool (which resolves them at
+				// spawn time into the shared map). On resurrect/restore that map is
+				// empty, so fall back to re-resolving the persona's declared skills —
+				// otherwise the child would boot with the default skill set instead
+				// of the persona's pinned skills.
+				let agentSkillPaths = skillPaths.get(agentSpec.id) ?? [];
+				if (agentSkillPaths.length === 0 && agentConfig?.skills) {
+					try {
+						agentSkillPaths = resolveSkillPaths(agentConfig.skills, pi.getCommands());
+					} catch (err) {
+						// Skills no longer resolvable — spawn without them rather than
+						// failing the whole restore/resurrect batch.
+						console.error(`[subagents] Failed to resolve skills for "${agentSpec.id}": ${err instanceof Error ? err.message : String(err)}`);
+					}
+				}
 				args = buildAgentArgs(
 					agentSpec.id,
 					agentConfig,
@@ -325,6 +356,8 @@ export class SubagentManager {
 				status,
 				kind: agentSpec.kind,
 				cwd: agentSpec.kind === "agent" ? agentSpec.cwd : undefined,
+				forkTools: agentSpec.kind === "fork" ? agentSpec.tools : undefined,
+				forkSkillPaths: agentSpec.kind === "fork" ? agentSpec.skillPaths : undefined,
 				completionNotified: false,
 			};
 
@@ -351,6 +384,8 @@ export class SubagentManager {
 					sessionFile: entry.sessionFile,
 					sessionId: entry.sessionId,
 					cwd: entry.cwd,
+					tools: entry.forkTools,
+					skillPaths: entry.forkSkillPaths,
 				});
 			}
 		}
@@ -421,15 +456,20 @@ export class SubagentManager {
 	 * on the next restore cycle.
 	 */
 	async softShutdown(): Promise<void> {
-		// SIGTERM each child first — do NOT touch the persistence log.
-		await Promise.all(this.entries.map((e) => e.rpc.stop()));
+		// Swap entries out BEFORE stopping — prevents monitorExit from seeing the
+		// SIGTERM exit code mid-shutdown and firing spurious crash notifications
+		// (mirrors teardownSingle).
+		const entries = this.entries;
+		this.entries = [];
+
+		// SIGTERM each child — do NOT touch the persistence log.
+		await Promise.all(entries.map((e) => e.rpc.stop()));
 
 		if (this.broker) {
 			await this.broker.stop();
 			this.broker = null;
 		}
 
-		this.entries = [];
 		this.topology = null;
 		this.correlationToTarget.clear();
 		this.sessionDir = null;
@@ -450,8 +490,14 @@ export class SubagentManager {
 			}
 		}
 
+		// Swap entries out BEFORE stopping — prevents monitorExit from seeing the
+		// SIGTERM exit code mid-teardown and firing spurious crash notifications
+		// (mirrors teardownSingle).
+		const entries = this.entries;
+		this.entries = [];
+
 		// Stop all children
-		await Promise.all(this.entries.map((e) => e.rpc.stop()));
+		await Promise.all(entries.map((e) => e.rpc.stop()));
 
 		// Stop broker
 		if (this.broker) {
@@ -459,8 +505,6 @@ export class SubagentManager {
 			this.broker = null;
 		}
 
-
-		this.entries = [];
 		this.topology = null;
 		this.correlationToTarget.clear();
 		this.sessionDir = null;
@@ -599,8 +643,11 @@ export class SubagentManager {
 				task: agent.task,
 				sessionFile: agent.sessionFile,
 				resumeSessionFile: agent.sessionFile,
-				tools: [],
-				skillPaths: [],
+				// Restore the tool/skill restrictions captured at fork time.
+				// Legacy records (written before these fields existed) fall back
+				// to unrestricted — the old behavior.
+				tools: agent.tools ?? [],
+				skillPaths: agent.skillPaths ?? [],
 				thinkingLevel: this.opts.pi.getThinkingLevel() as string,
 			};
 		}
@@ -708,8 +755,15 @@ export class SubagentManager {
 		const check = () => {
 			if (!this.entries.includes(entry)) return; // entry was removed
 			if (entry.rpc.exitCode !== null && entry.status.state !== "failed") {
-				if (entry.rpc.exitCode !== 0) {
+				// Any exit is unexpected while the agent hasn't settled — including
+				// exit code 0. Without this, a child that exits cleanly mid-task
+				// stays "running" forever and await_agents never resolves.
+				const settled = entry.status.state === "idle";
+				if (entry.rpc.exitCode !== 0 || !settled) {
 					entry.status.state = "failed";
+					if (entry.rpc.exitCode === 0 && !entry.status.lastError) {
+						entry.status.lastError = "Process exited unexpectedly";
+					}
 					entry.status.lastActivity = undefined;
 					if (this.broker) {
 						this.broker.agentCrashed(entry.id);

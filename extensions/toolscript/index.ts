@@ -23,6 +23,10 @@ export default function (pi: ExtensionAPI) {
 			try {
 				result = await c.start();
 			} catch {
+				// Boot failed — stop the client before forgetting it, otherwise a
+				// child process spawned during the failed boot would leak (shutdown
+				// only stops the client it can still see).
+				await c.stop().catch(() => {});
 				if (client === c) client = null;
 				return;
 			}

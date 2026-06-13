@@ -54,28 +54,24 @@ export interface SubagentIdentityData {
 	peers: PeerData[];
 }
 
-function escapeXml(s: string): string {
-	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
 export function serializeAgentMessage(data: AgentMessageData): string {
-	const attrs: string[] = [`from="${escapeXml(data.from)}"`];
+	const attrs: string[] = [`from="${data.from}"`];
 	if (data.correlationId) {
-		attrs.push(`correlation_id="${escapeXml(data.correlationId)}"`);
+		attrs.push(`correlation_id="${data.correlationId}"`);
 	}
 	attrs.push(`response_expected="${data.responseExpected ? "true" : "false"}"`);
 	return `<agent_message ${attrs.join(" ")}>\n${data.content}\n</agent_message>`;
 }
 
 function serializeAgentForXml(agent: AgentCompleteData): string {
-	const sessionAttr = agent.sessionId ? ` session_id="${escapeXml(agent.sessionId)}"` : "";
+	const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
 	const hint = agent.sessionId ? `<hint>${RESURRECT_HINT_SINGLE}</hint>\n` : "";
 	if (agent.status === "failed") {
 		const errorContent = agent.error ? `\n<error>${agent.error}</error>\n` : "";
-		return `<agent_idle id="${escapeXml(agent.id)}" status="failed"${sessionAttr}>${errorContent}${hint}</agent_idle>`;
+		return `<agent_idle id="${agent.id}" status="failed"${sessionAttr}>${errorContent}${hint}</agent_idle>`;
 	}
 	const output = agent.output ?? "(no output)";
-	return `<agent_idle id="${escapeXml(agent.id)}" status="idle"${sessionAttr}>\n${output}\n${hint}</agent_idle>`;
+	return `<agent_idle id="${agent.id}" status="idle"${sessionAttr}>\n${output}\n${hint}</agent_idle>`;
 }
 
 export function serializeAgentComplete(data: AgentCompleteData): string {
@@ -91,16 +87,16 @@ export function serializeAgentComplete(data: AgentCompleteData): string {
  * / error so it isn't lost.
  */
 export function serializeAgentTorndown(data: AgentCompleteData): string {
-	const sessionAttr = data.sessionId ? ` session_id="${escapeXml(data.sessionId)}"` : "";
+	const sessionAttr = data.sessionId ? ` session_id="${data.sessionId}"` : "";
 	const hint = data.sessionId ? `<hint>${RESURRECT_HINT_SINGLE}</hint>` : "";
-	const openTag = `<agent_torn_down id="${escapeXml(data.id)}" status="${data.status}"${sessionAttr}>`;
+	const openTag = `<agent_torn_down id="${data.id}" status="${data.status}"${sessionAttr}>`;
 	if (data.alreadyNotified) {
 		return hint ? `${openTag}\n${hint}\n</agent_torn_down>` : `${openTag}\n</agent_torn_down>`;
 	}
 	// Not yet notified — include body.
 	const bodyParts: string[] = [];
 	if (data.status === "failed") {
-		if (data.error) bodyParts.push(`<error>${escapeXml(data.error)}</error>`);
+		if (data.error) bodyParts.push(`<error>${data.error}</error>`);
 	} else {
 		bodyParts.push(data.output ?? "(no output)");
 	}
@@ -127,28 +123,28 @@ export function serializeGroupTorndown(data: ActiveAgentsCompleteData): string {
 	})();
 
 	const lines: string[] = ["<group_torn_down>"];
-	lines.push(`  <summary>${escapeXml(summary)}</summary>`);
+	lines.push(`  <summary>${summary}</summary>`);
 	let anySessionId = false;
 	for (const agent of data.agents) {
-		const sessionAttr = agent.sessionId ? ` session_id="${escapeXml(agent.sessionId)}"` : "";
+		const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
 		if (agent.sessionId) anySessionId = true;
 		if (agent.alreadyNotified) {
-			lines.push(`  <agent id="${escapeXml(agent.id)}" status="${agent.status}"${sessionAttr} />`);
+			lines.push(`  <agent id="${agent.id}" status="${agent.status}"${sessionAttr} />`);
 			continue;
 		}
 		// Not yet notified — include body so output/error isn't lost.
-		lines.push(`  <agent id="${escapeXml(agent.id)}" status="${agent.status}"${sessionAttr}>`);
+		lines.push(`  <agent id="${agent.id}" status="${agent.status}"${sessionAttr}>`);
 		if (agent.status === "failed") {
-			if (agent.error) lines.push(`    <error>${escapeXml(agent.error)}</error>`);
+			if (agent.error) lines.push(`    <error>${agent.error}</error>`);
 		} else {
-			lines.push(`    <output>${escapeXml(agent.output ?? "(no output)")}</output>`);
+			lines.push(`    <output>${agent.output ?? "(no output)"}</output>`);
 		}
 		lines.push(`  </agent>`);
 	}
 	if (anySessionId) {
 		lines.push(`  <hint>${RESURRECT_HINT_GROUP}</hint>`);
 	}
-	lines.push(`  <usage input="${escapeXml(data.usage.input)}" output="${escapeXml(data.usage.output)}" cost="${escapeXml(data.usage.cost)}" />`);
+	lines.push(`  <usage input="${data.usage.input}" output="${data.usage.output}" cost="${data.usage.cost}" />`);
 	lines.push("</group_torn_down>");
 	return lines.join("\n");
 }
@@ -165,32 +161,32 @@ export function serializeGroupComplete(data: ActiveAgentsCompleteData): string {
 	})();
 
 	const lines: string[] = ["<group_complete>"];
-	lines.push(`  <summary>${escapeXml(summary)}</summary>`);
+	lines.push(`  <summary>${summary}</summary>`);
 	let anySessionId = false;
 	for (const agent of data.agents) {
-		const sessionAttr = agent.sessionId ? ` session_id="${escapeXml(agent.sessionId)}"` : "";
+		const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
 		if (agent.sessionId) anySessionId = true;
-		lines.push(`  <agent id="${escapeXml(agent.id)}" status="${agent.status}"${sessionAttr} />`);
+		lines.push(`  <agent id="${agent.id}" status="${agent.status}"${sessionAttr} />`);
 	}
 	if (anySessionId) {
 		lines.push(`  <hint>${RESURRECT_HINT_GROUP}</hint>`);
 	}
-	lines.push(`  <usage input="${escapeXml(data.usage.input)}" output="${escapeXml(data.usage.output)}" cost="${escapeXml(data.usage.cost)}" />`);
+	lines.push(`  <usage input="${data.usage.input}" output="${data.usage.output}" cost="${data.usage.cost}" />`);
 	lines.push("</group_complete>");
 	return lines.join("\n");
 }
 
 export function serializeSubagentIdentity(data: SubagentIdentityData): string {
 	const lines: string[] = ["<subagent_identity>"];
-	lines.push(`  <id>${escapeXml(data.id)}</id>`);
-	lines.push(`  <task>${escapeXml(data.task)}</task>`);
+	lines.push(`  <id>${data.id}</id>`);
+	lines.push(`  <task>${data.task}</task>`);
 	lines.push("");
 	lines.push("  <peers>");
 	for (const peer of data.peers) {
-		const attrs: string[] = [`id="${escapeXml(peer.id)}"`];
+		const attrs: string[] = [`id="${peer.id}"`];
 		if (peer.isDefault) attrs.push(`default="true"`);
 		if (peer.description) {
-			lines.push(`    <peer ${attrs.join(" ")}>${escapeXml(peer.description)}</peer>`);
+			lines.push(`    <peer ${attrs.join(" ")}>${peer.description}</peer>`);
 		} else {
 			lines.push(`    <peer ${attrs.join(" ")} />`);
 		}
@@ -221,7 +217,8 @@ export function serializeSubagentIdentity(data: SubagentIdentityData): string {
 export type BrokerRequest =
 	| { type: "register"; agentId: string }
 	| { type: "send"; from: string; to: string; message: string; correlationId?: string; expectResponse?: boolean }
-	| { type: "respond"; from: string; correlationId: string; message: string };
+	| { type: "respond"; from: string; correlationId: string; message: string }
+	| { type: "cancel"; correlationId: string };
 
 export type BrokerResponse =
 	| { type: "registered" }

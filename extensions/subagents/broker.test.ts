@@ -210,3 +210,126 @@ describe("Broker.agentIdled", () => {
 		expect(broker.isQuiet()).toBe(true);
 	});
 });
+
+describe("Broker register after removal", () => {
+	let toCleanup: Array<{ close: () => Promise<void> | void }> = [];
+
+	afterEach(async () => {
+		for (const c of toCleanup) await c.close();
+		toCleanup = [];
+	});
+
+	it("clears the removed-agent tombstone when the id is re-registered", async () => {
+		const { broker } = await makeBroker(["worker"]);
+		toCleanup.push({ close: () => broker.stop() });
+
+		const parent = new TestClient(broker.socketPath);
+		toCleanup.push({ close: () => parent.close() });
+		await parent.register("parent");
+
+		const firstWorker = new TestClient(broker.socketPath);
+		toCleanup.push({ close: () => firstWorker.close() });
+		await firstWorker.register("worker");
+
+		// Tear the worker down — sends to it now fail.
+		broker.agentRemoved("worker");
+		parent.write({ type: "send", from: "parent", to: "worker", message: "hi" });
+		const removedErr = await parent.next();
+		expect(removedErr.type).toBe("error");
+		expect((removedErr as { error: string }).error).toMatch(/was removed/);
+
+		// A new agent reuses the id — sends must route to it again.
+		const secondWorker = new TestClient(broker.socketPath);
+		toCleanup.push({ close: () => secondWorker.close() });
+		await secondWorker.register("worker");
+
+		parent.write({ type: "send", from: "parent", to: "worker", message: "hello again" });
+		const ack = await parent.next();
+		expect(ack.type).toBe("send_ack");
+		const delivered = await secondWorker.nextMatching((m) => m.type === "message");
+		expect(delivered).toMatchObject({ type: "message", from: "parent", message: "hello again" });
+	});
+});
+
+describe("Broker ack-phase errors", () => {
+	let toCleanup: Array<{ close: () => Promise<void> | void }> = [];
+
+	afterEach(async () => {
+		for (const c of toCleanup) await c.close();
+		toCleanup = [];
+	});
+
+	it("omits correlationId on pre-flight errors so they resolve the ack waiter, not the response waiter", async () => {
+		const { broker } = await makeBroker(["ghost"]);
+		toCleanup.push({ close: () => broker.stop() });
+
+		const parent = new TestClient(broker.socketPath);
+		toCleanup.push({ close: () => parent.close() });
+		await parent.register("parent");
+
+		// "ghost" is in the topology but never connected.
+		parent.write({
+			type: "send",
+			from: "parent",
+			to: "ghost",
+			message: "anyone there?",
+			correlationId: "corr-ghost",
+			expectResponse: true,
+		});
+
+		const err = await parent.next();
+		expect(err.type).toBe("error");
+		expect((err as { correlationId?: string }).correlationId).toBeUndefined();
+		expect((err as { error: string }).error).toMatch(/not connected/);
+	});
+});
+
+describe("Broker cancel", () => {
+	let toCleanup: Array<{ close: () => Promise<void> | void }> = [];
+
+	afterEach(async () => {
+		for (const c of toCleanup) await c.close();
+		toCleanup = [];
+	});
+
+	it("drops the pending correlation when the sender cancels an aborted blocking send", async () => {
+		const { broker } = await makeBroker(["child"]);
+		toCleanup.push({ close: () => broker.stop() });
+
+		const parent = new TestClient(broker.socketPath);
+		const child = new TestClient(broker.socketPath);
+		toCleanup.push({ close: () => parent.close() }, { close: () => child.close() });
+		await parent.register("parent");
+		await child.register("child");
+
+		parent.write({
+			type: "send",
+			from: "parent",
+			to: "child",
+			message: "question",
+			correlationId: "corr-cancel",
+			expectResponse: true,
+		});
+		const ack = await parent.next();
+		expect(ack.type).toBe("send_ack");
+		await child.nextMatching((m) => m.type === "message");
+
+		// Sender aborts the blocking send.
+		parent.write({ type: "cancel", correlationId: "corr-cancel" });
+
+		// Barrier: requests on the same socket are processed in order, so once
+		// this follow-up send is acked the cancel has been handled too.
+		parent.write({ type: "send", from: "parent", to: "child", message: "barrier" });
+		const barrierAck = await parent.next();
+		expect(barrierAck.type).toBe("send_ack");
+
+		// A late respond hits no pending correlation — responder is told, and
+		// nothing is delivered to the sender's socket.
+		child.write({ type: "respond", from: "child", correlationId: "corr-cancel", message: "too late" });
+		// nextMatching: the barrier message is also in the child's queue.
+		const lateErr = await child.nextMatching((m) => m.type === "error");
+		expect((lateErr as { error: string }).error).toMatch(/No pending request/);
+
+		expect(broker.isQuiet()).toBe(true);
+	});
+});

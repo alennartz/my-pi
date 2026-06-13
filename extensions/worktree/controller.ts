@@ -70,6 +70,12 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 			if (!contextTransfer) {
 				return;
 			}
+			// Validate up front, before any destructive work (worktree creation,
+			// stash pop) — failing afterwards would strand the user's changes in
+			// the new worktree with an error instead of a session switch.
+			const sourceSessionFile = contextTransfer === "bring-context"
+				? requireCurrentSessionFile(env)
+				: null;
 
 			const status = await git.getStatusPorcelain(env.cwd);
 			let stashCreated = false;
@@ -115,9 +121,9 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 				return;
 			}
 
-			const sessionFile = contextTransfer === "fresh-session"
+			const sessionFile = sourceSessionFile === null
 				? await sessions.create(worktreePath)
-				: await sessions.forkFrom(requireCurrentSessionFile(env), worktreePath);
+				: await sessions.forkFrom(sourceSessionFile, worktreePath);
 			await runtime.switchSession(sessionFile);
 		},
 
@@ -143,6 +149,11 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 				);
 				return;
 			}
+
+			// Validate up front, before the merge and any destructive cleanup —
+			// failing after the worktree/branch are gone would strand the user in
+			// a deleted cwd with no session switch.
+			const sourceSessionFile = requireCurrentSessionFile(env);
 
 			const mergeTarget = await resolveMergeTarget(git, mainWorktree.path, request.mergeTarget);
 
@@ -214,7 +225,6 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 			// mainWorktree.path. The source file is then redundant — every entry
 			// has been copied into the fork — so we drop it to avoid leaving a
 			// duplicate behind.
-			const sourceSessionFile = requireCurrentSessionFile(env);
 			const sessionFile = await sessions.forkFrom(sourceSessionFile, mainWorktree.path);
 			const switchResult = await runtime.switchSession(sessionFile);
 			if (!switchResult.cancelled) {

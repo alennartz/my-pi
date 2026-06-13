@@ -195,6 +195,9 @@ export class Broker {
 
 				if (request.type === "register") {
 					agentId = request.agentId;
+					// A previously removed id may be reused by a newly spawned agent —
+					// clear the tombstone so sends to the new agent aren't rejected.
+					this.removedAgents.delete(agentId);
 					this.connections.set(agentId, socket);
 					this.writeTo(socket, { type: "registered" });
 					continue;
@@ -227,6 +230,8 @@ export class Broker {
 			this.handleSend(request, socket, senderId);
 		} else if (request.type === "respond") {
 			this.handleRespond(request, socket, senderId);
+		} else if (request.type === "cancel") {
+			this.handleCancel(request, senderId);
 		}
 	}
 
@@ -237,11 +242,15 @@ export class Broker {
 	): void {
 		const { to, message, correlationId, expectResponse } = request;
 
+		// NOTE: pre-flight (ack-phase) errors deliberately omit correlationId.
+		// The sender's client routes error frames WITH a correlationId to the
+		// blocking-response waiter; ack-phase errors must instead resolve the
+		// sendAndWait FIFO waiter, which expects frames without one.
+
 		// Channel enforcement
 		if (!canSend(this.topology, senderId, to)) {
 			this.writeTo(senderSocket, {
 				type: "error",
-				correlationId,
 				error: `Channel violation: "${senderId}" cannot send to "${to}"`,
 			});
 			return;
@@ -255,7 +264,6 @@ export class Broker {
 				: `Agent "${to}" was removed`;
 			this.writeTo(senderSocket, {
 				type: "error",
-				correlationId,
 				error,
 			});
 			return;
@@ -266,7 +274,6 @@ export class Broker {
 			if (this.deadlockGraph.wouldCauseCycle(senderId, to)) {
 				this.writeTo(senderSocket, {
 					type: "error",
-					correlationId,
 					error: `Deadlock detected: blocking send from "${senderId}" to "${to}" would create a cycle`,
 				});
 				return;
@@ -303,7 +310,6 @@ export class Broker {
 				}
 				this.writeTo(senderSocket, {
 					type: "error",
-					correlationId,
 					error: `Agent "${to}" is not connected`,
 				});
 				return;
@@ -357,6 +363,29 @@ export class Broker {
 
 		// Ack the responder
 		this.writeTo(responderSocket, { type: "send_ack" });
+	}
+
+	/**
+	 * Sender abandoned a blocking send (e.g. the tool call was aborted).
+	 * Drop the pending correlation so the eventual late respond doesn't hit a
+	 * stale entry, and remove the deadlock edge so the sender isn't considered
+	 * blocked anymore.
+	 */
+	private handleCancel(
+		request: Extract<BrokerRequest, { type: "cancel" }>,
+		senderId: string,
+	): void {
+		const { correlationId } = request;
+		const pending = this.pendingCorrelations.get(correlationId);
+		if (!pending || pending.from !== senderId) return;
+
+		const target = this.correlationTargets.get(correlationId);
+		if (target) {
+			this.deadlockGraph.removeEdge(pending.from, target);
+			this.correlationTargets.delete(correlationId);
+		}
+		this.pendingCorrelations.delete(correlationId);
+		this.onBlockingSendEnd?.(pending.from, correlationId);
 	}
 
 	private writeTo(socket: net.Socket, msg: BrokerResponse): void {

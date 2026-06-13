@@ -41,6 +41,8 @@ export function buildTopology(agents: AgentChannelSpec[]): Topology {
  */
 export function validateTopology(agents: AgentChannelSpec[]): string | null {
 	const allIds = new Set(agents.map((a) => a.id));
+	// "parent" is always a valid target (auto-injected into every channel list).
+	allIds.add("parent");
 	const errors: string[] = [];
 
 	for (const agent of agents) {
@@ -75,10 +77,11 @@ export function addToTopology(
 	const newIds = new Set(agents.map((a) => a.id));
 
 	// Validate: declared channels must reference existing or new-batch IDs
+	// ("parent" is always valid — auto-injected into every channel list).
 	for (const agent of agents) {
 		if (!agent.channels) continue;
 		for (const target of agent.channels) {
-			if (!existingIds.has(target) && !newIds.has(target)) {
+			if (target !== "parent" && !existingIds.has(target) && !newIds.has(target)) {
 				throw new Error(`Agent "${agent.id}" references unknown peer "${target}"`);
 			}
 		}

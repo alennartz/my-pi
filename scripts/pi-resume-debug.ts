@@ -1,7 +1,7 @@
-import { createAgentSession, SessionManager, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, SessionManager, DefaultResourceLoader, getAgentDir } from "@earendil-works/pi-coding-agent";
 
 async function inspect(label: string, sm: any) {
-  const loader = new DefaultResourceLoader(process.cwd());
+  const loader = new DefaultResourceLoader({ cwd: process.cwd(), agentDir: getAgentDir() });
   const { session } = await createAgentSession({
     sessionManager: sm,
     resourceLoader: loader,
@@ -20,7 +20,7 @@ async function inspect(label: string, sm: any) {
     firstEntry: entries[0],
     lastEntry: entries[entries.length - 1],
   }, null, 2));
-  await session.shutdown?.();
+  session.dispose();
 }
 
 const cwd = process.cwd();
