@@ -119,8 +119,9 @@ export class Broker {
 
 		// Send synthetic error responses to all blocked senders waiting on this agent
 		for (const [corrId, pending] of this.pendingCorrelations) {
-			if (this.getTargetFromCorrelation(corrId) === agentId) {
+			if (this.correlationTargets.get(corrId) === agentId) {
 				this.deadlockGraph.removeEdge(pending.from, agentId);
+				this.correlationTargets.delete(corrId);
 				this.writeTo(pending.fromSocket, {
 					type: "error",
 					correlationId: corrId,
@@ -166,10 +167,6 @@ export class Broker {
 
 	/** Map correlation IDs to the target agent they're waiting on. */
 	private correlationTargets = new Map<string, string>();
-
-	private getTargetFromCorrelation(corrId: string): string | undefined {
-		return this.correlationTargets.get(corrId);
-	}
 
 	private handleConnection(socket: net.Socket): void {
 		const decoder = new StringDecoder("utf8");

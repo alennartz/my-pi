@@ -16,6 +16,7 @@ import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, b
 import { ensurePersistence, appendAgentAdded, appendAgentRemoved, findAgentRecordBySessionId, loadPersistedAgents, getPersistencePaths, pruneInvalidPersistedAgents, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
 import { type Topology, buildTopology, addToTopology, removeFromTopology, validateTopology } from "./channels.js";
 import { parseSessionSnapshot } from "./session-snapshot.js";
+import { formatTokenCount } from "./format.js";
 import {
 	serializeSubagentIdentity,
 	serializeAgentMessage,
@@ -82,8 +83,8 @@ export interface SubagentManagerOptions {
 	parentSessionFile?: string;
 	skillPaths: Map<string, string[]>;
 	resolveContextWindow: (modelId: string) => number | undefined;
-	onUpdate: () => void;
-	onAgentComplete: (agentId: string, allDone: boolean) => void;
+	onUpdate: (mgr: SubagentManager) => void;
+	onAgentComplete: (mgr: SubagentManager, agentId: string, allDone: boolean) => void;
 	onParentMessage: (xml: string, meta: { correlationId?: string; responseExpected: boolean }) => void;
 }
 
@@ -220,21 +221,28 @@ export class SubagentManager {
 				}
 			}
 
-			// Build identity XML for system prompt
-			const allAgents = [...this.entries.map((e) => ({ id: e.id, kind: "agent" as const, task: e.task, agentDef: e.agentDef })), ...agents];
+			// Build identity XML for system prompt. Normalize all candidates to a
+			// uniform shape up front (id/persona/isDefault) so the peer mapping
+			// needs no `in`-checks or casts.
+			const allAgents: Array<{ id: string; persona?: string; isDefault: boolean }> = [
+				...this.entries.map((e) => ({ id: e.id, persona: e.agentDef, isDefault: !e.agentDef })),
+				...agents.map((a) => ({
+					id: a.id,
+					persona: a.kind === "agent" ? a.agent : undefined,
+					isDefault: a.kind === "agent" ? !a.agent : false,
+				})),
+			];
 			const peers = allAgents
 				.filter((a) => a.id !== agentSpec.id)
-				.filter((a) => allChannels.includes(a.id) || agentSpec.id === "parent")
+				.filter((a) => allChannels.includes(a.id))
 				.map((a) => {
-					const peerConfig = "agentDef" in a && a.agentDef
-						? agentConfigs.find((c) => c.name === a.agentDef)
-						: a.kind === "agent" && "agent" in a && (a as any).agent
-							? agentConfigs.find((c) => c.name === (a as any).agent)
-							: undefined;
+					const peerConfig = a.persona
+						? agentConfigs.find((c) => c.name === a.persona)
+						: undefined;
 					return {
 						id: a.id,
 						description: peerConfig?.description,
-						isDefault: a.kind === "agent" ? !("agent" in a && (a as any).agent) && !("agentDef" in a && a.agentDef) : false,
+						isDefault: a.isDefault,
 					};
 				});
 
@@ -668,7 +676,7 @@ export class SubagentManager {
 			entry.status.lastActivity = `${event.toolName}(${summarizeArgs(event.args)})`.replace(/[\r\n]+/g, " ");
 			if (event.toolName === "subagent" || event.toolName === "fork") entry.status.hasSubgroup = true;
 			if (event.toolName === "teardown") entry.status.hasSubgroup = false;
-			this.opts.onUpdate();
+			this.opts.onUpdate(this);
 		}
 
 		if (event.type === "message_end" && event.message) {
@@ -701,14 +709,14 @@ export class SubagentManager {
 						entry.status.lastOutput = part.text;
 					}
 				}
-				this.opts.onUpdate();
+				this.opts.onUpdate(this);
 			}
 		}
 
 		if (event.type === "agent_start") {
 			if (entry.status.state !== "failed") {
 				entry.status.state = "running";
-				this.opts.onUpdate();
+				this.opts.onUpdate(this);
 			}
 		}
 
@@ -726,27 +734,19 @@ export class SubagentManager {
 						break;
 					}
 				}
-				if (erroredMsg) {
-					entry.status.state = "failed";
+				const failed = !!erroredMsg;
+				entry.status.state = failed ? "failed" : "idle";
+				if (failed) {
 					entry.status.lastError = erroredMsg.errorMessage || "Agent run ended with an error";
-					entry.status.lastActivity = undefined;
-					// Unblock any blocking sends targeting this agent. The process is
-					// still alive (it can be re-prompted), so treat like idle rather
-					// than a crash that removes the agent from the broker.
-					this.broker?.agentIdled(entry.id);
-					this.opts.onUpdate();
-					entry.completionNotified = true;
-					this.opts.onAgentComplete(entry.id, this.allDone());
-				} else {
-					entry.status.state = "idle";
-					entry.status.lastActivity = undefined;
-					// Unblock any blocking sends targeting this agent — it finished its
-					// turn without responding, so the sender would hang otherwise.
-					this.broker?.agentIdled(entry.id);
-					this.opts.onUpdate();
-					entry.completionNotified = true;
-					this.opts.onAgentComplete(entry.id, this.allDone());
 				}
+				entry.status.lastActivity = undefined;
+				// Unblock any blocking sends targeting this agent. The process is
+				// still alive (it can be re-prompted), so treat like idle rather
+				// than a crash that removes the agent from the broker.
+				this.broker?.agentIdled(entry.id);
+				this.opts.onUpdate(this);
+				entry.completionNotified = true;
+				this.opts.onAgentComplete(this, entry.id, this.allDone());
 			}
 		}
 	}
@@ -768,9 +768,9 @@ export class SubagentManager {
 					if (this.broker) {
 						this.broker.agentCrashed(entry.id);
 					}
-					this.opts.onUpdate();
+					this.opts.onUpdate(this);
 					entry.completionNotified = true;
-					this.opts.onAgentComplete(entry.id, this.allDone());
+					this.opts.onAgentComplete(this, entry.id, this.allDone());
 				}
 			}
 		};
@@ -827,7 +827,7 @@ export class SubagentManager {
 			entry.status.pendingCorrelations.push(correlationId);
 			this.correlationToTarget.set(correlationId, targetId);
 			entry.status.waitingFor.push(targetId);
-			this.opts.onUpdate();
+			this.opts.onUpdate(this);
 		}
 	}
 
@@ -847,7 +847,7 @@ export class SubagentManager {
 			if (entry.status.pendingCorrelations.length === 0 && entry.status.state === "waiting") {
 				entry.status.state = "running";
 			}
-			this.opts.onUpdate();
+			this.opts.onUpdate(this);
 		}
 	}
 }
@@ -862,11 +862,4 @@ function summarizeArgs(args: Record<string, any>): string {
 	const keys = Object.keys(args);
 	if (keys.length === 0) return "";
 	return keys.slice(0, 2).join(", ");
-}
-
-function formatTokenCount(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1000000).toFixed(1)}M`;
 }

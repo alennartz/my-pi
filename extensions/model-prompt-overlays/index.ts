@@ -24,7 +24,7 @@ export default function modelPromptOverlays(pi: ExtensionAPI) {
 			const { overlays, diagnostics } = loadOverlayFiles(roots[rootIndex]);
 
 			for (const diag of diagnostics) {
-				if (tracker.shouldNotify(diag.path, diag.message)) {
+				if (tracker.shouldNotify(diag.message)) {
 					ctx.ui.notify(diag.message, "warning");
 				}
 			}

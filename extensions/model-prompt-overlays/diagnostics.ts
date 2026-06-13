@@ -1,13 +1,14 @@
 export function createDiagnosticsTracker(): {
-	shouldNotify(path: string, message: string): boolean;
+	shouldNotify(message: string): boolean;
 } {
 	const seen = new Set<string>();
 
 	return {
-		shouldNotify(path: string, message: string): boolean {
-			const key = `${path}:${message}`;
-			if (seen.has(key)) return false;
-			seen.add(key);
+		// Every diagnostic message already embeds its file path, so the message
+		// alone is a sufficient dedupe key.
+		shouldNotify(message: string): boolean {
+			if (seen.has(message)) return false;
+			seen.add(message);
 			return true;
 		},
 	};

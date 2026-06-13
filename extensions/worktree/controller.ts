@@ -227,7 +227,12 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 			// duplicate behind.
 			const sessionFile = await sessions.forkFrom(sourceSessionFile, mainWorktree.path);
 			const switchResult = await runtime.switchSession(sessionFile);
-			if (!switchResult.cancelled) {
+			if (switchResult.cancelled) {
+				// The switch was declined, so the runtime stays on the source
+				// session. The fork we just created is the redundant copy now —
+				// drop it instead of orphaning a duplicate.
+				await sessions.discard(sessionFile);
+			} else {
 				await sessions.discard(sourceSessionFile);
 			}
 		},

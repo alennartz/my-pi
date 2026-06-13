@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
-import { ToolscriptClient } from "./client.js";
+import { ToolscriptClient } from "./client.ts";
 
 export default function (pi: ExtensionAPI) {
 	let client: ToolscriptClient | null = null;
@@ -69,10 +69,9 @@ export default function (pi: ExtensionAPI) {
 		// Wait for any in-flight boot to settle so we never leak an orphaned child
 		// process. This may briefly block shutdown if a session is torn down mid-boot,
 		// but blocking shutdown is far less disruptive than blocking startup.
-		if (startPromise) {
-			await startPromise.catch(() => {});
-			startPromise = null;
-		}
+		const p = startPromise;
+		startPromise = null;
+		if (p) await p.catch(() => {});
 
 		if (c) {
 			await c.stop().catch(() => {});

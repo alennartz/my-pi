@@ -107,11 +107,10 @@ class NumberedSelectComponent implements Component, Focusable {
 
 	private handleNavigation(data: string): void {
 		// Digit keys 1-N for instant selection
-		for (let i = 0; i < this.options.length; i++) {
-			if (data === String(i + 1)) {
-				this.submit(i);
-				return;
-			}
+		const n = Number(data);
+		if (Number.isInteger(n) && n >= 1 && n <= this.options.length) {
+			this.submit(n - 1);
+			return;
 		}
 
 		if (matchesKey(data, Key.up)) {

@@ -127,6 +127,7 @@ export function getWorktreeArgumentCompletions(prefix: string, branches: string[
 	}
 
 	if (subcommand === "create") {
+		// create takes up to 2 args (branch-name, base-branch).
 		if (rest.length === 0) {
 			return mapAutocompleteItems(branches);
 		}
@@ -134,17 +135,22 @@ export function getWorktreeArgumentCompletions(prefix: string, branches: string[
 			return filterAutocompleteItems(branches, hasTrailingSpace ? "" : rest[0]);
 		}
 		if (rest.length === 2) {
-			return filterAutocompleteItems(branches, hasTrailingSpace ? "" : rest[1]);
+			// Trailing space here means both args are filled; a third is rejected
+			// by parseWorktreeCommand, so offer nothing.
+			return hasTrailingSpace ? null : filterAutocompleteItems(branches, rest[1]);
 		}
 		return null;
 	}
 
 	if (subcommand === "cleanup") {
+		// cleanup takes up to 1 arg (merge-target).
 		if (rest.length === 0) {
 			return mapAutocompleteItems(branches);
 		}
 		if (rest.length === 1) {
-			return filterAutocompleteItems(branches, hasTrailingSpace ? "" : rest[0]);
+			// Trailing space means the single arg is filled; a second is rejected
+			// by parseWorktreeCommand, so offer nothing.
+			return hasTrailingSpace ? null : filterAutocompleteItems(branches, rest[0]);
 		}
 		return null;
 	}

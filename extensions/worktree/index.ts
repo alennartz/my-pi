@@ -30,18 +30,22 @@ function shellQuote(value: string): string {
 }
 
 function runGit(args: string[], cwd: string): string {
-	const output = execSync(`git ${args.map(shellQuote).join(" ")}`, {
-		cwd,
-		encoding: "utf8",
-	});
-	return (typeof output === "string" ? output : String(output ?? "")).trim();
-}
-
-function runGitVoid(args: string[], cwd: string): void {
-	execSync(`git ${args.map(shellQuote).join(" ")}`, {
-		cwd,
-		encoding: "utf8",
-	});
+	try {
+		// stdio: capture stderr instead of letting git print it through to pi's
+		// TUI (stash-pop conflicts, worktree refusals would otherwise overwrite
+		// the UI). On failure we surface the captured stderr via the thrown error.
+		return execSync(`git ${args.map(shellQuote).join(" ")}`, {
+			cwd,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+		}).trim();
+	} catch (error) {
+		const stderr = (error as { stderr?: string }).stderr;
+		if (stderr && stderr.trim()) {
+			throw new Error(`git ${args.join(" ")} failed: ${stderr.trim()}`, { cause: error });
+		}
+		throw error;
+	}
 }
 
 function resolveRepoRoot(cwd: string): string {
@@ -131,7 +135,7 @@ function createGitClient() {
 			return output !== "No local changes to save";
 		},
 		async stashPop(cwd: string) {
-			runGitVoid(["stash", "pop"], cwd);
+			runGit(["stash", "pop"], cwd);
 		},
 		async branchExists(input: { cwd: string; branchName: string }) {
 			try {
@@ -155,13 +159,13 @@ function createGitClient() {
 			const args = input.createBranch
 				? ["worktree", "add", input.path, "-b", input.branchName, input.baseBranch]
 				: ["worktree", "add", input.path, input.branchName];
-			runGitVoid(args, input.cwd);
+			runGit(args, input.cwd);
 		},
 		async removeWorktree(input: { cwd: string; worktreePath: string }) {
-			runGitVoid(["worktree", "remove", input.worktreePath], input.cwd);
+			runGit(["worktree", "remove", input.worktreePath], input.cwd);
 		},
 		async deleteBranch(input: { cwd: string; branchName: string; force: boolean }) {
-			runGitVoid(["branch", input.force ? "-D" : "-d", input.branchName], input.cwd);
+			runGit(["branch", input.force ? "-D" : "-d", input.branchName], input.cwd);
 		},
 		async isAncestor(input: { cwd: string; ancestor: string; descendant: string }) {
 			try {
@@ -342,6 +346,12 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 
 	pi.registerCommand("worktree", {
 		description: "Create, resume, and clean up git worktree sessions",
+		// NOTE: pi's `getArgumentCompletions` is passed only the prefix — there is
+		// no `ctx`, so we cannot resolve `ctx.cwd` here the way the handler does.
+		// We fall back to `process.cwd()`. After a session switch into a worktree,
+		// the runtime cwd and `process.cwd()` can diverge, so branch completions
+		// may be listed from the original repo rather than the active worktree.
+		// Unavoidable until the completions API exposes the command context.
 		getArgumentCompletions: (prefix) => {
 			return toAutocompleteItems(getWorktreeArgumentCompletions(prefix, listGitBranches(process.cwd())));
 		},

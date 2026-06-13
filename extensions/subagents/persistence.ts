@@ -60,6 +60,49 @@ function appendJsonl(file: string, data: unknown): void {
 	fs.appendFileSync(file, JSON.stringify(data) + "\n", "utf8");
 }
 
+/**
+ * Read and parse every well-formed JSONL line from a lifecycle log. Missing
+ * files and malformed lines are skipped silently (returns the events that did
+ * parse). Single home for the parse-per-line loop both readers share.
+ */
+function readEvents(logFile: string): AgentLifecycleEvent[] {
+	let contents: string;
+	try {
+		contents = fs.readFileSync(logFile, "utf8");
+	} catch {
+		return [];
+	}
+	const events: AgentLifecycleEvent[] = [];
+	for (const line of contents.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		try {
+			events.push(JSON.parse(trimmed));
+		} catch {
+			continue;
+		}
+	}
+	return events;
+}
+
+/** Project an `agent_added` event into the live-agent record shape. */
+function recordFromEvent(
+	event: Extract<AgentLifecycleEvent, { type: "agent_added" }>,
+): PersistedAgentRecord {
+	return {
+		id: event.id,
+		kind: event.kind,
+		task: event.task,
+		channels: event.channels,
+		agent: event.agent,
+		sessionFile: event.sessionFile,
+		sessionId: event.sessionId,
+		cwd: event.cwd,
+		tools: event.tools,
+		skillPaths: event.skillPaths,
+	};
+}
+
 export function getPersistencePaths(parentSessionFile: string): PersistencePaths {
 	const dir = path.dirname(parentSessionFile);
 	const base = path.basename(parentSessionFile, path.extname(parentSessionFile));
@@ -116,35 +159,9 @@ export function findAgentRecordBySessionId(
 	sessionId: string,
 ): PersistedAgentRecord | undefined {
 	const paths = getPersistencePaths(parentSessionFile);
-	if (!fs.existsSync(paths.logFile)) return undefined;
-	let contents: string;
-	try {
-		contents = fs.readFileSync(paths.logFile, "utf8");
-	} catch {
-		return undefined;
-	}
-	for (const line of contents.split("\n")) {
-		const trimmed = line.trim();
-		if (!trimmed) continue;
-		let event: AgentLifecycleEvent;
-		try {
-			event = JSON.parse(trimmed);
-		} catch {
-			continue;
-		}
+	for (const event of readEvents(paths.logFile)) {
 		if (event.type === "agent_added" && event.sessionId === sessionId) {
-			return {
-				id: event.id,
-				kind: event.kind,
-				task: event.task,
-				channels: event.channels,
-				agent: event.agent,
-				sessionFile: event.sessionFile,
-				sessionId: event.sessionId,
-				cwd: event.cwd,
-				tools: event.tools,
-				skillPaths: event.skillPaths,
-			};
+			return recordFromEvent(event);
 		}
 	}
 	return undefined;
@@ -202,34 +219,11 @@ export function loadPersistedAgents(parentSessionFile: string): {
 	const paths = getPersistencePaths(parentSessionFile);
 	if (!fs.existsSync(paths.logFile)) return null;
 
-	const lines = fs.readFileSync(paths.logFile, "utf8")
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean);
-
 	const liveAgents = new Map<string, PersistedAgentRecord>();
 
-	for (const line of lines) {
-		let event: AgentLifecycleEvent;
-		try {
-			event = JSON.parse(line);
-		} catch {
-			continue;
-		}
-
+	for (const event of readEvents(paths.logFile)) {
 		if (event.type === "agent_added") {
-			liveAgents.set(event.id, {
-				id: event.id,
-				kind: event.kind,
-				task: event.task,
-				channels: event.channels,
-				agent: event.agent,
-				sessionFile: event.sessionFile,
-				sessionId: event.sessionId,
-				cwd: event.cwd,
-				tools: event.tools,
-				skillPaths: event.skillPaths,
-			});
+			liveAgents.set(event.id, recordFromEvent(event));
 		} else if (event.type === "agent_removed") {
 			const current = liveAgents.get(event.id);
 			if (!current) continue;

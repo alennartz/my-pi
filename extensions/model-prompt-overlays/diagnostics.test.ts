@@ -2,26 +2,26 @@ import { describe, it, expect } from "vitest";
 import { createDiagnosticsTracker } from "./diagnostics.ts";
 
 describe("createDiagnosticsTracker", () => {
-	it("returns true on first occurrence of a path+message pair", () => {
+	it("returns true on first occurrence of a message", () => {
 		const tracker = createDiagnosticsTracker();
-		expect(tracker.shouldNotify("/a.md", "bad field")).toBe(true);
+		expect(tracker.shouldNotify("bad field: /a.md")).toBe(true);
 	});
 
 	it("returns false on second identical call", () => {
 		const tracker = createDiagnosticsTracker();
-		tracker.shouldNotify("/a.md", "bad field");
-		expect(tracker.shouldNotify("/a.md", "bad field")).toBe(false);
+		tracker.shouldNotify("bad field: /a.md");
+		expect(tracker.shouldNotify("bad field: /a.md")).toBe(false);
 	});
 
-	it("returns true for different message on same path", () => {
+	it("returns true for a different message", () => {
 		const tracker = createDiagnosticsTracker();
-		tracker.shouldNotify("/a.md", "bad field");
-		expect(tracker.shouldNotify("/a.md", "missing models")).toBe(true);
+		tracker.shouldNotify("bad field: /a.md");
+		expect(tracker.shouldNotify("missing models: /a.md")).toBe(true);
 	});
 
-	it("returns true for different path with same message", () => {
+	it("returns true for the same problem on a different path (path embedded in message)", () => {
 		const tracker = createDiagnosticsTracker();
-		tracker.shouldNotify("/a.md", "bad field");
-		expect(tracker.shouldNotify("/b.md", "bad field")).toBe(true);
+		tracker.shouldNotify("bad field: /a.md");
+		expect(tracker.shouldNotify("bad field: /b.md")).toBe(true);
 	});
 });

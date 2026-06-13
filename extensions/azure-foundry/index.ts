@@ -35,27 +35,25 @@ const REQUIRED_ENV_VARS = [
 	"AZURE_FOUNDRY_RESOURCE_GROUP",
 ] as const;
 
-interface FoundryConfig {
-	endpoint: string;
-	account: string;
-	resourceGroup: string;
-	subscription?: string;
-}
+/**
+ * Resolved configuration. Only `endpoint` is consumed here; the helper process
+ * reads the account/resource-group/subscription env vars itself.
+ */
+type ConfigResult = { ok: true; endpoint: string } | { ok: false; missing: string[] };
 
 /**
- * Resolve required configuration from env vars. Returns null (rather than
- * throwing) when any required var is absent, so a misconfigured/absent Azure
- * Foundry setup degrades to a no-op instead of crashing the entire pi CLI.
+ * Resolve required configuration from env vars. Returns `{ ok: false, missing }`
+ * (rather than throwing) when any required var is absent, so a
+ * misconfigured/absent Azure Foundry setup degrades to a no-op instead of
+ * crashing the entire pi CLI. The caller reports the missing list.
  */
-function resolveConfig(): FoundryConfig | null {
+function resolveConfig(): ConfigResult {
 	const missing = REQUIRED_ENV_VARS.filter((name) => !process.env[name]);
-	if (missing.length > 0) return null;
+	if (missing.length > 0) return { ok: false, missing: [...missing] };
 
 	return {
+		ok: true,
 		endpoint: process.env.AZURE_FOUNDRY_ENDPOINT!.replace(/\/+$/, ""),
-		account: process.env.AZURE_FOUNDRY_ACCOUNT!,
-		resourceGroup: process.env.AZURE_FOUNDRY_RESOURCE_GROUP!,
-		subscription: process.env.AZURE_FOUNDRY_SUBSCRIPTION, // optional
 	};
 }
 
@@ -215,6 +213,9 @@ const PI_AI_PROVIDER: Record<Backend, "anthropic" | "azure-openai-responses"> = 
  * instead of a hand-maintained table that silently drifts from upstream.
  */
 function lookupMeta(backend: Backend, modelName: string): ModelMeta {
+	// `modelName` is a free-form deployment model name, not one of getModel's
+	// statically-known model-id union members; cast to satisfy the parameter
+	// type. A miss returns undefined, which is handled by the fallback below.
 	const model = getModel(PI_AI_PROVIDER[backend], modelName as never);
 	if (!model) return { ...DEFAULTS };
 	return {
@@ -238,12 +239,10 @@ function lookupMeta(backend: Backend, modelName: string): ModelMeta {
 
 export default function (pi: ExtensionAPI) {
 	const config = resolveConfig();
-	if (!config) {
+	if (!config.ok) {
 		// Required env vars absent — degrade to a no-op so pi can still start.
 		console.warn(
-			`azure-foundry: skipping registration — missing required env var(s): ${REQUIRED_ENV_VARS.filter(
-				(name) => !process.env[name],
-			).join(", ")}`,
+			`azure-foundry: skipping registration — missing required env var(s): ${config.missing.join(", ")}`,
 		);
 		return;
 	}

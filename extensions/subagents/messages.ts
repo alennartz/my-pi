@@ -63,7 +63,7 @@ export function serializeAgentMessage(data: AgentMessageData): string {
 	return `<agent_message ${attrs.join(" ")}>\n${data.content}\n</agent_message>`;
 }
 
-function serializeAgentForXml(agent: AgentCompleteData): string {
+export function serializeAgentComplete(agent: AgentCompleteData): string {
 	const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
 	const hint = agent.sessionId ? `<hint>${RESURRECT_HINT_SINGLE}</hint>\n` : "";
 	if (agent.status === "failed") {
@@ -72,10 +72,6 @@ function serializeAgentForXml(agent: AgentCompleteData): string {
 	}
 	const output = agent.output ?? "(no output)";
 	return `<agent_idle id="${agent.id}" status="idle"${sessionAttr}>\n${output}\n${hint}</agent_idle>`;
-}
-
-export function serializeAgentComplete(data: AgentCompleteData): string {
-	return serializeAgentForXml(data);
 }
 
 /**
@@ -105,30 +101,29 @@ export function serializeAgentTorndown(data: AgentCompleteData): string {
 }
 
 /**
- * Teardown report for the full agent group. Mirrors <group_complete> but uses
- * a distinct element so the model recognizes the lifecycle event. Per-agent
- * entries are slim by default (id/status/session_id) since each agent already
- * had an individual <agent_idle> notification when it settled. For any agent
- * that was torn down before it idled, its last output / error is included.
+ * Shared group-report serializer for <group_torn_down> and <group_complete>.
+ * The two reports differ only in element name and whether not-yet-notified
+ * agents get their output/error expanded inline (`expandUnnotified`).
  */
-export function serializeGroupTorndown(data: ActiveAgentsCompleteData): string {
-	const summary = (() => {
-		const counts: Record<string, number> = {};
-		for (const a of data.agents) {
-			counts[a.status] = (counts[a.status] || 0) + 1;
-		}
-		return Object.entries(counts)
-			.map(([status, count]) => `${count} ${status}`)
-			.join(", ");
-	})();
+function serializeGroupReport(
+	data: ActiveAgentsCompleteData,
+	opts: { elementName: string; expandUnnotified: boolean },
+): string {
+	const counts: Record<string, number> = {};
+	for (const a of data.agents) {
+		counts[a.status] = (counts[a.status] || 0) + 1;
+	}
+	const summary = Object.entries(counts)
+		.map(([status, count]) => `${count} ${status}`)
+		.join(", ");
 
-	const lines: string[] = ["<group_torn_down>"];
+	const lines: string[] = [`<${opts.elementName}>`];
 	lines.push(`  <summary>${summary}</summary>`);
 	let anySessionId = false;
 	for (const agent of data.agents) {
 		const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
 		if (agent.sessionId) anySessionId = true;
-		if (agent.alreadyNotified) {
+		if (!opts.expandUnnotified || agent.alreadyNotified) {
 			lines.push(`  <agent id="${agent.id}" status="${agent.status}"${sessionAttr} />`);
 			continue;
 		}
@@ -145,35 +140,23 @@ export function serializeGroupTorndown(data: ActiveAgentsCompleteData): string {
 		lines.push(`  <hint>${RESURRECT_HINT_GROUP}</hint>`);
 	}
 	lines.push(`  <usage input="${data.usage.input}" output="${data.usage.output}" cost="${data.usage.cost}" />`);
-	lines.push("</group_torn_down>");
+	lines.push(`</${opts.elementName}>`);
 	return lines.join("\n");
 }
 
-export function serializeGroupComplete(data: ActiveAgentsCompleteData): string {
-	const summary = (() => {
-		const counts: Record<string, number> = {};
-		for (const a of data.agents) {
-			counts[a.status] = (counts[a.status] || 0) + 1;
-		}
-		return Object.entries(counts)
-			.map(([status, count]) => `${count} ${status}`)
-			.join(", ");
-	})();
+/**
+ * Teardown report for the full agent group. Mirrors <group_complete> but uses
+ * a distinct element so the model recognizes the lifecycle event. Per-agent
+ * entries are slim by default (id/status/session_id) since each agent already
+ * had an individual <agent_idle> notification when it settled. For any agent
+ * that was torn down before it idled, its last output / error is included.
+ */
+export function serializeGroupTorndown(data: ActiveAgentsCompleteData): string {
+	return serializeGroupReport(data, { elementName: "group_torn_down", expandUnnotified: true });
+}
 
-	const lines: string[] = ["<group_complete>"];
-	lines.push(`  <summary>${summary}</summary>`);
-	let anySessionId = false;
-	for (const agent of data.agents) {
-		const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
-		if (agent.sessionId) anySessionId = true;
-		lines.push(`  <agent id="${agent.id}" status="${agent.status}"${sessionAttr} />`);
-	}
-	if (anySessionId) {
-		lines.push(`  <hint>${RESURRECT_HINT_GROUP}</hint>`);
-	}
-	lines.push(`  <usage input="${data.usage.input}" output="${data.usage.output}" cost="${data.usage.cost}" />`);
-	lines.push("</group_complete>");
-	return lines.join("\n");
+export function serializeGroupComplete(data: ActiveAgentsCompleteData): string {
+	return serializeGroupReport(data, { elementName: "group_complete", expandUnnotified: false });
 }
 
 export function serializeSubagentIdentity(data: SubagentIdentityData): string {

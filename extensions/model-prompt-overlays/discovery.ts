@@ -21,15 +21,14 @@ export function discoverContextRoots(cwd: string, agentDir: string, includeAnces
 	const roots: string[] = [];
 	const seen = new Set<string>();
 
-	const addRoot = (dir: string, position: "append" | "unshift") => {
+	const addRoot = (dir: string) => {
 		if (seen.has(dir)) return;
 		seen.add(dir);
-		if (position === "append") roots.push(dir);
-		else roots.unshift(dir);
+		roots.push(dir);
 	};
 
 	// 1. Global agent dir always comes first (not project-local, always trusted).
-	addRoot(resolve(agentDir), "append");
+	addRoot(resolve(agentDir));
 
 	if (!includeAncestors) return roots;
 
@@ -47,7 +46,7 @@ export function discoverContextRoots(cwd: string, agentDir: string, includeAnces
 	}
 
 	for (const dir of ancestors) {
-		addRoot(dir, "append");
+		addRoot(dir);
 	}
 
 	return roots;

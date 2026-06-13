@@ -60,6 +60,10 @@ export function loadOverlayFiles(dir: string): {
 
 		let models: string[];
 		if (typeof rawModels === "string") {
+			if (rawModels === "") {
+				diagnostics.push({ path: filePath, message: `Empty 'models' string in frontmatter: ${filePath}` });
+				continue;
+			}
 			models = [rawModels];
 		} else if (Array.isArray(rawModels)) {
 			if (rawModels.length === 0) {

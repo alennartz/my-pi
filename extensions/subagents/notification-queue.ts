@@ -64,6 +64,9 @@ export class NotificationQueue {
 		if (this._isWaiting) return;
 		if (this.entries.length === 0) return;
 		if (this.parentBusy && !this.config.steerDelivery) return;
+		// In steer mode while busy, mirror queue()'s gating: hold until the last
+		// in-flight tool call ends so we don't deliver mid-tool-round.
+		if (this.parentBusy && this.pendingToolCalls.size > 0) return;
 
 		this.doFlush();
 	}

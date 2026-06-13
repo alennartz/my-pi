@@ -42,6 +42,7 @@ import {
 } from "./messages.js";
 import { createStopSequenceManager } from "./stop-sequences.js";
 import { NotificationQueue } from "./notification-queue.js";
+import { formatTokenCount } from "./format.js";
 import { formatSpawnToolResult } from "./tool-result.js";
 
 // ─── Delivery mode flag ──────────────────────────────────────────────────────
@@ -91,12 +92,17 @@ class BrokerClient {
 
 	async connect(socketPath: string, agentId: string): Promise<void> {
 		return new Promise((resolve, reject) => {
+			let connected = false;
 			this.socket = net.createConnection(socketPath, () => {
 				this.write({ type: "register", agentId });
 				// Wait for registered response
 				this.waitForNext().then((msg) => {
-					if (msg.type === "registered") resolve();
-					else reject(new Error(`Expected 'registered', got '${msg.type}'`));
+					if (msg.type === "registered") {
+						connected = true;
+						resolve();
+					} else {
+						reject(new Error(`Expected 'registered', got '${msg.type}'`));
+					}
 				});
 			});
 
@@ -155,7 +161,15 @@ class BrokerClient {
 			});
 
 			this.socket.on("error", (err) => {
-				reject(err);
+				// Before connect settles, the only channel for failure is the connect
+				// promise. After a successful connect a socket error would otherwise be
+				// silent — the dropped broker link only shows up as hung sends — so
+				// surface it.
+				if (connected) {
+					console.error(`[subagent broker client:${agentId}] socket error after connect: ${err}`);
+				} else {
+					reject(err);
+				}
 			});
 
 			this.socket.on("close", () => {
@@ -236,7 +250,40 @@ export default function (pi: ExtensionAPI) {
 	let panelHandle: PanelHandle | null = null;
 	let tuiRef: TUI | null = null;
 	let brokerClient: BrokerClient | null = null;
+	let parentBrokerClient: BrokerClient | null = null;
 	const skillPathsMap = new Map<string, string[]>();
+
+	/**
+	 * Push the given statuses to whichever display surface is active (TUI
+	 * widget or panel). Single home for the update/render/updateCards block
+	 * that every spawn/teardown path and the manager's onUpdate share.
+	 */
+	function refreshDisplays(statuses: AgentStatus[]): void {
+		if (dashboard && tuiRef) {
+			dashboard.update(statuses);
+			tuiRef.requestRender();
+		}
+		if (panelHandle) {
+			panelHandle.updateCards(statusesToCards(statuses));
+		}
+	}
+
+	/**
+	 * Reject the batch if any id collides within itself or with a live agent.
+	 * Shared by the subagent and resurrect tools.
+	 */
+	function assertNewAgentIds(ids: string[], mgr: SubagentManager): void {
+		const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+		if (dupes.length > 0) {
+			throw new Error(`Duplicate agent ids: ${[...new Set(dupes)].join(", ")}`);
+		}
+		const existingIds = new Set(mgr.getAgentStatuses().map((s) => s.id));
+		for (const id of ids) {
+			if (existingIds.has(id)) {
+				throw new Error(`Agent id "${id}" already exists`);
+			}
+		}
+	}
 
 	// ─── Notification queue ─────────────────────────────────────────────
 
@@ -250,23 +297,22 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// await_agents state — set while a wait is active, used by callbacks
-	// to decide when to resolve the wait promise.
-	let waitSatisfied: (() => boolean) | null = null;
-	let waitResolve: ((result: string) => void) | null = null;
-	let waitAbortCleanup: (() => void) | null = null;
+	// await_agents state — a single object holds the whole in-flight wait so
+	// its parts can't drift out of sync. Null when no wait is active.
+	interface WaitState {
+		resolve: (result: string) => void;
+		satisfied: () => boolean;
+		abortCleanup: (() => void) | null;
+	}
+	let waitState: WaitState | null = null;
 
 	function resolveWait(): void {
-		if (!waitResolve) return;
-		const resolve = waitResolve;
-		waitResolve = null;
-		waitSatisfied = null;
-		if (waitAbortCleanup) {
-			waitAbortCleanup();
-			waitAbortCleanup = null;
-		}
+		if (!waitState) return;
+		const state = waitState;
+		waitState = null;
+		state.abortCleanup?.();
 		queue.setWaiting(false);
-		resolve(queue.drainAll());
+		state.resolve(queue.drainAll());
 	}
 
 	/** Shared await logic — blocks until the given agent IDs are all idle/failed. */
@@ -285,23 +331,21 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Guard against concurrent await_agents calls
-		if (waitResolve) {
+		if (waitState) {
 			throw new Error("Another await_agents call is already active.");
 		}
 
 		// Enter wait mode
-		waitSatisfied = isSatisfied;
 		queue.setWaiting(true);
 
 		try {
 			const result = await new Promise<string>((resolve, reject) => {
-				waitResolve = resolve;
+				const state: WaitState = { resolve, satisfied: isSatisfied, abortCleanup: null };
+				waitState = state;
 
 				if (signal) {
 					const onAbort = () => {
-						waitResolve = null;
-						waitSatisfied = null;
-						waitAbortCleanup = null;
+						waitState = null;
 						queue.setWaiting(false);
 						reject(new Error("Aborted"));
 					};
@@ -310,7 +354,7 @@ export default function (pi: ExtensionAPI) {
 						return;
 					}
 					signal.addEventListener("abort", onAbort, { once: true });
-					waitAbortCleanup = () => signal.removeEventListener("abort", onAbort);
+					state.abortCleanup = () => signal.removeEventListener("abort", onAbort);
 				}
 			});
 
@@ -372,14 +416,7 @@ export default function (pi: ExtensionAPI) {
 
 		await ensureWidget(ctx);
 		await ensureParentBrokerClient();
-		const restoredStatuses = mgr.getAgentStatuses();
-		if (dashboard && tuiRef) {
-			dashboard.update(restoredStatuses);
-			tuiRef.requestRender();
-		}
-		if (panelHandle) {
-			panelHandle.updateCards(statusesToCards(restoredStatuses));
-		}
+		refreshDisplays(mgr.getAgentStatuses());
 		stopSequences.addOnce("<agent_idle");
 	});
 
@@ -505,20 +542,11 @@ export default function (pi: ExtensionAPI) {
 				const found = all.find((m: any) => m.id === modelId);
 				return found?.contextWindow;
 			},
-			onUpdate: () => {
-				if (!manager) return;
-				const statuses = manager.getAgentStatuses();
-				if (dashboard && tuiRef) {
-					dashboard.update(statuses);
-					tuiRef.requestRender();
-				}
-				if (panelHandle) {
-					panelHandle.updateCards(statusesToCards(statuses));
-				}
+			onUpdate: (mgr) => {
+				refreshDisplays(mgr.getAgentStatuses());
 			},
-			onAgentComplete: (agentId, allDone) => {
-				if (!manager) return;
-				const status = manager.getAgentStatus(agentId);
+			onAgentComplete: (mgr, agentId, allDone) => {
+				const status = mgr.getAgentStatus(agentId);
 				if (!status) return;
 				const data: AgentCompleteData = {
 					id: agentId,
@@ -528,11 +556,11 @@ export default function (pi: ExtensionAPI) {
 				};
 				let xml = serializeAgentComplete(data);
 				if (allDone) {
-					const total = manager.getAgentStatuses().length;
+					const total = mgr.getAgentStatuses().length;
 					xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} are now idle. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
 				}
 				queue.queue(xml, "local");
-				if (queue.isWaiting && waitSatisfied?.()) {
+				if (queue.isWaiting && waitState?.satisfied()) {
 					resolveWait();
 				}
 			},
@@ -665,17 +693,7 @@ export default function (pi: ExtensionAPI) {
 
 			// Validate unique ids (including against existing agents)
 			const mgr = ensureManager(ctx);
-			const existingIds = new Set(mgr.getAgentStatuses().map((s) => s.id));
-			const ids = params.agents.map((a) => a.id);
-			const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
-			if (dupes.length > 0) {
-				throw new Error(`Duplicate agent ids: ${dupes.join(", ")}`);
-			}
-			for (const id of ids) {
-				if (existingIds.has(id)) {
-					throw new Error(`Agent id "${id}" already exists`);
-				}
-			}
+			assertNewAgentIds(params.agents.map((a) => a.id), mgr);
 
 			// Resolve and validate per-agent cwd overrides. Throws atomically on
 			// any invalid cwd before any RpcChild is constructed.
@@ -725,14 +743,7 @@ export default function (pi: ExtensionAPI) {
 			await ensureParentBrokerClient();
 
 			// Push initial statuses so the widget renders immediately
-			const initialStatuses = mgr.getAgentStatuses();
-			if (dashboard && tuiRef) {
-				dashboard.update(initialStatuses);
-				tuiRef.requestRender();
-			}
-			if (panelHandle) {
-				panelHandle.updateCards(statusesToCards(initialStatuses));
-			}
+			refreshDisplays(mgr.getAgentStatuses());
 
 			stopSequences.addOnce("<agent_idle");
 
@@ -815,14 +826,7 @@ export default function (pi: ExtensionAPI) {
 			await ensureParentBrokerClient();
 
 			// Push initial statuses
-			const forkStatuses = mgr.getAgentStatuses();
-			if (dashboard && tuiRef) {
-				dashboard.update(forkStatuses);
-				tuiRef.requestRender();
-			}
-			if (panelHandle) {
-				panelHandle.updateCards(statusesToCards(forkStatuses));
-			}
+			refreshDisplays(mgr.getAgentStatuses());
 
 			stopSequences.addOnce("<agent_idle");
 
@@ -1083,14 +1087,7 @@ export default function (pi: ExtensionAPI) {
 				}
 				skillPathsMap.clear();
 			} else {
-				const statuses = manager.getAgentStatuses();
-				if (dashboard && tuiRef) {
-					dashboard.update(statuses);
-					tuiRef.requestRender();
-				}
-				if (panelHandle) {
-					panelHandle.updateCards(statusesToCards(statuses));
-				}
+				refreshDisplays(manager.getAgentStatuses());
 			}
 
 			const label = params.agent ? `Agent "${params.agent}" removed.` : "All agents terminated.";
@@ -1125,17 +1122,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Validate unique ids within the batch and against existing agents.
-			const existingIds = new Set(mgr.getAgentStatuses().map((s) => s.id));
-			const ids = params.agents.map((a) => a.id);
-			const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
-			if (dupes.length > 0) {
-				throw new Error(`Duplicate agent ids: ${[...new Set(dupes)].join(", ")}`);
-			}
-			for (const id of ids) {
-				if (existingIds.has(id)) {
-					throw new Error(`Agent id "${id}" already exists`);
-				}
-			}
+			assertNewAgentIds(params.agents.map((a) => a.id), mgr);
 
 			// Reject reusing the same session twice in one batch.
 			const sessionIds = params.agents.map((a) => a.sessionId);
@@ -1187,14 +1174,7 @@ export default function (pi: ExtensionAPI) {
 			const ack = await mgr.start(specs, discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined).agents);
 			await ensureParentBrokerClient();
 
-			const statuses = mgr.getAgentStatuses();
-			if (dashboard && tuiRef) {
-				dashboard.update(statuses);
-				tuiRef.requestRender();
-			}
-			if (panelHandle) {
-				panelHandle.updateCards(statusesToCards(statuses));
-			}
+			refreshDisplays(mgr.getAgentStatuses());
 
 			stopSequences.addOnce("<agent_idle");
 
@@ -1303,10 +1283,6 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ─── Parent broker client (lazy init) ────────────────────────────────
-
-	let parentBrokerClient: BrokerClient | null = null;
-
 	// ─── Cleanup on shutdown ─────────────────────────────────────────────
 
 	pi.on("session_shutdown", async () => {
@@ -1367,13 +1343,6 @@ const STATE_LABELS: Record<AgentState, string> = {
 	failed: "failed",
 };
 
-function fmtTokensPanel(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1000000).toFixed(1)}M`;
-}
-
 function statusesToCards(statuses: AgentStatus[]): Card[] {
 	return statuses.map((s) => {
 		const body: Card["body"] = [];
@@ -1398,8 +1367,8 @@ function statusesToCards(statuses: AgentStatus[]): Card[] {
 		// Footer stats
 		const footer: string[] = [];
 		const totalInput = s.usage.input + s.usage.cacheRead + s.usage.cacheWrite;
-		if (totalInput > 0) footer.push(`↑${fmtTokensPanel(totalInput)}`);
-		if (s.usage.output > 0) footer.push(`↓${fmtTokensPanel(s.usage.output)}`);
+		if (totalInput > 0) footer.push(`↑${formatTokenCount(totalInput)}`);
+		if (s.usage.output > 0) footer.push(`↓${formatTokenCount(s.usage.output)}`);
 		if (s.contextWindow && s.contextWindow > 0 && s.lastTurnInput > 0) {
 			footer.push(`ctx:${Math.round((s.lastTurnInput / s.contextWindow) * 100)}%`);
 		}

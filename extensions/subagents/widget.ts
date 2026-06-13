@@ -11,6 +11,7 @@ import type { Component } from "@earendil-works/pi-tui";
 import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { AgentStatus, AgentState } from "./agent-set.js";
+import { formatTokenCount } from "./format.js";
 
 const STATUS_ICONS: Record<AgentState, string> = {
 	running: "⏳",
@@ -21,14 +22,7 @@ const STATUS_ICONS: Record<AgentState, string> = {
 
 const SUBGROUP_ICON = "\uDB81\uDEA9"; // nf-md-file_tree
 
-// ─── Token / percentage formatting ──────────────────────────────────
-
-function fmtTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1000000).toFixed(1)}M`;
-}
+// ─── Percentage formatting ──────────────────────────────────────────
 
 function fmtPct(input: number, window: number): string {
 	if (window <= 0) return "0%";
@@ -110,10 +104,10 @@ export class SubagentDashboard implements Component {
 		const borderColor = this.borderColor(s.state);
 		const bc = (text: string) => t.fg(borderColor, text);
 
-		// Corner/edge chars
-		const [tl, tr, bl, br, hFill] = failed
-			? ["╔", "╗", "╚", "╝", "═"]
-			: ["╭", "╮", "╰", "╯", "─"];
+		// Corner/edge chars (bottom corners are re-derived in renderBottomBorder)
+		const [tl, tr, hFill] = failed
+			? ["╔", "╗", "═"]
+			: ["╭", "╮", "─"];
 
 		// ── Top border ──
 		const turns = `(${s.usage.turns})`;
@@ -136,7 +130,7 @@ export class SubagentDashboard implements Component {
 		const modelName = s.model || "—";
 		const identityRaw = `${defName} • ${modelName}`;
 		const identityColor = dimmed ? "dim" : "muted";
-		const line1 = this.interiorLine(t.fg(identityColor, truncateToWidth(identityRaw, innerWidth)), innerWidth, bc, hFill === "═");
+		const line1 = this.interiorLine(t.fg(identityColor, truncateToWidth(identityRaw, innerWidth)), innerWidth, bc, failed);
 
 		// ── Line 2: activity ──
 		const activityText = this.activityText(s);
@@ -149,22 +143,22 @@ export class SubagentDashboard implements Component {
 		const line4 = this.interiorLine(truncateToWidth(channelText, innerWidth, "…", false), innerWidth, bc, failed);
 
 		// ── Bottom border ──
-		const bottomLine = this.renderBottomBorder(s, boxWidth, bc, tl === "╔");
+		const bottomLine = this.renderBottomBorder(s, boxWidth, bc, failed);
 
 		return [topLine, line1, line2, line4, bottomLine];
 	}
 
 	/** Wrap interior content in border chars, padded to innerWidth. */
-	private interiorLine(content: string, innerWidth: number, bc: (s: string) => string, doubleBorder: boolean): string {
-		const vBar = doubleBorder ? "║" : "│";
+	private interiorLine(content: string, innerWidth: number, bc: (s: string) => string, failed: boolean): string {
+		const vBar = failed ? "║" : "│";
 		const contentVis = visibleWidth(content);
 		const pad = Math.max(0, innerWidth - contentVis);
 		return bc(vBar) + content + " ".repeat(pad) + bc(vBar);
 	}
 
-	private renderBottomBorder(s: AgentStatus, boxWidth: number, bc: (s: string) => string, doubleBorder: boolean): string {
+	private renderBottomBorder(s: AgentStatus, boxWidth: number, bc: (s: string) => string, failed: boolean): string {
 		const t = this.theme;
-		const [bl, br, hFill] = doubleBorder ? ["╚", "╝", "═"] : ["╰", "╯", "─"];
+		const [bl, br, hFill] = failed ? ["╚", "╝", "═"] : ["╰", "╯", "─"];
 		const innerWidth = boxWidth - 2;
 		const dimmed = s.state === "idle" || s.state === "failed";
 		const statColor = dimmed ? "dim" : "muted";
@@ -176,21 +170,30 @@ export class SubagentDashboard implements Component {
 		if (s.contextWindow && s.contextWindow > 0) {
 			parts.push(`ctx:${fmtPct(s.lastTurnInput, s.contextWindow)}`);
 		} else if (s.lastTurnInput > 0) {
-			parts.push(`↑${fmtTokens(s.lastTurnInput)}`);
+			parts.push(`↑${formatTokenCount(s.lastTurnInput)}`);
 		}
 
 		// Cumulative tokens
 		const tokParts: string[] = [];
 		const totalInput = s.usage.input + s.usage.cacheRead + s.usage.cacheWrite;
-		if (totalInput > 0) tokParts.push(`↑${fmtTokens(totalInput)}`);
-		if (s.usage.output > 0) tokParts.push(`↓${fmtTokens(s.usage.output)}`);
+		if (totalInput > 0) tokParts.push(`↑${formatTokenCount(totalInput)}`);
+		if (s.usage.output > 0) tokParts.push(`↓${formatTokenCount(s.usage.output)}`);
 		if (tokParts.length > 0) parts.push(tokParts.join(" "));
 
 		// Cost
 		if (s.usage.cost > 0) parts.push(`$${s.usage.cost.toFixed(2)}`);
 
-		const statsStr = parts.join(" ");
-		const statsVis = visibleWidth(statsStr);
+		// Layout: bl + leftFill + " " + stats + " " + rightFill + br. The stats
+		// segment needs at least leftFill(1) + 2 surrounding spaces, so truncate
+		// it to innerWidth-3; otherwise a long footer overflows boxWidth and
+		// misaligns the row (stitchRow only pads, never trims).
+		let statsStr = parts.join(" ");
+		let statsVis = visibleWidth(statsStr);
+		const maxStats = innerWidth - 3;
+		if (statsVis > maxStats) {
+			statsStr = truncateToWidth(statsStr, Math.max(0, maxStats));
+			statsVis = visibleWidth(statsStr);
+		}
 
 		// Layout: bl + hFill + stats + hFill + br
 		const availFill = innerWidth - statsVis - (statsVis > 0 ? 2 : 0); // 2 for spacing around stats
@@ -254,7 +257,8 @@ export class SubagentDashboard implements Component {
 		if (counts.idle > 0) countParts.push(`${counts.idle} idle`);
 		if (counts.waiting > 0) countParts.push(`${counts.waiting} waiting`);
 		if (counts.failed > 0) countParts.push(`${counts.failed} failed`);
-		parts.push(`${this.statuses.length} agents: ${countParts.join(" · ")}`);
+		const agentCount = this.statuses.length;
+		parts.push(`${agentCount} agent${agentCount === 1 ? "" : "s"}: ${countParts.join(" · ")}`);
 
 		// Cost
 		if (totalCost > 0) parts.push(`$${totalCost.toFixed(2)}`);
