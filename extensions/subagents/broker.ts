@@ -229,6 +229,8 @@ export class Broker {
 			this.handleRespond(request, socket, senderId);
 		} else if (request.type === "cancel") {
 			this.handleCancel(request, senderId);
+		} else if (request.type === "detach") {
+			this.handleDetach(request, senderId);
 		}
 	}
 
@@ -382,6 +384,34 @@ export class Broker {
 			this.correlationTargets.delete(correlationId);
 		}
 		this.pendingCorrelations.delete(correlationId);
+		this.onBlockingSendEnd?.(pending.from, correlationId);
+	}
+
+	/**
+	 * Sender's blocking wait was interrupted but NOT cancelled — the user wants
+	 * the sender to move on while the target keeps working. The sender is no
+	 * longer blocked, so drop the deadlock edge and clear the blocking
+	 * indicator. Crucially, the pending correlation and its target mapping are
+	 * KEPT: when the target eventually responds, the reply still routes back to
+	 * the original sender's socket (where it's delivered asynchronously as a
+	 * notification).
+	 *
+	 * Removing the edge is not just cleanup — leaving it would falsely report a
+	 * deadlock if the target later issues a legitimate blocking send back to the
+	 * now-free sender.
+	 */
+	private handleDetach(
+		request: Extract<BrokerRequest, { type: "detach" }>,
+		senderId: string,
+	): void {
+		const { correlationId } = request;
+		const pending = this.pendingCorrelations.get(correlationId);
+		if (!pending || pending.from !== senderId) return;
+
+		const target = this.correlationTargets.get(correlationId);
+		if (target) {
+			this.deadlockGraph.removeEdge(pending.from, target);
+		}
 		this.onBlockingSendEnd?.(pending.from, correlationId);
 	}
 

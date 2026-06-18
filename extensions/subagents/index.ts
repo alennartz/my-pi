@@ -911,31 +911,87 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (responsePromise && correlationId) {
-				// Race the blocking wait against the abort signal so Escape
-				// (or any other cancellation) can unblock the tool call.
-				const responseMsg = await new Promise<BrokerResponse>((resolve, reject) => {
-					const cancel = () => {
-						client!.cancelWaitForResponse(correlationId);
-						// Tell the broker so the pending correlation doesn't go stale
-						// (a late respond would otherwise hit a dangling entry).
-						client!.write({ type: "cancel", correlationId });
-						reject(new Error("Cancelled"));
-					};
+				// Where async-delivered replies should be queued: uplink if the send
+				// went through the parent's broker, local if to one of our children.
+				const queueTag: "uplink" | "local" = client === brokerClient ? "uplink" : "local";
 
-					if (signal?.aborted) {
-						cancel();
+				// When a detached send's reply finally lands, deliver it as an
+				// unsolicited agent_message notification rather than a tool result.
+				// The original correlation_id rides along as the only thread tying
+				// the late reply back to the question that was asked.
+				const deliverDeferredResponse = (msg: BrokerResponse) => {
+					let content: string;
+					if (msg.type === "response") {
+						content = msg.message;
+					} else if (msg.type === "error") {
+						content = `(no response — ${msg.error})`;
+					} else {
 						return;
 					}
+					const xml = serializeAgentMessage({
+						from: params.to,
+						content,
+						correlationId,
+						responseExpected: false,
+					});
+					queue.queue(xml, queueTag);
+					if (queue.isWaiting) resolveWait();
+				};
 
-					const onAbort = () => cancel();
-					signal?.addEventListener("abort", onAbort, { once: true });
+				// Race the blocking wait against the abort signal. On abort we do NOT
+				// cancel the send — we detach it: this tool call returns so the user
+				// can inject context, the target keeps working, and its eventual
+				// reply is delivered asynchronously via deliverDeferredResponse.
+				type RaceResult = { kind: "response"; msg: BrokerResponse } | { kind: "deferred" };
+				const outcome = await new Promise<RaceResult>((resolve) => {
+					let settled = false;
+
+					const detach = () => {
+						if (settled) return;
+						settled = true;
+						// Keep the local correlation waiter registered so responsePromise
+						// still resolves below. Tell the broker to drop the deadlock edge
+						// (the parent is no longer blocked) while keeping the pending
+						// correlation so the target's respond still routes back here.
+						client!.write({ type: "detach", correlationId });
+						resolve({ kind: "deferred" });
+					};
+
+					const onAbort = () => detach();
+
+					if (signal?.aborted) {
+						detach();
+					} else {
+						signal?.addEventListener("abort", onAbort, { once: true });
+					}
 
 					responsePromise.then((msg) => {
 						signal?.removeEventListener("abort", onAbort);
-						resolve(msg);
+						if (settled) {
+							// Abort already converted this to a deferred wait — deliver the
+							// late reply as an async notification instead of a tool result.
+							deliverDeferredResponse(msg);
+							return;
+						}
+						settled = true;
+						resolve({ kind: "response", msg });
 					});
 				});
 
+				if (outcome.kind === "deferred") {
+					return {
+						content: [{
+							type: "text",
+							text:
+								`Your blocking wait on "${params.to}" was interrupted, not cancelled. ` +
+								`"${params.to}" is still working; its reply will arrive later as an ` +
+								`<agent_message> notification (correlation_id="${correlationId}"). ` +
+								`Handle whatever the user needs now — you'll be prompted again when the response lands.`,
+						}],
+					};
+				}
+
+				const responseMsg = outcome.msg;
 				if (responseMsg.type === "response") {
 					return {
 						content: [{ type: "text", text: responseMsg.message }],

@@ -201,7 +201,8 @@ export type BrokerRequest =
 	| { type: "register"; agentId: string }
 	| { type: "send"; from: string; to: string; message: string; correlationId?: string; expectResponse?: boolean }
 	| { type: "respond"; from: string; correlationId: string; message: string }
-	| { type: "cancel"; correlationId: string };
+	| { type: "cancel"; correlationId: string }
+	| { type: "detach"; correlationId: string };
 
 export type BrokerResponse =
 	| { type: "registered" }

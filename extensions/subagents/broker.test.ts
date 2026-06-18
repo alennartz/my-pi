@@ -333,3 +333,73 @@ describe("Broker cancel", () => {
 		expect(broker.isQuiet()).toBe(true);
 	});
 });
+
+describe("Broker detach", () => {
+	let toCleanup: Array<{ close: () => Promise<void> | void }> = [];
+
+	afterEach(async () => {
+		for (const c of toCleanup) await c.close();
+		toCleanup = [];
+	});
+
+	it("drops the deadlock edge but keeps the pending correlation so a late respond still delivers", async () => {
+		const { broker } = await makeBroker(["child"]);
+		toCleanup.push({ close: () => broker.stop() });
+
+		const parent = new TestClient(broker.socketPath);
+		const child = new TestClient(broker.socketPath);
+		toCleanup.push({ close: () => parent.close() }, { close: () => child.close() });
+		await parent.register("parent");
+		await child.register("child");
+
+		parent.write({
+			type: "send",
+			from: "parent",
+			to: "child",
+			message: "question",
+			correlationId: "corr-detach",
+			expectResponse: true,
+		});
+		expect((await parent.next()).type).toBe("send_ack");
+		await child.nextMatching((m) => m.type === "message");
+
+		// While the edge parent→child exists, a reverse blocking send child→parent
+		// would close a cycle and is rejected.
+		child.write({
+			type: "send",
+			from: "child",
+			to: "parent",
+			message: "reverse",
+			correlationId: "c-pre",
+			expectResponse: true,
+		});
+		const preErr = await child.nextMatching((m) => m.type === "error");
+		expect((preErr as { error: string }).error).toMatch(/Deadlock/);
+
+		// Interrupt-without-cancel: detach the original send.
+		parent.write({ type: "detach", correlationId: "corr-detach" });
+
+		// Barrier: ensures the detach has been processed before we continue.
+		parent.write({ type: "send", from: "parent", to: "child", message: "barrier" });
+		expect((await parent.next()).type).toBe("send_ack");
+
+		// The edge is gone, so the same reverse blocking send is now allowed.
+		child.write({
+			type: "send",
+			from: "child",
+			to: "parent",
+			message: "reverse ok",
+			correlationId: "c-ok",
+			expectResponse: true,
+		});
+		const okFrame = await child.nextMatching((m) => m.type === "send_ack" || m.type === "error");
+		expect(okFrame.type).toBe("send_ack");
+
+		// And the original correlation is still pending: a late respond is
+		// delivered to the parent's socket instead of erroring.
+		child.write({ type: "respond", from: "child", correlationId: "corr-detach", message: "late but delivered" });
+		const delivered = await parent.nextMatching((m) => m.type === "response");
+		expect((delivered as { correlationId: string }).correlationId).toBe("corr-detach");
+		expect((delivered as { message: string }).message).toBe("late but delivered");
+	});
+});
