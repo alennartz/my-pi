@@ -160,9 +160,25 @@ After handle-review completes and passes validation, read `docs/reviews/<topic>.
 - If the review contained **structural findings** (wrong module boundaries, missing interfaces, architectural violations) or **multiple major/critical findings**, trigger a re-review cycle:
   1. Delete `docs/reviews/<topic>.md`.
   2. Commit the deletion.
-  3. Spawn a new `review` subagent (code-review skill).
-  4. After that completes, spawn a new `handle-review` subagent.
+  3. **Resurrect the original review agent** (its `session_id` is in its teardown report) instead of spawning a fresh one. It already holds the plan context and its own findings with their reasoning — fix verification builds on that instead of rebuilding it. Task template:
+
+     ```
+     Fixes for your review findings landed in commits since your review (diff from
+     the HEAD you reviewed to current HEAD). Re-review scoped to those fixes:
+     verify each of your prior findings is resolved, and check the fix diff for
+     newly introduced issues. Write a fresh docs/reviews/<topic>.md (the old one
+     was deleted) and commit. Do not re-run the full-baseline review or the
+     two-pass fan-out. You may resurrect your pass subagents if verification
+     genuinely needs their accumulated file context (fixes spanning many of the
+     files they read) — but a resurrected agent re-pays its full context every
+     turn, so for small, localized fix diffs do the re-check directly with fresh
+     reads.
+     ```
+
+  4. After that completes and passes validation, **resurrect the original handle-review agent** the same way, with a task pointing at the fresh review file.
   5. Repeat this evaluation.
+
+  If a resurrection fails (e.g., the session is unavailable), fall back to spawning a fresh subagent for that phase.
 
 - Otherwise, evaluate the Manual-Test Skip Decision below.
 
