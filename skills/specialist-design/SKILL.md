@@ -21,7 +21,7 @@ name: security-reviewer
 description: "Reviews diffs for security vulnerabilities — injection attacks, auth bypasses, data exposure."
 tools: read, bash, edit
 skills: debugging
-model: claude-sonnet
+model: smart
 ---
 ```
 
@@ -31,7 +31,7 @@ model: claude-sonnet
 - **`description`** (required, string) — What this agent does. Read by the orchestrator at group-design time to decide whether to use this specialist. Files without a `description` are silently skipped during discovery.
 - **`tools`** (optional, comma-separated) — Filters available tools. Only the listed tools are visible to the agent. Omit to give the agent all available tools.
 - **`skills`** (optional, comma-separated) — Skill names to make available. Resolved to filesystem paths via `resolveSkillPaths` at spawn time. When specified, the agent starts with `--no-skills` and only the listed skills are loaded (via `--skill` flags).
-- **`model`** (optional, string) — Pins the agent to a specific model. Omit to use pi's configured default model.
+- **`model`** (optional, string) — Pins the agent's model. Accepts a **tier name** (`cheap`, `medium`, `smart`, `frontier`) — the preferred vocabulary — or a concrete model id. Tier names resolve to concrete models at spawn time from the model-tiers config (`~/.pi/agent/model-tiers.json`, with a trusted-project `.pi/model-tiers.json` override); an unconfigured or unavailable tier falls back to the session default model. Omit to use the session default. (Use the `list_models` tool to see the full catalog when you need a specific model id.)
 
 **Body** — everything below the frontmatter is the system prompt, injected via `--append-system-prompt`. This is the agent's persistent identity: role, boundaries, behavioral rules. Write it as direct instructions to the agent.
 
