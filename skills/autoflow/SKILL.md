@@ -143,6 +143,16 @@ It covers these phases: `test-write`, `test-review`, `impl-plan`, `implement`, `
 
 If the subagent repeatedly goes idle without passing validation (no progress between attempts), escalate to the user with a summary of what the subagent produced, what's missing, and why it appears stuck.
 
+### Handle-Review Skip on Clean Review
+
+After review passes validation, check the review file for open findings before spawning handle-review:
+
+```
+grep -c '\*\*Status:\*\* open' docs/reviews/<topic>.md
+```
+
+If there are zero open findings, skip handle-review entirely — there is nothing to resolve. Note the skip in your acknowledgment and proceed directly to the Manual-Test Skip Decision.
+
 ### Handle-Review Special Case
 
 After handle-review completes and passes validation, read `docs/reviews/<topic>.md` and evaluate the review content:

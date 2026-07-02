@@ -21,13 +21,11 @@ The output is a findings file — not a conversation, not a fix. The review runs
 
 2. **Read `docs/plans/<topic>.md`** — the full plan: architecture, tests, steps, and status fields. If the plan doesn't exist, tell the user and stop. Suggest running the earlier pipeline phases first to establish the plan this review checks against. The plan should have a `pre-test-write-commit` field (in the Tests section) — this is the diff baseline, scoping the review back through test writing. If it's missing, fall back to `pre-implementation-commit` (in the Steps section). If neither exists, ask the user for a commit hash or ref to diff from.
 
-3. **Get the diff.** Use the `pre-test-write-commit` field from the plan (or `pre-implementation-commit` as fallback) to run `git diff <commit>..HEAD`. This is the scope of review — everything that changed from test writing through implementation.
-
-4. **Read the changed files in full.** The diff tells you what changed, but review requires understanding context. Read the full current version of files with non-trivial changes. Don't read every file touched — use judgment about which files need full context (e.g., a file with 2 lines changed in a 500-line module probably needs the full read; a new file is already fully visible in the diff).
+3. **Determine the diff range.** Use the `pre-test-write-commit` field from the plan (or `pre-implementation-commit` as fallback) to form `<commit>..HEAD`. This is the scope of review — everything that changed from test writing through implementation. Do **not** run the diff or read source files yourself — the pass subagents do their own reading.
 
 ### 0.5. Run Passes in Parallel
 
-Sections 1 and 2 are independent — they both operate on the same plan and diff but neither needs the other's output. Spawn two subagents as a fan-out: one for the plan adherence pass, one for the code correctness pass. Give each the plan content, the diff, and the full file reads from step 0. No inter-agent channels needed.
+Sections 1 and 2 are independent — they both operate on the same plan and diff but neither needs the other's output. Spawn two subagents as a fan-out: one for the plan adherence pass, one for the code correctness pass. Give each only the commit range and the plan file path — do not paste plan content, diff output, or file contents into the task strings. Each subagent runs `git diff <range>` itself, reads the plan, and reads changed files in full where the diff alone lacks context (e.g., a file with 2 lines changed in a 500-line module needs the full read; a new file is already fully visible in the diff). No inter-agent channels needed.
 
 Wait for both agents' `<agent_idle>` notifications, then merge their findings into the final review document (section 3). Deduplicate if both flagged the same issue; preserve the more detailed write-up.
 
