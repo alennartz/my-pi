@@ -91,6 +91,8 @@ For each phase, spawn a single subagent using the `subagent` tool. The task stri
 3. **Working directory** — the repo root.
 4. **Clarification invariant** — the following exact text:
 
+Additionally, set the subagent's `model` field to the phase's tier from the mapping table below. Tiers (`cheap`, `medium`, `smart`, `frontier`) resolve to concrete models via the machine's tier config.
+
 > If you need clarification or encounter ambiguity, use `send(to='parent', expectResponse=true)` to ask. Do not stop or complete without finishing the phase.
 
 **Task string template:**
@@ -105,16 +107,18 @@ If you need clarification or encounter ambiguity, use `send(to='parent', expectR
 
 The skill-to-phase mapping:
 
-| Phase | Skill file |
-|-------|-----------|
-| test-write | `skills/test-writing/SKILL.md` |
-| test-review | `skills/test-review/SKILL.md` |
-| impl-plan | `skills/impl-planning/SKILL.md` |
-| implement | `skills/implementing/SKILL.md` |
-| review | `skills/code-review/SKILL.md` |
-| handle-review | `skills/handle-review/SKILL.md` |
-| manual-test | `skills/manual-testing/SKILL.md` |
-| cleanup | `skills/cleanup/SKILL.md` |
+| Phase | Skill file | Model tier |
+|-------|-----------|------------|
+| test-write | `skills/test-writing/SKILL.md` | `medium` |
+| test-review | `skills/test-review/SKILL.md` | `smart` |
+| impl-plan | `skills/impl-planning/SKILL.md` | `frontier` |
+| implement | `skills/implementing/SKILL.md` | `medium` |
+| review | `skills/code-review/SKILL.md` | `medium` |
+| handle-review | `skills/handle-review/SKILL.md` | `medium` |
+| manual-test | `skills/manual-testing/SKILL.md` | `medium` |
+| cleanup | `skills/cleanup/SKILL.md` | `medium` |
+
+Tier rationale: impl-plan gets `frontier` because plan quality multiplies through every downstream phase. Review runs on `medium` because it only orchestrates — its correctness pass spawns on `smart` (see the code-review skill). Phases executing against explicit specs run on `medium`.
 
 ### Waiting and Handling Interrupts
 

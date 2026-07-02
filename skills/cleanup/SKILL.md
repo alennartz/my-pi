@@ -29,7 +29,7 @@ This skill always runs in a clean context with no conversational history from pr
 
 ### 1. Spawn Background Agents
 
-Before starting DR extraction, spawn two subagents as a fan-out — no inter-agent channels needed:
+Before starting DR extraction, spawn two subagents as a fan-out on the `cheap` model tier (both tasks are mechanical: diff-scoped summarization and doc sweeping) — no inter-agent channels needed:
 
 - **Codemap refresh agent** — give it the current codemap, the plan's `pre-implementation-commit` hash, the architecture's impacted modules list, and (if present) the *Tools* and *Plan Updates* sections of the manual-testing artifact so it can add or update the `tools/manual-test/` module. Note: `tools/manual-test/` and its contents (including `PLAN.md` and `README.md`) are **permanent** — they are the manual-testing module, not working artifacts. It runs the scoped codemap update: `git diff --name-only <hash>..HEAD` to find changed files, examines the changes, updates affected codemap sections, preserves everything else. Follows the codemap skill's scoped update operation.
 

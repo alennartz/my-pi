@@ -71,7 +71,7 @@ Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact 
 
 ### 5. Check for Blind Spots
 
-If `docs/brainstorms/<topic>.md` exists, spawn a default subagent with the brainstorm and plan file paths. Its task: read both files and identify brainstorm intent that the architecture doesn't cover. Each gap should name the missing intent and explain why the architectural decisions don't address it.
+If `docs/brainstorms/<topic>.md` exists, spawn a default subagent on the `cheap` model tier with the brainstorm and plan file paths — the check is a mechanical two-file comparison. Its task: read both files and identify brainstorm intent that the architecture doesn't cover. Each gap should name the missing intent and explain why the architectural decisions don't address it.
 
 Wait for `<agent_idle>`. If the subagent fails, inform the user and proceed to commit. Otherwise, review the output — filter noise (intent already covered, or out of scope) and surface substantive findings to the user. The user decides per finding: revisit the architecture to cover it, or dismiss. Update the plan file if the architecture was extended.
 
