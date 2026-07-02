@@ -11,9 +11,10 @@
 
 import * as net from "node:net";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
 	type AgentConfig,
@@ -44,6 +45,14 @@ import { createStopSequenceManager } from "./stop-sequences.js";
 import { NotificationQueue } from "./notification-queue.js";
 import { formatTokenCount } from "./format.js";
 import { formatSpawnToolResult } from "./tool-result.js";
+import {
+	TIER_NAMES,
+	type TierConfig,
+	isTierName,
+	loadTierConfig,
+	resolveModelRef,
+	renderTierTable,
+} from "./model-tiers.js";
 
 // ─── Delivery mode flag ──────────────────────────────────────────────────────
 //
@@ -244,6 +253,35 @@ export default function (pi: ExtensionAPI) {
 		return allowedTools.has(name);
 	}
 
+	// ─── Model tiers ──────────────────────────────────────────────────────────────
+	//
+	// Config is read fresh on every call — the files are tiny, and edits
+	// apply without /reload. The project config dir name (".pi" by default)
+	// is derived from getAgentDir() (= <home>/<configDir>/agent).
+
+	const projectConfigDirName = path.basename(path.dirname(getAgentDir()));
+
+	function loadTiers(cwd: string, projectTrusted: boolean): TierConfig {
+		return loadTierConfig({
+			globalPath: path.join(getAgentDir(), "model-tiers.json"),
+			projectPath: path.join(cwd, projectConfigDirName, "model-tiers.json"),
+			projectTrusted,
+		});
+	}
+
+	// Per-session dedup for tier warnings/notices (cf. model-prompt-overlays
+	// diagnostics): each distinct message is surfaced at most once.
+	const notifiedTierIssues = new Set<string>();
+
+	function notifyTierIssueOnce(
+		ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } },
+		message: string,
+	): void {
+		if (notifiedTierIssues.has(message)) return;
+		notifiedTierIssues.add(message);
+		ctx.ui.notify(message, "warning");
+	}
+
 	// Shared state
 	let manager: SubagentManager | null = null;
 	let dashboard: SubagentDashboard | null = null;
@@ -428,14 +466,6 @@ export default function (pi: ExtensionAPI) {
 		if (!activeTools.includes("subagent")) return;
 
 		const agents = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined).agents;
-		const modelIds = Array.from(new Set(
-			ctx.modelRegistry
-				.getAvailable()
-				.map((m: any) => m?.id)
-				.filter((id: any): id is string => typeof id === "string" && id.length > 0),
-		)).sort();
-
-		if (agents.length === 0 && modelIds.length === 0) return;
 
 		const lines = [""];
 
@@ -453,30 +483,28 @@ export default function (pi: ExtensionAPI) {
 			lines.push("");
 		}
 
-		if (modelIds.length > 0) {
-			const maxModels = 30;
-			const listed = modelIds.slice(0, maxModels);
-			const remaining = modelIds.length - listed.length;
-
-			lines.push(
-				"## Available Models",
-				"",
-				"The following model IDs can be used with `subagent` `agents[].model`.",
-				"If a specialist agent definition pins a model, that pinned model always wins and `agents[].model` is ignored.",
-				"",
+		const availableModels: any[] = ctx.modelRegistry.getAvailable();
+		const isAvailable = (ref: string) =>
+			availableModels.some(
+				(m: any) => m?.id === ref || `${m?.provider}/${m?.id}` === ref,
 			);
-			for (const id of listed) {
-				lines.push(`- \`${id}\``);
-			}
-			if (remaining > 0) {
-				lines.push(`- ... and ${remaining} more`);
-			}
-			lines.push("");
-		}
+		const tiers = loadTiers(ctx.cwd, ctx.isProjectTrusted());
+		const defaultModelRef = ctx.model?.id ?? "session default";
+
+		lines.push(
+			"## Model Tiers",
+			"",
+			"The `subagent` tool's `agents[].model` field accepts a tier name. Tiers resolve to concrete models at spawn time:",
+			"",
+			...renderTierTable(tiers, isAvailable, defaultModelRef),
+			"",
+			"Pick the tier matching the task's difficulty. Raw model IDs are also accepted in `agents[].model` when the user names a specific model; `list_models` shows the full catalog.",
+			"",
+		);
 
 		lines.push("Omitting the `agent` field spawns a **default general-purpose agent** — use this unless the task specifically matches a specialist's description above. You may set `model` to override model selection unless the chosen specialist definition already pins a model.");
 		lines.push("");
-		lines.push("Do not set a custom `model` unless the user explicitly asks for a specific model. The default model selection is almost always correct.");
+		lines.push("Tiers are the preferred vocabulary for `model`. Omit `model` entirely when the session default is fine.");
 
 		return { systemPrompt: event.systemPrompt + "\n" + lines.join("\n") + "\n" };
 	});
@@ -606,7 +634,7 @@ export default function (pi: ExtensionAPI) {
 	const AgentItem = Type.Object({
 		id: Type.String({ description: "Unique identifier for this agent among the parent's active agents" }),
 		agent: Type.Optional(Type.String({ description: "Agent definition name (omit for default agent)" })),
-		model: Type.Optional(Type.String({ description: "Optional model id override. Ignored if the selected specialist agent definition already pins a model." })),
+		model: Type.Optional(Type.String({ description: "Optional model override: a tier name (`cheap`, `medium`, `smart`, `frontier`) or a concrete model id. Ignored if the selected specialist agent definition already pins a model." })),
 		task: Type.String({ description: "Task description for this agent" }),
 		channels: Type.Optional(
 			Type.Array(Type.String(), {
@@ -626,6 +654,37 @@ export default function (pi: ExtensionAPI) {
 		sessionId: Type.String({ description: "session_id surfaced by a prior teardown report" }),
 		channels: Type.Array(Type.String(), { description: "Peer agent ids this agent can send to (re-declared fresh; siblings resurrected in the same batch are valid targets). Parent is always allowed." }),
 		task: Type.String({ description: "Directive the agent runs on resurrection" }),
+	});
+
+	// ─── Tool: list_models ──────────────────────────────────────────────────────
+
+	if (shouldRegisterTool("list_models")) pi.registerTool({
+		name: "list_models",
+		label: "List Models",
+		description: "List all available models with context window and pricing. Complements the model-tier table for cases where a concrete model is explicitly required.",
+		promptSnippet: "Call `list_models` to see the full model catalog when a concrete model id (rather than a tier) is explicitly required.",
+		parameters: Type.Object({}),
+
+		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+			const models: any[] = ctx.modelRegistry.getAvailable();
+			const fmtCost = (value: unknown) =>
+				typeof value === "number" ? value.toFixed(2) : "-";
+			const rows = models
+				.map((m: any) => ({
+					ref: `${m?.provider}/${m?.id}`,
+					contextWindow: typeof m?.contextWindow === "number" ? String(m.contextWindow) : "-",
+					input: fmtCost(m?.cost?.input),
+					output: fmtCost(m?.cost?.output),
+					cacheRead: fmtCost(m?.cost?.cacheRead),
+				}))
+				.sort((a, b) => a.ref.localeCompare(b.ref));
+			const lines = [
+				"| provider/id | context window | input $/Mtok | output $/Mtok | cacheRead $/Mtok |",
+				"| --- | --- | --- | --- | --- |",
+				...rows.map((r) => `| ${r.ref} | ${r.contextWindow} | ${r.input} | ${r.output} | ${r.cacheRead} |`),
+			];
+			return { content: [{ type: "text", text: lines.join("\n") }] };
+		},
 	});
 
 	if (shouldRegisterTool("subagent")) pi.registerTool({
@@ -677,7 +736,8 @@ export default function (pi: ExtensionAPI) {
 
 				if (a.model) {
 					// Specialist-pinned model always wins; only validate override when it can actually apply.
-					if (!foundConfig?.model && !isValidModelRef(a.model)) {
+					// Tier names are always valid — they resolve (or fall back) at spawn time.
+					if (!foundConfig?.model && !isTierName(a.model) && !isValidModelRef(a.model)) {
 						const available = availableModels
 							.map((m: any) => `${m?.provider}/${m?.id}`)
 							.filter(Boolean)
@@ -685,7 +745,7 @@ export default function (pi: ExtensionAPI) {
 						const preview = available.length > 0 ? available.slice(0, 20).join(", ") : "none";
 						const more = available.length > 20 ? `, ... (+${available.length - 20} more)` : "";
 						throw new Error(
-							`Unknown model "${a.model}" for agent "${a.id}". Available models: ${preview}${more}`,
+							`Unknown model "${a.model}" for agent "${a.id}". Tiers: ${TIER_NAMES.join(", ")}. Available models: ${preview}${more}`,
 						);
 					}
 				}
@@ -722,11 +782,22 @@ export default function (pi: ExtensionAPI) {
 			// providers before extension providers. By resolving here against
 			// getAvailable() (auth-filtered), we always pick the provider that's
 			// actually configured, regardless of ordering in getAll().
+			const tiers = loadTiers(ctx.cwd, ctx.isProjectTrusted());
 			const agentSpecs: RegularAgentSpec[] = params.agents.map(a => {
 				const agentConfig = a.agent ? allAgentConfigs.find((c) => c.name === a.agent) : undefined;
 				// Agent-pinned model wins over tool override — resolve whichever applies.
 				const rawModel = agentConfig?.model ?? a.model;
 				let model: string | undefined = rawModel;
+				if (model) {
+					// Tier names resolve to configured model ids; unconfigured or
+					// unavailable tiers fall back to the session default (no --model).
+					if (isTierName(model) && Object.keys(tiers).length === 0) {
+						notifyTierIssueOnce(ctx, "model tiers unconfigured; all tiers use the session default model");
+					}
+					const resolution = resolveModelRef(model, tiers, isValidModelRef);
+					if (resolution.warning) notifyTierIssueOnce(ctx, resolution.warning);
+					model = resolution.model;
+				}
 				if (model) {
 					const resolved = availableModels.find(
 						(m: any) => m?.id === model || `${m?.provider}/${m?.id}` === model,

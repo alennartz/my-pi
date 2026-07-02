@@ -10,6 +10,8 @@
  * dropping bad entries — it never throws.
  */
 
+import * as fs from "node:fs";
+
 export const TIER_NAMES = ["cheap", "medium", "smart", "frontier"] as const;
 export type TierName = (typeof TIER_NAMES)[number];
 
@@ -17,7 +19,7 @@ export type TierName = (typeof TIER_NAMES)[number];
 export type TierConfig = Partial<Record<TierName, string>>;
 
 export function isTierName(ref: string): ref is TierName {
-	throw new Error("not implemented");
+	return (TIER_NAMES as readonly string[]).includes(ref);
 }
 
 /**
@@ -32,7 +34,29 @@ export function loadTierConfig(opts: {
 	projectPath: string;
 	projectTrusted: boolean;
 }): TierConfig {
-	throw new Error("not implemented");
+	const global = readTierFile(opts.globalPath);
+	const project = opts.projectTrusted ? readTierFile(opts.projectPath) : {};
+	return { ...global, ...project };
+}
+
+/** Read one config file; any error yields an empty contribution. */
+function readTierFile(filePath: string): TierConfig {
+	try {
+		return sanitize(JSON.parse(fs.readFileSync(filePath, "utf-8")));
+	} catch {
+		return {};
+	}
+}
+
+/** Keep only known tier keys with string values; drop everything else. */
+function sanitize(parsed: unknown): TierConfig {
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+	const config: TierConfig = {};
+	for (const name of TIER_NAMES) {
+		const value = (parsed as Record<string, unknown>)[name];
+		if (typeof value === "string") config[name] = value;
+	}
+	return config;
 }
 
 /**
@@ -52,7 +76,14 @@ export function resolveModelRef(
 	tiers: TierConfig,
 	isAvailable: (ref: string) => boolean,
 ): { model: string | undefined; warning?: string } {
-	throw new Error("not implemented");
+	if (!isTierName(ref)) return { model: ref };
+	const configured = tiers[ref];
+	if (configured === undefined) return { model: undefined };
+	if (isAvailable(configured)) return { model: configured };
+	return {
+		model: undefined,
+		warning: `Model tier "${ref}" is configured as "${configured}", which is not available; using the session default model.`,
+	};
 }
 
 /**
@@ -67,5 +98,14 @@ export function renderTierTable(
 	isAvailable: (ref: string) => boolean,
 	defaultModelRef: string,
 ): string[] {
-	throw new Error("not implemented");
+	const lines = ["| Tier | Model |", "| --- | --- |"];
+	for (const name of TIER_NAMES) {
+		const configured = tiers[name];
+		if (configured !== undefined && isAvailable(configured)) {
+			lines.push(`| ${name} | \`${configured}\` |`);
+		} else {
+			lines.push(`| ${name} | \`${defaultModelRef}\` (default) |`);
+		}
+	}
+	return lines;
 }

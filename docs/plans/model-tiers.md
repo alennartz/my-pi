@@ -144,12 +144,14 @@ No supersessions. DR-033 (resurrect re-resolves persona from persistence log) is
 
 ## Steps
 
+**Pre-implementation commit:** `93586a1ef439820470c96abe432420652538a947`
+
 ### Step 1: Implement `isTierName`
 
 In `extensions/subagents/model-tiers.ts`, replace the `isTierName` stub body: return true iff `ref` is one of `TIER_NAMES` (exact, case-sensitive match — `(TIER_NAMES as readonly string[]).includes(ref)`).
 
 **Verify:** `npx vitest run extensions/subagents/model-tiers.test.ts -t isTierName` — all 4 tests pass.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Implement `loadTierConfig`
 
@@ -163,7 +165,7 @@ In `extensions/subagents/model-tiers.ts`, replace the `loadTierConfig` stub body
 Suggested shape: a small pure helper `sanitize(parsed: unknown): TierConfig` plus a read-one-file wrapper, merged with spread (`{ ...global, ...project }`).
 
 **Verify:** `npx vitest run extensions/subagents/model-tiers.test.ts -t loadTierConfig` — all 10 tests pass.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Implement `resolveModelRef`
 
@@ -175,7 +177,7 @@ In `extensions/subagents/model-tiers.ts`, replace the `resolveModelRef` stub bod
 - Tier `ref`, configured, unavailable → `{ model: undefined, warning }` where the warning string names the unavailable model id (tests assert `warning` contains the configured id).
 
 **Verify:** `npx vitest run extensions/subagents/model-tiers.test.ts -t resolveModelRef` — all 8 tests pass.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Implement `renderTierTable`
 
@@ -188,7 +190,7 @@ In `extensions/subagents/model-tiers.ts`, replace the `renderTierTable` stub bod
 Format suggestion: markdown table rows `| cheap | \`gpt-5.4-mini\` |` / `| frontier | \`gpt-5.4\` (default) |`.
 
 **Verify:** `npx vitest run extensions/subagents/model-tiers.test.ts` — entire file passes (all 27 tests).
-**Status:** not started
+**Status:** done
 
 ### Step 5: Tier config loading + notify-dedup plumbing in `index.ts`
 
@@ -211,7 +213,7 @@ function loadTiers(cwd: string, projectTrusted: boolean): TierConfig {
 3. Add a per-session dedup set for tier notices, following the model-prompt-overlays diagnostics pattern (`extensions/model-prompt-overlays/diagnostics.ts`): a module-closure `Set<string>` keyed by message, plus a `notifyTierIssueOnce(ctx, message)` helper that calls `ctx.ui.notify(message, "warning")` only for unseen messages.
 
 **Verify:** helpers exist and compile mentally against real exports; used by Steps 6–8. No behavior change yet.
-**Status:** not started
+**Status:** done
 
 ### Step 6: Tier names accepted in spawn validation
 
@@ -222,7 +224,7 @@ In the `subagent` tool's `execute` in `extensions/subagents/index.ts`, in the pe
 - Update the `AgentItem` `model` field description to advertise tiers as the primary vocabulary: tier name (`cheap`, `medium`, `smart`, `frontier`) or a concrete model id; ignored when the specialist definition pins a model.
 
 **Verify:** spawning `{ model: "smart" }` does not throw at validation even with no tier config; spawning `{ model: "nonsense" }` throws with tier names listed in the message.
-**Status:** not started
+**Status:** done
 
 ### Step 7: Tier resolution in the spec-mapping path
 
@@ -234,7 +236,7 @@ In the `subagent` tool's `execute`, in the `agentSpecs` mapping (`const rawModel
 4. Empty-config notice: when `tiers` is empty (`Object.keys(tiers).length === 0`) and at least one spec's `rawModel` is a tier name, call `notifyTierIssueOnce` with `"model tiers unconfigured; all tiers use the session default model"` — once per session (dedup), not per tier and not per spawn.
 
 **Verify:** with a global `~/.pi/agent/model-tiers.json` (or a project `.pi/model-tiers.json` in a trusted dir) mapping `cheap` to a real model, spawning `{ model: "cheap" }` launches the child with that model (visible in the dashboard/`check_status` model field); with no config, `{ model: "cheap" }` spawns on the session default and a single unconfigured notice appears.
-**Status:** not started
+**Status:** done
 
 ### Step 8: Replace the Available Models prompt block with the tier table
 
@@ -246,7 +248,7 @@ In the `before_agent_start` handler in `extensions/subagents/index.ts`:
 4. Follow the table with guidance lines: pick the tier matching the task's difficulty; raw model IDs are also accepted in `agents[].model` when the user names a specific model; `list_models` shows the full catalog. Keep the existing trailing guidance about the default agent and pinned models, but replace "Do not set a custom `model`..." with tier-oriented phrasing (tiers are the advertised vocabulary; omit `model` when the default is fine).
 
 **Verify:** start a session in this repo, run any prompt, and inspect the system prompt (e.g. via session file or `/debug`): `## Available Models` is gone, `## Model Tiers` shows four rows with `(default)` markers for unconfigured tiers.
-**Status:** not started
+**Status:** done
 
 ### Step 9: Register the `list_models` tool
 
@@ -257,11 +259,11 @@ In `extensions/subagents/index.ts`, add a new tool registration gated by `should
 - `execute`: read `ctx.modelRegistry.getAvailable()`, sort by `provider/id`, and return one text block — a table with columns `provider/id | context window | input $/Mtok | output $/Mtok | cacheRead $/Mtok`. Model entries carry `provider`, `id`, `contextWindow: number`, and `cost: { input, output, cacheRead, cacheWrite }` (per-Mtok dollar figures from pi-ai's `Model` type).
 
 **Verify:** in a live session, calling `list_models` returns the sorted table with pricing columns; a child spawned with a `tools` restriction that omits `list_models` does not get the tool.
-**Status:** not started
+**Status:** done
 
 ### Step 10: Full test suite
 
 Run the repo test suite to confirm nothing regressed: `npx vitest run`.
 
 **Verify:** all test files pass, including the pre-existing `extensions/subagents/*.test.ts` suites.
-**Status:** not started
+**Status:** done
