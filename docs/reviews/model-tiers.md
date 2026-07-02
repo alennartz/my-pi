@@ -15,7 +15,7 @@ The plan was implemented faithfully — all ten steps trace cleanly to the diff,
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/index.ts:256-270`
-- **Status:** open
+- **Status:** resolved
 
 Plan Step 5 called for importing `CONFIG_DIR_NAME` from `@earendil-works/pi-coding-agent`, but that constant isn't re-exported from the package index — so the implementation derives it via `path.basename(path.dirname(getAgentDir()))`. The adaptation was necessary, but the chosen derivation is fragile: `getAgentDir()` honors the `PI_CODING_AGENT_DIR` env var and returns that path verbatim, with no guaranteed `<dir>/.pi/agent` shape. With the override set (e.g. `/tmp/pi-test-home`), the derivation yields the wrong segment, so project config is looked up at `<cwd>/<wrong-name>/model-tiers.json` and silently never loads (the loader swallows missing files by design). Sibling code in the same extension already hardcodes `".pi"` (`extensions/subagents/agents.ts:186`), which would be strictly more predictable. As written, global and project config resolution disagree under env override and the failure is invisible.
 
@@ -24,7 +24,7 @@ Plan Step 5 called for importing `CONFIG_DIR_NAME` from `@earendil-works/pi-codi
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/index.ts:271-281`
-- **Status:** open
+- **Status:** resolved
 
 The `notifiedTierIssues` `Set` lives in the extension closure, created once per extension load — not per session. After `/new` in the same pi process, a previously-shown warning (e.g. "tier configured as unavailable model") is silently suppressed for the new session. This matches the precedented `model-prompt-overlays` diagnostics pattern, but the comment "Per-session dedup" over-promises, and a user who fixes-then-unfixes config can miss a genuinely relevant warning.
 

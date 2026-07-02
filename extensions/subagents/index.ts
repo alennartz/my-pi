@@ -256,21 +256,22 @@ export default function (pi: ExtensionAPI) {
 	// ─── Model tiers ──────────────────────────────────────────────────────────────
 	//
 	// Config is read fresh on every call — the files are tiny, and edits
-	// apply without /reload. The project config dir name (".pi" by default)
-	// is derived from getAgentDir() (= <home>/<configDir>/agent).
-
-	const projectConfigDirName = path.basename(path.dirname(getAgentDir()));
+	// apply without /reload. Project config lives under the literal ".pi"
+	// dir (cf. findNearestProjectAgentsDir in agents.ts), which is stable
+	// regardless of the PI_CODING_AGENT_DIR override on the global agent dir.
 
 	function loadTiers(cwd: string, projectTrusted: boolean): TierConfig {
 		return loadTierConfig({
 			globalPath: path.join(getAgentDir(), "model-tiers.json"),
-			projectPath: path.join(cwd, projectConfigDirName, "model-tiers.json"),
+			projectPath: path.join(cwd, ".pi", "model-tiers.json"),
 			projectTrusted,
 		});
 	}
 
-	// Per-session dedup for tier warnings/notices (cf. model-prompt-overlays
-	// diagnostics): each distinct message is surfaced at most once.
+	// Per-extension-load dedup for tier warnings/notices (cf. model-prompt-overlays
+	// diagnostics): each distinct message is surfaced at most once for the
+	// lifetime of this extension instance — the set is closure-scoped, so it
+	// spans sessions within the same pi process, not just a single session.
 	const notifiedTierIssues = new Set<string>();
 
 	function notifyTierIssueOnce(
