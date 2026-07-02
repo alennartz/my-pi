@@ -168,11 +168,11 @@ After handle-review completes and passes validation, read `docs/reviews/<topic>.
      verify each of your prior findings is resolved, and check the fix diff for
      newly introduced issues. Write a fresh docs/reviews/<topic>.md (the old one
      was deleted) and commit. Do not re-run the full-baseline review or the
-     two-pass fan-out. You may resurrect your pass subagents if verification
-     genuinely needs their accumulated file context (fixes spanning many of the
-     files they read) — but a resurrected agent re-pays its full context every
-     turn, so for small, localized fix diffs do the re-check directly with fresh
-     reads.
+     two-pass fan-out. Prefer resurrecting your pass subagents for the
+     verification — their accumulated file context is mostly cache-priced
+     (~10% of fresh tokens), far cheaper than re-reading files at full price.
+     Only do the re-check directly when the fix diff is trivial enough that a
+     couple of fresh reads settle it.
      ```
 
   4. After that completes and passes validation, **resurrect the original handle-review agent** the same way, with a task pointing at the fresh review file.
