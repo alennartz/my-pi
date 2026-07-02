@@ -67,3 +67,29 @@ Limitations: observes status via `check_status` (the `hasSubgroup` widget/panel
 rendering is a TUI component factory RPC ignores — only its recompute input is
 verified); drives a real LLM, so it costs tokens and tolerates transient
 latency.
+
+### model-tiers (`model-tiers/run.mjs`)
+
+**Purpose:** Verify the subagents extension's model-tier feature end-to-end —
+the live wiring in `index.ts` that the pure-function unit tests cannot reach.
+Drives a real `pi --mode rpc` under a controlled `PI_CODING_AGENT_DIR`,
+captures the assembled provider payload via a `before_provider_request` probe
+(prompt-injection + config-overlay checks), and drives live tier/raw spawns
+and `list_models` (resolution, notice, and catalog checks). See
+`model-tiers/README.md`.
+
+**Invocation:** `node tools/manual-test/model-tiers/run.mjs [--keep] [--timeout <sec>] [--workdir <dir>]`.
+
+**Inputs:** flags only; uses ambient pi provider config.
+
+**Outputs:** phase log on stderr; JSON verdict on stdout
+(`{verdict, checks, observed}`); exit 0 = PASS, 1 = FAIL.
+
+**Prerequisites:** `pi` on PATH with this repo loadable as a package. Scrubs
+`PI_PARENT_LINK`/`PI_CODING_AGENT` from the spawned pi env.
+
+**Use for:** any topic touching model-tier config, tier resolution on the
+spawn path, the tier prompt-injection block, or the `list_models` tool.
+Limitations: the spawn checks drive a real LLM to call `subagent`, so they
+cost tokens and tolerate transient latency; the child's model is read from its
+session file (an independent oracle), not from tool-call narration.

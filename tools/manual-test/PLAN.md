@@ -102,3 +102,27 @@ invisible until a user notices their dashboard lying.
 **Driver:** `tools/manual-test/resume-restore/run.mjs` — drives a real
 `pi --mode rpc` through spawn → idle → kill → resume and asserts the restored
 `check_status` detail against an independent re-parse of the child session.
+
+### J7: Model-tier selection — prompt injection and spawn resolution
+
+**What:** The subagents extension advertises named model tiers (`cheap`,
+`medium`, `smart`, `frontier`) via a `## Model Tiers` table injected into the
+system prompt, resolves tier names (and raw model ids) to concrete models on
+the spawn path from a global + project JSON config overlay, exposes a
+`list_models` catalog tool, and emits a once-per-session notice when tiers are
+unconfigured. Verify: the table is injected (and the old `## Available Models`
+list is gone), config overlay resolves correctly (project overrides global,
+unshadowed global keys survive, untrusted project ignored), a tier spawn runs
+the configured model while an unconfigured tier falls back to the session
+default, raw ids still pass through, and `list_models` returns a priced
+catalog table.
+
+**Why:** Skills and agent definitions select models by tier, so tier
+resolution silently governs the cost and capability of every delegated phase.
+A broken table or misresolved tier ships wrong-cost/wrong-capability models
+with no visible error — a silent, expensive regression.
+
+**Driver:** `tools/manual-test/model-tiers/run.mjs` — drives a real
+`pi --mode rpc` under a controlled `PI_CODING_AGENT_DIR`, capturing the
+assembled provider payload via a probe extension and driving live tier/raw
+spawns and `list_models`. (See `tools/manual-test/README.md`.)

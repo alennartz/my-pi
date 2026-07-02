@@ -70,12 +70,52 @@ Adjacent-flow additions (one ring out from the hints):
 
 ## Results
 
-Populated after execution.
+All checks passed on the first full run of
+`tools/manual-test/model-tiers/run.mjs` (verdict PASS). Observations are the
+exact strings read from the assembled provider payload and the children's
+persisted session files.
+
+- **1. Prompt injection (check A)** — **pass.** The injected system prompt
+  contains `## Model Tiers` and does not contain `## Available Models`. All
+  four tier rows render `` `claude-opus-4-8` (default) `` (the session
+  default). *Coherence: looks coherent* — a well-formed markdown table
+  followed by the tier guidance and `list_models` pointer.
+- **2. Tier spawn resolution (check D)** — **pass.** With `cheap` mapped to
+  `gpt-5.4-nano`, spawning `model:"cheap"` produced a child whose persisted
+  session records model `gpt-5.4-nano` (not the `claude-opus-4-8` session
+  default), and no unconfigured notice fired.
+- **3. `list_models` catalog (check F)** — **pass.** The tool returned a
+  markdown table with header
+  `| provider/id | context window | input $/Mtok | output $/Mtok | cacheRead $/Mtok |`
+  and priced rows. *Coherence: looks coherent* — sorted, aligned, pricing
+  columns populated (e.g. `claude-opus-4-6 | 1000000 | 5.00 | 25.00 | 0.50`).
+- **4. Config overlay (check B)** — **pass.** Global
+  `{cheap: gpt-5.4-nano, medium: genitsec-haiku-4-5}` overlaid with project
+  `{cheap: gpt-5.4-mini}` rendered `cheap = gpt-5.4-mini` (project override
+  wins), `medium = genitsec-haiku-4-5` (unshadowed global survives), and
+  `smart` as the default row. Verified against a temp `PI_CODING_AGENT_DIR`,
+  never the real global config.
+- **5. Unconfigured notice (check E)** — **pass.** With no config, spawning
+  `model:"cheap"` fired exactly the notice
+  `"model tiers unconfigured; all tiers use the session default model"` and
+  the child ran the `claude-opus-4-8` session default.
+- **6. Raw model ID passthrough (check D)** — **pass.** A spawn with
+  `model:"gpt-5.4-mini"` (a raw id, not a tier) produced a child whose
+  session records `gpt-5.4-mini` — unchanged from pre-tier behavior.
+- **7. Untrusted-project gating (check C)** — **pass.** With
+  `defaultProjectTrust: "never"`, the project `.pi/model-tiers.json` override
+  was ignored and `cheap` resolved to the global `gpt-5.4-nano`, confirming
+  project config does not leak into untrusted projects.
 
 ## Plan Updates
 
-Populated after execution.
+Added **J7 (Model-tier selection — prompt injection and spawn resolution)** to
+`tools/manual-test/PLAN.md` as a new primary journey, driven by the new
+`model-tiers/run.mjs` tool. Tier resolution silently governs the cost and
+capability of every delegated phase, so it clears the "primary journey" bar.
+No journeys modified or retired.
 
 ## Open Issues
 
-Populated after execution.
+None. Every priority check and both adjacent-flow checks passed on the first
+run; no fixes were required.
