@@ -94,3 +94,48 @@ Tool description and a `promptSnippet` one-liner; no `promptGuidelines` needed b
 ### DR Notes
 
 No supersessions. DR-033 (resurrect re-resolves persona from persistence log) is consistent with resurrect retaining the concrete model — tiers resolve once at spawn and are never re-resolved.
+
+## Tests
+
+**Pre-test-write commit:** `6f41dea0af065072727dba5793bdc9514286d220`
+
+### Interface Files
+
+- `extensions/subagents/model-tiers.ts` — tier vocabulary (`TIER_NAMES`, `TierName`, `TierConfig`) and stub signatures for `isTierName`, `loadTierConfig`, `resolveModelRef`, and `renderTierTable` (bodies throw "not implemented"). No existing files needed changes — integration into `index.ts` (validation loop, spec mapping, prompt injection, `list_models` tool) is implementation work.
+
+### Test Files
+
+- `extensions/subagents/model-tiers.test.ts` — behavioral tests for the four pure/config functions: tier-name recognition, config loading and overlay semantics, model-ref resolution, and tier-table rendering. Uses temp-dir fixtures for `loadTierConfig`, following the module's existing test conventions (`persistence.test.ts`, `cwd.test.ts`).
+
+### Behaviors Covered
+
+#### isTierName
+
+- Recognizes exactly the four tier names `cheap`, `medium`, `smart`, `frontier`
+- Rejects concrete model ids, arbitrary strings, the empty string, and case variants (case-sensitive)
+
+#### loadTierConfig
+
+- Returns `{}` when neither config file exists
+- Loads tiers from global-only and project-only configs
+- Overlays project entries on global entries per key (project wins; unshadowed global keys survive)
+- Ignores the project config entirely when the project is untrusted
+- Tolerates unparseable JSON in either or both files without throwing — the other file still applies; worst case is `{}`
+- Drops non-string values and unknown tier keys while keeping valid entries from the same file
+- Tolerates a non-object JSON top level
+
+#### resolveModelRef
+
+- Configured tier with an available model resolves to the configured id, no warning
+- Unconfigured tier (including entirely-empty config) resolves to `undefined` with no warning — child falls back to the session default
+- Configured tier whose model is unavailable resolves to `undefined` with a warning naming the unavailable model
+- Non-tier refs pass through unchanged with no warning, even when unavailable — existing `isValidModelRef` validation stays the caller's job
+- Availability is consulted with the configured model id
+
+#### renderTierTable
+
+- Emits a row for every tier name
+- Configured, available tiers show their configured model id without a `(default)` marker
+- Unconfigured tiers show the session-default model id with a `(default)` marker
+- Configured-but-unavailable tiers show the session default with `(default)` and omit the unavailable id
+- Mixed configs render configured and defaulted rows distinguishably
