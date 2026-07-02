@@ -46,6 +46,7 @@ import { NotificationQueue } from "./notification-queue.js";
 import { formatTokenCount } from "./format.js";
 import { formatSpawnToolResult } from "./tool-result.js";
 import {
+	SESSION_DEFAULT_LABEL,
 	TIER_NAMES,
 	type TierConfig,
 	isTierName,
@@ -490,7 +491,7 @@ export default function (pi: ExtensionAPI) {
 				(m: any) => m?.id === ref || `${m?.provider}/${m?.id}` === ref,
 			);
 		const tiers = loadTiers(ctx.cwd, ctx.isProjectTrusted());
-		const defaultModelRef = ctx.model?.id ?? "session default";
+		const defaultModelRef = ctx.model?.id ?? SESSION_DEFAULT_LABEL;
 
 		lines.push(
 			"## Model Tiers",

@@ -15,6 +15,13 @@ import * as fs from "node:fs";
 export const TIER_NAMES = ["cheap", "medium", "smart", "frontier"] as const;
 export type TierName = (typeof TIER_NAMES)[number];
 
+/**
+ * Label used when the concrete session-default model id is unknown (i.e.
+ * `ctx.model` is undefined at injection time). Rendered without code
+ * backticks so it never reads as a real model id an LLM could echo back.
+ */
+export const SESSION_DEFAULT_LABEL = "session default";
+
 /** Flat tier→model-id map; any subset of tiers may be configured. */
 export type TierConfig = Partial<Record<TierName, string>>;
 
@@ -103,6 +110,10 @@ export function renderTierTable(
 		const configured = tiers[name];
 		if (configured !== undefined && isAvailable(configured)) {
 			lines.push(`| ${name} | \`${configured}\` |`);
+		} else if (defaultModelRef === SESSION_DEFAULT_LABEL) {
+			// Unknown concrete model — render the plain label, no backticks, so
+			// it isn't mistaken for a real model id.
+			lines.push(`| ${name} | ${defaultModelRef} (default) |`);
 		} else {
 			lines.push(`| ${name} | \`${defaultModelRef}\` (default) |`);
 		}

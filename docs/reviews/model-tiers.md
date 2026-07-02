@@ -33,7 +33,9 @@ The `notifiedTierIssues` `Set` lives in the extension closure, created once per 
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/index.ts:487`, `extensions/subagents/model-tiers.ts:100-110`
-- **Status:** open
+- **Status:** resolved
+
+Resolution: `renderTierTable` now special-cases the placeholder (exported as `SESSION_DEFAULT_LABEL`) and renders it as plain `session default (default)` without code backticks, so it no longer reads as a model id. The normal case (concrete `ctx.model.id`) keeps its backticked id, preserving transcript legibility. No test assertion needed adjusting — the `renderTierTable` tests exercise the default row with real model ids (`gpt-5.4`, `session-default-model`), which still render backticked.
 
 When `ctx.model` is undefined at `before_agent_start`, the tier table renders `` `session default` (default) `` — a non-id in code formatting, contradicting the module doc's claim that transcripts always record which model a tier-named spawn actually used. An LLM reading the table could echo `session default` back as a model ref. Cosmetic in practice since `ctx.model` is nearly always set.
 
