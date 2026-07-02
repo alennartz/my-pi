@@ -139,3 +139,5 @@ No supersessions. DR-033 (resurrect re-resolves persona from persistence log) is
 - Unconfigured tiers show the session-default model id with a `(default)` marker
 - Configured-but-unavailable tiers show the session default with `(default)` and omit the unavailable id
 - Mixed configs render configured and defaulted rows distinguishably
+
+**Review status:** skipped — test-review bypassed by skip decision
