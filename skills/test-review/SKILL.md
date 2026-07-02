@@ -1,13 +1,13 @@
 ---
 name: test-review
-description: "Validate tests against brainstorm intent and architecture. Use when tests have been written in the test-write phase and need checking before implementation planning begins. Interactive — escalates ambiguity to the user and fixes issues inline with approval. Produces docs/reviews/<topic>-tests.md."
+description: "Validate tests against brainstorm intent and architecture. Use when tests have been written in the test-write phase and need checking before implementation planning begins. Fixes clear issues autonomously and escalates ambiguity to the user in a single batch. Produces docs/reviews/<topic>-tests.md."
 ---
 
 # Test Review
 
 ## Overview
 
-Validate that the tests written in the test-write phase actually cover the brainstorm's intent and respect the architecture's boundaries. This is an interactive review — walk through the tests with the user, escalate gaps and ambiguities, and fix issues inline with approval.
+Validate that the tests written in the test-write phase actually cover the brainstorm's intent and respect the architecture's boundaries. Fix clear issues autonomously; escalate genuine ambiguity to the user as a single batch.
 
 The output is a review artifact (`docs/reviews/<topic>-tests.md`) and a review stamp on the plan's Tests section. What the user approves becomes the behavioral contract the implementation must satisfy.
 
@@ -37,22 +37,22 @@ Check the tests against these criteria:
 
 - **Reasonable expectations.** Test assertions should be satisfiable by any correct implementation of the interface. Flag over-specified expectations that constrain implementation unnecessarily — asserting on internal state, demanding specific error message strings beyond what the interface defines, requiring specific call counts or ordering not in the contract.
 
-### 2. Escalate and Fix
+### 2. Fix, Then Escalate as a Batch
 
-Walk through findings with the user. This is interactive — one issue or group of related issues at a time.
+Triage all findings first, then act in two batches. Do not walk through findings one at a time — each escalation is expensive (in autoflow this skill runs in a subagent, and every question pays a relay round-trip through the orchestrator to the user).
 
-**Escalate to the user:**
+**Fix autonomously** when both the diagnosis and the fix are unambiguous. Make the change directly — edit the test file, update the interface if needed, adjust the plan's Tests section to match. Minor naming issues, slightly redundant tests, and trivially fixable gaps all belong here; note them briefly in the review artifact.
+
+**Escalate the rest as a single batch.** Present all remaining findings together, each with what was found, why it needs a decision, and your recommendation. Escalation-worthy findings:
 
 - Brainstorm intent that no test covers — trace the gap back to its source. If the architecture doesn't cover the intent either, that's an architecture gap, not just a test gap. If the architecture covers it but the test writer missed it, that's a test-writing gap. Either way, the user decides whether it needs coverage or is intentionally untested.
 - Tests that cover something the brainstorm didn't describe — the user decides whether to keep or remove
 - Tests at too low an abstraction level — explain why and propose a higher-level replacement
 - Ambiguous expectations — where the test asserts something the interface doesn't clearly define
 
-**Fix inline with approval.** When the user agrees an issue needs fixing, make the change directly — edit the test file, update the interface if needed, adjust the plan's Tests section to match. Don't batch fixes for later; fix as you go.
+Wait for the user's decisions on the batch, then apply all of them.
 
 **Architecture gaps are fixable here.** When missing test coverage traces back to brainstorm intent the architecture didn't include, don't punt back to the architect phase. With the user's approval, update the architecture section of the plan (add the missing interfaces/decisions), then add the corresponding tests and interface code. This review has the brainstorm, the architecture, and the tests all in context — it's the right place to catch and close these gaps.
-
-**Use judgment on severity.** Not everything needs escalation. Minor naming issues, slightly redundant tests, or trivially fixable gaps can be noted and fixed with a brief mention. Save escalation for genuine ambiguity or missing coverage that could affect implementation.
 
 ### 3. Write the Review
 
@@ -121,7 +121,6 @@ Commit all changes (any test/interface fixes, review artifact, plan stamp) with 
 ## Key Principles
 
 - **The brainstorm is the intent** — tests should cover what the brainstorm decided to build. Missing coverage is a gap. Extra coverage is a question for the user.
-- **Interactive, not one-shot** — walk through findings with the user. Escalate ambiguity. Fix with approval. The review is a conversation, not a report dropped on the user's desk.
-- **Fix as you go** — when the user approves a fix, make it immediately. Don't accumulate a fix list for later.
+- **Fix confidently, escalate in one batch** — handle the unambiguous findings yourself, then bring the rest to the user together. One escalation round, not a drip of questions.
 - **Every finding is resolved** — by the time the review artifact is written, every finding should be either fixed or explicitly dismissed by the user. No open items.
 - **The stamp is the gate** — the review stamp on the Tests section signals that the behavioral contract is approved and ready for implementation planning. Don't stamp until the user is satisfied.

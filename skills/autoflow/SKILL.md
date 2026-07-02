@@ -40,7 +40,8 @@ Invoke with `/autoflow <description of what you want to build or change>`.
 
 After architect completes, evaluate the scope of the change to decide which phases to run:
 
-- **Full pipeline** — default. Proceed to test-write.
+- **Full pipeline** — for large or high-stakes changes: broad module impact, tricky behavioral contracts, security-sensitive surfaces. Proceed to test-write, then test-review.
+- **Skip test-review** — default for everything else. Run test-write, then proceed directly to impl-plan. Test-review pays a full context rebuild to re-check work just done; reserve it for topics where a missed behavioral gap is expensive.
 - **Skip to impl-plan** — for small, straightforward changes where upfront tests add little value. Bypasses test-write and test-review.
 - **Skip to implement** — for very small changes (a few lines, a single file, a config tweak). Bypasses test-write, test-review, and impl-plan.
 
@@ -68,6 +69,8 @@ When also skipping impl-plan (skip to implement), additionally append:
 ```
 
 Commit the scaffolded plan before spawning the target phase's subagent.
+
+When skipping test-review only (test-write still runs): after test-write completes and passes validation, append `**Review status:** skipped — test-review bypassed by skip decision` to the end of the `## Tests` section in the plan, commit, and proceed to impl-plan.
 
 ## Autonomous Phase Orchestration
 
