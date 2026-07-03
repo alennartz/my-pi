@@ -509,6 +509,7 @@ export default function (pi: ExtensionAPI) {
 			...renderTierTable(tiers, isAvailable, defaultModelRef),
 			"",
 			"Pick the tier matching the task's difficulty. Raw model IDs are also accepted in `agents[].model` when the user names a specific model; `list_models` shows the full catalog.",
+			"Append a thinking-effort suffix to any model id with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`) — e.g. `anthropic/claude-opus-4-8:xhigh`. Tier names don't take a suffix; a tier carries whatever level its config encodes.",
 			"",
 		);
 
