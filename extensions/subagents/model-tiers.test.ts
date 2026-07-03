@@ -378,6 +378,7 @@ describe("renderTierTable — suffix-aware", () => {
 		);
 		// Should have been checked with the model part, not the full suffixed string
 		expect(seen.some(r => r === "anthropic/claude-opus-4-8")).toBe(true);
+		expect(seen.some(r => r === "anthropic/claude-opus-4-8:high")).toBe(false);
 	});
 
 	it("falls back to session default when the model part of a suffixed tier is unavailable", () => {

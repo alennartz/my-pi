@@ -40,6 +40,7 @@ export function stripThinkingSuffix(pattern: string): { model: string; thinking?
 	if (!isThinkingLevel(suffix)) return { model: pattern };
 	return { model: pattern.slice(0, lastColon), thinking: suffix };
 }
+
 export type TierName = (typeof TIER_NAMES)[number];
 
 /**
@@ -139,7 +140,7 @@ export function renderTierTable(
 	for (const name of TIER_NAMES) {
 		const configured = tiers[name];
 		const modelPart = configured !== undefined ? stripThinkingSuffix(configured).model : undefined;
-		if (configured !== undefined && modelPart !== undefined && isAvailable(modelPart)) {
+		if (configured !== undefined && isAvailable(modelPart!)) {
 			lines.push(`| ${name} | \`${configured}\` |`);
 		} else if (defaultModelRef === SESSION_DEFAULT_LABEL) {
 			// Unknown concrete model — render the plain label, no backticks, so

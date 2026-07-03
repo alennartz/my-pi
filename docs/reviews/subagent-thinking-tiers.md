@@ -15,7 +15,7 @@ The plan was implemented faithfully: `stripThinkingSuffix` and its supporting ty
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/model-tiers.ts:141-145` (the `renderTierTable` tier loop)
-- **Status:** open
+- **Status:** resolved
 
 `stripThinkingSuffix` always returns `{ model: string, … }` — `model` is never `undefined`. The guard `modelPart !== undefined` in the `isAvailable(modelPart)` branch is dead code. Harmless, but worth removing for clarity.
 
@@ -24,7 +24,7 @@ The plan was implemented faithfully: `stripThinkingSuffix` and its supporting ty
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/model-tiers.test.ts` — `"judges availability on the model part"` test
-- **Status:** open
+- **Status:** resolved
 
 The test asserts `seen.some(r => r === "anthropic/claude-opus-4-8")` (the model part was passed to `isAvailable`) but does not assert that `seen` does *not* contain `"anthropic/claude-opus-4-8:high"` (the full suffixed string was not passed). An implementation that called `isAvailable` with both would still pass. Adding a `!seen.some(r => r === "anthropic/claude-opus-4-8:high")` assertion would close the gap.
 
@@ -33,7 +33,7 @@ The test asserts `seen.some(r => r === "anthropic/claude-opus-4-8")` (the model 
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/model-tiers.ts:43`
-- **Status:** open
+- **Status:** resolved
 
 `stripThinkingSuffix` ends and `export type TierName = …` immediately follows with no blank line, visually running the two declarations together. Every other top-level declaration in the file is separated. No functional impact.
 
@@ -42,7 +42,7 @@ The test asserts `seen.some(r => r === "anthropic/claude-opus-4-8")` (the model 
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/subagents/model-tiers.ts:36`
-- **Status:** open
+- **Status:** dismissed
 
 A real model id whose last colon-segment happens to be one of the six valid levels (e.g. a hypothetical OpenRouter id `acme/model:high`) would be misparsed — its last segment stripped as a thinking suffix rather than treated as part of the id. The plan documents this as an accepted tradeoff (non-level suffixes like `:exacto` are left intact; only the exact six-level vocabulary triggers the split), and no known model id collides. Noting for completeness.
 
