@@ -91,7 +91,7 @@ For each phase, spawn a single subagent using the `subagent` tool. The task stri
 3. **Working directory** — the repo root.
 4. **Clarification invariant** — the following exact text:
 
-Additionally, set the subagent's `model` field to the phase's tier from the mapping table below. Tiers (`cheap`, `medium`, `smart`, `frontier`) resolve to concrete models via the machine's tier config.
+Additionally, set the subagent's `model` field to the phase's tier from the mapping table below. Tiers (`cheap`, `medium`, `smart`, `frontier`) resolve to concrete models via the machine's tier config. You may append a thinking-effort suffix to any model with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`), but tier names don't take suffixes — use a concrete model id if you need to specify thinking effort.
 
 > If you need clarification or encounter ambiguity, use `send(to='parent', expectResponse=true)` to ask. Do not stop or complete without finishing the phase.
 
