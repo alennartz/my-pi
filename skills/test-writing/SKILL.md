@@ -7,6 +7,14 @@ description: "Write component-level behavioral tests against architecture interf
 
 > **This skill does not pause at the Explore→Act boundary.** The work here is plan execution — proceed through the full process without stopping for confirmation.
 
+> **⛔ DO NOT IMPLEMENT. This phase writes interfaces and failing tests — nothing else.**
+> You are forbidden from writing any working logic: no function bodies that compute a
+> result, no parsing, splitting, branching business rules, or algorithms — even if the
+> logic is "obvious" or "one line." Interface bodies are stubs that `throw new Error("not
+> implemented")` (or return a trivially-typed nullish value only where a throw won't
+> compile). **If, at the end of this phase, any new test passes, you have failed the
+> phase** — you wrote implementation that must not exist yet. See the Red Gate (step 2.5).
+
 ## Overview
 
 Turn architecture interfaces into real code and write behavioral tests against them — before any implementation exists. Read the architecture's Interfaces subsection, materialize the type definitions and contracts as committed code, then write component-level tests that exercise those interfaces.
@@ -32,9 +40,11 @@ Record the current HEAD hash before making any changes. This becomes the `pre-te
 Turn the architecture's interface descriptions into real code — types, contracts, data shapes, API boundaries. These are the public surfaces that tests will exercise and the implementation will later satisfy.
 
 - **Place files according to the codemap and architecture.** If the architecture specifies where interfaces live, follow it. Otherwise, use the codemap's module structure and existing conventions.
-- **Only define interfaces, not implementations.** Types, abstract contracts, data shapes, error types, enums — the structural skeleton. No function bodies, no business logic, no algorithms.
+- **Only define interfaces, not implementations.** Types, abstract contracts, data shapes, error types, enums — the structural skeleton. No function bodies that compute a result, no business logic, no algorithms.
+  - **A stub is a body that does nothing real.** For any function the plan asks you to create, the body is `throw new Error("not implemented")` — or, only where a throw won't type-check (e.g. a value the compiler requires), the cheapest trivially-typed nullish value. A stub NEVER parses, splits, branches on inputs, loops, or derives an output from an argument.
+  - **DO NOT write, even when it's tempting:** the "obvious" one-liner, the "trivial" string split, the "simple" validation check, the "just a map lookup." If it turns an input into a meaningful output, it is implementation and it belongs to a later phase. Writing it here is the exact failure this phase guards against.
 - **Match the codebase's style.** Follow existing naming conventions, export patterns, and file organization.
-- **Alter existing code when necessary.** Introducing new interfaces into a live codebase often requires touching existing files — changing imports, adjusting type signatures, updating call sites, adding stub exports. Do whatever minimal work is needed so the project compiles with the new interfaces in place. This isn't implementation — it's integration scaffolding.
+- **Alter existing code when necessary — structurally, not behaviorally.** Introducing new interfaces into a live codebase often requires touching existing files — changing imports, adjusting type signatures, updating call sites to reference new stubs, adding stub exports. Do the minimal *structural* work needed so the project compiles. "Make it compile" is NOT license to make it *work*: never satisfy a compile error by writing real logic. If a call site now needs a value the stub can't yet produce, wire it to the stub and let the test fail — that failure is the point.
 - **Existing tests may need updating too.** If your interface changes break existing tests at the type or import level, fix them enough to compile. Don't rewrite their logic — just keep them structurally valid against the new interfaces.
 
 ### 2. Write Tests
@@ -57,6 +67,18 @@ These are hard rules, not guidelines:
 - **No non-deterministic tests.** No timers, no random values, no network calls, no filesystem races. If a behavior involves non-determinism, test the deterministic contract around it (e.g., "accepts a random seed and produces consistent output" rather than "produces random output").
 - **No implementation detail testing.** The implementation doesn't exist yet. Tests exercise interfaces — defined inputs, expected outputs, documented contracts. If a test would need to know *how* something is implemented to pass, it's wrong.
 - **Reasonable expectations.** Test expectations should be satisfiable by any correct implementation of the interface. Don't over-specify return value shapes beyond what the interface defines. Don't assert on internal state.
+
+### 2.5. Red Gate — Verify the Tests Fail
+
+**Mandatory. Do not skip. Do not commit before this passes.**
+
+Run the test suite and inspect the result for the tests you just wrote:
+
+- **Every new test MUST fail** (assertion failure or `"not implemented"` throw). A new test that fails to *compile* or crashes the runner is not acceptable either — the suite must launch and execute; the new tests must run and go red.
+- **If any new test PASSES, the phase has failed.** A green new test means a stub already returns the value the test expects — i.e. you wrote implementation. Find the logic that made it pass, replace it with a `throw new Error("not implemented")` stub, and re-run until the test is red. Repeat until zero new tests pass.
+- Pre-existing tests unrelated to this topic should stay green; only tests you added/altered for this topic are expected to be red.
+
+The Red Gate is the objective check that this phase stayed inside its boundary. Passing it (all new tests red) is a precondition for committing.
 
 ### 3. Document and Commit
 

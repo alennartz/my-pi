@@ -118,7 +118,11 @@ The skill-to-phase mapping:
 | manual-test | `skills/manual-testing/SKILL.md` | `medium` |
 | cleanup | `skills/cleanup/SKILL.md` | `medium` |
 
-Tier rationale: impl-plan gets `frontier` because plan quality multiplies through every downstream phase. Review runs on `medium` because it only orchestrates — its correctness pass spawns on `smart` (see the code-review skill). Phases executing against explicit specs run on `medium`.
+Tier rationale: impl-plan gets `frontier` because plan quality multiplies through every downstream phase. Review runs on `medium` because it only orchestrates — its correctness pass spawns on `frontier` (see the code-review skill). Phases executing against explicit specs run on `medium`.
+
+**Phase-specific task-string addenda.** Weaker tiers need the phase boundary spelled out, not inferred. For the **test-write** phase, append this to the task string:
+
+> Do NOT write any implementation in this phase — no function bodies that compute a result, no parsing/splitting/branching logic, even "obvious" one-liners. Interface bodies are stubs that throw "not implemented." Before committing, run the Red Gate (skill step 2.5): every new test MUST fail. If any new test passes, you wrote implementation — remove it until the test is red. A green new test in this phase is a failed phase.
 
 ### Waiting and Handling Interrupts
 
