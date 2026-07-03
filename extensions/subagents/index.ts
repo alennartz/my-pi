@@ -14,7 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
-import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
 	type AgentConfig,
@@ -416,6 +416,13 @@ export default function (pi: ExtensionAPI) {
 		queue.setParentBusy(false);
 	});
 
+	// Keep the dashboard title in sync when the session is renamed.
+	pi.on("session_info_changed", async (event) => {
+		if (!dashboard || !tuiRef) return;
+		dashboard.setSessionName(event.name);
+		tuiRef.requestRender();
+	});
+
 	if (USE_STEER_DELIVERY) {
 		pi.on("tool_execution_start", async (event) => {
 			queue.trackToolStart(event.toolCallId);
@@ -557,9 +564,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ─── Lazy manager + widget initialization ───────────────────────────
 
-	type ToolCtx = Parameters<Parameters<typeof pi.registerTool>[0]["execute"]>[4];
-
-	function ensureManager(ctx: ToolCtx): SubagentManager {
+	function ensureManager(ctx: ExtensionContext): SubagentManager {
 		if (manager) return manager;
 
 		manager = new SubagentManager({
@@ -608,13 +613,15 @@ export default function (pi: ExtensionAPI) {
 		return manager;
 	}
 
-	async function ensureWidget(ctx: ToolCtx): Promise<void> {
+	async function ensureWidget(ctx: ExtensionContext): Promise<void> {
 		if (dashboard || panelHandle || parentLink) return;
 
 		if (ctx.mode === "tui") {
+			const initialName = ctx.sessionManager?.getSessionName?.();
 			ctx.ui.setWidget("subagents", (tui, theme) => {
 				tuiRef = tui;
 				dashboard = new SubagentDashboard(theme);
+				dashboard.setSessionName(initialName);
 				return dashboard;
 			});
 		} else {

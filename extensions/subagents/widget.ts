@@ -34,6 +34,7 @@ function fmtPct(input: number, window: number): string {
 export class SubagentDashboard implements Component {
 	private theme: Theme;
 	private statuses: AgentStatus[] = [];
+	private sessionName?: string;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
@@ -44,6 +45,13 @@ export class SubagentDashboard implements Component {
 	/** Push new status data from onUpdate callback. */
 	update(statuses: AgentStatus[]): void {
 		this.statuses = statuses;
+		this.invalidate();
+	}
+
+	/** Update the parent session name shown as the dashboard title. */
+	setSessionName(name: string | undefined): void {
+		if (this.sessionName === name) return;
+		this.sessionName = name;
 		this.invalidate();
 	}
 
@@ -72,6 +80,11 @@ export class SubagentDashboard implements Component {
 		const boxWidth = Math.floor((width - (itemsPerRow - 1) * GAP) / itemsPerRow);
 
 		const lines: string[] = [];
+
+		// Title (parent session name)
+		if (this.sessionName) {
+			lines.push(this.renderTitle(this.sessionName, width));
+		}
 
 		// Render rows of boxes
 		for (let i = 0; i < this.statuses.length; i += itemsPerRow) {
@@ -223,6 +236,12 @@ export class SubagentDashboard implements Component {
 			lines.push(row);
 		}
 		return lines;
+	}
+
+	/** Dashboard title line — the parent session name. */
+	private renderTitle(name: string, width: number): string {
+		const t = this.theme;
+		return truncateToWidth(t.fg("accent", `⌂ ${name}`), width);
 	}
 
 	/** Aggregate footer bar. */

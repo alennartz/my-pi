@@ -23,7 +23,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getModel } from "@earendil-works/pi-ai";
+import { getModel } from "@earendil-works/pi-ai/compat";
+import type { Api, Model } from "@earendil-works/pi-ai";
 
 // =============================================================================
 // Configuration (from env vars)
@@ -159,13 +160,8 @@ const BACKENDS: Record<Backend, BackendConfig> = {
 // Model Metadata (delegated to pi-ai's bundled catalog)
 // =============================================================================
 
-/** Per-million-token cost rates (matches pi-ai's Model.cost format). */
-interface ModelCost {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-}
+/** Per-million-token cost rates. Sourced directly from pi-ai's `Model.cost`. */
+type ModelCost = Model<Api>["cost"];
 
 interface ModelMeta {
 	reasoning: boolean;
