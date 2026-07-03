@@ -9,6 +9,8 @@ import {
 	loadTierConfig,
 	renderTierTable,
 	resolveModelRef,
+	stripThinkingSuffix,
+	isThinkingLevel,
 	type TierConfig,
 } from "./model-tiers.js";
 
@@ -226,5 +228,174 @@ describe("renderTierTable", () => {
 		expect(cheapLine!).toContain("gpt-5.4-mini");
 		expect(cheapLine!).not.toContain("(default)");
 		expect(frontierLine!).toContain("(default)");
+	});
+});
+
+// ─── isThinkingLevel ─────────────────────────────────────────────────────────
+
+describe("isThinkingLevel", () => {
+	it("recognizes all six valid thinking levels", () => {
+		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
+			expect(isThinkingLevel(level)).toBe(true);
+		}
+	});
+
+	it("rejects arbitrary strings that are not thinking levels", () => {
+		expect(isThinkingLevel("exacto")).toBe(false);
+		expect(isThinkingLevel("turbo")).toBe(false);
+		expect(isThinkingLevel("fast")).toBe(false);
+	});
+
+	it("rejects the empty string", () => {
+		expect(isThinkingLevel("")).toBe(false);
+	});
+
+	it("is case-sensitive — capitalized levels are not valid", () => {
+		expect(isThinkingLevel("High")).toBe(false);
+		expect(isThinkingLevel("XHIGH")).toBe(false);
+		expect(isThinkingLevel("Off")).toBe(false);
+	});
+});
+
+// ─── stripThinkingSuffix ─────────────────────────────────────────────────────
+
+describe("stripThinkingSuffix", () => {
+	it("strips a valid thinking level suffix from a provider/id pattern", () => {
+		const result = stripThinkingSuffix("anthropic/claude-opus-4-8:xhigh");
+		expect(result.model).toBe("anthropic/claude-opus-4-8");
+		expect(result.thinking).toBe("xhigh");
+	});
+
+	it("returns the full string as model when the suffix is not a valid level", () => {
+		const result = stripThinkingSuffix("openai/gpt-5.4:exacto");
+		expect(result.model).toBe("openai/gpt-5.4:exacto");
+		expect(result.thinking).toBeUndefined();
+	});
+
+	it("returns the full string as model when there is no colon", () => {
+		const result = stripThinkingSuffix("anthropic/claude-opus-4-8");
+		expect(result.model).toBe("anthropic/claude-opus-4-8");
+		expect(result.thinking).toBeUndefined();
+	});
+
+	it("handles each of the six levels correctly", () => {
+		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
+			const result = stripThinkingSuffix(`provider/model-id:${level}`);
+			expect(result.model).toBe("provider/model-id");
+			expect(result.thinking).toBe(level);
+		}
+	});
+
+	it("splits on the last colon — model id with multiple colons splits at the last one when suffix is valid", () => {
+		const result = stripThinkingSuffix("registry.io/namespace/model:high");
+		expect(result.model).toBe("registry.io/namespace/model");
+		expect(result.thinking).toBe("high");
+	});
+
+	it("leaves a model id with multiple colons intact when the last segment is not a valid level", () => {
+		const result = stripThinkingSuffix("registry.io/namespace/model:v2");
+		expect(result.model).toBe("registry.io/namespace/model:v2");
+		expect(result.thinking).toBeUndefined();
+	});
+
+	it("handles a bare id with a valid level suffix", () => {
+		const result = stripThinkingSuffix("claude-opus-4-8:medium");
+		expect(result.model).toBe("claude-opus-4-8");
+		expect(result.thinking).toBe("medium");
+	});
+});
+
+// ─── resolveModelRef — suffix-aware behavior ─────────────────────────────────
+
+describe("resolveModelRef — suffix-aware", () => {
+	const alwaysAvailable = () => true;
+	const neverAvailable = () => false;
+
+	it("resolves a tier configured with a suffixed value to the full suffixed string when the model part is available", () => {
+		const result = resolveModelRef("smart", { smart: "anthropic/claude-opus-4-8:xhigh" }, (ref) => ref === "anthropic/claude-opus-4-8");
+		expect(result.model).toBe("anthropic/claude-opus-4-8:xhigh");
+		expect(result.warning).toBeUndefined();
+	});
+
+	it("falls back to undefined when the model part of a suffixed tier value is unavailable", () => {
+		const result = resolveModelRef("smart", { smart: "anthropic/gone-model:high" }, neverAvailable);
+		expect(result.model).toBeUndefined();
+		expect(result.warning).toBeTruthy();
+	});
+
+	it("warning for an unavailable suffixed tier names the model part only, not the full suffixed string", () => {
+		const result = resolveModelRef("frontier", { frontier: "anthropic/gone-model:xhigh" }, neverAvailable);
+		expect(result.warning).toContain("gone-model");
+		expect(result.warning).not.toContain(":xhigh");
+	});
+
+	it("passes a non-tier suffixed ref through unchanged", () => {
+		const result = resolveModelRef("anthropic/claude-opus-4-8:medium", {}, alwaysAvailable);
+		expect(result.model).toBe("anthropic/claude-opus-4-8:medium");
+		expect(result.warning).toBeUndefined();
+	});
+
+	it("checks availability against the model part, not the full suffixed string", () => {
+		const seen: string[] = [];
+		resolveModelRef("cheap", { cheap: "anthropic/claude-opus-4-8:low" }, (ref) => {
+			seen.push(ref);
+			return true;
+		});
+		expect(seen).toContain("anthropic/claude-opus-4-8");
+		expect(seen).not.toContain("anthropic/claude-opus-4-8:low");
+	});
+
+	it("a tier configured without a suffix still resolves as before", () => {
+		const result = resolveModelRef("medium", { medium: "anthropic/claude-sonnet-4-6" }, (ref) => ref === "anthropic/claude-sonnet-4-6");
+		expect(result.model).toBe("anthropic/claude-sonnet-4-6");
+		expect(result.warning).toBeUndefined();
+	});
+});
+
+// ─── renderTierTable — suffix-aware behavior ──────────────────────────────────
+
+describe("renderTierTable — suffix-aware", () => {
+	it("renders the full suffixed string in the model column for a configured available tier", () => {
+		const lines = renderTierTable(
+			{ smart: "anthropic/claude-opus-4-8:xhigh" },
+			(ref) => ref === "anthropic/claude-opus-4-8",
+			"session-default",
+		);
+		const text = lines.join("\n");
+		expect(text).toContain("anthropic/claude-opus-4-8:xhigh");
+	});
+
+	it("judges availability on the model part of a suffixed configured value", () => {
+		// Model part 'anthropic/claude-opus-4-8' is available; suffixed form should appear
+		const seen: string[] = [];
+		renderTierTable(
+			{ smart: "anthropic/claude-opus-4-8:high" },
+			(ref) => {
+				seen.push(ref);
+				return true;
+			},
+			"session-default",
+		);
+		// Should have been checked with the model part, not the full suffixed string
+		expect(seen.some(r => r === "anthropic/claude-opus-4-8")).toBe(true);
+	});
+
+	it("falls back to session default when the model part of a suffixed tier is unavailable", () => {
+		const lines = renderTierTable(
+			{ frontier: "anthropic/gone-model:xhigh" },
+			() => false,
+			"gpt-5.4",
+		);
+		const frontierLine = lines.find(l => l.includes("frontier"));
+		expect(frontierLine).toBeDefined();
+		expect(frontierLine!).toContain("(default)");
+		expect(frontierLine!).not.toContain("gone-model");
+	});
+
+	it("does not render the thinking suffix in the model column for unavailable/unconfigured tiers", () => {
+		const lines = renderTierTable({}, () => false, "session-default");
+		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
+			expect(lines.join("\n")).not.toContain(`:${level}`);
+		}
 	});
 });

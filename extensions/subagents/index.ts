@@ -53,6 +53,7 @@ import {
 	loadTierConfig,
 	resolveModelRef,
 	renderTierTable,
+	stripThinkingSuffix,
 } from "./model-tiers.js";
 
 // ─── Delivery mode flag ──────────────────────────────────────────────────────
@@ -746,7 +747,9 @@ export default function (pi: ExtensionAPI) {
 				if (a.model) {
 					// Specialist-pinned model always wins; only validate override when it can actually apply.
 					// Tier names are always valid — they resolve (or fall back) at spawn time.
-					if (!foundConfig?.model && !isTierName(a.model) && !isValidModelRef(a.model)) {
+					// A suffixed model ref (e.g. "provider/id:xhigh") validates against its model part.
+					const modelPartForValidation = stripThinkingSuffix(a.model).model;
+					if (!foundConfig?.model && !isTierName(a.model) && !isValidModelRef(modelPartForValidation)) {
 						const available = availableModels
 							.map((m: any) => `${m?.provider}/${m?.id}`)
 							.filter(Boolean)
@@ -754,7 +757,7 @@ export default function (pi: ExtensionAPI) {
 						const preview = available.length > 0 ? available.slice(0, 20).join(", ") : "none";
 						const more = available.length > 20 ? `, ... (+${available.length - 20} more)` : "";
 						throw new Error(
-							`Unknown model "${a.model}" for agent "${a.id}". Tiers: ${TIER_NAMES.join(", ")}. Available models: ${preview}${more}`,
+							`Unknown model "${modelPartForValidation}" for agent "${a.id}". Tiers: ${TIER_NAMES.join(", ")}. Available models: ${preview}${more}`,
 						);
 					}
 				}
@@ -808,11 +811,17 @@ export default function (pi: ExtensionAPI) {
 					model = resolution.model;
 				}
 				if (model) {
+					// Strip any thinking suffix before provider-disambiguation, then
+					// re-append it so a bare "id:level" still gets provider-resolved
+					// (DR-036) while the level is preserved.
+					const { model: modelPart, thinking } = stripThinkingSuffix(model);
 					const resolved = availableModels.find(
-						(m: any) => m?.id === model || `${m?.provider}/${m?.id}` === model,
+						(m: any) => m?.id === modelPart || `${m?.provider}/${m?.id}` === modelPart,
 					);
 					if (resolved?.provider && resolved?.id) {
-						model = `${resolved.provider}/${resolved.id}`;
+						model = thinking
+							? `${resolved.provider}/${resolved.id}:${thinking}`
+							: `${resolved.provider}/${resolved.id}`;
 					}
 				}
 				return { kind: "agent" as const, ...a, model, cwd: resolvedCwds.get(a.id) };
