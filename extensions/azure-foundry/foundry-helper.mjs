@@ -26,7 +26,8 @@ import { dirname } from "node:path";
 
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000; // refresh 5 min before expiry
 const TOKEN_HARD_MARGIN_MS = 30 * 1000; // never use a token within 30s of expiry
-const AZ_RESOURCE = "https://cognitiveservices.azure.com";
+const AZ_RESOURCE =
+	process.env.AZURE_FOUNDRY_TOKEN_RESOURCE || "https://cognitiveservices.azure.com";
 
 function fail(msg) {
 	process.stderr.write(`azure-foundry-helper: ${msg}\n`);

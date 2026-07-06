@@ -15,6 +15,8 @@
  *
  * Optional env vars:
  *   AZURE_FOUNDRY_SUBSCRIPTION   - Subscription name or ID (if not the default)
+ *   AZURE_FOUNDRY_TOKEN_RESOURCE - AAD audience for the access token
+ *                                  (default: https://cognitiveservices.azure.com)
  */
 
 import { execFileSync, spawn } from "node:child_process";
