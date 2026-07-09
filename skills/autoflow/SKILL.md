@@ -41,7 +41,7 @@ Invoke with `/autoflow <description of what you want to build or change>`.
 After architect completes, evaluate the scope of the change to decide which phases to run:
 
 - **Full pipeline** — for large or high-stakes changes: broad module impact, tricky behavioral contracts, security-sensitive surfaces. Proceed to test-write, then test-review.
-- **Skip test-review** — default for everything else. Run test-write, then proceed directly to impl-plan. Test-review pays a full context rebuild to re-check work just done; reserve it for topics where a missed behavioral gap is expensive.
+- **Skip test-review** — Run test-write, then proceed directly to impl-plan. Test Review is mostly valuable for topics where a missed behavioral gap is expensive or where the intended behavior might be misunderstood by smaller models.
 - **Skip to impl-plan** — for small, straightforward changes where upfront tests add little value. Bypasses test-write and test-review.
 - **Skip to implement** — for very small changes (a few lines, a single file, a config tweak). Bypasses test-write, test-review, and impl-plan.
 
