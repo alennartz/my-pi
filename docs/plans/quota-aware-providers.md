@@ -169,3 +169,9 @@ evaluateQuota(snapshot, ledger, policy, now): QuotaVerdict
 - jiti is the same mechanism pi itself uses to load extensions, is already present transitively, and makes TS impls work at arbitrary paths regardless of pi's loader internals.
 
 Rejected earlier in brainstorm (recorded there): config-only/`models.json` generation (loses catalog metadata lookup, cold-start hook, single-writer ownership) and declarative provider descriptors (transport differences make config grow into code).
+
+## Tests
+
+> **Skipped.** No tests were written upfront. Follow red-green TDD as you implement —
+> write a focused failing test, make it pass, move on. Aim for component-boundary
+> behavioral tests (inputs, outputs, observable effects), not exhaustive coverage.
