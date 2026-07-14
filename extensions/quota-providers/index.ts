@@ -23,9 +23,10 @@ import {
 import type { ProviderImplementation, QuotaPolicy } from "./lib/types.js";
 import { appendLedgerEntry, readLedger } from "./lib/ledger.js";
 import { readUsageSnapshot } from "./lib/snapshot.js";
-import { readBypass, isBypassActive } from "./lib/bypass.js";
-import { evaluateQuota } from "./lib/quota.js";
+import { readBypass, writeBypass, isBypassActive, pruneBypass } from "./lib/bypass.js";
+import { evaluateQuota, effectiveSpend } from "./lib/quota.js";
 import { decideBlock } from "./lib/enforce.js";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 // =============================================================================
 // Module-level state — init-then-freeze; consumed by Steps 10–13.
@@ -42,6 +43,80 @@ export interface ProviderRecord {
 }
 
 export let providerRecords: readonly ProviderRecord[] = [];
+
+// =============================================================================
+// Pure helpers
+// =============================================================================
+
+function formatDollars(amount: number): string {
+	return `$${amount.toFixed(2)}`;
+}
+
+function formatDaysAhead(days: number): string {
+	if (days < 0) {
+		return `under budget by ${Math.abs(days).toFixed(1)} days`;
+	}
+	const date = new Date(Date.now() + days * 86_400_000).toLocaleDateString("en-US", {
+		month: "short",
+		day: "numeric",
+	});
+	return `spending at ${date}'s budget`;
+}
+
+/**
+ * Recompute and push the footer statusline for the worst-offending provider.
+ * Worst offending = highest daysAhead across providers with a usage snapshot.
+ * Pass providerRecords explicitly (pure function — no global capture of mutable state).
+ */
+function refreshStatusline(records: readonly ProviderRecord[], ctx: ExtensionContext): void {
+	if (!ctx.hasUI) return;
+
+	let worstRecord: ProviderRecord | null = null;
+	let worstDaysAhead = -Infinity;
+
+	for (const record of records) {
+		if (!record.hasUsageSeam) continue;
+		const cached = readUsageSnapshot(record.paths.usage);
+		if (!cached) continue;
+		const ledger = readLedger(record.paths.ledger);
+		const verdict = evaluateQuota(cached.snapshot, ledger, record.policy, Date.now());
+		if (verdict.daysAhead > worstDaysAhead) {
+			worstDaysAhead = verdict.daysAhead;
+			worstRecord = record;
+		}
+	}
+
+	if (!worstRecord) {
+		ctx.ui.setStatus("quota-providers", undefined);
+		return;
+	}
+
+	const cached = readUsageSnapshot(worstRecord.paths.usage);
+	if (!cached) {
+		ctx.ui.setStatus("quota-providers", undefined);
+		return;
+	}
+
+	const ledger = readLedger(worstRecord.paths.ledger);
+	const verdict = evaluateQuota(cached.snapshot, ledger, worstRecord.policy, Date.now());
+	const bypassEntries = readBypass(worstRecord.paths.bypass);
+	const bypassActive = isBypassActive(bypassEntries, process.env.PI_QUOTA_SCOPE ?? "");
+
+	let suffix = "";
+	if (bypassActive) {
+		suffix = " (bypassed)";
+	} else if (verdict.state === "hard-exceeded") {
+		suffix = " (HARD CAP)";
+	} else if (verdict.state === "soft-exceeded") {
+		suffix = " (soft cap)";
+	}
+
+	const date = new Date(Date.now() + verdict.daysAhead * 86_400_000).toLocaleDateString("en-US", {
+		month: "short",
+		day: "numeric",
+	});
+	ctx.ui.setStatus("quota-providers", `quota: spending at ${date}'s budget${suffix}`);
+}
 
 // =============================================================================
 // Helpers
@@ -228,10 +303,11 @@ export default async function (pi: ExtensionAPI) {
 		if (!process.env.PI_QUOTA_SCOPE) {
 			process.env.PI_QUOTA_SCOPE = ctx.sessionManager.getSessionId();
 		}
+		refreshStatusline(providerRecords, ctx);
 	});
 
 	// Append ledger entries after each assistant message and maybe refresh usage.
-	pi.on("message_end", (event) => {
+	pi.on("message_end", (event, ctx) => {
 		if (event.message.role !== "assistant") return;
 		const record = providerIdToRecord.get(event.message.provider ?? "");
 		if (!record) return;
@@ -240,6 +316,7 @@ export default async function (pi: ExtensionAPI) {
 			cost: event.message.usage?.cost?.total ?? 0,
 		});
 		maybeRefreshUsage(record);
+		refreshStatusline(providerRecords, ctx);
 	});
 
 	// Block new prompts when quota is exceeded.
@@ -262,6 +339,9 @@ export default async function (pi: ExtensionAPI) {
 		const bypassActive = isBypassActive(bypassEntries, process.env.PI_QUOTA_SCOPE ?? "");
 
 		const decision = decideBlock({ verdict, policy: record.policy, bypassActive });
+
+		refreshStatusline(providerRecords, ctx);
+
 		if (!decision.blocked) return;
 
 		if (ctx.hasUI) {
@@ -270,5 +350,119 @@ export default async function (pi: ExtensionAPI) {
 			console.error(decision.message);
 		}
 		return { action: "handled" };
+	});
+
+	// =========================================================================
+	// /quota command
+	// =========================================================================
+
+	pi.registerCommand("quota", {
+		description: "Show quota status or toggle bypass (/quota bypass [on|off])",
+		handler: async (args, ctx) => {
+			const parts = args.trim().split(/\s+/).filter(Boolean);
+
+			if (parts[0] === "bypass") {
+				// bypass on / bypass off / bypass (toggle)
+				const seamed = providerRecords.filter((r) => r.hasUsageSeam);
+				if (seamed.length === 0) {
+					ctx.ui.notify(
+						"No providers with a usage seam configured — quota bypass is unavailable.",
+						"warning",
+					);
+					return;
+				}
+				const allowed = seamed.filter((r) => r.policy.bypassAllowed);
+				if (allowed.length === 0) {
+					ctx.ui.notify(
+						"Bypass is disabled for all managed providers (bypassAllowed: false in config).",
+						"warning",
+					);
+					return;
+				}
+
+				const scopeId = process.env.PI_QUOTA_SCOPE ?? "";
+				const subcommand = parts[1]; // "on", "off", or undefined (toggle)
+				const now = Date.now();
+				let newState: boolean | undefined;
+
+				for (const record of allowed) {
+					const entries = readBypass(record.paths.bypass);
+					const cached = readUsageSnapshot(record.paths.usage);
+					const windowLengthMs =
+						cached
+							? cached.snapshot.windowEnd - cached.snapshot.windowStart
+							: 30 * 24 * 3_600_000;
+
+					const pruned = pruneBypass(entries, now, windowLengthMs);
+					const currentlyActive = isBypassActive(pruned, scopeId);
+					const shouldEnable =
+						subcommand === "on" ? true : subcommand === "off" ? false : !currentlyActive;
+
+					if (shouldEnable) {
+						pruned[scopeId] = { enabledAt: now };
+					} else {
+						delete pruned[scopeId];
+					}
+					writeBypass(record.paths.bypass, pruned);
+					newState = shouldEnable;
+				}
+
+				ctx.ui.notify(`Quota bypass turned ${newState ? "on" : "off"}.`);
+				return;
+			}
+
+			// Status display (no args)
+			const seamed = providerRecords.filter((r) => r.hasUsageSeam);
+			if (seamed.length === 0) {
+				ctx.ui.notify("No providers with a usage seam configured.");
+				return;
+			}
+
+			const scopeId = process.env.PI_QUOTA_SCOPE ?? "";
+			const now = Date.now();
+			const sections: string[] = [];
+
+			for (const record of seamed) {
+				const cached = readUsageSnapshot(record.paths.usage);
+				const ledger = readLedger(record.paths.ledger);
+				const bypassEntries = readBypass(record.paths.bypass);
+				const bypassActive = isBypassActive(bypassEntries, scopeId);
+
+				const lines: string[] = [`Provider: ${record.id}`];
+
+				if (!cached) {
+					lines.push("  Spend / Quota: no data yet");
+				} else {
+					const verdict = evaluateQuota(cached.snapshot, ledger, record.policy, now);
+					const spend = effectiveSpend(cached.snapshot, ledger);
+
+					lines.push(
+						`  Spend / Quota: ${formatDollars(spend)} / ${formatDollars(cached.snapshot.quota)}`,
+					);
+					lines.push(`  Pace: ${formatDaysAhead(verdict.daysAhead)}`);
+
+					const resetDate = new Date(verdict.resetAt).toLocaleDateString("en-US", {
+						month: "short",
+						day: "numeric",
+						year: "numeric",
+					});
+					lines.push(`  Window resets: ${resetDate}`);
+
+					const ageMs = now - cached.writtenAt;
+					const ageStr =
+						ageMs < 60_000
+							? `${Math.round(ageMs / 1000)}s ago`
+							: ageMs < 3_600_000
+								? `${Math.round(ageMs / 60_000)}m ago`
+								: `${Math.round(ageMs / 3_600_000)}h ago`;
+					lines.push(`  Snapshot age: ${ageStr}`);
+				}
+
+				lines.push(`  Bypass: ${bypassActive ? "active" : "inactive"}`);
+				sections.push(lines.join("\n"));
+			}
+
+			ctx.ui.notify(sections.join("\n\n"));
+		},
 	});
 }

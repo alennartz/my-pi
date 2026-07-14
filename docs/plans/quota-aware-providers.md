@@ -361,7 +361,7 @@ Write `lib/enforce.test.ts`: the decideBlock matrix (soft/hard × bypass × enfo
 - `bypass on` / `bypass off` (also bare `bypass` = toggle): rejected with an explanatory notify when `bypassAllowed` is false for every managed provider or no provider has the usage seam; otherwise read-modify-write `bypass.json` for `process.env.PI_QUOTA_SCOPE` (set `{ enabledAt: Date.now() }` / delete the key), pruning stale entries (`pruneBypass` with the current snapshot's window length; fall back to 30 days when no snapshot) in the same write.
 
 **Verify:** `/quota` shows the fake provider's numbers; `/quota bypass on` then a previously-blocked prompt goes through; `bypass off` restores blocking; a second pi process sharing the scope id observes the toggle at its next prompt.
-**Status:** not started
+**Status:** done
 
 ### Step 13: Footer indicator (`index.ts`)
 
@@ -372,7 +372,7 @@ Statusline via `ctx.ui.setStatus("quota-providers", text)` (guarded by `ctx.hasU
 - Recompute + update wherever the verdict is already computed: after the `input` handler evaluation, after each `message_end` ledger append, and on `session_start`. Extract a single `refreshStatusline(ctx)` helper so all three paths share one code path (one business operation, one function).
 
 **Verify:** running pi with the fake impl shows the footer status; pushing fake usage past the line flips it to the soft-cap variant; `/quota bypass on` flips it to bypassed.
-**Status:** not started
+**Status:** done
 
 ### Step 14: Generic subagents fix — settle children blocked before agent_start
 
