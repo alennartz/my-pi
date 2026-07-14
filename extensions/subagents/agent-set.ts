@@ -75,6 +75,15 @@ interface AgentEntry {
 	 * need their output re-emitted.
 	 */
 	completionNotified: boolean;
+	/**
+	 * True once the child has emitted agent_start since the most recent prompt
+	 * delivered to it. Reset to false on the initial Task: prompt and whenever
+	 * the child goes idle (ready for its next prompt). Set to true on
+	 * agent_start. Used to detect prompts blocked before the agent began
+	 * processing — e.g. when an extension's input handler returns early and
+	 * emits an error-level notify instead of letting the run proceed.
+	 */
+	agentStartedSinceLastPrompt: boolean;
 }
 
 export interface SubagentManagerOptions {
@@ -367,6 +376,7 @@ export class SubagentManager {
 				forkTools: agentSpec.kind === "fork" ? agentSpec.tools : undefined,
 				forkSkillPaths: agentSpec.kind === "fork" ? agentSpec.skillPaths : undefined,
 				completionNotified: false,
+				agentStartedSinceLastPrompt: false,
 			};
 
 			newEntries.push(entry);
@@ -713,9 +723,22 @@ export class SubagentManager {
 			}
 		}
 
+		if (event.type === "extension_ui_request" && event.method === "notify" && event.notifyType === "error") {
+			if (entry.status.state === "running" && !entry.agentStartedSinceLastPrompt) {
+				// Input handler blocked the prompt before the agent began processing.
+				// Settle the entry as failed so the parent doesn't wait forever.
+				this.settleFailed(entry, event.message);
+			} else if (entry.status.state !== "running") {
+				// Idle child received a blocked message — unblock any senders
+				// waiting on it so they fail fast instead of hanging.
+				this.broker?.agentIdled(entry.id);
+			}
+		}
+
 		if (event.type === "agent_start") {
 			if (entry.status.state !== "failed") {
 				entry.status.state = "running";
+				entry.agentStartedSinceLastPrompt = true;
 				this.opts.onUpdate(this);
 			}
 		}
@@ -734,21 +757,38 @@ export class SubagentManager {
 						break;
 					}
 				}
-				const failed = !!erroredMsg;
-				entry.status.state = failed ? "failed" : "idle";
-				if (failed) {
-					entry.status.lastError = erroredMsg.errorMessage || "Agent run ended with an error";
+				if (erroredMsg) {
+					this.settleFailed(entry, erroredMsg.errorMessage || "Agent run ended with an error");
+				} else {
+					entry.status.state = "idle";
+					// Reset so the next prompt to this agent starts clean.
+					entry.agentStartedSinceLastPrompt = false;
+					entry.status.lastActivity = undefined;
+					// Unblock any blocking sends targeting this agent. The process is
+					// still alive (it can be re-prompted), so treat like idle rather
+					// than a crash that removes the agent from the broker.
+					this.broker?.agentIdled(entry.id);
+					this.opts.onUpdate(this);
+					entry.completionNotified = true;
+					this.opts.onAgentComplete(this, entry.id, this.allDone());
 				}
-				entry.status.lastActivity = undefined;
-				// Unblock any blocking sends targeting this agent. The process is
-				// still alive (it can be re-prompted), so treat like idle rather
-				// than a crash that removes the agent from the broker.
-				this.broker?.agentIdled(entry.id);
-				this.opts.onUpdate(this);
-				entry.completionNotified = true;
-				this.opts.onAgentComplete(this, entry.id, this.allDone());
 			}
 		}
+	}
+
+	/**
+	 * Settle an entry as failed with the given error message. Used by both the
+	 * agent_end error path and the error-notify-before-agent_start path — one
+	 * business operation, one function.
+	 */
+	private settleFailed(entry: AgentEntry, errorMessage: string): void {
+		entry.status.state = "failed";
+		entry.status.lastError = errorMessage;
+		entry.status.lastActivity = undefined;
+		this.broker?.agentIdled(entry.id);
+		this.opts.onUpdate(this);
+		entry.completionNotified = true;
+		this.opts.onAgentComplete(this, entry.id, this.allDone());
 	}
 
 	private monitorExit(entry: AgentEntry): void {

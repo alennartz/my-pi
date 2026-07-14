@@ -508,14 +508,14 @@ export default function (pi: ExtensionAPI) {
 			"",
 			...renderTierTable(tiers, isAvailable, defaultModelRef),
 			"",
-			"Pick the tier matching the task's difficulty. Raw model IDs are also accepted in `agents[].model` when the user names a specific model; `list_models` shows the full catalog.",
+			"Raw model IDs are also accepted in `agents[].model` when the user names a specific model; `list_models` shows the full catalog.",
 			"Append a thinking-effort suffix to any model id with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`) — e.g. `anthropic/claude-opus-4-8:xhigh`. Tier names don't take a suffix; a tier carries whatever level its config encodes.",
 			"",
 		);
 
 		lines.push("Omitting the `agent` field spawns a **default general-purpose agent** — use this unless the task specifically matches a specialist's description above. You may set `model` to override model selection unless the chosen specialist definition already pins a model.");
 		lines.push("");
-		lines.push("Tiers are the preferred vocabulary for `model`. Omit `model` entirely when the session default is fine.");
+		lines.push("Omit `model` entirely by default — subagents then inherit the session's model. Specify a tier only when the user asks for one.");
 
 		return { systemPrompt: event.systemPrompt + "\n" + lines.join("\n") + "\n" };
 	});

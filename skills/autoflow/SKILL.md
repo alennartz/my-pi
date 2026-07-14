@@ -38,12 +38,14 @@ Invoke with `/autoflow <description of what you want to build or change>`.
 
 ## Skip Decisions
 
-After architect completes, evaluate the scope of the change to decide which phases to run:
+After architect completes, evaluate the scope of the change to decide which phases to run. The choice is *where to enter the pipeline* and *which optional phases to include* — the bullets below are the common cases, not the whole space of valid options.
 
 - **Full pipeline** — for large or high-stakes changes: broad module impact, tricky behavioral contracts, security-sensitive surfaces. Proceed to test-write, then test-review.
 - **Skip test-review** — Run test-write, then proceed directly to impl-plan. Test Review is mostly valuable for topics where a missed behavioral gap is expensive or where the intended behavior might be misunderstood by smaller models.
 - **Skip to impl-plan** — for small, straightforward changes where upfront tests add little value. Bypasses test-write and test-review.
 - **Skip to implement** — for very small changes (a few lines, a single file, a config tweak). Bypasses test-write, test-review, and impl-plan.
+
+These are examples, not an exhaustive menu. A valid skip decision drops a **contiguous prefix** of the pre-implementation phases (test-write → test-review → impl-plan) and enters at a coherent point — every phase downstream of the entry point still runs, and no phase runs without the artifacts its predecessors produce. So "skip test-write but run test-review" is not a valid option (test-review has nothing to review), and neither is skipping impl-plan while keeping the test phases in a way that leaves implement without a plan. Within that constraint, use judgment: the four bullets are the points that come up most often, not the only points you may choose.
 
 **If uncertain whether to skip, ask the user.**
 

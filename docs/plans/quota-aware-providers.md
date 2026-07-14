@@ -252,7 +252,7 @@ Create `extensions/quota-providers/lib/bypass.ts`:
 Tests `lib/ledger.test.ts` + `lib/bypass.test.ts`: torn-line tolerance, prune boundaries (`timestamp === asOf` pruned), round-trip through temp dirs, stale bypass pruning.
 
 **Verify:** `npx vitest run extensions/quota-providers/lib/ledger.test.ts extensions/quota-providers/lib/bypass.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 6: Generic out-of-band runner (`runner.mjs`)
 
@@ -299,7 +299,7 @@ Create `extensions/quota-providers/lib/registration.ts`:
 Write `lib/registration.test.ts`: grouping/suffixing, per-model `authHeader` override, catalog hit vs miss defaults, baseUrl assembly, refresh-due matrix.
 
 **Verify:** `npx vitest run extensions/quota-providers/lib/registration.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 9: Extension entry — config, discovery, registration wiring (`index.ts`)
 
@@ -385,7 +385,7 @@ In `extensions/subagents/agent-set.ts` (keep it quota-agnostic — the code must
 Add a test next to the existing agent-set coverage (follow the pattern of `broker.test.ts`/`messages.test.ts`; if `agent-set` has no test file yet, create `extensions/subagents/agent-set.test.ts` exercising `handleEvent` with synthetic events): error-notify before agent_start settles the entry as failed with lastError; error-notify *after* agent_start is ignored (agents may legitimately notify errors mid-run); error-notify to an idle entry unblocks pending sends.
 
 **Verify:** `npx vitest run extensions/subagents` passes including the new test; manually, a child spawned with the fake impl in a blocked state fails fast with `lastError` starting `quota soft cap exceeded` instead of hanging `await_agents`.
-**Status:** not started
+**Status:** done
 
 ### Step 15: End-to-end pass with the fake implementation
 
