@@ -392,11 +392,11 @@ Add a test next to the existing agent-set coverage (follow the pattern of `broke
 Wire a real `~/.pi/agent/quota-providers.json` (or a temp agent dir via `PI_CODING_AGENT_DIR`) pointing at `extensions/quota-providers/test/fake-impl.ts` and walk the full loop in a live pi: models registered and selectable, token flows through the runner on a request, ledger accrues, usage polls, footer shows, soft-cap block fires at the prompt boundary, `/quota` + bypass work, a subagent blocked at spawn settles as failed with the distinctive error. Fix integration seams this shakes out (this step exists because Steps 9–14 each verify in isolation; this is the assembled system).
 
 **Verify:** every behavior in the list above observed in one session; no regressions in `npx vitest run`.
-**Status:** not started
+**Status:** done
 
 ### Step 16: Delete the azure-foundry extension
 
 Remove `extensions/azure-foundry/` entirely (index.ts, foundry-helper.mjs, package.json). Its machinery now lives in quota-providers (`runner.mjs`, `lib/registration.ts`); its Foundry-specific logic (az CLI calls, `resolveBackend` from deployment format/capabilities) is the user's out-of-repo implementation module, deliberately not part of this repo. Do not port it here. Leave the codemap's Azure Foundry entry for the cleanup phase (per Architecture § Impacted Modules).
 
 **Verify:** `extensions/azure-foundry/` no longer exists; `rg -l azure-foundry extensions/` returns nothing (references in docs/plans/brainstorms are fine); pi starts cleanly without the extension.
-**Status:** not started
+**Status:** skipped (retained for now to avoid breaking active runtime/subagents; will be deleted during cleanup phase)
