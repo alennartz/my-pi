@@ -14,8 +14,8 @@ import * as fs from "node:fs";
 
 export const TIER_NAMES = ["cheap", "medium", "smart", "frontier"] as const;
 
-/** The six pi thinking levels, mirrored locally for suffix validation. */
-export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+/** The seven pi thinking levels, mirrored locally for suffix validation. */
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
 export function isThinkingLevel(s: string): s is ThinkingLevel {
@@ -24,7 +24,7 @@ export function isThinkingLevel(s: string): s is ThinkingLevel {
 
 /**
  * Split a trailing ":<valid-level>" off a model pattern, mirroring pi's
- * split-on-last-colon. Only splits when the suffix is one of the six levels,
+ * split-on-last-colon. Only splits when the suffix is one of the seven levels,
  * so colon-bearing model ids (e.g. OpenRouter "openai/gpt-x:exacto") are left
  * whole. Returns the model part and the level (if any).
  *

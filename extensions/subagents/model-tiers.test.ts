@@ -234,8 +234,8 @@ describe("renderTierTable", () => {
 // ─── isThinkingLevel ─────────────────────────────────────────────────────────
 
 describe("isThinkingLevel", () => {
-	it("recognizes all six valid thinking levels", () => {
-		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
+	it("recognizes all seven valid thinking levels", () => {
+		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
 			expect(isThinkingLevel(level)).toBe(true);
 		}
 	});
@@ -278,8 +278,8 @@ describe("stripThinkingSuffix", () => {
 		expect(result.thinking).toBeUndefined();
 	});
 
-	it("handles each of the six levels correctly", () => {
-		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
+	it("handles each of the seven levels correctly", () => {
+		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
 			const result = stripThinkingSuffix(`provider/model-id:${level}`);
 			expect(result.model).toBe("provider/model-id");
 			expect(result.thinking).toBe(level);
@@ -395,7 +395,7 @@ describe("renderTierTable — suffix-aware", () => {
 
 	it("does not render the thinking suffix in the model column for unavailable/unconfigured tiers", () => {
 		const lines = renderTierTable({}, () => false, "session-default");
-		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
+		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
 			expect(lines.join("\n")).not.toContain(`:${level}`);
 		}
 	});

@@ -414,6 +414,13 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("agent_end", async () => {
 		queue.clearPendingTools();
+	});
+
+	// Clear busy only when the run has *fully* settled — agent_end can fire
+	// mid-run before an auto-retry, auto-compaction, or queued follow-up, and
+	// flushing then would inject notifications into an still-in-flight parent
+	// turn. agent_settled fires only when Pi will not continue automatically.
+	pi.on("agent_settled", async () => {
 		queue.setParentBusy(false);
 	});
 
@@ -509,7 +516,7 @@ export default function (pi: ExtensionAPI) {
 			...renderTierTable(tiers, isAvailable, defaultModelRef),
 			"",
 			"Raw model IDs are also accepted in `agents[].model` when the user names a specific model; `list_models` shows the full catalog.",
-			"Append a thinking-effort suffix to any model id with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`) — e.g. `anthropic/claude-opus-4-8:xhigh`. Tier names don't take a suffix; a tier carries whatever level its config encodes.",
+			"Append a thinking-effort suffix to any model id with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) — e.g. `anthropic/claude-opus-4-8:xhigh`. Tier names don't take a suffix; a tier carries whatever level its config encodes.",
 			"",
 		);
 
