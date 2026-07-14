@@ -179,6 +179,8 @@ Rejected earlier in brainstorm (recorded there): config-only/`models.json` gener
 
 ## Steps
 
+**Pre-implementation commit:** `413e901d216017cb22b58c7351914cc859f16e0b`
+
 ### Step 1: Scaffold the extension and add the jiti dependency
 
 Create `extensions/quota-providers/package.json` mirroring the other extension manifests (`name: "quota-providers"`, `pi.extensions: ["./index.ts"]`). Create an empty `extensions/quota-providers/index.ts` exporting a no-op default extension factory (`export default function (pi: ExtensionAPI) {}`) so pi loads cleanly while the module is built up.
@@ -186,14 +188,14 @@ Create `extensions/quota-providers/package.json` mirroring the other extension m
 Add `jiti` as a dependency of the repo-root `package.json` via `npm install jiti` (never hand-edit the manifest). Root is the actual pi package — pi runs `npm install` there on package install, and Node resolution from both `extensions/quota-providers/index.ts` and `runner.mjs` walks up to the root `node_modules`. Note: pi itself uses a fork (`@mariozechner/jiti`, present transitively) — we depend on upstream `jiti` explicitly rather than reaching into pi's transitive deps.
 
 **Verify:** `node -e "require.resolve('jiti')"` succeeds from the repo root; `package.json` diff shows `jiti` under `dependencies`; extension dir exists with manifest + stub.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Seam types (`lib/types.ts`)
 
 Create `extensions/quota-providers/lib/types.ts` containing exactly the interfaces from the Architecture § Interfaces: `ProviderImplementation`, `ModelEntry`, `TokenResult`, `UsageSnapshot`, `ImplContext`. `Api` comes from `import type { Api } from "@earendil-works/pi-ai"`. Types only — no runtime code, so out-of-repo implementations importing it via `import type` carry no runtime path coupling. Also export the internal core types used downstream: `LedgerEntry { timestamp: number; cost: number }`, `QuotaVerdict { state: "ok" | "soft-exceeded" | "hard-exceeded"; daysAhead: number; resetAt: number }`, and `QuotaPolicy { bypassAllowed: boolean; lookaheadHours: number; maxPollSeconds: number; enforceHardCap: boolean }`.
 
 **Verify:** file exists; contains only type/interface declarations (no value exports besides types); other steps compile against it in-editor.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Config loading (`lib/config.ts` + tests)
 
