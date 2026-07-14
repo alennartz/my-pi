@@ -320,10 +320,11 @@ export default async function (pi: ExtensionAPI) {
 		if (event.message.role !== "assistant") return;
 		const record = providerIdToRecord.get(event.message.provider ?? "");
 		if (!record) return;
-		appendLedgerEntry(record.paths.ledger, {
-			timestamp: event.message.timestamp,
-			cost: event.message.usage?.cost?.total ?? 0,
-		});
+		appendLedgerEntry(
+			record.paths.ledger,
+			{ timestamp: event.message.timestamp, cost: event.message.usage?.cost?.total ?? 0 },
+			`${record.paths.usage}.lock`, // hold the usage lock so cmdUsage prune can't clobber us
+		);
 		maybeRefreshUsage(record);
 		refreshStatusline(providerRecords, ctx);
 	});
