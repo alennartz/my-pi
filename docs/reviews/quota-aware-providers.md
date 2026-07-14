@@ -15,7 +15,7 @@ This is a re-review scoped to the fix commits (`bffe3f9..4204e0a`). Thirteen of 
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/quota-providers/lib/ledger.ts:27–67` (acquireLockSync); `extensions/quota-providers/runner.mjs:258–395` (cmdUsage lock scope)
-- **Status:** open
+- **Status:** resolved
 
 The comment in `acquireLockSync` says "the prune holds it for < a few ms, so contention is brief." This was true of the original design where the lock guarded only the prune step. After the fix, `cmdUsage` holds the lock from `tryAcquireLock()` through the entire `try` block — which includes `await impl.getUsage(ctx)`, a network call that may take several seconds. `appendLedgerEntry` is called from the `message_end` event handler on the main thread, so if a usage runner happens to be mid-`getUsage` when a message completes, the main event loop will busy-spin (synchronously, no `setImmediate` or I/O yield) for however long `getUsage` takes — up to the 10-second deadline. This freezes the TUI and blocks all other event processing in that pi process.
 
@@ -28,7 +28,9 @@ Fix options: hold the lock only during the prune (drop it before `getUsage`, re-
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/agent-set.ts:726–742`
-- **Status:** open
+- **Status:** dismissed
+
+The trigger already keys on `notifyType === "error"`, so warning-level notifies from extensions (config notices, transient non-fatal events) never cause a child to be settled as failed. The residual case — a genuinely non-blocking error-level notify at startup, before `agent_start` — is rare enough that added recovery machinery is not warranted.
 
 Unchanged from the prior review. The `settleFailed` branch fires on any `notify(..., "error")` before `agent_start` — not only quota-blocked prompts. An extension in the child that emits a non-blocking error notify at startup (config warning, transient failure) while still letting the prompt proceed will cause: `settleFailed` → `state = "failed"` → the subsequent real `agent_start` is ignored (guard: `state !== "failed"`) → the child runs to completion but the parent has already reported it failed and dropped it from the broker. The child's output is lost. Every false positive is unrecoverable. Consider letting `agent_start` recover an entry settled via the notify path (as opposed to a process crash), or narrowing the trigger to notifies received with no subsequent `agent_start` within a short grace window.
 

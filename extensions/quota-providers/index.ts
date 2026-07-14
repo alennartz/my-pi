@@ -323,7 +323,7 @@ export default async function (pi: ExtensionAPI) {
 		appendLedgerEntry(
 			record.paths.ledger,
 			{ timestamp: event.message.timestamp, cost: event.message.usage?.cost?.total ?? 0 },
-			`${record.paths.usage}.lock`, // hold the usage lock so cmdUsage prune can't clobber us
+			`${record.paths.ledger}.lock`, // hold the ledger lock so cmdUsage prune can't clobber us
 		);
 		maybeRefreshUsage(record);
 		refreshStatusline(providerRecords, ctx);

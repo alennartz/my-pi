@@ -21,7 +21,7 @@
  * Ports token mechanics from extensions/azure-foundry/foundry-helper.mjs.
  */
 
-import { openSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync, statSync } from "node:fs";
+import { closeSync, openSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { spawn } from "node:child_process";
 
@@ -45,6 +45,48 @@ const POLICY_KEYS = [
 	"maxPollSeconds",
 	"enforceHardCap",
 ];
+
+// ---------------------------------------------------------------------------
+// Lock helper — O_EXCL acquire with stale-steal and spin-retry.
+// Used for both the usage stampede lock and the short-lived ledger lock.
+// Returns an object with a release() method.
+// ---------------------------------------------------------------------------
+
+function acquireLockSync(lockPath) {
+	const deadline = Date.now() + 10_000;
+	while (Date.now() < deadline) {
+		let fd;
+		try {
+			fd = openSync(lockPath, "wx");
+		} catch (err) {
+			if (err?.code !== "EEXIST") {
+				// Unexpected error — proceed without lock.
+				return { release: () => {} };
+			}
+			// Lock exists — check staleness.
+			let mtime;
+			try {
+				mtime = statSync(lockPath).mtimeMs;
+			} catch {
+				continue; // lock vanished between EEXIST and stat — retry
+			}
+			if (Date.now() - mtime >= LOCK_STALE_MS) {
+				try { unlinkSync(lockPath); } catch { /* already gone */ }
+				continue;
+			}
+			// Fresh lock — spin up to 5 ms, then retry.
+			const spinEnd = Date.now() + 5;
+			while (Date.now() < spinEnd) { /* busy spin */ }
+			continue;
+		}
+		// Acquired — write pid and close the fd.
+		try { writeFileSync(fd, String(process.pid), "utf-8"); } catch { /* non-fatal */ }
+		try { closeSync(fd); } catch { /* non-fatal */ }
+		return { release: () => { try { unlinkSync(lockPath); } catch { /* already gone */ } } };
+	}
+	// Timed out — proceed without lock (better than blocking indefinitely).
+	return { release: () => {} };
+}
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -368,10 +410,13 @@ async function cmdUsage(flags, impl, ctx) {
 		// Write usage cache atomically.
 		writeAtomic(cache, JSON.stringify({ writtenAt: Date.now(), snapshot }));
 
-		// Prune ledger: drop lines with timestamp <= snapshot.asOf.
+		// Prune ledger under a short-lived ledger lock so appendLedgerEntry
+		// (in index.ts, on pi's main thread) cannot race the read→filter→rename.
+		// The ledger lock is held only here — NOT around the getUsage call above.
 		// asOf was already destructured and validated above.
-		if (existsSync(ledger)) {
-			try {
+		const ledgerLock = acquireLockSync(`${ledger}.lock`);
+		try {
+			if (existsSync(ledger)) {
 				const raw = readFileSync(ledger, "utf-8");
 				const kept = raw
 					.split("\n")
@@ -387,9 +432,11 @@ async function cmdUsage(flags, impl, ctx) {
 					})
 					.join("\n");
 				writeAtomic(ledger, kept ? kept + "\n" : "");
-			} catch {
-				// Non-fatal: best-effort ledger prune.
 			}
+		} catch {
+			// Non-fatal: best-effort ledger prune.
+		} finally {
+			ledgerLock.release();
 		}
 	} finally {
 		releaseLock();

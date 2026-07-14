@@ -12,9 +12,11 @@ import { dirname } from "node:path";
 import type { LedgerEntry } from "./types.js";
 
 // ---------------------------------------------------------------------------
-// Lock helpers — mirrors the lock discipline in runner.mjs so appends and
-// prunes never race (prune reads ledger then renames; an interleaved append
-// would be clobbered, causing spend to undercount).
+// Ledger lock helpers — mirrors the lock discipline in runner.mjs so appends
+// and prunes never race (prune reads then renames; an interleaved append
+// between those two steps would be clobbered, causing spend to undercount).
+// This lock guards ONLY the brief prune read→filter→rename step in cmdUsage
+// and the appendFileSync here — it is never held across a network call.
 // ---------------------------------------------------------------------------
 
 const LOCK_STALE_MS = 60_000;
@@ -58,7 +60,7 @@ function acquireLockSync(lockPath: string): boolean {
         // Lock vanished between our EEXIST and statSync — retry.
         continue;
       }
-      // Fresh lock held by cmdUsage prune — busy-spin up to 5 ms per attempt.
+      // Fresh lock held by cmdUsage prune or another append — spin up to 5 ms.
       const spinEnd = Date.now() + 5;
       while (Date.now() < spinEnd) { /* spin */ }
     }
@@ -95,25 +97,27 @@ export function pruneLedger(entries: LedgerEntry[], asOf: number): LedgerEntry[]
 /**
  * Append one cost entry to the ledger file.
  *
- * When `usageLockPath` is provided the function acquires the usage lock before
- * writing so the prune in `cmdUsage` (which holds the same lock) cannot
- * clobber the append with its read→filter→rename sequence.
+ * When `ledgerLockPath` is provided (e.g. `ledger.jsonl.lock`) the function
+ * acquires the ledger lock before writing so the prune in `cmdUsage` — which
+ * holds the same lock only for its brief read→filter→rename step — cannot
+ * clobber the append. The busy-spin in `acquireLockSync` is bounded to the
+ * prune duration (< a few ms) and never blocks on a network call.
  */
 export function appendLedgerEntry(
   path: string,
   entry: LedgerEntry,
-  usageLockPath?: string,
+  ledgerLockPath?: string,
 ): void {
   mkdirSync(dirname(path), { recursive: true });
   let lockAcquired = false;
-  if (usageLockPath) {
-    lockAcquired = acquireLockSync(usageLockPath);
+  if (ledgerLockPath) {
+    lockAcquired = acquireLockSync(ledgerLockPath);
   }
   try {
     appendFileSync(path, JSON.stringify(entry) + "\n", { encoding: "utf8" });
   } finally {
-    if (lockAcquired && usageLockPath) {
-      try { unlinkSync(usageLockPath); } catch { /* already gone */ }
+    if (lockAcquired && ledgerLockPath) {
+      try { unlinkSync(ledgerLockPath); } catch { /* already gone */ }
     }
   }
 }
