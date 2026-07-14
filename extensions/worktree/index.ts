@@ -1,9 +1,15 @@
 import { execSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { SessionManager, type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+	CURRENT_SESSION_VERSION,
+	SessionManager,
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+	type SessionHeader,
+} from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { getWorktreeArgumentCompletions, isWorktreePath, parseWorktreeCommand } from "./command-surface.ts";
 import type {
@@ -211,6 +217,67 @@ function createGitClient() {
 	};
 }
 
+export function createSessionGateway(sessionDir: string | undefined): WorktreeDependencies["sessions"] {
+	return {
+		async continueRecent(cwd: string) {
+			const session = SessionManager.continueRecent(cwd, sessionDir);
+			const sessionFile = session?.getSessionFile();
+			// When no recent session exists, SessionManager.continueRecent falls
+			// back to a fresh, lazily persisted session — its file is not on disk
+			// yet, so switching into it would land in process.cwd() (see create()).
+			// Treat it as "no recent session" so the caller routes to create().
+			return sessionFile && existsSync(sessionFile) ? sessionFile : undefined;
+		},
+		async create(cwd: string) {
+			const manager = SessionManager.create(cwd, sessionDir);
+			const sessionFile = manager.getSessionFile();
+			if (!sessionFile) {
+				throw new Error(`Failed to create a persisted session for ${cwd}`);
+			}
+			// pi persists sessions lazily — nothing is written to disk until the
+			// first assistant message. But `switchSession` resolves the session's
+			// cwd from the file header, and a missing file silently falls back to
+			// process.cwd(), landing the fresh session in whatever directory the
+			// pi process was launched from. Write the header eagerly so the
+			// switch reads the worktree cwd.
+			const header: SessionHeader = {
+				type: "session",
+				version: CURRENT_SESSION_VERSION,
+				id: manager.getSessionId(),
+				timestamp: new Date().toISOString(),
+				cwd: manager.getCwd(),
+			};
+			writeFileSync(sessionFile, `${JSON.stringify(header)}\n`, { flag: "wx" });
+			return sessionFile;
+		},
+		async forkFrom(sourceSessionPath: string, targetCwd: string) {
+			const manager = SessionManager.forkFrom(sourceSessionPath, targetCwd, sessionDir);
+			// The forked history is saturated with absolute paths from the old
+			// checkout; without an explicit notice, the agent tends to keep using
+			// them and operates on the wrong worktree. Appending this message as
+			// the newest context entry counteracts that.
+			manager.appendCustomMessageEntry(
+				"worktree:moved",
+				`This session has been moved into a different git worktree. Your working directory is now ${targetCwd}. ` +
+					"The bash tool's default working directory has been switched accordingly — commands run there without any `cd`, so omit `cd` and use relative paths. " +
+					"Absolute paths mentioned earlier in this conversation refer to a different checkout — do not use them and do not `cd` to them.",
+				true,
+			);
+			const sessionFile = manager.getSessionFile();
+			if (!sessionFile) {
+				throw new Error(`Failed to fork a persisted session into ${targetCwd}`);
+			}
+			return sessionFile;
+		},
+		async discard(sessionFile: string) {
+			// Best-effort: the source session is fully duplicated by `forkFrom`,
+			// so deleting it just removes the redundant copy. Other historical
+			// session files in the same directory are intentionally left behind.
+			await rm(sessionFile, { force: true });
+		},
+	};
+}
+
 function createDependencies(
 	ctx: ExtensionCommandContext,
 	sendUserMessageAndAwaitTurn: (message: string) => Promise<void>,
@@ -228,50 +295,7 @@ function createDependencies(
 			currentSessionFile,
 		},
 		git: createGitClient(),
-		sessions: {
-			async continueRecent(cwd: string) {
-				const session = SessionManager.continueRecent(cwd, sessionDir);
-				return session?.getSessionFile();
-			},
-			async create(cwd: string) {
-				const manager = SessionManager.create(cwd, sessionDir);
-				// Force the session file to exist on disk so the persisted header (which
-				// records `cwd`) is what `SessionManager.open` will read when the runtime
-				// switches into it. Without this, the new session inherits the runtime's
-				// current cwd (the original process cwd / a now-removed worktree).
-				manager.appendCustomEntry("worktree:bootstrap", { cwd });
-				const sessionFile = manager.getSessionFile();
-				if (!sessionFile) {
-					throw new Error(`Failed to create a persisted session for ${cwd}`);
-				}
-				return sessionFile;
-			},
-			async forkFrom(sourceSessionPath: string, targetCwd: string) {
-				const manager = SessionManager.forkFrom(sourceSessionPath, targetCwd, sessionDir);
-				// The forked history is saturated with absolute paths from the old
-				// checkout; without an explicit notice, the agent tends to keep using
-				// them and operates on the wrong worktree. Appending this message as
-				// the newest context entry counteracts that.
-				manager.appendCustomMessageEntry(
-					"worktree:moved",
-					`This session has been moved into a different git worktree. Your working directory is now ${targetCwd}. ` +
-						"The bash tool's default working directory has been switched accordingly — commands run there without any `cd`, so omit `cd` and use relative paths. " +
-						"Absolute paths mentioned earlier in this conversation refer to a different checkout — do not use them and do not `cd` to them.",
-					true,
-				);
-				const sessionFile = manager.getSessionFile();
-				if (!sessionFile) {
-					throw new Error(`Failed to fork a persisted session into ${targetCwd}`);
-				}
-				return sessionFile;
-			},
-			async discard(sessionFile: string) {
-				// Best-effort: the source session is fully duplicated by `forkFrom`,
-				// so deleting it just removes the redundant copy. Other historical
-				// session files in the same directory are intentionally left behind.
-				await rm(sessionFile, { force: true });
-			},
-		},
+		sessions: createSessionGateway(sessionDir),
 		agent: {
 			sendMergeInstruction: sendUserMessageAndAwaitTurn,
 		},

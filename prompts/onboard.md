@@ -4,12 +4,12 @@ description: Introduction to this package and setup walkthrough
 
 # Package Onboarding
 
-This is **alenna-pi**, a personal [pi coding agent](https://github.com/badlogic/pi-mono) package. It extends pi with custom workflow skills, a cloud provider, and reusable components.
+This is **alenna-pi**, a personal [pi coding agent](https://github.com/badlogic/pi-mono) package. It extends pi with custom workflow skills, provider extensions, and reusable components.
 
 ## What's Included
 
 - **Workflow pipeline** — a structured development flow: brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle-review → cleanup. Each phase is a skill that produces artifacts consumed by the next. Driven by `/autoflow`: brainstorm and architect are interactive; remaining phases run autonomously via subagents, with transitions validated against bundled artifact checks.
-- **Azure AI Foundry provider** — auto-discovers model deployments from Azure AI Foundry and registers them as pi models with dynamic Azure AD token refresh.
+- **Providers and quota enforcement** — Azure AI Foundry auto-discovers model deployments and registers them as pi models with dynamic Azure AD token refresh. Quota-providers framework adds pro-rated soft-cap enforcement, session-scoped bypass, `/quota` command for usage tracking, and footer indicator. Configured at `~/.pi/agent/quota-providers.json`.
 - **Standalone skills** — `codemap` (generate/refresh a codebase map) and `debugging` (structured root-cause investigation).
 - **Subagent orchestration** — spawn specialized agents with channel-based inter-agent communication. Agents run as isolated `pi --mode rpc` processes with topology enforcement, deadlock detection, persistent per-parent child sessions, append-only lifecycle logging for restore/replay, and a live TUI widget. Tools: `subagent`, `fork`, `send`, `respond`, `check_status`, `teardown`, `resurrect`, `await_agents`.
 - **Agent definitions** — reusable specialist agents distributed with the package. Currently includes `scout` — a read-only codebase lookup agent that runs on a cheap model for lightweight, mechanical exploration (locating definitions, finding usage sites, grepping for patterns). Always returns file paths with line ranges so the parent reads only what matters.
