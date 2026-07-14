@@ -63,7 +63,7 @@ The ten workflow skills and the autoflow orchestration skill that drives them. A
 
 Standalone utility skills not tied to the workflow pipeline.
 
-**Responsibilities:** codemap generation and maintenance, structured debugging, decision record management (format, numbering, supersession)
+**Responsibilities:** codemap generation and maintenance, structured debugging, decision record management (format, numbering, supersession), skill authoring guidance (invocation axis, information hierarchy, pruning, leading words)
 
 **Dependencies:** none
 
@@ -71,6 +71,8 @@ Standalone utility skills not tied to the workflow pipeline.
 - `skills/codemap/SKILL.md`
 - `skills/debugging/SKILL.md`
 - `skills/decision-records/SKILL.md`
+- `skills/skill-writing/SKILL.md`
+- `skills/skill-writing/GLOSSARY.md`
 - `docs/decisions/**`
 
 ### Subagents

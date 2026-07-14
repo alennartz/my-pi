@@ -9,7 +9,7 @@ description: "Craft guide for creating persistent, reusable agent definitions (.
 
 Agent definitions are Markdown files that turn a generic pi agent into a focused specialist. Each definition declares a name, description, optional tool and skill filters, an optional model pin, and a system prompt. When referenced in the `subagent` tool's `agent` field, the definition shapes the spawned agent's identity — what it knows, what tools it sees, and how it behaves.
 
-This skill covers how to write good definitions. For deciding *when* to use agents and *how* to orchestrate them, see the **orchestrating-agents** skill.
+This skill covers how to write good definitions. For deciding *when* to use agents and *how* to orchestrate them, see the **orchestrating-agents** skill. For writing skills (SKILL.md files) rather than agent definitions, see the **skill-writing** skill.
 
 ## Format Reference
 
