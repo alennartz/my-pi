@@ -175,7 +175,6 @@ export interface CachePaths {
 	usage: string;
 	ledger: string;
 	bypass: string;
-	usageLock: string;
 }
 
 /**
@@ -191,6 +190,5 @@ export function cachePaths(agentDir: string, implId: string): CachePaths {
 		usage: join(dir, "usage.json"),
 		ledger: join(dir, "ledger.jsonl"),
 		bypass: join(dir, "bypass.json"),
-		usageLock: join(dir, "usage.lock"),
 	};
 }

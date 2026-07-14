@@ -785,6 +785,7 @@ export class SubagentManager {
 		entry.status.state = "failed";
 		entry.status.lastError = errorMessage;
 		entry.status.lastActivity = undefined;
+		entry.agentStartedSinceLastPrompt = false;
 		this.broker?.agentIdled(entry.id);
 		this.opts.onUpdate(this);
 		entry.completionNotified = true;

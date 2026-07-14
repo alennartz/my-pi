@@ -149,7 +149,7 @@ export function readModelsCache(path: string): { writtenAt: number; models: Mode
 	if (!existsSync(path)) return null;
 	try {
 		const parsed = JSON.parse(readFileSync(path, "utf-8")) as ModelsCache;
-		if (Array.isArray(parsed?.models)) return parsed;
+		if (Array.isArray(parsed?.models) && typeof parsed.writtenAt === "number") return parsed;
 	} catch {
 		// torn/garbage cache — treat as miss
 	}

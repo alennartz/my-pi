@@ -197,6 +197,5 @@ describe("cachePaths", () => {
 		expect(paths.usage).toBe(path.join(base, "usage.json"));
 		expect(paths.ledger).toBe(path.join(base, "ledger.jsonl"));
 		expect(paths.bypass).toBe(path.join(base, "bypass.json"));
-		expect(paths.usageLock).toBe(path.join(base, "usage.lock"));
 	});
 });

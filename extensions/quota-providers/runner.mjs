@@ -136,6 +136,11 @@ async function refreshTokenSync(cachePath, prior, impl, ctx) {
 		fail(`token: impl.getToken failed: ${err instanceof Error ? err.message : String(err)}`);
 	}
 
+	if (result == null) {
+		if (prior) return prior.accessToken;
+		fail("token: impl.getToken returned null/undefined");
+	}
+
 	const { token, expiresAt } = result;
 	if (!token) fail("token: impl.getToken returned no token");
 	if (typeof expiresAt !== "number" || Number.isNaN(expiresAt)) {
@@ -253,6 +258,14 @@ async function cmdUsage(flags, impl, ctx) {
 	let lockFd = null;
 	let lockAcquired = false;
 
+	// Release the lock and mark it released. Idempotent — safe to call from
+	// both the finally block and inline before fail() calls inside the try.
+	const releaseLock = () => {
+		if (!lockAcquired) return;
+		try { unlinkSync(lockPath); } catch { /* already gone */ }
+		lockAcquired = false;
+	};
+
 	const tryAcquireLock = () => {
 		try {
 			lockFd = openSync(lockPath, "wx");
@@ -300,7 +313,7 @@ async function cmdUsage(flags, impl, ctx) {
 
 	if (!tryAcquireLock()) {
 		// Another live process is already handling usage refresh.
-		process.exit(0);
+		return;
 	}
 
 	// Write pid to lock file so others can check staleness.
@@ -318,8 +331,8 @@ async function cmdUsage(flags, impl, ctx) {
 				if (typeof cached?.writtenAt === "number") {
 					const ageSeconds = (Date.now() - cached.writtenAt) / 1000;
 					if (ageSeconds < maxPollSeconds) {
-						// Cache is still fresh — exit without rewriting.
-						process.exit(0);
+						// Cache is still fresh — return so the finally releases the lock.
+						return;
 					}
 				}
 			} catch {
@@ -332,15 +345,32 @@ async function cmdUsage(flags, impl, ctx) {
 		try {
 			snapshot = await impl.getUsage(ctx);
 		} catch (err) {
+			releaseLock();
 			fail(`usage: impl.getUsage failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
+
+		// Validate snapshot shape — a malformed result would produce a
+		// "fresh" cache that index.ts rejects (returning null), causing
+		// enforcement to be silently off and the stampede guard to fire
+		// on every subsequent poll.
+		const { spend, quota, windowStart, windowEnd, asOf } = snapshot ?? {};
+		if (
+			typeof spend !== "number" ||
+			typeof quota !== "number" ||
+			typeof windowStart !== "number" ||
+			typeof windowEnd !== "number" ||
+			typeof asOf !== "number"
+		) {
+			releaseLock();
+			fail("usage: impl.getUsage returned invalid snapshot — expected numeric spend, quota, windowStart, windowEnd, asOf");
 		}
 
 		// Write usage cache atomically.
 		writeAtomic(cache, JSON.stringify({ writtenAt: Date.now(), snapshot }));
 
 		// Prune ledger: drop lines with timestamp <= snapshot.asOf.
-		const asOf = snapshot.asOf;
-		if (typeof asOf === "number" && existsSync(ledger)) {
+		// asOf was already destructured and validated above.
+		if (existsSync(ledger)) {
 			try {
 				const raw = readFileSync(ledger, "utf-8");
 				const kept = raw
@@ -362,14 +392,7 @@ async function cmdUsage(flags, impl, ctx) {
 			}
 		}
 	} finally {
-		// Always release the lock.
-		if (lockAcquired) {
-			try {
-				unlinkSync(lockPath);
-			} catch {
-				// Already gone — fine.
-			}
-		}
+		releaseLock();
 	}
 }
 

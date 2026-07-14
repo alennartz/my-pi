@@ -42,8 +42,6 @@ export interface ProviderRecord {
 	providerIds: string[];
 }
 
-export let providerRecords: readonly ProviderRecord[] = [];
-
 // =============================================================================
 // Pure helpers
 // =============================================================================
@@ -97,16 +95,20 @@ function refreshStatusline(records: readonly ProviderRecord[], ctx: ExtensionCon
 		return;
 	}
 
+	const now = Date.now();
 	const ledger = readLedger(worstRecord.paths.ledger);
-	const verdict = evaluateQuota(cached.snapshot, ledger, worstRecord.policy, Date.now());
-	const bypassEntries = readBypass(worstRecord.paths.bypass);
+	const verdict = evaluateQuota(cached.snapshot, ledger, worstRecord.policy, now);
+	const windowLengthMs = cached.snapshot.windowEnd - cached.snapshot.windowStart;
+	const rawBypass = readBypass(worstRecord.paths.bypass);
+	const bypassEntries = pruneBypass(rawBypass, now, windowLengthMs);
 	const bypassActive = isBypassActive(bypassEntries, process.env.PI_QUOTA_SCOPE ?? "");
 
+	// Hard cap takes precedence over bypass display — hard cap is never bypassable.
 	let suffix = "";
-	if (bypassActive) {
-		suffix = " (bypassed)";
-	} else if (verdict.state === "hard-exceeded") {
+	if (verdict.state === "hard-exceeded") {
 		suffix = " (HARD CAP)";
+	} else if (bypassActive) {
+		suffix = " (bypassed)";
 	} else if (verdict.state === "soft-exceeded") {
 		suffix = " (soft cap)";
 	}
@@ -202,11 +204,14 @@ export default async function (pi: ExtensionAPI) {
 						"--cache",
 						paths.models,
 					],
-					{ stdio: "ignore", timeout: 35_000 },
+					{ stdio: ["ignore", "ignore", "pipe"], timeout: 35_000 },
 				);
 			} catch (err) {
+				const runnerStderr =
+					(err as NodeJS.ErrnoException & { stderr?: Buffer }).stderr?.toString()?.trim();
 				const msg = err instanceof Error ? err.message : String(err);
-				console.warn(`quota-providers: skipping "${id}" — discovery failed: ${msg}`);
+				const detail = runnerStderr ? `\n  Runner output: ${runnerStderr}` : "";
+				console.warn(`quota-providers: skipping "${id}" — discovery failed: ${msg}${detail}`);
 				continue;
 			}
 			cache = readModelsCache(paths.models);
@@ -237,8 +242,12 @@ export default async function (pi: ExtensionAPI) {
 
 		const groups = groupModels(id, cache.models, impl.authHeader);
 
-		// Quoted for /bin/sh -c; paths may contain spaces.
-		const apiKeyCmd = `!"${process.execPath}" "${runnerPath}" token --module "${implPath}" --impl "${id}" --config "${configPath}" --cache "${paths.token}"`;
+		// Single-quote escaping for /bin/sh -c — safe against $, backticks, and
+		// embedded double quotes in paths. Replace ' with '\'' to embed a literal
+		// single quote inside a single-quoted segment.
+		const sq = (s: string) => `'${s.replace(/'/g, "'\\''")}' `;
+		// sq() adds a trailing space so each token is already separated.
+		const apiKeyCmd = `!${sq(process.execPath)}${sq(runnerPath)}token --module ${sq(implPath)}--impl ${sq(id)}--config ${sq(configPath)}--cache ${sq(paths.token)}`.trimEnd();
 
 		const implMeta = {
 			id: impl.id,
@@ -266,7 +275,7 @@ export default async function (pi: ExtensionAPI) {
 		);
 	}
 
-	providerRecords = Object.freeze(records);
+	const providerRecords = Object.freeze(records);
 
 	// Build provider-id → record lookup used by event handlers.
 	const providerIdToRecord = new Map<string, ProviderRecord>();
@@ -332,10 +341,13 @@ export default async function (pi: ExtensionAPI) {
 		const cached = readUsageSnapshot(record.paths.usage);
 		if (!cached) return; // no data yet — never block on missing data
 
+		const now = Date.now();
 		const ledger = readLedger(record.paths.ledger);
-		const verdict = evaluateQuota(cached.snapshot, ledger, record.policy, Date.now());
+		const verdict = evaluateQuota(cached.snapshot, ledger, record.policy, now);
 
-		const bypassEntries = readBypass(record.paths.bypass);
+		const windowLengthMs = cached.snapshot.windowEnd - cached.snapshot.windowStart;
+		const rawBypass = readBypass(record.paths.bypass);
+		const bypassEntries = pruneBypass(rawBypass, now, windowLengthMs);
 		const bypassActive = isBypassActive(bypassEntries, process.env.PI_QUOTA_SCOPE ?? "");
 
 		const decision = decideBlock({ verdict, policy: record.policy, bypassActive });
@@ -385,6 +397,14 @@ export default async function (pi: ExtensionAPI) {
 				const now = Date.now();
 				let newState: boolean | undefined;
 
+				// For a bare toggle, compute the target state once from any-active
+				// across all providers, so they all flip uniformly rather than each
+				// independently inverting its own current state.
+				const toggleTarget: boolean | undefined =
+					subcommand === undefined
+						? !allowed.some((r) => isBypassActive(readBypass(r.paths.bypass), scopeId))
+						: undefined;
+
 				for (const record of allowed) {
 					const entries = readBypass(record.paths.bypass);
 					const cached = readUsageSnapshot(record.paths.usage);
@@ -394,9 +414,8 @@ export default async function (pi: ExtensionAPI) {
 							: 30 * 24 * 3_600_000;
 
 					const pruned = pruneBypass(entries, now, windowLengthMs);
-					const currentlyActive = isBypassActive(pruned, scopeId);
 					const shouldEnable =
-						subcommand === "on" ? true : subcommand === "off" ? false : !currentlyActive;
+						subcommand === "on" ? true : subcommand === "off" ? false : toggleTarget!;
 
 					if (shouldEnable) {
 						pruned[scopeId] = { enabledAt: now };
@@ -411,10 +430,10 @@ export default async function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// Status display (no args)
-			const seamed = providerRecords.filter((r) => r.hasUsageSeam);
-			if (seamed.length === 0) {
-				ctx.ui.notify("No providers with a usage seam configured.");
+			// Status display (no args) — show all providers, not just those with a
+			// usage seam, so the seam-present indicator is visible per provider.
+			if (providerRecords.length === 0) {
+				ctx.ui.notify("No quota providers configured.");
 				return;
 			}
 
@@ -422,13 +441,20 @@ export default async function (pi: ExtensionAPI) {
 			const now = Date.now();
 			const sections: string[] = [];
 
-			for (const record of seamed) {
+			for (const record of providerRecords) {
+				const lines: string[] = [`Provider: ${record.id}`];
+				lines.push(`  Usage seam: ${record.hasUsageSeam ? "yes" : "no"}`);
+
+				if (!record.hasUsageSeam) {
+					// No usage seam — quota enforcement unavailable for this provider.
+					sections.push(lines.join("\n"));
+					continue;
+				}
+
 				const cached = readUsageSnapshot(record.paths.usage);
 				const ledger = readLedger(record.paths.ledger);
 				const bypassEntries = readBypass(record.paths.bypass);
 				const bypassActive = isBypassActive(bypassEntries, scopeId);
-
-				const lines: string[] = [`Provider: ${record.id}`];
 
 				if (!cached) {
 					lines.push("  Spend / Quota: no data yet");
@@ -439,7 +465,10 @@ export default async function (pi: ExtensionAPI) {
 					lines.push(
 						`  Spend / Quota: ${formatDollars(spend)} / ${formatDollars(cached.snapshot.quota)}`,
 					);
-					lines.push(`  Pace: ${formatDaysAhead(verdict.daysAhead)}`);
+					const rawDays = verdict.daysAhead >= 0
+						? `+${verdict.daysAhead.toFixed(1)}`
+						: verdict.daysAhead.toFixed(1);
+					lines.push(`  Pace: ${formatDaysAhead(verdict.daysAhead)} (${rawDays} days)`);
 
 					const resetDate = new Date(verdict.resetAt).toLocaleDateString("en-US", {
 						month: "short",
