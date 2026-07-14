@@ -270,7 +270,7 @@ runner.mjs <command> --module <implPath> --impl <implId> --config <configPath> -
 - All writes atomic (`writeAtomic` ported into the .mjs). Errors → message on stderr, exit 1 (mirrors `fail()` in foundry-helper).
 
 **Verify:** step 7's integration tests exercise all four commands; manually, `node extensions/quota-providers/runner.mjs token --module <fake> --impl fake --config <cfg> --cache /tmp/t.json` prints a token.
-**Status:** not started
+**Status:** done
 
 ### Step 7: Fake implementation fixture + runner integration tests
 
