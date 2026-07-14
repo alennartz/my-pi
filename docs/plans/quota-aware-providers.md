@@ -209,7 +209,7 @@ Create `extensions/quota-providers/lib/config.ts` with pure parsing separated fr
 Write `lib/config.test.ts` (vitest, colocated like subagents tests): defaults applied, settings passthrough excludes policy keys, `~` expansion, malformed entry dropped with warning, missing file, `enabled: false` respected.
 
 **Verify:** `npx vitest run extensions/quota-providers/lib/config.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Quota math (`lib/quota.ts` + tests)
 
@@ -231,7 +231,7 @@ evaluateQuota(snapshot: UsageSnapshot, ledger: LedgerEntry[], policy: QuotaPolic
 Write `lib/quota.test.ts`: under-budget, exactly-on-line, lookahead boundary, negative daysAhead, ledger riding on snapshot, entries ≤ asOf ignored, hard cap, degenerate window/quota.
 
 **Verify:** `npx vitest run extensions/quota-providers/lib/quota.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Ledger and bypass stores (`lib/ledger.ts`, `lib/bypass.ts` + tests)
 
