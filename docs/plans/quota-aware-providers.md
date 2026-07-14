@@ -399,4 +399,4 @@ Wire a real `~/.pi/agent/quota-providers.json` (or a temp agent dir via `PI_CODI
 Remove `extensions/azure-foundry/` entirely (index.ts, foundry-helper.mjs, package.json). Its machinery now lives in quota-providers (`runner.mjs`, `lib/registration.ts`); its Foundry-specific logic (az CLI calls, `resolveBackend` from deployment format/capabilities) is the user's out-of-repo implementation module, deliberately not part of this repo. Do not port it here. Leave the codemap's Azure Foundry entry for the cleanup phase (per Architecture § Impacted Modules).
 
 **Verify:** `extensions/azure-foundry/` no longer exists; `rg -l azure-foundry extensions/` returns nothing (references in docs/plans/brainstorms are fine); pi starts cleanly without the extension.
-**Status:** skipped (retained for now to avoid breaking active runtime/subagents; will be deleted during cleanup phase)
+**Status:** done
