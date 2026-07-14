@@ -21,6 +21,11 @@ import {
 	discoveryRefreshDue,
 } from "./lib/registration.js";
 import type { ProviderImplementation, QuotaPolicy } from "./lib/types.js";
+import { appendLedgerEntry, readLedger } from "./lib/ledger.js";
+import { readUsageSnapshot } from "./lib/snapshot.js";
+import { readBypass, isBypassActive } from "./lib/bypass.js";
+import { evaluateQuota } from "./lib/quota.js";
+import { decideBlock } from "./lib/enforce.js";
 
 // =============================================================================
 // Module-level state — init-then-freeze; consumed by Steps 10–13.
@@ -188,6 +193,34 @@ export default async function (pi: ExtensionAPI) {
 
 	providerRecords = Object.freeze(records);
 
+	// Build provider-id → record lookup used by event handlers.
+	const providerIdToRecord = new Map<string, ProviderRecord>();
+	for (const record of records) {
+		for (const pid of record.providerIds) {
+			providerIdToRecord.set(pid, record);
+		}
+	}
+
+	/** Kick a detached usage-poll if cache is stale; best-effort. */
+	function maybeRefreshUsage(record: ProviderRecord): void {
+		if (!record.hasUsageSeam) return;
+		const cached = readUsageSnapshot(record.paths.usage);
+		const age = cached ? (Date.now() - cached.writtenAt) / 1000 : Infinity;
+		if (age < record.policy.maxPollSeconds) return;
+		try {
+			const child = spawn(process.execPath, [
+				runnerPath, "usage",
+				"--module", record.implPath,
+				"--impl", record.id,
+				"--config", configPath,
+				"--cache", record.paths.usage,
+				"--ledger", record.paths.ledger,
+				"--max-poll-seconds", String(record.policy.maxPollSeconds),
+			], { detached: true, stdio: "ignore" });
+			child.unref();
+		} catch { /* best-effort */ }
+	}
+
 	// Scope id: the root session id is inherited by child processes via
 	// process.env, so all subagents spawned from the same root session share
 	// the same quota scope without extra coordination.
@@ -195,5 +228,47 @@ export default async function (pi: ExtensionAPI) {
 		if (!process.env.PI_QUOTA_SCOPE) {
 			process.env.PI_QUOTA_SCOPE = ctx.sessionManager.getSessionId();
 		}
+	});
+
+	// Append ledger entries after each assistant message and maybe refresh usage.
+	pi.on("message_end", (event) => {
+		if (event.message.role !== "assistant") return;
+		const record = providerIdToRecord.get(event.message.provider ?? "");
+		if (!record) return;
+		appendLedgerEntry(record.paths.ledger, {
+			timestamp: event.message.timestamp,
+			cost: event.message.usage?.cost?.total ?? 0,
+		});
+		maybeRefreshUsage(record);
+	});
+
+	// Block new prompts when quota is exceeded.
+	pi.on("input", (event, ctx) => {
+		// Skip extension commands so /quota bypass on is reachable while blocked.
+		if (event.text.startsWith("/")) return;
+
+		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
+		if (!record || !record.hasUsageSeam) return;
+
+		maybeRefreshUsage(record);
+
+		const cached = readUsageSnapshot(record.paths.usage);
+		if (!cached) return; // no data yet — never block on missing data
+
+		const ledger = readLedger(record.paths.ledger);
+		const verdict = evaluateQuota(cached.snapshot, ledger, record.policy, Date.now());
+
+		const bypassEntries = readBypass(record.paths.bypass);
+		const bypassActive = isBypassActive(bypassEntries, process.env.PI_QUOTA_SCOPE ?? "");
+
+		const decision = decideBlock({ verdict, policy: record.policy, bypassActive });
+		if (!decision.blocked) return;
+
+		if (ctx.hasUI) {
+			ctx.ui.notify(decision.message, "error");
+		} else {
+			console.error(decision.message);
+		}
+		return { action: "handled" };
 	});
 }

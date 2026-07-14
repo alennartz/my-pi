@@ -324,7 +324,7 @@ Still in `index.ts`:
 - `readUsageSnapshot(path): UsageSnapshot | null` helper (torn/garbage → null) lives in `lib/` next to the other cache readers.
 
 **Verify:** run pi against the fake impl, send a prompt on a fake model; `ledger.jsonl` gains a line with the message cost; `usage.json` appears within one poll interval; a second concurrent pi process doesn't corrupt either file.
-**Status:** not started
+**Status:** done
 
 ### Step 11: Prompt-boundary enforcement (`lib/enforce.ts` + `index.ts` input handler + tests)
 
@@ -351,7 +351,7 @@ decideBlock(args: {
 Write `lib/enforce.test.ts`: the decideBlock matrix (soft/hard × bypass × enforceHardCap × bypassAllowed), exact error-string prefixes, message content (daysAhead date, reset, hint presence).
 
 **Verify:** `npx vitest run extensions/quota-providers/lib/enforce.test.ts` passes; manually, with the fake impl reporting over-line usage, an interactive prompt is refused with the notification and no LLM call occurs.
-**Status:** not started
+**Status:** done
 
 ### Step 12: `/quota` command (`index.ts`)
 
