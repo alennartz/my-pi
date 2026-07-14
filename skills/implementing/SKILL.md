@@ -90,6 +90,7 @@ When in doubt: if you're changing *what* gets done, stop and talk to the user. I
 - **Channels resolve dependencies, phases are for control** — inter-step dependencies are handled by worker-to-worker communication. The primary slices work into phases for its own ability to review, commit, and course-correct.
 - **One shot** — drive through the full plan without stopping for scheduled reviews. Interrupt when you discover something the plan didn't decide — an architecture conflict, a scope change, a design choice that wasn't anticipated. If the plan needs frequent interrupts, the plan is the problem.
 - **Architecture is inviolable** — the architecture section is a hard contract. Steps flex; architecture doesn't.
+- **Function-level discipline** — whoever writes code (you or a worker) reads the **codebase-design** skill's `FUNCTIONS.md` and follows it: pure functions by default, deliberate mutation points, honest names, one operation one function. Include it in every worker brief.
 - **Verify early and often** — cheap checks after every step. Expensive checks batched. The plan's verify field is the floor, not the ceiling.
 - **Commit per phase** — in direct mode, commit per step. In orchestrated mode, commit when all workers have finished and the phase is complete. Real commit messages.
 - **Resumable** — start from the first step that isn't done. Interruptions are cheap.

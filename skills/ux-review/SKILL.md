@@ -1,6 +1,6 @@
 ---
 name: ux-review
-description: "Audit an existing UI surface for design quality — visual hierarchy, consistency, ergonomics, anti-patterns, design system adherence — and produce a priority-grouped findings document with concrete fixes. Tech-agnostic: assesses what the design *is*, not how it's implemented. Use when the user asks to review the design of a screen, audit an existing app for slop or inconsistency, or get a ship-readiness verdict on the visual quality of a feature. Optional focus area scopes the audit; without one, audit the whole UI in scope. Triggers: 'audit the design of…', 'review this UI', 'is this ready to ship visually', 'find the design slop in…'."
+description: "Audit an existing UI surface for design quality — visual hierarchy, consistency, ergonomics, anti-patterns, design system adherence — producing priority-grouped findings with concrete fixes and a ship-readiness verdict. Use when the user asks to audit or review a UI's design, or whether it's visually ready to ship. Assesses what the design *is*, not how it's implemented. An optional focus area scopes the audit; without one, audit the whole UI in scope."
 ---
 
 # UX Review

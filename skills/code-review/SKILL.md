@@ -120,4 +120,5 @@ Commit with message: `review: <topic>`
 - **Every finding is a real risk** — if you can't articulate why a finding matters, drop it.
 - **No fixes, no implementation** — the review produces findings, full stop. Don't fix code, don't suggest rewrites, don't open PRs.
 - **Full context, not just the diff** — read the surrounding code to understand whether something is actually wrong or just looks odd in isolation.
+- **Design doctrine is part of the bar** — read the **codebase-design** skill (including `FUNCTIONS.md`) and review against it: shallow modules, hypothetical seams, impure-by-default functions, lying names, and duplicated business operations are findings.
 - **One shot** — run both passes, write the report, commit. No interactive checkpoints.

@@ -33,7 +33,7 @@ Before starting DR extraction, spawn two subagents as a fan-out on the `cheap` m
 
 - **Codemap refresh agent** — give it the current codemap, the plan's `pre-implementation-commit` hash, the architecture's impacted modules list, and (if present) the *Tools* and *Plan Updates* sections of the manual-testing artifact so it can add or update the `tools/manual-test/` module. Note: `tools/manual-test/` and its contents (including `PLAN.md` and `README.md`) are **permanent** — they are the manual-testing module, not working artifacts. It runs the scoped codemap update: `git diff --name-only <hash>..HEAD` to find changed files, examines the changes, updates affected codemap sections, preserves everything else. Follows the codemap skill's scoped update operation.
 
-- **Documentation pass agent** — give it the plan summary and the diff scope. It sweeps user-facing documentation in the repo (READMEs, AGENTS.md, contributing guides, API docs — whatever exists, no hardcoded list). For each document, checks whether anything shipped in this workflow makes it stale: descriptions that no longer match reality, missing references to new features, outdated examples, structural descriptions that don't reflect current organization. Updates what needs updating, leaves accurate docs alone.
+- **Documentation pass agent** — give it the plan summary and the diff scope. It sweeps user-facing documentation in the repo (READMEs, AGENTS.md, contributing guides, API docs — whatever exists, no hardcoded list). For each document, checks whether anything shipped in this workflow makes it stale: descriptions that no longer match reality, missing references to new features, outdated examples, structural descriptions that don't reflect current organization. Updates what needs updating, leaves accurate docs alone. If a `glossary.md` exists at the repo root, it also checks it for drift — terms the shipped work coined, renamed, or changed the meaning of — and updates it per the domain-modeling skill's format.
 
 These run in the background while you work on DR extraction.
 
@@ -52,6 +52,8 @@ Scan the working artifacts (brainstorm, plan, review, test review, manual-test) 
 When DR extraction is complete, wait for the background agents' `<agent_idle>` notifications if they haven't finished yet. Review their output for sanity — the codemap should reflect the implementation changes, and docs should be accurate. If a background agent failed or produced incorrect output, redo that work yourself before proceeding.
 
 ### 4. Delete Working Artifacts
+
+Before deleting, check the brainstorm artifact's **Fog** subsection (under Open Questions). If any fog entries were never promoted, surface them to the user: "these were flagged as fog and never graduated — promote any to a new topic or decision record, or they're deleted with the artifact." Fog dies by default; promotion is a deliberate user choice, never automatic.
 
 Remove the working artifacts for this topic:
 - `docs/brainstorms/<topic>.md`

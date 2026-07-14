@@ -63,7 +63,7 @@ The ten workflow skills and the autoflow orchestration skill that drives them. A
 
 Standalone utility skills not tied to the workflow pipeline.
 
-**Responsibilities:** codemap generation and maintenance, structured debugging, decision record management (format, numbering, supersession), skill authoring guidance (invocation axis, information hierarchy, pruning, leading words)
+**Responsibilities:** codemap generation and maintenance, structured debugging, decision record management (format, numbering, supersession), skill authoring guidance (invocation axis, information hierarchy, pruning, leading words), domain language maintenance (glossary.md convention, active term-sharpening discipline), code design doctrine (deep modules/seams at module level, function-level principles in FUNCTIONS.md — referenced by the pipeline skills), periodic architecture review (user-invoked deepening scan with HTML report)
 
 **Dependencies:** none
 
@@ -73,6 +73,13 @@ Standalone utility skills not tied to the workflow pipeline.
 - `skills/decision-records/SKILL.md`
 - `skills/skill-writing/SKILL.md`
 - `skills/skill-writing/GLOSSARY.md`
+- `skills/domain-modeling/SKILL.md`
+- `skills/domain-modeling/FORMAT.md`
+- `skills/codebase-design/SKILL.md`
+- `skills/codebase-design/FUNCTIONS.md`
+- `skills/codebase-design/DEEPENING.md`
+- `skills/codebase-design/DESIGN-IT-TWICE.md`
+- `skills/improve-code/SKILL.md`
 - `docs/decisions/**`
 
 ### Subagents
@@ -207,9 +214,9 @@ Extension that discovers AGENTS.*.md overlay files, matches them against the act
 
 Slash-command prompts distributed with the package.
 
-**Responsibilities:** `onboard` introduces the package, offers to install behavioral conventions (model-specific overlays) and coding principles (base AGENTS.md content); `tidy` runs repo tidying.
+**Responsibilities:** `onboard` introduces the package and offers to install behavioral conventions (model-specific overlays); `tidy` runs repo tidying.
 
-**Dependencies:** consumes `conventions/` for content to install.
+**Dependencies:** none.
 
 **Files:**
 - `prompts/onboard.md`
@@ -224,4 +231,3 @@ Reusable convention content the onboard prompt offers to install into the user's
 **Dependencies:** none; content is plain Markdown read by `onboard`.
 
 **Files:**
-- `conventions/coding-principles.md`

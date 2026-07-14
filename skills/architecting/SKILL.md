@@ -19,9 +19,9 @@ Do NOT produce execution steps, specific file changes, or ordered task sequences
 
 Before starting:
 
-1. **Read `codemap.md`** at the repo root. If it doesn't exist, suggest to the user that one should be created and offer to generate it now using the codemap skill. If the user declines, fall back to an unguided exploration of the codebase — survey the directory structure, entry points, and key files to ground yourself before proceeding.
+1. **Read `codemap.md`** at the repo root, and `glossary.md` if one exists — use its terms throughout, and run the **domain-modeling** skill's discipline when terminology fuzzes or shifts during the conversation. If the codemap doesn't exist, suggest to the user that one should be created and offer to generate it now using the codemap skill. If the user declines, fall back to an unguided exploration of the codebase — survey the directory structure, entry points, and key files to ground yourself before proceeding.
 
-2. **Check for a brainstorm.** If the user links one, read it from `docs/brainstorms/<topic>.md`. If no brainstorm is linked and the user's description feels too vague or too large in scope, suggest they brainstorm first. If the direction is clear enough, proceed. When a brainstorm exists, pay attention to its structure: **key decisions** (with reasoning) are settled starting points, **open questions** are fair game for discussion. Don't treat them the same.
+2. **Check for a brainstorm.** If the user links one, read it from `docs/brainstorms/<topic>.md`. If no brainstorm is linked and the user's description feels too vague or too large in scope, suggest they brainstorm first. If the direction is clear enough, proceed. When a brainstorm exists, pay attention to its structure: **key decisions** (with reasoning) are settled starting points, **open questions** are fair game for discussion. Don't treat them the same. The brainstorm's **sharp questions** are an input checklist: by the end of architecting, every one is resolved, consciously deferred with a reason, or ruled out of scope — none silently dropped. Its **fog** carries no obligation; treat any of it your investigation happens to sharpen as a new question.
 
 ### 1. Investigate
 
@@ -128,6 +128,7 @@ Commit with message: `architect: <topic>`
 - **Options for tech choices** — always 2-3 genuine alternatives with trade-offs for technology decisions. The user picks.
 - **Shape, not sequence** — decide what the architecture looks like, not the order to build it
 - **The codemap is the map** — use its module names, respect its boundaries, note when boundaries need to shift
+- **Design deep modules** — read the **codebase-design** skill and apply its doctrine: lots of behaviour behind small interfaces, seams placed deliberately, the interface as the test surface. Use its vocabulary (module, interface, seam, adapter, depth) in the plan.
 - **YAGNI** — don't architect what isn't needed. If a simple approach works, take it.
 - **Decision records are settled context** — check `docs/decisions/` before making decisions. Follow existing DRs; superseding one is always a conversation with the user.
 - **Code snippets for shape, not implementation** — use code in the plan when it communicates shape more clearly than prose: interfaces, type signatures, data structures, module boundaries. Avoid implementation snippets (function bodies, algorithms, logic) — those pre-empt TDD and constrain the implementer unnecessarily. When prose is equally clear, prefer prose. Interface descriptions are the primary input for the test-writing phase — the test writer materializes them as real code and writes behavioral tests against them, potentially in a clean context with no access to the architectural conversation. What you write in the Interfaces section is what they have to work with.

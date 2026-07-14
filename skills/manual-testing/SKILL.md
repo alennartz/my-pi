@@ -1,6 +1,6 @@
 ---
 name: manual-testing
-description: "Exercise shipped functionality the way a human would — run a persistent smoke suite of primary user journeys, add topic-specific tests, fix straightforward issues inline, and grow the manual-test tooling over time. Use after handle-review and before cleanup to close the outer loop. Requires a plan in docs/plans/<topic>.md — if it doesn't exist, run the earlier pipeline phases first."
+description: "Exercise shipped functionality the way a human would — a persistent smoke suite of primary user journeys plus topic-specific tests, fixing straightforward issues inline. Use after handle-review and before cleanup to close the outer loop. Requires a plan in docs/plans/<topic>.md — if it doesn't exist, run the earlier pipeline phases first."
 ---
 
 # Manual Testing

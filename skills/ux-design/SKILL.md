@@ -1,6 +1,6 @@
 ---
 name: ux-design
-description: "Decide and document the design for a UI surface — palette, typography, spacing, components, layout, motion, copy voice — and produce a structured DESIGN.md brief that an implementer can build against on any frontend stack (web, mobile, desktop, TV, embedded). Use when the task is to give a screen, feature, or whole product its visual and structural direction. Tech-agnostic by design: produces decisions and rationale, not code. Triggered by requests like 'design the UI for…', 'how should this screen look', 'pick the visual direction for…', 'audit the design of…', or 'turn this product idea into a design brief.'"
+description: "Decide and document the design for a UI surface — palette, typography, spacing, components, layout, motion, copy voice — as a structured DESIGN.md brief an implementer can build against on any frontend stack. Use when a screen, feature, or product needs its visual and structural direction. Produces decisions and rationale, not code."
 ---
 
 # UX Design

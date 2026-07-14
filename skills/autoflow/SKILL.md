@@ -1,6 +1,7 @@
 ---
 name: autoflow
-description: "Run the full development workflow pipeline with minimal human intervention. Brainstorm and architect are interactive; remaining phases run autonomously via subagents."
+description: "Run the full development workflow pipeline — interactive brainstorm and architect, then autonomous phases via subagents."
+disable-model-invocation: true
 ---
 
 # Autoflow

@@ -91,6 +91,7 @@ The steps are appended below the existing architecture section:
 ## Key Principles
 
 - **Grounded in code** — steps reference real files, real interfaces, real types found during investigation. Not assumptions.
+- **Respect the seams** — read the **codebase-design** skill; steps build behind the architecture's interfaces, and step-level interface decisions follow its doctrine (deep modules, no hypothetical seams).
 - **Adds detail, not scope** — the architecture decides what to build. This skill decides the sequence and the specifics. Don't expand beyond the architecture.
 - **Generate, don't negotiate** — present the full plan, don't walk through it conversationally. Only surface questions when the architecture doesn't match the code.
 - **Get the order right** — earlier steps should lay foundations for later steps. This is good authoring practice and gives the implementer a natural build sequence, but it's not a strict concurrency constraint — the implementer may parallelize steps that touch independent modules.

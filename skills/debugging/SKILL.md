@@ -1,6 +1,6 @@
 ---
 name: debugging
-description: "Use any time the user reports a problem — something not working, broken, wrong, unexpected, or off. This is the go-to skill whenever the user describes a symptom rather than requesting a specific change. Covers everything from vague 'this doesn't work' reports to specific error messages, stack traces, test failures, crashes, wrong output, regressions, or build errors. Also use when stuck — a previous fix didn't work, the same problem keeps coming back, or you're looping on failed attempts. Enforces root cause investigation before any fix."
+description: "Root-cause debugging discipline. Use whenever the user describes a symptom — anything broken, wrong, or unexpected — rather than requesting a specific change. Also use when stuck: a fix didn't hold, or attempts are looping. Enforces root cause investigation before any fix."
 ---
 
 # Systematic Debugging

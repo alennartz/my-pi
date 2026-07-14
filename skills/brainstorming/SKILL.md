@@ -11,6 +11,8 @@ Help the user explore an idea through natural, collaborative dialogue. The goal 
 
 A good brainstorm doesn't just organize what the user already knows — it helps them discover what they didn't know they didn't know.
 
+If a `glossary.md` exists at the repo root, read it and use its terms. When the conversation coins new terms or exposes fuzzy ones, run the **domain-modeling** skill's discipline alongside the brainstorm.
+
 Do NOT jump to implementation. No code, no scaffolding, no "let me set that up for you." The output of brainstorming is clarity, not code.
 
 ## Anti-Patterns
@@ -47,6 +49,8 @@ Don't disappear for ten paragraphs and then reveal a grand plan. Keep exchanges 
 Ask clarifying questions **one at a time**. Don't overwhelm with a list — have a conversation. Let each answer reshape your understanding and inform the next question.
 
 Prefer multiple choice when it helps narrow things down, but open-ended questions are fine too. The goal is to understand purpose, constraints, and what success looks like.
+
+With each question, offer your recommended answer. A recommendation gives the user something concrete to accept or push against — and exposes your current understanding for correction.
 
 **Keep going until you can explain the idea back to the user in a way that surprises them** — i.e., you've synthesized something they hadn't quite articulated yet. If your summary is just a restatement of what they told you, you haven't dug deep enough.
 
@@ -96,11 +100,18 @@ Stay in this phase until at least one of these is true:
 - Have I challenged the user's initial framing, or just organized it?
 - Did we explore the problem space, or just the first idea that came up?
 - Is there a dimension we haven't touched (technical, human, temporal, organizational)?
+- Are there unresolved branches of the decision tree — decisions that hang on an upstream decision we haven't made?
 - Would someone reading the brainstorm artifact learn something non-obvious?
 
 If the answer to any of these is unsatisfying, go back to Deepen. It's always better to explore one more angle than to converge too early.
 
-When you're genuinely ready: check in with the user. Summarize the direction, confirm alignment. Validate incrementally — short exchanges, building toward agreement.
+Triage the remaining open questions before wrapping up. The test: can the question be stated precisely right now — not whether it can be answered?
+
+- A **sharp** question about *intent or scope* belongs to this conversation — resolve it or get the user's explicit deferral. Converging over one is premature convergence.
+- A **sharp** *technical* question — answerable only by code investigation — is a handoff to architecting, not a failure of the brainstorm.
+- Everything you can sense but can't yet phrase precisely is **fog**.
+
+When you're genuinely ready: check in with the user. Summarize the direction, confirm alignment, and name the fog explicitly in the summary so the user can pull anything back into the conversation. Validate incrementally — short exchanges, building toward agreement.
 
 Apply YAGNI to the *solution*, not to the *exploration*. Cut unnecessary complexity from what you're proposing to build, but don't cut the thinking short.
 
@@ -115,7 +126,9 @@ Write a brainstorming artifact that captures:
 - **The idea** — what we set out to explore
 - **Key decisions** — what was considered and what was chosen. For each decision, capture the *why* — the reasoning and constraints that led to the choice. Downstream phases use this reasoning to judge whether a decision still holds; without it, decided things get relitigated for no reason.
 - **Direction** — the agreed-upon approach
-- **Open questions** — anything unresolved that needs future attention
+- **Open questions** — split in two:
+  - **Sharp questions** — precisely stated, unresolved. Technical ones are explicit inputs to architecting; deferred intent questions carry the reason for deferral.
+  - **Fog** — areas sensed but not yet phrasable as precise questions. Fog is not a commitment: it dies with this artifact at cleanup unless deliberately promoted.
 
 Save to `docs/brainstorms/<topic>.md` and commit. Keep it concise — this is a reference, not a novel. But make sure the *reasoning* comes through, not just the conclusions. Someone reading this later should understand *why*, not just *what*.
 
