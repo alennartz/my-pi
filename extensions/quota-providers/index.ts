@@ -50,74 +50,66 @@ function formatDollars(amount: number): string {
 	return `$${amount.toFixed(2)}`;
 }
 
-function formatDaysAhead(days: number): string {
-	if (days < 0) {
-		return `under budget by ${Math.abs(days).toFixed(1)} days`;
-	}
-	const date = new Date(Date.now() + days * 86_400_000).toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-	});
-	return `spending at ${date}'s budget`;
+function formatShortDate(ms: number): string {
+	return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 /**
- * Recompute and push the footer statusline for the worst-offending provider.
- * Worst offending = highest daysAhead across providers with a usage snapshot.
- * Pass providerRecords explicitly (pure function — no global capture of mutable state).
+ * Build the compact one-line footer for a single provider, or undefined when
+ * there is nothing worth showing:
+ *   - no usage seam (provider isn't quota-tracked),
+ *   - no snapshot cached yet, or
+ *   - the cached snapshot's window has already reset (now >= windowEnd).
+ *
+ * The last guard matters: the budget date reduces to
+ * `windowStart + (spend/quota)·windowLength`, always inside *that snapshot's*
+ * window. A snapshot left over from a prior window would therefore render a
+ * budget date inside that stale (e.g. last month's) window — so we refuse to
+ * show an expired snapshot at all and let a background poll replace it.
  */
-function refreshStatusline(records: readonly ProviderRecord[], ctx: ExtensionContext): void {
-	if (!ctx.hasUI) return;
+function buildFooterLine(record: ProviderRecord, now: number): string | undefined {
+	if (!record.hasUsageSeam) return undefined;
+	const cached = readUsageSnapshot(record.paths.usage);
+	if (!cached) return undefined;
+	const snap = cached.snapshot;
+	if (now >= snap.windowEnd) return undefined;
 
-	let worstRecord: ProviderRecord | null = null;
-	let worstDaysAhead = -Infinity;
+	const ledger = readLedger(record.paths.ledger);
+	const verdict = evaluateQuota(snap, ledger, record.policy, now);
+	const spend = effectiveSpend(snap, ledger);
 
-	for (const record of records) {
-		if (!record.hasUsageSeam) continue;
-		const cached = readUsageSnapshot(record.paths.usage);
-		if (!cached) continue;
-		const ledger = readLedger(record.paths.ledger);
-		const verdict = evaluateQuota(cached.snapshot, ledger, record.policy, Date.now());
-		if (verdict.daysAhead > worstDaysAhead) {
-			worstDaysAhead = verdict.daysAhead;
-			worstRecord = record;
-		}
-	}
-
-	if (!worstRecord) {
-		ctx.ui.setStatus("quota-providers", undefined);
-		return;
-	}
-
-	const cached = readUsageSnapshot(worstRecord.paths.usage);
-	if (!cached) {
-		ctx.ui.setStatus("quota-providers", undefined);
-		return;
-	}
-
-	const now = Date.now();
-	const ledger = readLedger(worstRecord.paths.ledger);
-	const verdict = evaluateQuota(cached.snapshot, ledger, worstRecord.policy, now);
-	const windowLengthMs = cached.snapshot.windowEnd - cached.snapshot.windowStart;
-	const rawBypass = readBypass(worstRecord.paths.bypass);
-	const bypassEntries = pruneBypass(rawBypass, now, windowLengthMs);
+	const windowLengthMs = snap.windowEnd - snap.windowStart;
+	const bypassEntries = pruneBypass(readBypass(record.paths.bypass), now, windowLengthMs);
 	const bypassActive = isBypassActive(bypassEntries, process.env.PI_QUOTA_SCOPE ?? "");
+
+	// Budget date: the point in the window whose prorated budget equals current
+	// spend. daysAhead is the signed delta in days between that date and now.
+	const budgetDate = formatShortDate(now + verdict.daysAhead * 86_400_000);
+	const delta =
+		verdict.daysAhead >= 0 ? `+${verdict.daysAhead.toFixed(1)}` : verdict.daysAhead.toFixed(1);
+	const resetDate = formatShortDate(verdict.resetAt);
 
 	// Hard cap takes precedence over bypass display — hard cap is never bypassable.
 	let suffix = "";
-	if (verdict.state === "hard-exceeded") {
-		suffix = " (HARD CAP)";
-	} else if (bypassActive) {
-		suffix = " (bypassed)";
-	} else if (verdict.state === "soft-exceeded") {
-		suffix = " (soft cap)";
-	}
+	if (verdict.state === "hard-exceeded") suffix = " · HARD CAP";
+	else if (bypassActive) suffix = " · bypassed";
+	else if (verdict.state === "soft-exceeded") suffix = " · soft cap";
 
-	const date = new Date(Date.now() + verdict.daysAhead * 86_400_000).toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-	});
-	ctx.ui.setStatus("quota-providers", `quota: spending at ${date}'s budget${suffix}`);
+	return `quota: ${formatDollars(spend)}/${formatDollars(snap.quota)} · ${budgetDate}'s budget (${delta}d) · resets ${resetDate}${suffix}`;
+}
+
+/**
+ * Push (or clear) the footer statusline, scoped to the active model's provider.
+ * Pass the resolved record for the current provider, or null/undefined to clear
+ * (e.g. the active model is on a provider with no quota tracking).
+ */
+function refreshStatusline(
+	record: ProviderRecord | null | undefined,
+	ctx: ExtensionContext,
+): void {
+	if (!ctx.hasUI) return;
+	const line = record ? buildFooterLine(record, Date.now()) : undefined;
+	ctx.ui.setStatus("quota-providers", line);
 }
 
 // =============================================================================
@@ -254,6 +246,7 @@ export default async function (pi: ExtensionAPI) {
 			name: impl.name,
 			baseUrl: impl.baseUrl,
 			authHeader: impl.authHeader,
+			headers: impl.headers,
 		};
 
 		const providerIds: string[] = [];
@@ -289,8 +282,12 @@ export default async function (pi: ExtensionAPI) {
 	function maybeRefreshUsage(record: ProviderRecord): void {
 		if (!record.hasUsageSeam) return;
 		const cached = readUsageSnapshot(record.paths.usage);
-		const age = cached ? (Date.now() - cached.writtenAt) / 1000 : Infinity;
-		if (age < record.policy.maxPollSeconds) return;
+		const now = Date.now();
+		// Force a refresh when the cached window has already reset, regardless of
+		// snapshot age — a stale window can otherwise linger below the poll floor.
+		const windowEnded = cached ? now >= cached.snapshot.windowEnd : false;
+		const age = cached ? (now - cached.writtenAt) / 1000 : Infinity;
+		if (!windowEnded && age < record.policy.maxPollSeconds) return;
 		try {
 			const child = spawn(process.execPath, [
 				runnerPath, "usage",
@@ -312,7 +309,17 @@ export default async function (pi: ExtensionAPI) {
 		if (!process.env.PI_QUOTA_SCOPE) {
 			process.env.PI_QUOTA_SCOPE = ctx.sessionManager.getSessionId();
 		}
-		refreshStatusline(providerRecords, ctx);
+		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
+		if (record) maybeRefreshUsage(record);
+		refreshStatusline(record, ctx);
+	});
+
+	// Retarget the footer to the newly-selected model's provider (or clear it when
+	// that provider isn't quota-tracked).
+	pi.on("model_select", (event, ctx) => {
+		const record = providerIdToRecord.get(event.model.provider ?? "");
+		if (record) maybeRefreshUsage(record);
+		refreshStatusline(record, ctx);
 	});
 
 	// Append ledger entries after each assistant message and maybe refresh usage.
@@ -326,7 +333,7 @@ export default async function (pi: ExtensionAPI) {
 			`${record.paths.ledger}.lock`, // hold the ledger lock so cmdUsage prune can't clobber us
 		);
 		maybeRefreshUsage(record);
-		refreshStatusline(providerRecords, ctx);
+		refreshStatusline(providerIdToRecord.get(ctx.model?.provider ?? ""), ctx);
 	});
 
 	// Block new prompts when quota is exceeded.
@@ -343,6 +350,12 @@ export default async function (pi: ExtensionAPI) {
 		if (!cached) return; // no data yet — never block on missing data
 
 		const now = Date.now();
+		// Window already reset — the cached snapshot is stale; never block on it. A
+		// refresh was already kicked above.
+		if (now >= cached.snapshot.windowEnd) {
+			refreshStatusline(record, ctx);
+			return;
+		}
 		const ledger = readLedger(record.paths.ledger);
 		const verdict = evaluateQuota(cached.snapshot, ledger, record.policy, now);
 
@@ -353,7 +366,7 @@ export default async function (pi: ExtensionAPI) {
 
 		const decision = decideBlock({ verdict, policy: record.policy, bypassActive });
 
-		refreshStatusline(providerRecords, ctx);
+		refreshStatusline(record, ctx);
 
 		if (!decision.blocked) return;
 
@@ -428,71 +441,35 @@ export default async function (pi: ExtensionAPI) {
 				}
 
 				ctx.ui.notify(`Quota bypass turned ${newState ? "on" : "off"}.`);
+				refreshStatusline(providerIdToRecord.get(ctx.model?.provider ?? ""), ctx);
 				return;
 			}
 
-			// Status display (no args) — show all providers, not just those with a
-			// usage seam, so the seam-present indicator is visible per provider.
+			// Status display (no args) — scoped to the active model's provider, surfaced
+			// as the compact footer line rather than a multi-line notify wall.
 			if (providerRecords.length === 0) {
 				ctx.ui.notify("No quota providers configured.");
 				return;
 			}
 
-			const scopeId = process.env.PI_QUOTA_SCOPE ?? "";
-			const now = Date.now();
-			const sections: string[] = [];
-
-			for (const record of providerRecords) {
-				const lines: string[] = [`Provider: ${record.id}`];
-				lines.push(`  Usage seam: ${record.hasUsageSeam ? "yes" : "no"}`);
-
-				if (!record.hasUsageSeam) {
-					// No usage seam — quota enforcement unavailable for this provider.
-					sections.push(lines.join("\n"));
-					continue;
-				}
-
-				const cached = readUsageSnapshot(record.paths.usage);
-				const ledger = readLedger(record.paths.ledger);
-				const bypassEntries = readBypass(record.paths.bypass);
-				const bypassActive = isBypassActive(bypassEntries, scopeId);
-
-				if (!cached) {
-					lines.push("  Spend / Quota: no data yet");
-				} else {
-					const verdict = evaluateQuota(cached.snapshot, ledger, record.policy, now);
-					const spend = effectiveSpend(cached.snapshot, ledger);
-
-					lines.push(
-						`  Spend / Quota: ${formatDollars(spend)} / ${formatDollars(cached.snapshot.quota)}`,
-					);
-					const rawDays = verdict.daysAhead >= 0
-						? `+${verdict.daysAhead.toFixed(1)}`
-						: verdict.daysAhead.toFixed(1);
-					lines.push(`  Pace: ${formatDaysAhead(verdict.daysAhead)} (${rawDays} days)`);
-
-					const resetDate = new Date(verdict.resetAt).toLocaleDateString("en-US", {
-						month: "short",
-						day: "numeric",
-						year: "numeric",
-					});
-					lines.push(`  Window resets: ${resetDate}`);
-
-					const ageMs = now - cached.writtenAt;
-					const ageStr =
-						ageMs < 60_000
-							? `${Math.round(ageMs / 1000)}s ago`
-							: ageMs < 3_600_000
-								? `${Math.round(ageMs / 60_000)}m ago`
-								: `${Math.round(ageMs / 3_600_000)}h ago`;
-					lines.push(`  Snapshot age: ${ageStr}`);
-				}
-
-				lines.push(`  Bypass: ${bypassActive ? "active" : "inactive"}`);
-				sections.push(lines.join("\n"));
+			const record = providerIdToRecord.get(ctx.model?.provider ?? "");
+			if (!record) {
+				ctx.ui.notify("Current model's provider isn't quota-tracked.");
+				return;
+			}
+			if (!record.hasUsageSeam) {
+				ctx.ui.notify(`${record.id}: no usage seam — quota not tracked.`);
+				return;
 			}
 
-			ctx.ui.notify(sections.join("\n\n"));
+			maybeRefreshUsage(record);
+			const line = buildFooterLine(record, Date.now());
+			if (!line) {
+				ctx.ui.notify(`${record.id}: no quota data yet.`);
+				return;
+			}
+			refreshStatusline(record, ctx);
+			ctx.ui.notify(line);
 		},
 	});
 }

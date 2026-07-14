@@ -105,7 +105,13 @@ export function groupModels(
  * Pure — does not call registerProvider itself.
  */
 export function buildProviderConfig(
-	impl: { id: string; name?: string; baseUrl: string; authHeader?: boolean },
+	impl: {
+		id: string;
+		name?: string;
+		baseUrl: string;
+		authHeader?: boolean;
+		headers?: Record<string, string>;
+	},
 	group: ProviderGroup,
 	apiKeyCommand: string,
 ): object {
@@ -113,6 +119,7 @@ export function buildProviderConfig(
 		baseUrl: impl.baseUrl + (group.baseUrlPath ?? ""),
 		apiKey: apiKeyCommand,
 		authHeader: group.authHeader,
+		...(impl.headers ? { headers: impl.headers } : {}),
 		api: group.api,
 		models: group.models.map((entry) => {
 			const meta = resolveModelMeta(entry.catalogProvider, entry.modelName);

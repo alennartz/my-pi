@@ -16,6 +16,10 @@ export interface ProviderImplementation {
   baseUrl: string;
   /** Whether pi should add `Authorization: Bearer <token>`. May vary per model via ModelEntry. */
   authHeader?: boolean;
+  /** Extra request headers merged into every request for this provider's models.
+   *  Overrides SDK defaults (e.g. `user-agent`) — useful for gateways that filter
+   *  on the vendor SDK's default User-Agent. Applies to all models of the impl. */
+  headers?: Record<string, string>;
 
   /** Seam 1: fetch the raw model list. Runs out-of-band in the runner. */
   discoverModels(ctx: ImplContext): Promise<ModelEntry[]>;
