@@ -214,13 +214,14 @@ Extension that discovers AGENTS.*.md overlay files, matches them against the act
 
 Slash-command prompts distributed with the package.
 
-**Responsibilities:** `onboard` introduces the package and offers to install behavioral conventions (model-specific overlays); `tidy` runs repo tidying.
+**Responsibilities:** `onboard` introduces the package and offers to install behavioral conventions (model-specific overlays); `tidy` runs repo tidying; `resolve-conflicts` works an in-progress merge/rebase conflict by intent.
 
 **Dependencies:** none.
 
 **Files:**
 - `prompts/onboard.md`
 - `prompts/tidy.md`
+- `prompts/resolve-conflicts.md`
 
 ### Conventions
 
