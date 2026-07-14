@@ -284,7 +284,7 @@ Create `extensions/quota-providers/runner.test.ts` — integration tests spawnin
 - Failing seam → non-zero exit, stderr message, no cache corruption.
 
 **Verify:** `npx vitest run extensions/quota-providers/runner.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 8: Discovery cache + provider registration core (`lib/registration.ts` + tests)
 
@@ -313,7 +313,7 @@ Flesh out `extensions/quota-providers/index.ts` (replacing the Step 1 stub), por
 - Scope id: in a `session_start` handler, if `process.env.PI_QUOTA_SCOPE` is unset, set it to `ctx.sessionManager.getSessionId()` (children spawned by subagents inherit `process.env`, so the root session id becomes the shared scope).
 
 **Verify:** with a config pointing at the fake impl, `pi --list-models` (or launching pi) lists the fake models under provider id `fake-<api>`; with no config file, pi starts clean with no warnings; with a malformed block, pi starts and warns.
-**Status:** not started
+**Status:** done
 
 ### Step 10: Ledger appends and usage polling wiring (`index.ts`)
 

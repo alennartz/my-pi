@@ -135,7 +135,7 @@ export function parseProvidersConfig(
  * Resolve the pi agent directory, mirroring azure-foundry's resolveAgentDir().
  * Honors PI_CODING_AGENT_DIR (with ~ expansion); falls back to ~/.pi/agent.
  */
-function resolveAgentDir(): string {
+export function resolveAgentDir(): string {
 	const env = process.env.PI_CODING_AGENT_DIR;
 	if (env) return env.startsWith("~/") ? join(homedir(), env.slice(2)) : env;
 	return join(homedir(), ".pi", "agent");
