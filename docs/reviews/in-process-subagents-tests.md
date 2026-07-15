@@ -6,7 +6,7 @@
 
 ## Summary
 
-The initial tests covered the three new interfaces, but they did not yet protect the migration's observable-parity promise or several critical SDK lifecycle contracts. After a single approved decision batch, the suite now exercises the public scoped-extension, managed-session, and router seams; it uses deterministic SDK mocks for component behavior and one isolated real-SDK persisted-session fixture. The tests remain intentionally red because the interface implementations are still stubs; the runner launches all 33 topic tests without compilation or runner failures.
+The initial tests covered the three new interfaces, but they did not yet protect the migration's observable-parity promise or several critical SDK lifecycle contracts. After a single approved decision batch, the suite now exercises the public scoped-extension, managed-session, and router seams; it uses deterministic SDK mocks for component behavior and one isolated real-SDK persisted-session fixture. The reopened trust-precedence review preserves that suite and moves the four new cases onto a local public-SDK trust seam, avoiding an unsupported private pi import. The tests remain intentionally red because the interface implementations are still stubs; the runner launches without compilation or runner failures.
 
 ## Findings
 
@@ -63,3 +63,21 @@ The brainstorm requires parity for explicit child identity/uplink routing, dynam
 - **Status:** resolved
 
 The original tests treated accepted idle/cancel failures as promise rejections even though `RoutedResponse` includes a typed error variant and legacy synthetic failures are delivered after acceptance. They also left omitted/duplicate correlation IDs and responder ownership unspecified. The approved contract rejects only pre-delivery sends, resolves accepted cancel/lifecycle failures as `{ type: "error" }`, reserves rejection for router shutdown, allocates omitted IDs, rejects duplicates, and permits responses only from the addressed endpoint. The expanded router suite covers those rules, child-to-parent delivery, disconnected targets, detach/reverse work, multiple outstanding deadlock edges, sender removal, reconnection, and one-shot blocking-status callbacks.
+
+### 7. Trust tests mocked an unsupported private pi helper
+
+- **Category:** wrong abstraction
+- **Severity:** critical
+- **Location:** `extensions/subagents/managed-child-session.test.ts:216-241,396-416`; `extensions/subagents/project-trust.ts:1-28`
+- **Status:** resolved
+
+The reopened tests mocked `resolveProjectTrusted` as a root export from `@earendil-works/pi-coding-agent`, but the package's supported export map does not expose that CLI-internal helper. A correct extension therefore could not satisfy the test without an unsupported private-subpath import. With approval, the suite now uses `project-trust.ts`, a local interface that accepts only public SDK trust types and a `ProjectTrustStore`; Managed Child Session wires its headless resource-loader callback to that module.
+
+### 8. Precedence coverage skipped undecided and never branches
+
+- **Category:** missing coverage
+- **Severity:** warning
+- **Location:** `extensions/subagents/project-trust.test.ts:68-122`
+- **Status:** resolved
+
+The added saved-trust case had no extension handler, so it did not cover the normal `project_trust: "undecided"` fallthrough. Its configured-default case covered only `always`; `never` was never reached because it appeared only behind saved trust. The reviewed tests now cover decisive `yes` and `no`, `undecided` falling through to saved trust, both configured defaults, and an unresolved headless `ask` that performs no UI calls.

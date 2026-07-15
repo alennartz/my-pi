@@ -35,7 +35,15 @@ A concrete SDK-native module inside `extensions/subagents/` owns the full lifecy
 
 This is not an RPC/SDK compatibility adapter and has no alternate process implementation. It deliberately exposes its `AgentSessionRuntime` so later SDK-native capabilities are not hidden behind the old transport's limits.
 
-Dependencies: pi SDK session/runtime factories, the scoped subagents extension factory, existing agent specifications, and shared auth/model infrastructure from the parent context.
+Dependencies: pi SDK session/runtime factories, the scoped subagents extension factory, the child project-trust resolver, existing agent specifications, and shared auth/model infrastructure from the parent context.
+
+#### Child Project Trust
+
+A local, transport-free module resolves trust for child project resources. It uses only public pi SDK event types and `ProjectTrustStore`; it does not import pi's private CLI trust resolver.
+
+It owns the precedence required for child resource loading: a decisive extension `project_trust` result, then saved trust, then the configured `always`/`never` default, then an unresolved `ask` declining through the supplied headless context. An `undecided` extension result falls through to saved trust. This is a narrow domain seam used by Managed Child Session's resource-loader callback, not a second session backend.
+
+Dependencies: public `LoadExtensionsResult`, `ProjectTrustContext`, `DefaultProjectTrust`, and `ProjectTrustStore` types from pi.
 
 #### In-Memory Message Router
 
@@ -79,6 +87,27 @@ Contracts:
 - Session shutdown detaches the scoped extension from its uplink and softly shuts down its immediate children. It does not tear down its parent-owned runtime or mutate the parent's lifecycle record.
 
 The child resource loader removes the normally discovered root-scoped Subagents extension by resolved extension identity, then injects exactly one child-scoped factory. Every other eligible extension remains discoverable under the child's cwd and trust policy.
+
+#### Child project trust
+
+```ts
+type ChildProjectTrustOptions = {
+  cwd: string;
+  extensionsResult: LoadExtensionsResult;
+  trustStore: Pick<ProjectTrustStore, "get" | "set">;
+  defaultProjectTrust?: DefaultProjectTrust;
+  projectTrustContext: ProjectTrustContext;
+};
+
+function resolveChildProjectTrust(
+  options: ChildProjectTrustOptions,
+): Promise<boolean>;
+```
+
+Contracts:
+
+- It invokes project extensions with `{ type: "project_trust", cwd }` through the supplied context. The first `yes` or `no` result wins; `undecided` continues precedence resolution.
+- If no extension decides, saved trust wins over the configured default. `always` resolves true, `never` resolves false, and `ask` resolves false when the supplied context has no UI without calling its dialog methods.
 
 #### Managed child session
 
@@ -146,7 +175,7 @@ Construction contracts:
 - `new`, `resume`, and `fork` map to `SessionManager.create`, `SessionManager.open`, and `SessionManager.forkFrom` respectively. Existing RPC-created JSONL sessions are opened directly; no session-format migration is introduced.
 - The child session name is the agent ID, matching the current CLI `--name` behavior.
 - Auth storage and the model registry are shared with the parent session. Settings, resource loading, tools, and the event bus are created per effective child cwd, following the multi-session pattern already used by Pimote.
-- Project resources follow the CLI's non-interactive trust semantics: saved trust and configured defaults are honored, but an unresolved `ask` decision does not prompt from a child.
+- Project resources follow the CLI's non-interactive trust semantics through `resolveChildProjectTrust`: decisive extension trust, saved trust, and configured defaults are honored in precedence order, but an unresolved `ask` decision does not prompt from a child. The managed module does not import pi's private CLI resolver.
 - A model reference is resolved with pi's CLI-compatible model resolver, including thinking suffixes. When no override exists, normal session restoration/settings selection applies. Persona-pinned model precedence remains unchanged.
 - Persona skill restrictions use `noSkills` plus explicit absolute skill paths. Forks receive their captured active built-in tools and skill paths. Other cwd-eligible resources continue through `DefaultResourceLoader`.
 - The SDK-wide `allowedTools` policy is passed as the session tool allowlist; `ask_user` is excluded from every child. This remains independent from the scoped Subagents extension-tool policy carried by `scope.identity.tools`.
@@ -304,13 +333,15 @@ No new dependency is introduced.
 
 - `extensions/subagents/scoped-extension.ts` — scoped root/child identity contract and extension factory boundary.
 - `extensions/subagents/managed-child-session.ts` — SDK-native child target, configuration, lifecycle hooks, and managed runtime contract.
+- `extensions/subagents/project-trust.ts` — public-SDK child project-trust precedence contract.
 - `extensions/subagents/message-router.ts` — typed in-memory message ports, routed messages/responses, correlation receipts, and router lifecycle contract.
 
 ### Test Files
 
 - `extensions/subagents/scoped-extension.test.ts` — exact root/child registration, persona tool restrictions, infrastructure `respond`, and scope isolation.
 - `extensions/subagents/scoped-extension.integration.test.ts` — explicit child-uplink routing, scoped model catalog/shutdown behavior, and root orchestration through mocked SDK-native children without RPC or socket brokers.
-- `extensions/subagents/managed-child-session.test.ts` — deterministic mocked-SDK construction, target translation, configuration propagation, local non-interactive project-trust precedence, prompt preflight, event/UI hooks, replacement, cooperative abort, and idempotent disposal.
+- `extensions/subagents/managed-child-session.test.ts` — deterministic mocked-SDK construction, target translation, configuration propagation, headless local project-trust wiring, prompt preflight, event/UI hooks, replacement, cooperative abort, and idempotent disposal.
+- `extensions/subagents/project-trust.test.ts` — extension, saved, default, and non-interactive `ask` trust precedence using public SDK types.
 - `extensions/subagents/managed-child-session.integration.test.ts` — isolated real-SDK reopening of a persisted RPC-era JSONL child session.
 - `extensions/subagents/message-router.test.ts` — bidirectional endpoint delivery, correlation allocation/ownership, deadlock and pre-delivery failures, typed terminal failures, dynamic reconnection, blocking-status callbacks, and router shutdown.
 
@@ -327,12 +358,16 @@ No new dependency is introduced.
 #### Managed child session
 
 - New, resumed, and forked targets map exactly to `SessionManager.create`, `open`, and `forkFrom`, preserve effective cwd/session metadata, and name each child after its agent ID.
-- Child creation shares auth/model infrastructure while applying model/thinking, SDK-wide tools, no-direct-user-prompt, explicit skills, append prompt, scoped extension/resource-loader configuration, and non-interactive unresolved-trust fallback.
+- Child creation shares auth/model infrastructure while applying model/thinking, SDK-wide tools, no-direct-user-prompt, explicit skills, append prompt, scoped extension/resource-loader configuration, and the local headless project-trust resolver.
 - Prompt submission forwards RPC source and streaming behavior, settles at preflight, surfaces preflight rejection, and observes later run failures.
 - Event subscriptions precede headless extension binding; events, UI notifications, shutdown requests, and replacement metadata reach the manager hooks.
 - Disposal runs safely more than once, interruption uses cooperative cancellation, and runtime replacement rebinds the same wrapper with current runtime/session/event bus.
 - An isolated real SDK test reopens an RPC-era persisted JSONL directly, retaining its session file, ID, cwd, and header.
-- Local child project trust is resolved in precedence order: an extension `project_trust` yes/no decision wins; otherwise saved trust wins; otherwise the configured `always`/`never` default wins; an unresolved `ask` declines without opening interactive trust UI.
+
+#### Child project trust
+
+- The local resolver accepts public SDK trust inputs and passes the managed child's headless `rpc` context through resource loading.
+- A decisive extension `project_trust` result wins; an `undecided` result falls through to saved trust, then both configured defaults, then a headless unresolved `ask` decline without dialog calls.
 
 #### In-memory message routing
 
@@ -341,3 +376,5 @@ No new dependency is introduced.
 - Cancel, idle, unavailable, and removal resolve accepted waits as typed errors; detach removes only the waiting edge so reverse work and a late response still arrive.
 - Multiple outstanding waits preserve their deadlock edge until all are settled. Idle endpoints remain reusable; unavailable/removed endpoints reject future sends until a replacement reconnects; removal also clears sender-owned waits.
 - Blocking-status callbacks fire once at start and once at every terminal path. Router shutdown alone rejects unresolved waits and future sends.
+
+**Review status:** approved
