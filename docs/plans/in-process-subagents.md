@@ -291,3 +291,42 @@ No new dependency is introduced.
 ### DR Supersessions
 
 - **DR-014** (Dual-Transport Architecture — RPC for Lifecycle, Unix Socket for Messaging) — superseded because child lifecycle and communication now occur within one process. New decision: own children as `AgentSessionRuntime` instances and route messages through a centralized in-memory router, while explicitly relinquishing process-isolation guarantees.
+
+## Tests
+
+**Pre-test-write commit:** `7aec0c2bcaaf977d6f6e5aa5f68ef60bc2757b2b`
+
+### Interface Files
+
+- `extensions/subagents/scoped-extension.ts` — scoped root/child identity contract and extension factory boundary.
+- `extensions/subagents/managed-child-session.ts` — SDK-native child target, configuration, lifecycle hooks, and managed runtime contract.
+- `extensions/subagents/message-router.ts` — typed in-memory message ports, routed messages/responses, correlation receipts, and router lifecycle contract.
+
+### Test Files
+
+- `extensions/subagents/scoped-extension.test.ts` — root and child extension registration, persona tool restrictions, infrastructure `respond`, and scope isolation.
+- `extensions/subagents/managed-child-session.test.ts` — new/resume/fork construction, session metadata, prompt submission, cooperative abort, disposal, runtime exposure, and replacement metadata.
+- `extensions/subagents/message-router.test.ts` — endpoint delivery, blocking correlations, deadlock and authorization failures, cancel/detach semantics, idle/unavailable/removed targets, and router shutdown.
+
+### Behaviors Covered
+
+#### Scoped extension construction
+
+- A root-scoped factory exposes the complete existing subagent tool surface without consulting process-wide parent identity.
+- A child-scoped factory applies persona tool restrictions while always retaining `respond` for infrastructure responses.
+- Independently constructed scopes keep registrations and mutable state isolated.
+
+#### Managed child session
+
+- New, resumed, and forked targets create SDK-native child sessions with runtime/session metadata.
+- Prompt submission accepts steer and follow-up streaming modes; interruption uses cooperative cancellation.
+- Disposal runs safely more than once and exposes the current runtime/session/event bus.
+- Runtime session replacement reports updated session metadata through the lifecycle hook.
+
+#### In-memory message routing
+
+- Connected endpoints deliver fire-and-forget messages within the parent-local topology.
+- Blocking sends register correlations before delivery, resolve on response, and reject unauthorized or deadlocking routes without residue.
+- Cancel removes a pending correlation; detach removes only the waiting edge so a late response still arrives.
+- Idle targets fail waiting senders but remain reusable; unavailable and removed targets reject future sends.
+- Router shutdown rejects unresolved waits and drops endpoint subscriptions.
