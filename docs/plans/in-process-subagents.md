@@ -298,6 +298,8 @@ No new dependency is introduced.
 
 **Pre-test-write commit:** `7aec0c2bcaaf977d6f6e5aa5f68ef60bc2757b2b`
 
+**Reopened test-write commit:** `0e0854d371fe5927e9efa289d7ee39f290b7bd67`
+
 ### Interface Files
 
 - `extensions/subagents/scoped-extension.ts` — scoped root/child identity contract and extension factory boundary.
@@ -308,7 +310,7 @@ No new dependency is introduced.
 
 - `extensions/subagents/scoped-extension.test.ts` — exact root/child registration, persona tool restrictions, infrastructure `respond`, and scope isolation.
 - `extensions/subagents/scoped-extension.integration.test.ts` — explicit child-uplink routing, scoped model catalog/shutdown behavior, and root orchestration through mocked SDK-native children without RPC or socket brokers.
-- `extensions/subagents/managed-child-session.test.ts` — deterministic mocked-SDK construction, target translation, configuration propagation, prompt preflight, event/UI hooks, replacement, cooperative abort, and idempotent disposal.
+- `extensions/subagents/managed-child-session.test.ts` — deterministic mocked-SDK construction, target translation, configuration propagation, local non-interactive project-trust precedence, prompt preflight, event/UI hooks, replacement, cooperative abort, and idempotent disposal.
 - `extensions/subagents/managed-child-session.integration.test.ts` — isolated real-SDK reopening of a persisted RPC-era JSONL child session.
 - `extensions/subagents/message-router.test.ts` — bidirectional endpoint delivery, correlation allocation/ownership, deadlock and pre-delivery failures, typed terminal failures, dynamic reconnection, blocking-status callbacks, and router shutdown.
 
@@ -330,6 +332,7 @@ No new dependency is introduced.
 - Event subscriptions precede headless extension binding; events, UI notifications, shutdown requests, and replacement metadata reach the manager hooks.
 - Disposal runs safely more than once, interruption uses cooperative cancellation, and runtime replacement rebinds the same wrapper with current runtime/session/event bus.
 - An isolated real SDK test reopens an RPC-era persisted JSONL directly, retaining its session file, ID, cwd, and header.
+- Local child project trust is resolved in precedence order: an extension `project_trust` yes/no decision wins; otherwise saved trust wins; otherwise the configured `always`/`never` default wins; an unresolved `ask` declines without opening interactive trust UI.
 
 #### In-memory message routing
 
@@ -338,5 +341,3 @@ No new dependency is introduced.
 - Cancel, idle, unavailable, and removal resolve accepted waits as typed errors; detach removes only the waiting edge so reverse work and a late response still arrive.
 - Multiple outstanding waits preserve their deadlock edge until all are settled. Idle endpoints remain reusable; unavailable/removed endpoints reject future sends until a replacement reconnects; removal also clears sender-owned waits.
 - Blocking-status callbacks fire once at start and once at every terminal path. Router shutdown alone rejects unresolved waits and future sends.
-
-**Review status:** approved

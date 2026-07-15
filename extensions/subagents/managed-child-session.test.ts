@@ -12,6 +12,9 @@ const sdk = vi.hoisted(() => {
 		runtimes: any[];
 		bindings: Array<{ session: any; bindings: any }>;
 		eventDuringBind?: any;
+		savedProjectTrust: boolean | null;
+		defaultProjectTrust: "ask" | "always" | "never";
+		trustStoreInstances: any[];
 		promptImplementation: (session: any, text: string, options: any) => Promise<void>;
 	} = {
 		managers: [],
@@ -22,6 +25,9 @@ const sdk = vi.hoisted(() => {
 		runtimes: [],
 		bindings: [],
 		eventDuringBind: undefined,
+		savedProjectTrust: null,
+		defaultProjectTrust: "ask",
+		trustStoreInstances: [],
 		promptImplementation: async (_session, _text, options) => {
 			options?.preflightResult?.(true);
 		},
@@ -53,6 +59,46 @@ const sdk = vi.hoisted(() => {
 			makeManager("fork", { sourceSessionFile, cwd, sessionDir }),
 		),
 	};
+
+	class ProjectTrustStore {
+		constructor(agentDir: string) {
+			state.trustStoreInstances.push({ agentDir, store: this });
+		}
+
+		get = vi.fn((_cwd: string): boolean | null => state.savedProjectTrust);
+		set = vi.fn((_cwd: string, decision: boolean | null) => {
+			state.savedProjectTrust = decision;
+		});
+	}
+
+	const resolveProjectTrusted = vi.fn(async (options: any): Promise<boolean> => {
+		for (const extension of options.extensionsResult?.extensions ?? []) {
+			const handlers = extension.handlers?.get?.("project_trust") ?? [];
+			for (const handler of handlers) {
+				const decision = await handler(
+					{ type: "project_trust", cwd: options.cwd },
+					options.projectTrustContext,
+				);
+				if (decision.trusted === "yes" || decision.trusted === "no") {
+					if (decision.remember === true) {
+						options.trustStore.set(options.cwd, decision.trusted === "yes");
+					}
+					return decision.trusted === "yes";
+				}
+			}
+		}
+
+		const saved = options.trustStore.get(options.cwd);
+		if (saved !== null) return saved;
+		if (options.defaultProjectTrust === "always") return true;
+		if (options.defaultProjectTrust === "never") return false;
+		if (options.projectTrustContext?.hasUI !== false) {
+			throw new Error("interactive trust prompt is not allowed for child sessions");
+		}
+		return false;
+	});
+
+	const hasTrustRequiringProjectResources = vi.fn(() => true);
 
 	const createEventBus = vi.fn(() => ({
 		on: vi.fn(() => () => {}),
@@ -94,7 +140,7 @@ const sdk = vi.hoisted(() => {
 			authStorage: options.authStorage,
 			modelRegistry: options.modelRegistry,
 			settingsManager: {
-				getDefaultProjectTrust: vi.fn(() => "ask"),
+				getDefaultProjectTrust: vi.fn(() => state.defaultProjectTrust),
 			},
 			resourceLoader: {
 				getExtensions: vi.fn(() => ({ extensions: [], errors: [] })),
@@ -166,6 +212,9 @@ const sdk = vi.hoisted(() => {
 		state.runtimes.length = 0;
 		state.bindings.length = 0;
 		state.eventDuringBind = undefined;
+		state.savedProjectTrust = null;
+		state.defaultProjectTrust = "ask";
+		state.trustStoreInstances.length = 0;
 		state.promptImplementation = async (_session, _text, options) => {
 			options?.preflightResult?.(true);
 		};
@@ -178,6 +227,8 @@ const sdk = vi.hoisted(() => {
 			createAgentSessionFromServices,
 			createAgentSessionRuntime,
 			resolveCliModel,
+			resolveProjectTrusted,
+			hasTrustRequiringProjectResources,
 		]) {
 			mock.mockClear();
 		}
@@ -192,7 +243,10 @@ const sdk = vi.hoisted(() => {
 		createAgentSessionFromServices,
 		createAgentSessionRuntime,
 		resolveCliModel,
-		SettingsManager: { create: vi.fn(() => ({ getDefaultProjectTrust: () => "ask" })) },
+		resolveProjectTrusted,
+		hasTrustRequiringProjectResources,
+		ProjectTrustStore,
+		SettingsManager: { create: vi.fn(() => ({ getDefaultProjectTrust: () => state.defaultProjectTrust })) },
 		getAgentDir: vi.fn(() => "/agent-dir"),
 	};
 });
@@ -204,6 +258,9 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 	createAgentSessionFromServices: sdk.createAgentSessionFromServices,
 	createAgentSessionRuntime: sdk.createAgentSessionRuntime,
 	resolveCliModel: sdk.resolveCliModel,
+	resolveProjectTrusted: sdk.resolveProjectTrusted,
+	hasTrustRequiringProjectResources: sdk.hasTrustRequiringProjectResources,
+	ProjectTrustStore: sdk.ProjectTrustStore,
 	SettingsManager: sdk.SettingsManager,
 	getAgentDir: sdk.getAgentDir,
 }));
@@ -259,6 +316,26 @@ function makeHooks(): ChildSessionHooks {
 		onSessionChanged: vi.fn(),
 		onShutdownRequested: vi.fn(),
 	};
+}
+
+function makeProjectTrustExtension(
+	trusted: "yes" | "no" | "undecided",
+	remember?: boolean,
+): { handlers: Map<string, Array<(...args: any[]) => unknown>>; handler: ReturnType<typeof vi.fn> } {
+	const handler = vi.fn(() => ({
+		trusted,
+		...(remember === undefined ? {} : { remember }),
+	}));
+	return {
+		handlers: new Map([["project_trust", [handler]]]),
+		handler,
+	};
+}
+
+function projectTrustResolver(): (input: { extensionsResult: any }) => Promise<boolean> {
+	const resolver = sdk.state.servicesArgs[0]?.resourceLoaderReloadOptions?.resolveProjectTrust;
+	expect(resolver).toEqual(expect.any(Function));
+	return resolver;
 }
 
 async function createChild(
@@ -368,6 +445,56 @@ describe("createManagedChildSession construction", () => {
 
 		const bindings = sdk.state.bindings[0].bindings;
 		await expect(bindings.uiContext.confirm({ message: "trust this project?" })).resolves.toBe(false);
+	});
+
+	it("uses an extension project_trust decision before saved trust and configured defaults", async () => {
+		sdk.state.savedProjectTrust = true;
+		sdk.state.defaultProjectTrust = "always";
+		const extension = makeProjectTrustExtension("no");
+		await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" });
+
+		await expect(projectTrustResolver()({
+			extensionsResult: { extensions: [extension], errors: [] },
+		})).resolves.toBe(false);
+		expect(extension.handler).toHaveBeenCalledWith(
+			{ type: "project_trust", cwd: "/repo" },
+			expect.objectContaining({ mode: "rpc", hasUI: false }),
+		);
+	});
+
+	it("uses saved trust when no extension handler decides, before the configured default", async () => {
+		sdk.state.savedProjectTrust = true;
+		sdk.state.defaultProjectTrust = "never";
+		await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" });
+
+		await expect(projectTrustResolver()({
+			extensionsResult: { extensions: [], errors: [] },
+		})).resolves.toBe(true);
+	});
+
+	it("uses the configured default when extension and saved trust are unresolved", async () => {
+		sdk.state.savedProjectTrust = null;
+		sdk.state.defaultProjectTrust = "always";
+		await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" });
+
+		await expect(projectTrustResolver()({
+			extensionsResult: { extensions: [], errors: [] },
+		})).resolves.toBe(true);
+	});
+
+	it("declines an unresolved ask default in the child without enabling interactive trust UI", async () => {
+		sdk.state.savedProjectTrust = null;
+		sdk.state.defaultProjectTrust = "ask";
+		await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" });
+		const resolveProjectTrust = projectTrustResolver();
+		const callsBeforeResolution = sdk.resolveProjectTrusted.mock.calls.length;
+
+		await expect(resolveProjectTrust({
+			extensionsResult: { extensions: [], errors: [] },
+		})).resolves.toBe(false);
+		expect(sdk.resolveProjectTrusted.mock.calls.length).toBeGreaterThan(callsBeforeResolution);
+		const trustCall = sdk.resolveProjectTrusted.mock.calls.slice(-1)[0]?.[0];
+		expect(trustCall?.projectTrustContext).toMatchObject({ mode: "rpc", hasUI: false });
 	});
 });
 
