@@ -219,6 +219,22 @@ describe("buildProviderConfig", () => {
 		expect(m).toHaveProperty("contextWindow");
 		expect(m).toHaveProperty("maxTokens");
 	});
+
+	it("preserves GPT-5.6's max thinking capability from the catalog", () => {
+		const models: ModelEntry[] = [
+			{
+				id: "gpt-5.6-sol",
+				modelName: "gpt-5.6-sol",
+				api: "openai-responses",
+				catalogProvider: "openai",
+			},
+		];
+		const [group] = groupModels("impl", models);
+		const cfg = buildProviderConfig(impl, group, apiKey) as Record<string, unknown>;
+		const [model] = cfg.models as Array<Record<string, unknown>>;
+
+		expect(model.thinkingLevelMap).toMatchObject({ max: "max" });
+	});
 });
 
 // =============================================================================

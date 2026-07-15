@@ -16,6 +16,7 @@ interface ModelMeta {
 	contextWindow: number;
 	maxTokens: number;
 	cost: ModelCost;
+	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 	forceAdaptiveThinking?: boolean;
 }
 
@@ -46,6 +47,7 @@ export function resolveModelMeta(
 		contextWindow: model.contextWindow,
 		maxTokens: model.maxTokens,
 		cost: model.cost,
+		thinkingLevelMap: model.thinkingLevelMap,
 		forceAdaptiveThinking: model.compat?.forceAdaptiveThinking,
 	};
 }
@@ -131,6 +133,7 @@ export function buildProviderConfig(
 				cost: meta.cost,
 				contextWindow: meta.contextWindow,
 				maxTokens: meta.maxTokens,
+				...(meta.thinkingLevelMap ? { thinkingLevelMap: meta.thinkingLevelMap } : {}),
 				...(group.api === "anthropic-messages" && meta.forceAdaptiveThinking
 					? { compat: { forceAdaptiveThinking: true } }
 					: {}),
