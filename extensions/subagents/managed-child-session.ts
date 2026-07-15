@@ -25,6 +25,10 @@ export type ChildSessionConfig = {
 	scope: Extract<SubagentScope, { kind: "child" }>;
 	modelRef?: string;
 	thinkingLevel?: ThinkingLevel;
+	/**
+	 * SDK-wide child-tool allowlist, corresponding to the legacy CLI `--tools`
+	 * policy. It intersects with (but does not replace) scope.identity.tools.
+	 */
 	allowedTools?: string[];
 	skillPaths: string[];
 	appendSystemPrompt: string[];

@@ -40,16 +40,17 @@ describe("createSubagentsExtension root scope", () => {
 		await factory(pi as any);
 
 		const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
-		expect(names).toEqual(expect.arrayContaining(ALL_TOOLS));
+		expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
 	});
 
 	it("keeps root scope independent from process-wide parent-link state", async () => {
 		const previous = process.env.PI_PARENT_LINK;
-		process.env.PI_PARENT_LINK = JSON.stringify({ id: "stale-child" });
+		process.env.PI_PARENT_LINK = JSON.stringify({ id: "stale-child", tools: ["send"] });
 		try {
 			const pi = makePi();
 			await createSubagentsExtension({ kind: "root" })(pi as any);
-			expect(pi.registerTool).toHaveBeenCalled();
+			const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
+			expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
 		} finally {
 			if (previous === undefined) delete process.env.PI_PARENT_LINK;
 			else process.env.PI_PARENT_LINK = previous;
@@ -63,9 +64,7 @@ describe("createSubagentsExtension child scope", () => {
 		await createSubagentsExtension(childScope(["send"]))(pi as any);
 
 		const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
-		expect(names).toContain("send");
-		expect(names).toContain("respond");
-		expect(names).not.toContain("subagent");
+		expect([...names].sort()).toEqual(["respond", "send"]);
 	});
 
 	it("allows an unrestricted child to expose the same scoped tool surface", async () => {
@@ -73,7 +72,7 @@ describe("createSubagentsExtension child scope", () => {
 		await createSubagentsExtension(childScope())(pi as any);
 
 		const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
-		expect(names).toEqual(expect.arrayContaining(ALL_TOOLS));
+		expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
 	});
 
 	it("does not share mutable registrations between independently constructed scopes", async () => {
@@ -87,9 +86,7 @@ describe("createSubagentsExtension child scope", () => {
 
 		const firstNames = first.registerTool.mock.calls.map(([tool]) => tool.name);
 		const secondNames = second.registerTool.mock.calls.map(([tool]) => tool.name);
-		expect(firstNames).toContain("send");
-		expect(firstNames).not.toContain("check_status");
-		expect(secondNames).toContain("check_status");
-		expect(secondNames).not.toContain("send");
+		expect([...firstNames].sort()).toEqual(["respond", "send"]);
+		expect([...secondNames].sort()).toEqual(["check_status", "respond"]);
 	});
 });

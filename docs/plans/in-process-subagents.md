@@ -72,6 +72,7 @@ Contracts:
 
 - All mutable extension state remains inside the returned factory closure; no session identity is read from or written to process globals.
 - A child scope registers the same tools as today, subject to its persona tool restriction, with `respond` retaining its infrastructure exception.
+- `scope.identity.tools` is the persona-derived policy for Subagents extension tools. `ChildSessionConfig.allowedTools` is the independent SDK-wide child-tool allowlist corresponding to the legacy CLI `--tools` policy. When both apply, effective tool availability is their intersection. The scoped factory always registers `respond` despite the persona policy, but an explicit SDK-wide allowlist may still exclude it.
 - The child uplink represents only the parent manager's namespace. A child manager creates a separate local router for its own immediate children.
 - Tool routing preserves the current rule: a target owned by the local manager uses the local port; otherwise a child uses its uplink; a root with no local target reports that no agent is available.
 - `list_models` remains a session-local extension tool and renders the complete catalog from that scoped session's `ctx.modelRegistry`, including context and pricing, exactly as it does today.
@@ -148,6 +149,7 @@ Construction contracts:
 - Project resources follow the CLI's non-interactive trust semantics: saved trust and configured defaults are honored, but an unresolved `ask` decision does not prompt from a child.
 - A model reference is resolved with pi's CLI-compatible model resolver, including thinking suffixes. When no override exists, normal session restoration/settings selection applies. Persona-pinned model precedence remains unchanged.
 - Persona skill restrictions use `noSkills` plus explicit absolute skill paths. Forks receive their captured active built-in tools and skill paths. Other cwd-eligible resources continue through `DefaultResourceLoader`.
+- The SDK-wide `allowedTools` policy is passed as the session tool allowlist; `ask_user` is excluded from every child. This remains independent from the scoped Subagents extension-tool policy carried by `scope.identity.tools`.
 - The discovered root Subagents extension is filtered and replaced by the scoped child factory. `ask_user` is excluded from every child. No other extension is removed solely because the session is a child.
 - The manager subscribes before `bindExtensions()` so work triggered by `session_start` cannot outrun status tracking.
 - Extensions bind in `rpc` mode with a headless UI context, runtime-backed command actions, an abort handler, a child-local shutdown handler, and an extension-error listener.
@@ -219,11 +221,11 @@ Routing contracts:
 
 - `parent` remains a reserved endpoint ID. Each local manager connects its own parent endpoint plus one endpoint per immediate child.
 - Channel validation occurs before delivery. Dead/removed, disconnected, and unauthorized targets fail without creating a pending correlation.
-- For blocking sends, the response promise, correlation record, target mapping, and deadlock edge are installed before target delivery, so an immediate response cannot race registration.
+- For blocking sends, the response promise, correlation record, target mapping, and deadlock edge are installed before target delivery, so an immediate response cannot race registration. The router allocates a correlation ID when the caller omits one and rejects a caller-supplied ID that is already pending.
 - A deadlock cycle rejects the send without delivery.
-- `respond()` resolves the original sender's response promise, removes the correlation and deadlock edge, and ends its waiting status.
-- `cancel()` removes both correlation and edge. `detach()` removes the edge and waiting status but retains the correlation so a late response can be delivered asynchronously by the scoped extension.
-- When a target becomes idle without responding, is removed, or its runtime becomes unavailable, all sends waiting on that target receive the same synthetic failures as today. An idle or failed run leaves the endpoint reusable; removal or an unavailable runtime tombstones it. Removing a sender also clears correlations it owns.
+- Only the endpoint that received a blocking message may `respond()`. A valid response resolves the original sender's response promise, removes the correlation and deadlock edge, and ends its waiting status.
+- `cancel()` removes both correlation and edge. `detach()` removes the edge and waiting status but retains the correlation so a late response can be delivered asynchronously by the scoped extension. After delivery has been accepted, cancellation and lifecycle failures resolve the response promise as `{ type: "error", error }`; they do not reject it.
+- When a target becomes idle without responding, is removed, or its runtime becomes unavailable, all sends waiting on that target receive the same synthetic failures as today. An idle or failed run leaves the endpoint reusable; removal or an unavailable runtime tombstones it until a replacement endpoint reconnects. Removing a sender also clears correlations it owns.
 - `close()` rejects unresolved correlations and drops all endpoint subscriptions without touching persistence or SDK runtimes.
 
 The existing XML message and completion serializers remain unchanged. Socket-only request/response frame types are removed.
@@ -304,29 +306,37 @@ No new dependency is introduced.
 
 ### Test Files
 
-- `extensions/subagents/scoped-extension.test.ts` — root and child extension registration, persona tool restrictions, infrastructure `respond`, and scope isolation.
-- `extensions/subagents/managed-child-session.test.ts` — new/resume/fork construction, session metadata, prompt submission, cooperative abort, disposal, runtime exposure, and replacement metadata.
-- `extensions/subagents/message-router.test.ts` — endpoint delivery, blocking correlations, deadlock and authorization failures, cancel/detach semantics, idle/unavailable/removed targets, and router shutdown.
+- `extensions/subagents/scoped-extension.test.ts` — exact root/child registration, persona tool restrictions, infrastructure `respond`, and scope isolation.
+- `extensions/subagents/scoped-extension.integration.test.ts` — explicit child-uplink routing, scoped model catalog/shutdown behavior, and root orchestration through mocked SDK-native children without RPC or socket brokers.
+- `extensions/subagents/managed-child-session.test.ts` — deterministic mocked-SDK construction, target translation, configuration propagation, prompt preflight, event/UI hooks, replacement, cooperative abort, and idempotent disposal.
+- `extensions/subagents/managed-child-session.integration.test.ts` — isolated real-SDK reopening of a persisted RPC-era JSONL child session.
+- `extensions/subagents/message-router.test.ts` — bidirectional endpoint delivery, correlation allocation/ownership, deadlock and pre-delivery failures, typed terminal failures, dynamic reconnection, blocking-status callbacks, and router shutdown.
 
 ### Behaviors Covered
 
 #### Scoped extension construction
 
-- A root-scoped factory exposes the complete existing subagent tool surface without consulting process-wide parent identity.
-- A child-scoped factory applies persona tool restrictions while always retaining `respond` for infrastructure responses.
+- A root-scoped factory exposes exactly the existing subagent tool surface without consulting process-wide parent identity.
+- A child-scoped factory applies the persona-derived Subagents tool policy while always registering `respond` for infrastructure responses; the SDK-wide allowlist remains a separate policy.
 - Independently constructed scopes keep registrations and mutable state isolated.
+- A child routes sends, responses, and incoming notifications through its explicit uplink, keeps notifications detached after session shutdown, and renders `list_models` from its own registry.
+- Root orchestration owns mocked SDK-native children rather than RPC children or socket brokers, projects lifecycle events only at `agent_settled`, updates status/dashboard output, persists replacement metadata, supports dynamic membership, interrupts cooperatively, settles pre-start headless errors, restores torn-down sessions, and propagates persona model/tool/skill/cwd policy.
 
 #### Managed child session
 
-- New, resumed, and forked targets create SDK-native child sessions with runtime/session metadata.
-- Prompt submission accepts steer and follow-up streaming modes; interruption uses cooperative cancellation.
-- Disposal runs safely more than once and exposes the current runtime/session/event bus.
-- Runtime session replacement reports updated session metadata through the lifecycle hook.
+- New, resumed, and forked targets map exactly to `SessionManager.create`, `open`, and `forkFrom`, preserve effective cwd/session metadata, and name each child after its agent ID.
+- Child creation shares auth/model infrastructure while applying model/thinking, SDK-wide tools, no-direct-user-prompt, explicit skills, append prompt, scoped extension/resource-loader configuration, and non-interactive unresolved-trust fallback.
+- Prompt submission forwards RPC source and streaming behavior, settles at preflight, surfaces preflight rejection, and observes later run failures.
+- Event subscriptions precede headless extension binding; events, UI notifications, shutdown requests, and replacement metadata reach the manager hooks.
+- Disposal runs safely more than once, interruption uses cooperative cancellation, and runtime replacement rebinds the same wrapper with current runtime/session/event bus.
+- An isolated real SDK test reopens an RPC-era persisted JSONL directly, retaining its session file, ID, cwd, and header.
 
 #### In-memory message routing
 
-- Connected endpoints deliver fire-and-forget messages within the parent-local topology.
-- Blocking sends register correlations before delivery, resolve on response, and reject unauthorized or deadlocking routes without residue.
-- Cancel removes a pending correlation; detach removes only the waiting edge so a late response still arrives.
-- Idle targets fail waiting senders but remain reusable; unavailable and removed targets reject future sends.
-- Router shutdown rejects unresolved waits and drops endpoint subscriptions.
+- Connected endpoints deliver fire-and-forget messages in both parent→child and child→parent directions, with unsubscribe support.
+- Blocking sends register correlations before delivery, allocate omitted IDs, reject duplicates/pre-delivery failures/deadlocks, and accept responses only from the addressed endpoint.
+- Cancel, idle, unavailable, and removal resolve accepted waits as typed errors; detach removes only the waiting edge so reverse work and a late response still arrive.
+- Multiple outstanding waits preserve their deadlock edge until all are settled. Idle endpoints remain reusable; unavailable/removed endpoints reject future sends until a replacement reconnects; removal also clears sender-owned waits.
+- Blocking-status callbacks fire once at start and once at every terminal path. Router shutdown alone rejects unresolved waits and future sends.
+
+**Review status:** approved

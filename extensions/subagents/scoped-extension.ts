@@ -10,6 +10,10 @@ export type SubagentScope =
 				id: string;
 				task: string;
 				channels: string[];
+				/**
+				 * Subagents-extension tool policy inherited from the persona. This is
+				 * independent from the SDK-wide child-tool allowlist.
+				 */
 				tools?: string[];
 			};
 			uplink: MessagePort;

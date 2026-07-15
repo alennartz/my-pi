@@ -1,6 +1,9 @@
 import type { Topology } from "./channels.js";
 
-/** A message delivered through a parent-local in-memory router. */
+/**
+ * A message delivered through a parent-local in-memory router. Every blocking
+ * message has a correlationId; the router allocates one when the caller omits it.
+ */
 export type RoutedMessage = {
 	from: string;
 	message: string;
@@ -13,7 +16,11 @@ export type RoutedResponse =
 	| { type: "response"; message: string }
 	| { type: "error"; error: string };
 
-/** Receipt returned after a message has been accepted for delivery. */
+/**
+ * Receipt returned after a message has been accepted for delivery. A response
+ * promise resolves with a typed error after accepted lifecycle/cancel failures;
+ * only router shutdown rejects an already accepted unresolved wait.
+ */
 export type SendReceipt = {
 	correlationId?: string;
 	response?: Promise<RoutedResponse>;
@@ -28,6 +35,7 @@ export interface MessagePort {
 		expectResponse: boolean;
 		correlationId?: string;
 	}): Promise<SendReceipt>;
+	/** Only the endpoint addressed by the correlation may respond. */
 	respond(correlationId: string, message: string): Promise<void>;
 	detach(correlationId: string): void;
 	cancel(correlationId: string): void;
