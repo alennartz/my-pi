@@ -88,6 +88,17 @@ function stableRootSessionId(ctx: ExtensionContext, sessionFile: string | undefi
 	return ctx.sessionManager.getSessionName?.() ?? "root";
 }
 
+function summarizeArgs(args: Record<string, any>): string {
+	if (!args) return "";
+	if (args.command) {
+		const command = String(args.command).replace(/[\\r\\n\\t]+/g, " ").replace(/  +/g, " ").trim();
+		return command.length > 40 ? `${command.slice(0, 40)}…` : command;
+	}
+	if (args.path) return String(args.path);
+	const keys = Object.keys(args);
+	return keys.length === 0 ? "" : keys.slice(0, 2).join(", ");
+}
+
 /** Build an extension factory bound to one root or child session scope. */
 export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory {
 	return (pi: ExtensionAPI) => {
