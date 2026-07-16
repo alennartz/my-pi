@@ -107,10 +107,10 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		const skillPathsMap = new Map<string, string[]>();
 		const notifiedTierIssues = new Set<string>();
 		// A recursive scope has two routing ports: its local parent endpoint and
-		// the explicit uplink to its own parent. Each parent-local router allocates
-		// IDs independently, and legacy callers may provide explicit IDs, so retain
-		// every possible origin rather than overwriting one port with another.
-		const correlationOrigin = new Map<string, MessagePort[]>();
+		// the explicit uplink to its own parent. Generated IDs are namespaced, but
+		// callers may provide explicit IDs. Keep one origin and reject a duplicate
+		// arriving on the other port before it reaches the model.
+		const correlationOrigin = new Map<string, MessagePort>();
 		let cachedPackageAgents: { user: AgentConfig[]; project: AgentConfig[] } | null = null;
 
 		const queue = new NotificationQueue({
@@ -278,15 +278,30 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			return candidate && typeof candidate.send === "function" ? candidate as MessagePort : null;
 		}
 
-		function rememberCorrelationOrigin(correlationId: string, port: MessagePort): void {
-			const origins = correlationOrigin.get(correlationId) ?? [];
-			if (!origins.includes(port)) origins.push(port);
-			correlationOrigin.set(correlationId, origins);
+		function rejectDuplicateCorrelation(port: MessagePort, correlationId: string): void {
+			const error = `Correlation ID "${correlationId}" is already pending on another recursive route`;
+			if (port.reject) {
+				void port.reject(correlationId, error).catch(() => {});
+				return;
+			}
+			// Structural adapters from the pre-rejection interface only expose
+			// respond(); the typed router path above is used in production.
+			void port.respond(correlationId, `(no response — ${error})`).catch(() => {});
+		}
+
+		function rememberCorrelationOrigin(correlationId: string, port: MessagePort): boolean {
+			const existing = correlationOrigin.get(correlationId);
+			if (existing && existing !== port) {
+				rejectDuplicateCorrelation(port, correlationId);
+				return false;
+			}
+			correlationOrigin.set(correlationId, port);
+			return true;
 		}
 
 		function receiveRoutedMessage(port: MessagePort, message: RoutedMessage, source: "local" | "uplink"): void {
-			if (message.responseExpected && message.correlationId) {
-				rememberCorrelationOrigin(message.correlationId, port);
+			if (message.responseExpected && message.correlationId && !rememberCorrelationOrigin(message.correlationId, port)) {
+				return;
 			}
 			queue.queue(serializeAgentMessage({
 				from: message.from,
@@ -334,8 +349,8 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				},
 				onParentMessage: (xml, meta) => {
 					const port = getLocalParentPort();
-					if (meta.responseExpected && meta.correlationId && port) {
-						rememberCorrelationOrigin(meta.correlationId, port);
+					if (meta.responseExpected && meta.correlationId && port && !rememberCorrelationOrigin(meta.correlationId, port)) {
+						return;
 					}
 					queue.queue(xml, "local");
 					if (queue.isWaiting) resolveWait();
@@ -844,26 +859,12 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			const origins = correlationOrigin.get(params.correlationId) ?? [];
-			if (origins.length === 0) {
-				const fallback = scope.kind === "child" ? scope.uplink : getLocalParentPort();
-				if (fallback) origins.push(fallback);
-			}
-			if (origins.length === 0) throw new Error("No route for this response.");
-			let lastError: unknown;
-			for (const port of origins) {
-				try {
-					await port.respond(params.correlationId, params.message);
-					correlationOrigin.delete(params.correlationId);
-					return { content: [{ type: "text", text: "Response sent." }] };
-				} catch (error) {
-					// Explicit legacy IDs can collide across the local router and
-					// uplink. A non-target port rejects without consuming its wait;
-					// try the remaining origin before surfacing the error.
-					lastError = error;
-				}
-			}
-			throw lastError instanceof Error ? lastError : new Error(String(lastError));
+			const port = correlationOrigin.get(params.correlationId)
+				?? (scope.kind === "child" ? scope.uplink : getLocalParentPort());
+			if (!port) throw new Error("No route for this response.");
+			await port.respond(params.correlationId, params.message);
+			correlationOrigin.delete(params.correlationId);
+			return { content: [{ type: "text", text: "Response sent." }] };
 		}
 	});
 

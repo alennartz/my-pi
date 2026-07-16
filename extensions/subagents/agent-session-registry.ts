@@ -199,11 +199,14 @@ export class AgentSessionRegistry {
 							sessionFile: metadata.sessionFile,
 							cwd: metadata.cwd,
 						}) as AgentNodeSnapshot;
-						this.stagedSnapshots.set(pathKey, next);
 						const liveNode = this.nodes.get(pathKey);
-						if (liveNode && !snapshotEqual(previous, next)) {
-							liveNode.snapshot = next;
-							this.emit({ type: "node_updated", previous, node: next });
+						if (liveNode) {
+							if (!snapshotEqual(previous, next)) {
+								liveNode.snapshot = next;
+								this.emit({ type: "node_updated", previous, node: next });
+							}
+						} else {
+							this.stagedSnapshots.set(pathKey, next);
 						}
 						request.hooks.onSessionChanged(metadata);
 					},
@@ -290,7 +293,6 @@ export class AgentSessionRegistry {
 		if (node) {
 			const previous = node.snapshot;
 			node.snapshot = snapshot;
-			this.stagedSnapshots.set(pathKey, snapshot);
 			this.emit({ type: "node_updated", previous, node: snapshot });
 		} else {
 			// Construction-time SDK events are staged immutably and become the
@@ -394,6 +396,7 @@ export class AgentSessionRegistry {
 				await this.disposeNode(node);
 				if (this.nodes.get(nodeKey) !== node) continue;
 				this.nodes.delete(nodeKey);
+				this.stagedSnapshots.delete(nodeKey);
 				this.emit({ type: "node_removed", node: node.snapshot });
 			}
 		} finally {

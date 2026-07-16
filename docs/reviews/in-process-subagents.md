@@ -35,7 +35,7 @@ The fix commit resolves all fifteen findings from the prior review, including th
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/agent-session-registry.ts:290-294,392-403`
-- **Status:** open
+- **Status:** resolved
 
 `updateOperational()` stores every committed node's replacement snapshot in `stagedSnapshots`, even though the live node is already held in `nodes`. Removal never deletes that staging entry. Repeated activity followed by teardown therefore retains full snapshots—including potentially large `lastOutput` strings—for every removed node, causing unbounded per-root memory growth. Only genuinely staged nodes should use this map, or removal must clear the committed-path entry.
 
@@ -44,7 +44,7 @@ The fix commit resolves all fifteen findings from the prior review, including th
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/scoped-extension.ts:281-285,847-866`
-- **Status:** open
+- **Status:** resolved
 
 Generated IDs are now namespaced and safe, but the public `MessagePort` interface still accepts caller-supplied IDs. If the same explicit ID is pending simultaneously on the local child router and the recursive uplink, `correlationOrigin` keeps both ports and tries them in insertion order. The first port can accept the response as a valid target, so the response may resolve the wrong pending request; a failed-port retry cannot disambiguate two valid matches. Origin-qualified keys or a scope-level rejection of duplicate explicit IDs are needed.
 

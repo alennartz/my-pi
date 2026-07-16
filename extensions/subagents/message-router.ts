@@ -39,6 +39,8 @@ export interface MessagePort {
 	}): Promise<SendReceipt>;
 	/** Only the endpoint addressed by the correlation may respond. */
 	respond(correlationId: string, message: string): Promise<void>;
+	/** Reject a pending request from its addressed endpoint (optional adapter seam). */
+	reject?(correlationId: string, error: string): Promise<void>;
 	detach(correlationId: string): void;
 	cancel(correlationId: string): void;
 	subscribe(listener: (message: RoutedMessage) => void): () => void;
@@ -205,6 +207,7 @@ export class MessageRouter {
 			id: endpoint.id,
 			send: (input) => this.sendFrom(endpoint, input),
 			respond: (correlationId, message) => this.respondFrom(endpoint, correlationId, message),
+			reject: (correlationId, error) => this.rejectFrom(endpoint, correlationId, error),
 			detach: (correlationId) => this.detachFrom(endpoint, correlationId),
 			cancel: (correlationId) => this.cancelFrom(endpoint, correlationId),
 			subscribe: (listener) => this.subscribeTo(endpoint, listener),
@@ -282,6 +285,21 @@ export class MessageRouter {
 		}
 
 		this.completePendingResponse(pending, message);
+	}
+
+	private async rejectFrom(endpoint: Endpoint, correlationId: string, error: string): Promise<void> {
+		this.assertEndpointActive(endpoint);
+		const pending = this.pendingCorrelations.get(correlationId);
+		if (!pending) {
+			throw new Error(`No pending request for correlation ID "${correlationId}"`);
+		}
+		if (pending.to !== endpoint.id) {
+			throw new Error(
+				`Endpoint "${endpoint.id}" is not the target for correlation ID "${correlationId}"`,
+			);
+		}
+
+		this.resolvePendingError(pending, error || `Blocking request "${correlationId}" was rejected`);
 	}
 
 	private detachFrom(endpoint: Endpoint, correlationId: string): void {
