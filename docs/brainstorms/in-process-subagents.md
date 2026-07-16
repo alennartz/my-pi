@@ -67,3 +67,21 @@ Success means the existing subagent workflows behave the same from an agent and 
 ### Fog
 
 - None currently. Process-isolation differences are accepted constraints, not unresolved requirements.
+
+## Architecture Clarification
+
+The interactive architecture retrospective corrected one ownership assumption without changing the brainstorm's product scope:
+
+- Parent-local managers still own immediate-child orchestration, topology, messaging, persistence, completion policy, and the existing tool behavior.
+- A live **per-root session registry** owns the root-relative hierarchy, descendant SDK runtimes, and canonical operational snapshots. This is runtime ownership infrastructure, not a new recursive-reporting or navigation feature.
+- The externally owned root is represented at path `[]`. Descendant identity is a canonical segmented path of sibling-scoped agent names, such as `["researcher", "scout"]`; paths are live-only and reusable after removal.
+- The registry is not persisted. Existing per-parent lifecycle logs remain authoritative, and current nested-restore limitations remain unchanged.
+- Removed nodes leave the active registry after emitting a final snapshot. Historical cost retention is a future projection, not registry state.
+- Each agent receives an isolated settings manager, resource loader, EventBus, extension instances, tools, skills, context, trust decision, and system prompt. Auth storage and the model registry are shared within the root.
+- Each parent retains its own in-memory message router. Recursive children receive an explicit uplink plus the shared registry and their canonical path.
+- Child extensions bind once to a stable delegating UI context: headless initially, attachable later without emitting another `session_start`. Pimote discovery and integration remain deliberately unresolved so Pimote does not become coupled to this external extension.
+- Child pi session names initialize from the escaped full path. The path remains authoritative if the pi session changes.
+- Persona tool restrictions are normalized once as the SDK allowlist. Infrastructure `respond` is always included, direct-user `ask_user` is always excluded, and forks inherit the parent's complete active tool set. This intentionally fixes the current double-filter bug where CLI `--tools` can remove registered extension tools.
+- The local child project-trust resolver preserves CLI precedence because pi does not publicly export that resolver.
+
+This clarification supersedes only the brainstorm's assumption that a shared tree would necessarily implement the future features. It does not add recursive cost reporting, descendant-facing tools, session navigation, Pimote integration, a TUI viewer, a historical ledger, or root-wide persistence to the current change.

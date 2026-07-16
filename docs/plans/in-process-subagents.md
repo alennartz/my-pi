@@ -2,7 +2,7 @@
 
 ## Context
 
-Replace subprocess/RPC-backed subagents with in-process pi SDK sessions while preserving the extension's observable behavior and persisted-session compatibility. Process isolation guarantees are deliberately excluded, and later recursive reporting or cross-session UI features remain out of scope. See [the brainstorm](../brainstorms/in-process-subagents.md).
+Replace subprocess/RPC-backed subagents with in-process pi SDK sessions while preserving observable behavior and compatibility with existing child sessions and lifecycle logs. The runtime ownership shape deliberately supports later recursive reporting and session presentation, but those product features remain out of scope. See [the brainstorm](../brainstorms/in-process-subagents.md), including its appended architecture clarification.
 
 ## Architecture
 
@@ -10,50 +10,205 @@ Replace subprocess/RPC-backed subagents with in-process pi SDK sessions while pr
 
 #### Subagents
 
-The Subagents module keeps ownership of the public orchestration interface and its existing parent-local semantics. Agent discovery, personas, model tiers, tool schemas, topology rules, deadlock detection, notification batching, persistence records, status rendering, and lifecycle reports remain its responsibilities.
+The Subagents module keeps its public tool interface and parent-local orchestration semantics. Agent discovery, personas, model tiers, topology, channel enforcement, deadlock policy, notifications, persistence, completion policy, resurrection, status formatting, and dashboard/panel projection remain its responsibilities.
 
-Its runtime responsibilities change:
+Runtime ownership changes:
 
-- Child execution is owned through live `AgentSessionRuntime` objects rather than `ChildProcess`/RPC handles.
-- Each extension instance still manages only its immediate children. A child receives an explicit in-memory uplink to its parent and may create its own local manager for recursive spawning.
-- Child identity, tool restrictions, and parent linkage are passed through a scoped extension factory rather than `PI_PARENT_LINK`.
-- Lifecycle and usage state are derived from direct `AgentSessionEvent` subscriptions. Process-exit polling and stderr-based failure handling disappear.
-- Inter-agent messages use an in-memory router. Channel authorization, correlation ownership, blocking-send behavior, detach/cancel behavior, deadlock detection, and idle/removal failure semantics remain unchanged.
-- Existing lifecycle logs and child session files remain the source of truth for restore and resurrection.
+- One live `AgentSessionRegistry` exists per root session tree. It contains an externally owned root node and every live descendant node.
+- The registry owns descendant `AgentSessionRuntime` creation, replacement, metadata, operational snapshots, and disposal.
+- Each `SubagentManager` still manages only its immediate children. It owns their router namespace and persistence records, but reads and updates their canonical node state through the shared registry.
+- Every parent retains a separate in-memory router. A recursive child receives the shared registry, its canonical path, and an explicit uplink to its parent's router.
+- Child identity and capabilities are supplied through a scoped extension factory rather than process environment variables.
+- SDK session events replace RPC events and process-exit polling. Cooperative cancellation replaces signals and hard kill.
+- Existing child JSONL sessions and version-1 lifecycle logs remain authoritative for restore and resurrection. The registry itself is not persisted.
 
-The module remains parent-local: it does not add a root registry, recursive aggregation, descendant queries, or cross-session viewing.
+The registry does not expose new LLM tools or implement recursive cost aggregation, descendant queries, session navigation, Pimote integration, TUI viewing, or historical reporting.
 
 #### Numbered Select
 
-Numbered Select no longer infers subagent role from `PI_PARENT_LINK`. Root sessions continue to register `ask_user`; SDK child creation centrally excludes that tool from child sessions, preserving the current no-direct-user-prompt policy without process environment coupling.
+Numbered Select no longer infers child role from `PI_PARENT_LINK`. It registers `ask_user` normally in root sessions. The normalized child SDK tool policy centrally excludes `ask_user`, so no child can prompt the user directly.
 
 ### New Modules
 
+#### Agent Session Registry
+
+A deep module inside `extensions/subagents/` owns the live root-relative tree and all descendant SDK sessions. It validates canonical paths, provides atomic child creation, stores immutable operational snapshots, publishes node lifecycle events, exposes presentation attachment, and disposes registry-owned subtrees.
+
+The registry does not own message topology, lifecycle logs, persona discovery, LLM-facing reports, or historical usage. Those remain parent-manager responsibilities or future projections.
+
+Dependencies: Managed Child Session, shared root auth/model infrastructure, and path/status value types.
+
 #### Managed Child Session
 
-A concrete SDK-native module inside `extensions/subagents/` owns the full lifecycle of one child session. It hides cwd-bound service construction, project-trust resolution, resource loading, model selection, extension binding, event rebinding after session replacement, prompt submission, cooperative interruption, and disposal behind a small interface.
+A concrete SDK-native module owns one descendant's `AgentSessionRuntime` and independently scoped services. It hides session target translation, cwd-bound settings/resources, model resolution, tool/skill policy application, extension loading, project trust, SDK event binding, prompt submission, session replacement rebinding, cooperative abort, and idempotent disposal.
 
-This is not an RPC/SDK compatibility adapter and has no alternate process implementation. It deliberately exposes its `AgentSessionRuntime` so later SDK-native capabilities are not hidden behind the old transport's limits.
+It is not an RPC-compatible adapter. The registry node exposes the concrete managed session and underlying runtime so later SDK-native integrations are not constrained by the removed transport.
 
-Dependencies: pi SDK session/runtime factories, the scoped subagents extension factory, the child project-trust resolver, existing agent specifications, and shared auth/model infrastructure from the parent context.
+#### Delegating Extension UI
+
+A small stateful module implements one stable `ExtensionUIContext`. Extensions bind to it once. It forwards to a headless target by default and can temporarily attach another presentation target without rebinding extensions or emitting another `session_start`.
+
+This is an attachment seam only. It contains no Pimote-specific imports or navigation behavior.
 
 #### Child Project Trust
 
-A local, transport-free module resolves trust for child project resources. It uses only public pi SDK event types and `ProjectTrustStore`; it does not import pi's private CLI trust resolver.
-
-It owns the precedence required for child resource loading: a decisive extension `project_trust` result, then saved trust, then the configured `always`/`never` default, then an unresolved `ask` declining through the supplied headless context. An `undecided` extension result falls through to saved trust. This is a narrow domain seam used by Managed Child Session's resource-loader callback, not a second session backend.
-
-Dependencies: public `LoadExtensionsResult`, `ProjectTrustContext`, `DefaultProjectTrust`, and `ProjectTrustStore` types from pi.
+A pure module reproduces pi's non-interactive project-trust precedence using public SDK types: decisive extension result, saved trust, configured default, then headless decline for unresolved `ask`.
 
 #### In-Memory Message Router
 
-A transport-free routing module replaces the Unix-socket broker and socket clients. It owns the topology, registered endpoints, correlation table, deadlock graph, removed-agent state, and delivery of messages/responses/errors.
-
-The router remains centralized within each parent-local manager, preserving the current hub-and-spoke authority. Its interface deals in typed messages and promises rather than JSONL frames or acknowledgements.
-
-Dependencies: existing channel topology and deadlock modules. It has no dependency on SDK sessions or extension UI.
+A transport-free parent-local router replaces the Unix-socket broker and clients. It owns endpoints, topology authorization, correlations, blocking response lifetimes, detach/cancel behavior, deadlock edges, and lifecycle failures. It has no dependency on SDK sessions or the registry.
 
 ### Interfaces
+
+#### Canonical agent paths
+
+```ts
+type AgentPath = readonly string[];
+
+function childAgentPath(parent: AgentPath, localId: string): AgentPath;
+function formatAgentPath(path: AgentPath): string;
+```
+
+Contracts:
+
+- The root path is `[]`.
+- A descendant path is its ordered sequence of sibling-scoped agent IDs, for example `["researcher", "scout"]`.
+- Internal identity uses segments, never a delimiter-joined string. Existing agent IDs are not newly restricted because they contain `/` or another display delimiter.
+- `formatAgentPath()` escapes individual segments before joining them for display and initial pi session naming.
+- Duplicate local IDs under one live parent are rejected. The same local ID under different parents is valid.
+- Paths are stable for the live logical node even if its current pi session changes. Once a node is removed, its path may be reused.
+
+#### Registry nodes and snapshots
+
+```ts
+type NodeOwnership = "external" | "registry";
+
+type AgentUsage = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+  turns: number;
+};
+
+type AgentOperationalSnapshot = {
+  state: "running" | "idle" | "waiting" | "failed";
+  usage: AgentUsage;
+  model?: string;
+  lastActivity?: string;
+  lastOutput?: string;
+  lastError?: string;
+  lastTurnInput: number;
+  contextWindow?: number;
+  hasSubgroup: boolean;
+  pendingCorrelations: string[];
+  waitingFor: string[];
+};
+
+type AgentNodeSnapshot = {
+  path: AgentPath;
+  parentPath: AgentPath | null;
+  localId: string | null;
+  ownership: NodeOwnership;
+  sessionId: string;
+  sessionFile?: string;
+  cwd: string;
+  task?: string;
+  agentDef?: string;
+  channels: string[];
+  operational: AgentOperationalSnapshot;
+};
+
+type RegistryEvent =
+  | { type: "node_added"; node: AgentNodeSnapshot }
+  | {
+      type: "node_updated";
+      previous: AgentNodeSnapshot;
+      node: AgentNodeSnapshot;
+    }
+  | { type: "node_removed"; node: AgentNodeSnapshot };
+```
+
+Contracts:
+
+- Snapshots are immutable values. Managers compute transitions and replace snapshots through registry operations; they do not maintain a second canonical status object.
+- The root node has path `[]`, `parentPath: null`, `localId: null`, and `ownership: "external"`. The registry records its metadata and status but never disposes its runtime.
+- Descendants have `ownership: "registry"` and a managed SDK session.
+- Session metadata updates in place when a logical node switches pi sessions; path and parentage do not change.
+- The registry contains active nodes only. `node_removed` carries the final snapshot before deletion; no tombstone or historical cost ledger remains in the registry.
+
+#### Agent session registry
+
+```ts
+type ExternalRootNode = {
+  get snapshot(): AgentNodeSnapshot & { ownership: "external" };
+};
+
+type RegisteredAgentNode = {
+  get snapshot(): AgentNodeSnapshot & { ownership: "registry" };
+  readonly session: ManagedChildSession;
+  readonly presentation: DelegatingExtensionUI;
+};
+
+type AgentRegistryNode = ExternalRootNode | RegisteredAgentNode;
+
+type CreateAgentNodeRequest = {
+  localId: string;
+  task: string;
+  agentDef?: string;
+  channels: string[];
+  session: Omit<ChildSessionConfig, "path" | "scope"> & {
+    uplink: MessagePort;
+  };
+  initialOperational: AgentOperationalSnapshot;
+};
+
+class AgentSessionRegistry {
+  constructor(options: {
+    root: AgentNodeSnapshot;
+    dependencies: ManagedChildSessionDependencies;
+    createSession?: typeof createManagedChildSession;
+  });
+
+  get(path: AgentPath): AgentRegistryNode | undefined;
+  getSnapshot(path: AgentPath): AgentNodeSnapshot | undefined;
+  listChildren(parent: AgentPath): AgentNodeSnapshot[];
+
+  createChildren(
+    parent: AgentPath,
+    requests: CreateAgentNodeRequest[],
+  ): Promise<RegisteredAgentNode[]>;
+
+  updateOperational(
+    path: AgentPath,
+    next: AgentOperationalSnapshot,
+  ): void;
+
+  remove(path: AgentPath): Promise<void>;
+  attachPresentation(
+    path: AgentPath,
+    target: ExtensionUIContext,
+  ): () => void;
+  subscribe(listener: (event: RegistryEvent) => void): () => void;
+  dispose(): Promise<void>;
+}
+```
+
+Contracts:
+
+- Construction requires exactly one external root snapshot at `[]`.
+- `createChildren()` requires a live parent, rejects duplicate sibling IDs and reserved `parent`, and reserves every requested path before starting SDK construction.
+- Batch creation is atomic. If any session fails, every staged session is disposed, every path reservation is released, no node events survive, and the manager writes no lifecycle records.
+- The registry derives each child path, full display/session name, child scope, and shared registry reference. Callers cannot register arbitrary parentage after session creation.
+- Successful creation publishes immutable `node_added` snapshots only after all sessions expose real session IDs/files.
+- `updateOperational()` is the single status mutation point and emits `node_updated` only for an actual value change.
+- Managed session replacement updates session ID/file/cwd on the existing node and emits `node_updated` without changing its path.
+- `remove()` disposes registry-owned descendants and the target safely and idempotently, emits bottom-up final `node_removed` events, and makes paths reusable. Removing `[]` is invalid.
+- Presentation attachment is valid only for registry-owned descendants; the external root remains presented by its host.
+- `dispose()` removes every registry-owned node and leaves the external root runtime untouched.
+- Subscriber failures do not interrupt registry lifecycle operations.
+- The registry has no disk I/O. Parent managers continue to decide whether a removal is user teardown or soft shutdown and update lifecycle logs accordingly.
 
 #### Scoped extension construction
 
@@ -62,11 +217,12 @@ type SubagentScope =
   | { kind: "root" }
   | {
       kind: "child";
+      registry: AgentSessionRegistry;
+      path: AgentPath;
       identity: {
         id: string;
         task: string;
         channels: string[];
-        tools?: string[];
       };
       uplink: MessagePort;
     };
@@ -74,40 +230,60 @@ type SubagentScope =
 function createSubagentsExtension(scope: SubagentScope): ExtensionFactory;
 ```
 
-The package entrypoint exports a root-scoped factory as its default. Managed child sessions inject a child-scoped inline factory.
-
 Contracts:
 
-- All mutable extension state remains inside the returned factory closure; no session identity is read from or written to process globals.
-- A child scope registers the same tools as today, subject to its persona tool restriction, with `respond` retaining its infrastructure exception.
-- `scope.identity.tools` is the persona-derived policy for Subagents extension tools. `ChildSessionConfig.allowedTools` is the independent SDK-wide child-tool allowlist corresponding to the legacy CLI `--tools` policy. When both apply, effective tool availability is their intersection. The scoped factory always registers `respond` despite the persona policy, but an explicit SDK-wide allowlist may still exclude it.
-- The child uplink represents only the parent manager's namespace. A child manager creates a separate local router for its own immediate children.
-- Tool routing preserves the current rule: a target owned by the local manager uses the local port; otherwise a child uses its uplink; a root with no local target reports that no agent is available.
-- `list_models` remains a session-local extension tool and renders the complete catalog from that scoped session's `ctx.modelRegistry`, including context and pricing, exactly as it does today.
-- Session shutdown detaches the scoped extension from its uplink and softly shuts down its immediate children. It does not tear down its parent-owned runtime or mutate the parent's lifecycle record.
+- The default package entrypoint constructs a root-scoped factory. The root factory creates one registry when its root session context is available and registers the external root node.
+- A child-scoped factory receives the existing per-root registry and its already-reserved canonical path. It never discovers role or parent identity from process globals.
+- Every factory invocation owns isolated mutable extension state: manager, queues, displays, correlation origins, tier notices, and skill-path cache.
+- Root and child factories register the same Subagents tool definitions. The session's normalized SDK allowlist determines which tools are active; the factory does not apply a second persona filter.
+- Each child manager uses `scope.path` as its owner path, `scope.registry` for runtime/state ownership, and `scope.uplink` for parent/sibling communication.
+- Root sessions may restore immediate children and render dashboard/panel state. Child scopes retain the current behavior of not automatically restoring grandchildren after their own restart.
+- `list_models` reads the executing session's model registry.
+- Session shutdown detaches uplink listeners and softly shuts down the scope's immediate-child manager. The registry remains the only owner allowed to dispose the scope's own runtime.
 
-The child resource loader removes the normally discovered root-scoped Subagents extension by resolved extension identity, then injects exactly one child-scoped factory. Every other eligible extension remains discoverable under the child's cwd and trust policy.
-
-#### Child project trust
+#### Normalized child tool policy
 
 ```ts
-type ChildProjectTrustOptions = {
-  cwd: string;
-  extensionsResult: LoadExtensionsResult;
-  trustStore: Pick<ProjectTrustStore, "get" | "set">;
-  defaultProjectTrust?: DefaultProjectTrust;
-  projectTrustContext: ProjectTrustContext;
-};
+type ChildToolPolicyInput =
+  | { kind: "default" }
+  | { kind: "persona"; tools: string[] }
+  | { kind: "fork"; parentActiveTools: string[] };
 
-function resolveChildProjectTrust(
-  options: ChildProjectTrustOptions,
-): Promise<boolean>;
+type ChildToolPolicy =
+  | { allowedTools: undefined; excludeTools: ["ask_user"] }
+  | { allowedTools: string[]; excludeTools: undefined };
+
+function resolveChildToolPolicy(input: ChildToolPolicyInput): ChildToolPolicy;
 ```
 
 Contracts:
 
-- It invokes project extensions with `{ type: "project_trust", cwd }` through the supplied context. The first `yes` or `no` result wins; `undecided` continues precedence resolution.
-- If no extension decides, saved trust wins over the configured default. `always` resolves true, `never` resolves false, and `ask` resolves false when the supplied context has no UI without calling its dialog methods.
+- A default agent has no SDK allowlist and explicitly excludes `ask_user`.
+- Persona tools are the authoritative restriction. The normalized allowlist adds `respond`, removes `ask_user`, and preserves every other named built-in or extension tool.
+- Forks inherit the parent's complete active tool names, not only built-ins; normalization adds `respond` and removes `ask_user`.
+- Output is deduplicated and deterministic.
+- There is no independent `scope.identity.tools` registration policy. This intentionally fixes the current double-filter bug where CLI `--tools` filters a tool that the extension registered.
+- Typed-agent extension loading is not expanded with a new persona field. Extension enablement continues to come from each child's isolated cwd settings, package discovery, and trust decision.
+
+#### Delegating extension UI
+
+```ts
+class DelegatingExtensionUI {
+  readonly context: ExtensionUIContext;
+
+  attach(target: ExtensionUIContext): () => void;
+  reset(): void;
+}
+```
+
+Contracts:
+
+- `context` is a stable object for the lifetime of the logical node and forwards every operation/property to the current target.
+- The initial target is a headless implementation: notifications reach child lifecycle hooks, dialogs return non-interactive fallbacks, and visual operations are local no-ops.
+- `attach()` replaces the target without calling `session.bindExtensions()` and returns a token-aware detach function. A stale detach cannot displace a newer attachment.
+- `reset()` returns to headless behavior.
+- Runtime session replacement binds the new session's extension instances to the same delegating context, so an active presentation may survive replacement.
+- Registry discovery and any Pimote-specific adapter are deliberately deferred. Nothing in this module imports Pimote.
 
 #### Managed child session
 
@@ -123,12 +299,12 @@ type ChildSessionTarget =
     };
 
 type ChildSessionConfig = {
-  id: string;
+  path: AgentPath;
   target: ChildSessionTarget;
   scope: Extract<SubagentScope, { kind: "child" }>;
   modelRef?: string;
   thinkingLevel?: ThinkingLevel;
-  allowedTools?: string[];
+  toolPolicy: ChildToolPolicy;
   skillPaths: string[];
   appendSystemPrompt: string[];
 };
@@ -146,6 +322,7 @@ type ChildSessionHooks = {
 
 class ManagedChildSession {
   readonly runtime: AgentSessionRuntime;
+  readonly presentation: DelegatingExtensionUI;
   get eventBus(): EventBusController;
   get session(): AgentSession;
   get sessionId(): string;
@@ -158,40 +335,47 @@ class ManagedChildSession {
   abort(): Promise<void>;
   dispose(): Promise<void>;
 }
-
-function createManagedChildSession(
-  config: ChildSessionConfig,
-  dependencies: {
-    agentDir: string;
-    authStorage: AuthStorage;
-    modelRegistry: ModelRegistry;
-  },
-  hooks: ChildSessionHooks,
-): Promise<ManagedChildSession>;
 ```
 
-Construction contracts:
+Construction and lifecycle contracts:
 
-- `new`, `resume`, and `fork` map to `SessionManager.create`, `SessionManager.open`, and `SessionManager.forkFrom` respectively. Existing RPC-created JSONL sessions are opened directly; no session-format migration is introduced.
-- The child session name is the agent ID, matching the current CLI `--name` behavior.
-- Auth storage and the model registry are shared with the parent session. Settings, resource loading, tools, and the event bus are created per effective child cwd, following the multi-session pattern already used by Pimote.
-- Project resources follow the CLI's non-interactive trust semantics through `resolveChildProjectTrust`: decisive extension trust, saved trust, and configured defaults are honored in precedence order, but an unresolved `ask` decision does not prompt from a child. The managed module does not import pi's private CLI resolver.
-- A model reference is resolved with pi's CLI-compatible model resolver, including thinking suffixes. When no override exists, normal session restoration/settings selection applies. Persona-pinned model precedence remains unchanged.
-- Persona skill restrictions use `noSkills` plus explicit absolute skill paths. Forks receive their captured active built-in tools and skill paths. Other cwd-eligible resources continue through `DefaultResourceLoader`.
-- The SDK-wide `allowedTools` policy is passed as the session tool allowlist; `ask_user` is excluded from every child. This remains independent from the scoped Subagents extension-tool policy carried by `scope.identity.tools`.
-- The discovered root Subagents extension is filtered and replaced by the scoped child factory. `ask_user` is excluded from every child. No other extension is removed solely because the session is a child.
-- The manager subscribes before `bindExtensions()` so work triggered by `session_start` cannot outrun status tracking.
-- Extensions bind in `rpc` mode with a headless UI context, runtime-backed command actions, an abort handler, a child-local shutdown handler, and an extension-error listener.
-- Runtime session replacement re-creates cwd-bound services, rebinds extensions and subscriptions, and reports the new session metadata through `onSessionChanged` without replacing the `ManagedChildSession` object.
+- `new`, `resume`, and concurrent child `fork` map to `SessionManager.create`, `SessionManager.open`, and `SessionManager.forkFrom`. Existing RPC-created session files open directly.
+- Every active session, including an opened legacy session and any replacement session, receives the escaped full registry path as its initial pi session name. Registry path remains authoritative if an extension later renames the pi session.
+- Auth storage and the model registry come from the root registry. Every runtime generation creates its own cwd-bound `SettingsManager`, resource loader, EventBus, trust context, tools, skills, context, and extension instances.
+- Model references use pi's CLI-compatible resolver. Persona model precedence and fork thinking inheritance remain unchanged.
+- Tool policy is applied exactly once through SDK `tools` or `excludeTools` options.
+- Explicit persona skills use `noSkills` plus absolute skill paths. Otherwise normal isolated skill discovery applies.
+- `DefaultResourceLoader` retains normal child cwd/package discovery. It filters only the normally discovered root Subagents extension and injects exactly one child-scoped factory carrying registry/path/uplink identity.
+- Project trust uses `resolveChildProjectTrust()` with CLI-equivalent non-interactive precedence.
+- SDK event subscription occurs before `bindExtensions()` so `session_start` work cannot outrun status projection.
+- Extensions bind in `rpc` mode to the stable delegating UI context and runtime-backed command actions. No second bind is needed for presentation attachment.
+- Session replacement re-creates scoped services, re-subscribes, binds the new extension instances to the same presentation delegate, and reports metadata without replacing the registry node.
+- `submit()` returns at prompt preflight while observing the full prompt promise. Input source remains `rpc`.
+- DR-041 remains applicable: an input handler may return `handled` with preflight success, so an error notification before `agent_start` settles the child as failed.
+- `abort()` uses cooperative SDK cancellation. `dispose()` is idempotent and delegates to `AgentSessionRuntime.dispose()` so extension shutdown runs.
 
-Prompt and shutdown contracts:
+#### Child project trust
 
-- `submit()` calls `session.prompt()` with input source `rpc` and returns when prompt preflight has accepted or rejected the input; it does not wait for the agent run to settle. The full prompt promise remains observed internally so later rejection cannot become an unhandled promise.
-- A thrown preflight failure rejects `submit()`. An input handler that returns `handled` still reports preflight success in pi; DR-041 therefore remains in force through `onUiNotify`: an error notification received before `agent_start` settles the child as failed.
-- `abort()` delegates to cooperative SDK cancellation. No hard-kill fallback exists.
-- `dispose()` delegates to `AgentSessionRuntime.dispose()` so `session_shutdown` handlers run before resources and subscriptions are released. It is idempotent.
+```ts
+type ChildProjectTrustOptions = {
+  cwd: string;
+  extensionsResult: LoadExtensionsResult;
+  trustStore: Pick<ProjectTrustStore, "get" | "set">;
+  defaultProjectTrust?: DefaultProjectTrust;
+  projectTrustContext: ProjectTrustContext;
+  onExtensionError?: (error: ExtensionError) => void;
+};
 
-The headless UI context preserves non-interactive child behavior: notifications reach `onUiNotify`; status/widget/title operations do not target the parent's TUI; dialogs resolve to their non-interactive fallback rather than asking the user. Scoped child extensions receive the same context again after a runtime session replacement.
+function resolveChildProjectTrust(
+  options: ChildProjectTrustOptions,
+): Promise<boolean>;
+```
+
+Contracts:
+
+- Project extension handlers run in loader order. The first `yes` or `no` wins; `undecided` falls through.
+- A remembered extension decision is saved. Handler failures are reported through `onExtensionError` and are non-decisive.
+- Saved trust wins over configured `always`/`never`; unresolved `ask` returns false without invoking child dialog UI.
 
 #### In-memory routing
 
@@ -225,245 +409,87 @@ interface MessagePort {
   cancel(correlationId: string): void;
   subscribe(listener: (message: RoutedMessage) => void): () => void;
 }
-
-class MessageRouter {
-  constructor(options: {
-    topology: Topology;
-    onBlockingSendStart?: (
-      from: string,
-      to: string,
-      correlationId: string,
-    ) => void;
-    onBlockingSendEnd?: (from: string, correlationId: string) => void;
-  });
-
-  connect(agentId: string): MessagePort;
-  agentIdle(agentId: string): void;
-  agentUnavailable(agentId: string, error: string): void;
-  agentRemoved(agentId: string): void;
-  isQuiet(): boolean;
-  close(): void;
-}
 ```
 
-Routing contracts:
+Routing remains parent-local:
 
-- `parent` remains a reserved endpoint ID. Each local manager connects its own parent endpoint plus one endpoint per immediate child.
-- Channel validation occurs before delivery. Dead/removed, disconnected, and unauthorized targets fail without creating a pending correlation.
-- For blocking sends, the response promise, correlation record, target mapping, and deadlock edge are installed before target delivery, so an immediate response cannot race registration. The router allocates a correlation ID when the caller omits one and rejects a caller-supplied ID that is already pending.
-- A deadlock cycle rejects the send without delivery.
-- Only the endpoint that received a blocking message may `respond()`. A valid response resolves the original sender's response promise, removes the correlation and deadlock edge, and ends its waiting status.
-- `cancel()` removes both correlation and edge. `detach()` removes the edge and waiting status but retains the correlation so a late response can be delivered asynchronously by the scoped extension. After delivery has been accepted, cancellation and lifecycle failures resolve the response promise as `{ type: "error", error }`; they do not reject it.
-- When a target becomes idle without responding, is removed, or its runtime becomes unavailable, all sends waiting on that target receive the same synthetic failures as today. An idle or failed run leaves the endpoint reusable; removal or an unavailable runtime tombstones it until a replacement endpoint reconnects. Removing a sender also clears correlations it owns.
-- `close()` rejects unresolved correlations and drops all endpoint subscriptions without touching persistence or SDK runtimes.
+- Each manager owns one router namespace with reserved endpoint `parent` and immediate-child endpoints.
+- Child scopes use their explicit uplink for parent/sibling targets and create a separate router for their own children.
+- Channel checks, target availability, correlation registration-before-delivery, deadlock detection, responder ownership, detach/cancel, idle failures, reconnect, and quiet-state semantics remain as reviewed.
+- Accepted lifecycle/cancel failures resolve as typed error responses. Router shutdown rejects unresolved waits.
+- Registry paths do not change the LLM-facing local IDs or channel vocabulary.
 
-The existing XML message and completion serializers remain unchanged. Socket-only request/response frame types are removed.
+#### Manager and registry state projection
 
-#### Subagent manager and status projection
+A manager entry retains only orchestration/persistence data not owned by the registry: child path, persona record, task/channels, fork restoration metadata, router port, completion-notified flag, and prompt-start tracking.
 
-`SubagentManager` retains its tool-facing operations and reports. Each internal entry replaces `RpcChild` with a `ManagedChildSession` and the child's `MessagePort`.
+Contracts:
 
-Lifecycle projection contracts:
-
-- `tool_execution_start` updates last activity and subgroup hints.
-- Assistant `message_end` accumulates tokens, cost, model, context fill, and last output exactly once.
-- `agent_start` marks the entry running and records that the submitted prompt began.
-- A terminal `agent_end` (`willRetry === false`) records any final assistant error. Completion is emitted at `agent_settled`, the authoritative boundary after retries, compaction, and queued continuations.
-- An error-level headless UI notification before `agent_start` follows DR-041 and settles the entry as failed.
-- Runtime creation, binding, or prompt failures settle the affected entry as failed and surface their error; there is no process stderr fallback.
-- `interrupt` calls the managed session's cooperative `abort()`.
-- User teardown removes the entry from routing before disposal and appends `agent_removed`. Soft shutdown disposes sessions and routing without appending removals, allowing the next root startup to restore them.
-- Completion still requires every immediate child to be idle/failed and the local router to have no pending correlations.
-- Every status mutation continues through the manager's existing `onUpdate` callback. The scoped extension projects that immediate-child status through the existing TUI dashboard or Pimote panel handle, including initial spawn/restore, activity changes, completion, interruption, and teardown. Arbitrary widgets/statuses emitted by extensions inside a headless child remain headless; they are not the Subagents dashboard contract.
-
-Batch validation remains atomic before session creation. If construction of a batch fails after some sessions were created, those sessions and ports are disposed and no partial `agent_added` records survive.
+- Manager status getters read canonical immediate-child snapshots through `registry.listChildren(ownerPath)`.
+- SDK event hooks calculate the same activity, usage, model, context, subgroup, waiting, output, and failure transitions as today, then call `registry.updateOperational()`.
+- `agent_start` marks running. Terminal `agent_end` records a final assistant error, while `agent_settled` is the single completion boundary after retries, compaction, and continuations.
+- Headless pre-start error notification follows DR-041. Runtime unavailability produces failed state without process stderr or exit polling.
+- Existing `onUpdate` and completion callbacks project registry snapshots into the TUI dashboard, Pimote panel, XML notifications, and tool results.
+- `interrupt` resolves the node and calls its managed session's cooperative abort.
+- Manager spawn/fork/resurrect requests registry-owned children atomically, then writes existing persistence records and submits initial tasks. A construction rollback writes nothing.
+- User teardown writes `agent_removed` and asks the registry to remove the node subtree. Soft shutdown asks the registry to dispose live children without writing removals. Registry disposal is idempotent when nested `session_shutdown` handlers converge.
+- Completion requires every immediate child snapshot to be idle/failed and the local router to be quiet.
 
 #### Persistence compatibility
 
-The `PersistencePaths`, `PersistedAgentRecord`, and version-1 lifecycle event shapes remain unchanged.
+`PersistencePaths`, `PersistedAgentRecord`, and version-1 lifecycle event shapes remain compatible.
 
-- Fresh children continue writing sessions beneath `<parent-session>.subagents/sessions`.
-- `agent_added` is written only after a child runtime exposes its real session file and ID. If an extension-driven session replacement changes that metadata, another `agent_added` event for the same agent ID records the new live session using the existing schema.
-- Restore still prunes invalid persisted cwd overrides independently, recomputes status from the child JSONL, re-resolves personas for tool restrictions, and opens the latest recorded child session.
-- Resurrection continues to locate removed records by transcript-provided session ID and reuses the same session file.
-- Child-scoped sessions retain the current restore limitation: on their own restart they do not automatically reconstruct grandchildren. Changing recursive restore behavior is outside feature parity.
+- Fresh child sessions remain under `<parent-session>.subagents/sessions`.
+- Records continue using sibling-local agent IDs. Registry paths are deterministically reconstructed from the restoring manager's owner path plus each record ID; no registry ID or tree file is persisted.
+- Restore still prunes invalid cwd values, recomputes usage/model/output from child JSONL, re-resolves personas for capabilities, and opens the recorded session.
+- Resurrection still finds removed records through transcript-provided session IDs.
+- A session replacement may append another `agent_added` event for the same local ID with updated session metadata using the existing schema.
+- Child-scoped startup retains the current limitation of not automatically reconstructing grandchildren.
 
 ### Technology Choices
 
-#### Pi SDK runtime instead of subprocess RPC
+#### Per-root registry over manager-owned sessions
 
-Use `createAgentSessionServices`, `createAgentSessionFromServices`, and `createAgentSessionRuntime`. `AgentSessionRuntime` is required rather than bare `AgentSession` because child extensions may replace sessions or cwd, and runtime disposal emits the extension shutdown lifecycle.
-
-Rejected alternatives:
-
-- Retaining RPC as a fallback would force a lowest-common-denominator interface and preserve the transport architecture this change removes.
-- Bare `AgentSession` would make session replacement, cwd-bound service recreation, and extension shutdown the Subagents module's responsibility.
-
-#### Default resource discovery with a scoped override
-
-Use `DefaultResourceLoader` through `createAgentSessionServices`, filter only the discovered root Subagents extension with `extensionsOverride`, and inject the child-scoped factory with `extensionFactories`.
+Choose one live registry per root tree. It owns runtime lifecycle, canonical paths, tree shape, snapshots, and presentation attachment; managers retain parent-local orchestration.
 
 Rejected alternatives:
 
-- `noExtensions` plus manual reconstruction risks silently diverging from normal cwd/package discovery.
-- A fully custom `ResourceLoader` would duplicate pi's trust, package, context, skills, and prompt discovery behavior.
+- Direct manager ownership would require another ownership refactor for known descendant and presentation features.
+- A process-global registry would mix unrelated roots and introduce global lifecycle state.
+- Moving topology and persistence into the registry would change current semantics and over-expand the module.
 
-#### Typed in-memory router instead of EventBus messaging
+#### Pi SDK runtime over subprocess RPC
 
-Use a dedicated router with direct ports and promises. The existing per-session EventBus remains for extension communication but does not carry orchestration messages.
+Use `createAgentSessionServices`, `createAgentSessionFromServices`, and `createAgentSessionRuntime`. `AgentSessionRuntime` is required for scoped service recreation, extension shutdown, and future session replacement.
 
 Rejected alternatives:
 
-- A shared EventBus does not naturally own channel authorization, blocking response lifetimes, detach/cancel semantics, or deadlock edges.
-- Node streams or `MessageChannel` would retain framing and transport machinery without providing process isolation.
+- Retaining RPC as a fallback would force a lowest-common-denominator interface.
+- Bare `AgentSession` would push replacement and shutdown behavior into callers.
+
+#### Isolated default resource discovery
+
+Use a fresh `DefaultResourceLoader` per child runtime generation. Filter only the root Subagents extension and inject the child-scoped factory. Share auth/model infrastructure but not settings, loaders, EventBuses, or extension instances.
+
+Rejected alternatives:
+
+- `noExtensions` plus manual reconstruction would diverge from normal cwd/package discovery.
+- Shared resource loaders or extension runtimes would violate RPC-equivalent session isolation.
+
+#### Parent-local typed router
+
+Use direct ports/promises behind one router per manager. A root-wide router is unnecessary because global tree inspection belongs to the registry, while messaging IDs and channel rules remain sibling-local.
+
+#### Stable delegating UI context
+
+Bind child extensions once to a delegating context rather than rebinding the SDK session when a future presentation attaches. This avoids duplicate `session_start` side effects while remaining presentation-agnostic.
+
+#### Deferred Pimote discovery
+
+Do not add factory injection, EventBus object discovery, global registries, or Pimote imports in this change. The registry's neutral lookup, event, and presentation interfaces preserve options for a later generic adapter without coupling repositories prematurely.
 
 No new dependency is introduced.
 
 ### DR Supersessions
 
-- **DR-014** (Dual-Transport Architecture — RPC for Lifecycle, Unix Socket for Messaging) — superseded because child lifecycle and communication now occur within one process. New decision: own children as `AgentSessionRuntime` instances and route messages through a centralized in-memory router, while explicitly relinquishing process-isolation guarantees.
-
-## Tests
-
-**Pre-test-write commit:** `7aec0c2bcaaf977d6f6e5aa5f68ef60bc2757b2b`
-
-**Reopened test-write commit:** `0e0854d371fe5927e9efa289d7ee39f290b7bd67`
-
-### Interface Files
-
-- `extensions/subagents/scoped-extension.ts` — scoped root/child identity contract and extension factory boundary.
-- `extensions/subagents/managed-child-session.ts` — SDK-native child target, configuration, lifecycle hooks, and managed runtime contract.
-- `extensions/subagents/project-trust.ts` — public-SDK child project-trust precedence contract.
-- `extensions/subagents/message-router.ts` — typed in-memory message ports, routed messages/responses, correlation receipts, and router lifecycle contract.
-
-### Test Files
-
-- `extensions/subagents/scoped-extension.test.ts` — exact root/child registration, persona tool restrictions, infrastructure `respond`, and scope isolation.
-- `extensions/subagents/scoped-extension.integration.test.ts` — explicit child-uplink routing, scoped model catalog/shutdown behavior, and root orchestration through mocked SDK-native children without RPC or socket brokers.
-- `extensions/subagents/managed-child-session.test.ts` — deterministic mocked-SDK construction, target translation, configuration propagation, headless local project-trust wiring, prompt preflight, event/UI hooks, replacement, cooperative abort, and idempotent disposal.
-- `extensions/subagents/project-trust.test.ts` — extension, saved, default, and non-interactive `ask` trust precedence using public SDK types.
-- `extensions/subagents/managed-child-session.integration.test.ts` — isolated real-SDK reopening of a persisted RPC-era JSONL child session.
-- `extensions/subagents/message-router.test.ts` — bidirectional endpoint delivery, correlation allocation/ownership, deadlock and pre-delivery failures, typed terminal failures, dynamic reconnection, blocking-status callbacks, and router shutdown.
-
-### Behaviors Covered
-
-#### Scoped extension construction
-
-- A root-scoped factory exposes exactly the existing subagent tool surface without consulting process-wide parent identity.
-- A child-scoped factory applies the persona-derived Subagents tool policy while always registering `respond` for infrastructure responses; the SDK-wide allowlist remains a separate policy.
-- Independently constructed scopes keep registrations and mutable state isolated.
-- A child routes sends, responses, and incoming notifications through its explicit uplink, keeps notifications detached after session shutdown, and renders `list_models` from its own registry.
-- Root orchestration owns mocked SDK-native children rather than RPC children or socket brokers, projects lifecycle events only at `agent_settled`, updates status/dashboard output, persists replacement metadata, supports dynamic membership, interrupts cooperatively, settles pre-start headless errors, restores torn-down sessions, and propagates persona model/tool/skill/cwd policy.
-
-#### Managed child session
-
-- New, resumed, and forked targets map exactly to `SessionManager.create`, `open`, and `forkFrom`, preserve effective cwd/session metadata, and name each child after its agent ID.
-- Child creation shares auth/model infrastructure while applying model/thinking, SDK-wide tools, no-direct-user-prompt, explicit skills, append prompt, scoped extension/resource-loader configuration, and the local headless project-trust resolver.
-- Prompt submission forwards RPC source and streaming behavior, settles at preflight, surfaces preflight rejection, and observes later run failures.
-- Event subscriptions precede headless extension binding; events, UI notifications, shutdown requests, and replacement metadata reach the manager hooks.
-- Disposal runs safely more than once, interruption uses cooperative cancellation, and runtime replacement rebinds the same wrapper with current runtime/session/event bus.
-- An isolated real SDK test reopens an RPC-era persisted JSONL directly, retaining its session file, ID, cwd, and header.
-
-#### Child project trust
-
-- The local resolver accepts public SDK trust inputs and passes the managed child's headless `rpc` context through resource loading.
-- A decisive extension `project_trust` result wins; an `undecided` result falls through to saved trust, then both configured defaults, then a headless unresolved `ask` decline without dialog calls.
-
-#### In-memory message routing
-
-- Connected endpoints deliver fire-and-forget messages in both parent→child and child→parent directions, with unsubscribe support.
-- Blocking sends register correlations before delivery, allocate omitted IDs, reject duplicates/pre-delivery failures/deadlocks, and accept responses only from the addressed endpoint.
-- Cancel, idle, unavailable, and removal resolve accepted waits as typed errors; detach removes only the waiting edge so reverse work and a late response still arrive.
-- Multiple outstanding waits preserve their deadlock edge until all are settled. Idle endpoints remain reusable; unavailable/removed endpoints reject future sends until a replacement reconnects; removal also clears sender-owned waits.
-- Blocking-status callbacks fire once at start and once at every terminal path. Router shutdown alone rejects unresolved waits and future sends.
-
-**Review status:** approved
-
-## Steps
-
-### Step 1: Implement child project-trust precedence
-
-Implement `resolveChildProjectTrust()` in `extensions/subagents/project-trust.ts` as the local public-SDK equivalent of pi's non-interactive trust decision flow. Walk `extensionsResult.extensions` and each extension's `project_trust` handlers in loader order, invoke them with `{ type: "project_trust", cwd }` and `projectTrustContext`, and stop at the first `yes` or `no`; let `undecided` continue, and persist a decisive result through `trustStore.set(cwd, decision)` when the handler requests `remember`. If no extension decides, consult `trustStore.get(cwd)`, then `defaultProjectTrust` (`always`/`never`), and finally return `false` for an unresolved `ask` without calling the headless context's dialog methods. Keep all decision data in the function arguments; do not import pi's private trust resolver or introduce process-wide trust state.
-
-**Verify:** `npx vitest run extensions/subagents/project-trust.test.ts`
-**Status:** not started
-
-### Step 2: Implement the in-memory message router
-
-Implement `MessageRouter` and its per-endpoint `MessagePort` adapters in `extensions/subagents/message-router.ts` using the supplied `Topology`, `canSend()` from `extensions/subagents/channels.ts`, and `DeadlockGraph` from `extensions/subagents/deadlock.ts`. Keep endpoint listeners, unavailable/removed tombstones, and pending correlations as router-instance state. Each pending correlation must record its sender, addressed endpoint, response resolve/reject functions, and whether its waiting edge is still attached; retain a per-`from`/`to` edge count so resolving one of several waits does not remove deadlock protection for the others.
-
-Make `connect()` reject IDs outside the current topology, clear a reconnecting endpoint's tombstone, and return a port whose methods are scoped to that endpoint. In `send()`, validate authorization, target availability/connectivity, duplicate caller IDs, and deadlock cycles before accepting delivery. For blocking sends, allocate an omitted ID, install the promise/correlation/deadlock state, and invoke `onBlockingSendStart` before notifying target subscribers so an immediate `respond()` cannot race registration. Centralize terminal cleanup so response, cancel, detach, idle, unavailable, removal, and close each remove the correct edge and invoke `onBlockingSendEnd` at most once. Accepted cancellation/lifecycle failures resolve as `RoutedResponse` errors; only router closure rejects an accepted wait. Keep detached correlations pending for late delivery, make idle endpoints reusable, tombstone unavailable/removed endpoints until `connect()`, clear sender-owned correlations on removal, and make `close()` reject all waits and discard subscribers without touching sessions or persistence.
-
-**Verify:** `npx vitest run extensions/subagents/message-router.test.ts`
-**Status:** not started
-
-### Step 3: Implement SDK-native managed child sessions
-
-Implement `ManagedChildSession` and `createManagedChildSession()` in `extensions/subagents/managed-child-session.ts` around `SessionManager`, `createAgentSessionServices()`, `createAgentSessionFromServices()`, and `createAgentSessionRuntime()`. Translate `ChildSessionTarget` to `SessionManager.create`, `open`, or `forkFrom`; append the agent ID as session info for new/forked managers; and use the opened manager's cwd for resumed sessions. Resolve an explicit `modelRef` with `resolveCliModel()`, surface resolver errors, pass `config.thinkingLevel ?? resolved.thinkingLevel`, pass an explicit `allowedTools` list after removing `ask_user`, or use `excludeTools: ["ask_user"]` when no allowlist exists.
-
-Inside the runtime factory, create a fresh `SettingsManager`, event bus, headless UI context, and resource loader services for each effective cwd while reusing `dependencies.authStorage` and `dependencies.modelRegistry`. Configure discovery with the child's append prompt, `additionalSkillPaths: config.skillPaths` and `noSkills: true` when that list is nonempty, a named inline `createSubagentsExtension(config.scope)` factory, and an `extensionsOverride` that filters only the resolved `extensions/subagents/index.ts` root entry while preserving every other extension and loader result field. Construct one `ProjectTrustStore` from `dependencies.agentDir`; wire `resourceLoaderReloadOptions.resolveProjectTrust` to `resolveChildProjectTrust()` with the current cwd, pre-trust extension result, current settings default, and that session's `{ mode: "rpc", hasUI: false }` trust context.
-
-Give the headless `ExtensionUIContext` non-interactive dialog/editor fallbacks, route `notify()` to `hooks.onUiNotify`, and make widget/status/title/custom-terminal operations local no-ops. Subscribe `hooks.onEvent` before binding extensions in `rpc` mode. Bind runtime-backed command actions (`waitForIdle`, new/fork/switch/navigation/reload), cooperative abort, `hooks.onShutdownRequested`, and extension errors routed to the UI hook. On runtime replacement, unsubscribe the old session, adopt the new session/event bus/UI context, subscribe before rebinding, and call `hooks.onSessionChanged` with the new ID, file, and cwd while retaining the same wrapper object. Distinguish initial construction from later replacement: initial factory/bind failures must reject `createManagedChildSession()`, while a factory or rebind failure after the wrapper is live must notify the error, invoke `onShutdownRequested()` to mark the now-invalid runtime unavailable, and rethrow to the initiating SDK action.
-
-Implement getters against the runtime's current session. Make `submit()` resolve or reject at prompt preflight while permanently observing the continuing `session.prompt()` promise, `abort()` await `session.abort()`, and `dispose()` retain one idempotent disposal promise that unsubscribes and invokes `runtime.dispose()` exactly once so extension shutdown handlers still run.
-
-**Verify:** `npx vitest run extensions/subagents/managed-child-session.test.ts extensions/subagents/managed-child-session.integration.test.ts`
-**Status:** not started
-
-### Step 4: Migrate the manager to sessions and ports
-
-Refactor `extensions/subagents/agent-set.ts` so `AgentEntry` holds a `ManagedChildSession` and its child `MessagePort` instead of `RpcChild`. Add the shared `ManagedChildSessionDependencies` to `SubagentManagerOptions`; replace the broker field with a `MessageRouter` plus its connected `parent` port; expose that port through a small `getParentPort()` method for the scoped extension; and keep topology mutation, status, persistence, and report state inside the manager instance. `interrupt()` must call `child.abort()`, and completion reports must stop consulting stderr/process exit state.
-
-In `start()`, retain the existing reserved-ID, model/persona, cwd, skill, topology, peer-description, and identity-XML behavior, then derive each `ChildSessionConfig` explicitly:
-
-- regular new agents use a `new` target at their resolved/default cwd; restored or resurrected regular agents use `resume`;
-- fresh forks use a `fork` target from the parent session file; restored forks use `resume`;
-- the child scope carries the computed ID/task/channels, persona Subagents-tool policy, and its connected router port;
-- the SDK allowlist comes independently from persona tools or the fork's captured built-in tools; map the fork convention `tools: []` (all built-ins were active, so the legacy CLI omitted `--tools`) to `allowedTools: undefined`, never to an empty SDK allowlist;
-- skill paths come from the spawn cache, restored fork record, or re-resolved persona declaration;
-- append prompts contain the persona prompt only for a fresh regular session and always contain the serialized subagent identity; model/thinking fields preserve the current persona/tier/fork precedence.
-
-Stage the topology additions, ports, entries, and constructed runtimes until the whole batch has constructed successfully. If any construction fails, dispose every staged runtime, mark staged endpoints removed, roll back their topology entries, restore first-call infrastructure to its empty state when applicable, and write no `agent_added` records. After successful construction, publish all entries and read real session IDs/files. Fresh spawns and explicit resurrection append existing version-1 `agent_added` records before submitting `Task:` prompts; automatic `restoreFromPersistence()` reopens the already-recorded sessions without duplicating those initial records or prompts. A prompt-preflight failure settles that live entry as failed rather than leaving it running. `onSessionChanged` must update the entry and append a new `agent_added` record with the same persona/task/channel/cwd/tool/skill metadata and replacement session metadata.
-
-Replace `handleRpcEvent()`/exit polling with typed managed-session hooks. `tool_execution_start` and assistant `message_end` retain the current activity, subgroup, usage, model, context-fill, and last-output projection. `agent_start` marks a nonfailed entry running and records prompt start. A terminal `agent_end` records only a final assistant error; `agent_settled` performs the single idle/failed transition, calls `router.agentIdle()`, updates displays, and emits completion after retries/compaction/continuations are over. Route pre-start error notifications through the existing failure operation and fail pending sends to an already-idle target without re-completing it. Preserve the rule that ordinary mid-run error notifications do not settle the child, but retain the managed wrapper's immediately preceding replacement-failure notification for its paired `onShutdownRequested` call. That shutdown/unavailable hook must settle the entry as failed, call `router.agentUnavailable()` with the retained or fallback error, update displays, and emit completion once.
-
-Preserve restore pruning and snapshot seeding. For user teardown, tombstone routing before `child.dispose()`, append `agent_removed`, and close the router when empty; for soft shutdown, dispose all children and close routing without appending removals. Completion is true only when every entry is idle/failed and `router.isQuiet()`.
-
-**Verify:** `rg -n 'RpcChild|Broker|PI_PARENT_LINK|handleRpcEvent|monitorExit' extensions/subagents/agent-set.ts` prints no matches, and `npx vitest run extensions/subagents/channels.test.ts extensions/subagents/persistence.test.ts extensions/subagents/session-snapshot.test.ts`
-**Status:** not started
-
-### Step 5: Construct root and child extension scopes
-
-Move the operational extension implementation from `extensions/subagents/index.ts` behind `createSubagentsExtension(scope)` in `extensions/subagents/scoped-extension.ts`, and reduce `index.ts` to the package's default root-scoped factory. Place the manager, dashboard/panel handles, tier-warning set, skill-path cache, notification queue, await state, correlation origins, and all other mutable extension state inside the returned factory invocation. Derive role and persona tool registration only from `scope`: root and unrestricted children register the full ten-tool surface, restricted children register only their listed Subagents tools plus infrastructure `respond`, and no code reads or writes `PI_PARENT_LINK`. Keep tool definition/registration independent from lifecycle capabilities: register the scoped tool surface before touching `pi.on` or `scope.uplink`, and skip only lifecycle/uplink hookup when a structural test adapter does not provide those methods; the real SDK path still installs every hook and subscription.
-
-Preserve current agent discovery, tier/model resolution, tool schemas, status formatting, notification batching, stop sequences, persistence restore, resurrection, await, interruption, and dashboard/Pimote projection. Create `SubagentManager` with `getAgentDir()`, the scoped context's `modelRegistry` and its `authStorage`, and the existing callbacks. Root sessions may restore their immediate children and create a dashboard; child sessions skip recursive restore and parent-facing display creation. Remove broker-client initialization from spawn/fork/resurrect/teardown paths. On `session_shutdown`, detach the scope's uplink subscription, clear local queues/UI state, and softly shut down only the scope's immediate-child manager; do not dispose a child scope's parent-owned runtime.
-
-Keep `list_models` session-local by reading the executing context's model registry and retaining the current table format. Update process-specific prompt guidance/comments to describe isolated SDK sessions without promising OS process isolation.
-
-**Verify:** `npx vitest run extensions/subagents/scoped-extension.test.ts`
-**Status:** not started
-
-### Step 6: Route scoped tools through explicit ports
-
-In `extensions/subagents/scoped-extension.ts`, replace `BrokerClient` and origin strings with explicit `MessagePort` references. Subscribe a child factory to `scope.uplink`, subscribe the local manager callback/parent port to immediate-child messages, serialize incoming `RoutedMessage` values with the unchanged XML serializer, and record the originating port for blocking correlations. Preserve notification queue tags so uplink and local completion/message delivery continue to drain correctly.
-
-Implement `send` routing exactly at the parent-local seam: use `manager.getParentPort()` when the target is an immediate child, otherwise use `scope.uplink` for a child scope, and report no available agent for a root without that local target. Consume `SendReceipt` directly. Fire-and-forget sends return after acceptance; blocking sends await the typed response, race the tool abort signal by calling `port.detach(correlationId)`, and turn a detached late response/error into the existing asynchronous `<agent_message>` notification. Implement `respond` by using the recorded origin port (with the same local/uplink fallback rules), then remove the correlation origin only after routing the response. Keep cancellation, waiting-state callbacks, and deadlock ownership inside `MessageRouter`, not the extension.
-
-**Verify:** `npx vitest run extensions/subagents/scoped-extension.integration.test.ts`
-**Status:** not started
-
-### Step 7: Remove subprocess and socket remnants
-
-After the managed path satisfies the reviewed replacement tests, delete `extensions/subagents/broker.ts`, `extensions/subagents/rpc-child.ts`, and their obsolete implementation-coupled coverage in `extensions/subagents/broker.test.ts` and `extensions/subagents/agent-set.test.ts`. Remove `BrokerRequest`/`BrokerResponse` and socket-protocol commentary from `extensions/subagents/messages.ts`, and remove the now-unused CLI argument builders (`buildAgentArgs()` and `buildForkArgs()`) from `extensions/subagents/agents.ts`. Clean obsolete `node:net`, `node:string_decoder`, child-process, socket, environment-payload, and process-exit imports/comments from the live extension files.
-
-Remove the `PI_PARENT_LINK` registration guard from `extensions/numbered-select/index.ts`: root sessions always register `ask_user`, while `ManagedChildSession`'s SDK-wide child tool policy excludes it. Do not add a compatibility transport, environment fallback, or new dependency.
-
-**Verify:** `rg -n 'PI_PARENT_LINK|RpcChild|BrokerClient|BrokerRequest|BrokerResponse|node:child_process|node:net|brokerSocket' extensions/subagents extensions/numbered-select --glob '!*.test.ts'` prints no matches, and `npx vitest run extensions/subagents`
-**Status:** not started
-
-### Step 8: Run the repository regression suite
-
-Run the complete Vitest suite after the transport removal. Confirm the reviewed trust, managed-session, router, scoped-extension, persistence, topology, serialization, model-tier, notification, and unrelated extension/skill tests all pass. Per repository convention, do not run a build, compiler, or standalone type-check; runtime-loaded TypeScript plus the test suite is the verification path.
-
-**Verify:** `npx vitest run`
-**Status:** not started
+- **DR-014** (Dual-Transport Architecture — RPC for Lifecycle, Unix Socket for Messaging) — superseded because child lifecycle and communication now occur within one process. New decision: a per-root registry owns SDK child sessions, while parent-local in-memory routers retain centralized channel and deadlock authority. Process-isolation guarantees are deliberately relinquished.
