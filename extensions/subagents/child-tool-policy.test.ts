@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { resolveChildToolPolicy } from "./child-tool-policy.js";
+import { resolveChildToolPolicy, type ChildToolPolicyInput } from "./child-tool-policy.js";
+
+function expectExactStableAllowlist(input: ChildToolPolicyInput, expected: string[]) {
+	const first = resolveChildToolPolicy(input);
+	const second = resolveChildToolPolicy(input);
+
+	expect(first.excludeTools).toBeUndefined();
+	expect(first.allowedTools).toBeDefined();
+	expect(new Set(first.allowedTools!)).toEqual(new Set(expected));
+	expect(first.allowedTools!).toHaveLength(expected.length);
+	expect(second).toEqual(first);
+}
 
 describe("resolveChildToolPolicy", () => {
 	it("gives a default child no allowlist while excluding direct-user prompting", () => {
@@ -9,31 +20,21 @@ describe("resolveChildToolPolicy", () => {
 		});
 	});
 
-	it("normalizes persona tools into one deduplicated SDK allowlist", () => {
-		const policy = resolveChildToolPolicy({
+	it("normalizes persona tools into one authoritative, deduplicated SDK allowlist", () => {
+		expectExactStableAllowlist({
 			kind: "persona",
 			tools: ["read", "send", "respond", "send", "ask_user"],
-		});
-
-		expect(policy.excludeTools).toBeUndefined();
-		expect(policy.allowedTools).toBeDefined();
-		const allowedTools = policy.allowedTools!;
-		expect(allowedTools).toEqual(expect.arrayContaining(["read", "send", "respond"]));
-		expect(allowedTools).not.toContain("ask_user");
-		expect(new Set(allowedTools).size).toBe(allowedTools.length);
+		}, ["read", "send", "respond"]);
 	});
 
-	it("preserves extension and built-in tools from a fork while adding infrastructure respond", () => {
-		const policy = resolveChildToolPolicy({
+	it("keeps an empty persona restriction operational with only infrastructure respond", () => {
+		expectExactStableAllowlist({ kind: "persona", tools: [] }, ["respond"]);
+	});
+
+	it("preserves exactly the active extension and built-in fork tools while adding infrastructure respond", () => {
+		expectExactStableAllowlist({
 			kind: "fork",
 			parentActiveTools: ["read", "toolscript_custom", "send", "ask_user", "send"],
-		});
-
-		expect(policy.excludeTools).toBeUndefined();
-		expect(policy.allowedTools).toBeDefined();
-		const allowedTools = policy.allowedTools!;
-		expect(allowedTools).toEqual(expect.arrayContaining(["read", "toolscript_custom", "send", "respond"]));
-		expect(allowedTools).not.toContain("ask_user");
-		expect(new Set(allowedTools).size).toBe(allowedTools.length);
+		}, ["read", "toolscript_custom", "send", "respond"]);
 	});
 });

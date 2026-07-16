@@ -11,16 +11,16 @@ import type { MessagePort } from "./message-router.js";
 
 export type NodeOwnership = "external" | "registry";
 
-export type AgentUsage = {
+export type AgentUsage = Readonly<{
 	input: number;
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
 	cost: number;
 	turns: number;
-};
+}>;
 
-export type AgentOperationalSnapshot = {
+export type AgentOperationalSnapshot = Readonly<{
 	state: "running" | "idle" | "waiting" | "failed";
 	usage: AgentUsage;
 	model?: string;
@@ -30,11 +30,11 @@ export type AgentOperationalSnapshot = {
 	lastTurnInput: number;
 	contextWindow?: number;
 	hasSubgroup: boolean;
-	pendingCorrelations: string[];
-	waitingFor: string[];
-};
+	pendingCorrelations: readonly string[];
+	waitingFor: readonly string[];
+}>;
 
-export type AgentNodeSnapshot = {
+export type AgentNodeSnapshot = Readonly<{
 	path: AgentPath;
 	parentPath: AgentPath | null;
 	localId: string | null;
@@ -44,9 +44,9 @@ export type AgentNodeSnapshot = {
 	cwd: string;
 	task?: string;
 	agentDef?: string;
-	channels: string[];
+	channels: readonly string[];
 	operational: AgentOperationalSnapshot;
-};
+}>;
 
 export type RegistryEvent =
 	| { type: "node_added"; node: AgentNodeSnapshot }

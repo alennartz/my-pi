@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { childAgentPath, formatAgentPath, type AgentPath } from "./agent-path.js";
 import { createManagedChildSession, type ChildSessionConfig } from "./managed-child-session.js";
 import type { MessagePort } from "./message-router.js";
 
@@ -15,14 +16,14 @@ afterEach(() => {
 	tmpRoot = undefined;
 });
 
-function childConfig(sessionFile: string, sessionDir: string): ChildSessionConfig {
+function childConfig(sessionFile: string, sessionDir: string, agentPath: AgentPath): ChildSessionConfig {
 	return {
-		path: ["legacy-worker"],
+		path: agentPath,
 		target: { kind: "resume", sessionFile, sessionDir },
 		scope: {
 			kind: "child",
 			registry,
-			path: ["legacy-worker"],
+			path: agentPath,
 			identity: {
 				id: "legacy-worker",
 				task: "resume the prior task",
@@ -48,15 +49,16 @@ describe("ManagedChildSession legacy RPC-session compatibility", () => {
 		// RPC children wrote ordinary pi JSONL session files. Seed one through the
 		// real SDK, then require the managed SDK path to reopen that exact file.
 		const legacy = SessionManager.create(cwd, sessionDir, { id: "11111111-1111-4111-8111-111111111111" });
-		legacy.appendSessionInfo("legacy-worker");
+		legacy.appendSessionInfo("old-rpc-child-name");
 		const sessionFile = legacy.getSessionFile()!;
+		const agentPath = childAgentPath(["legacy/project"], "legacy-worker");
 		const sessionId = legacy.getSessionId();
 		const originalHeader = legacy.getHeader();
 
 		const authStorage = AuthStorage.inMemory();
 		const modelRegistry = ModelRegistry.inMemory(authStorage);
 		const child = await createManagedChildSession(
-			childConfig(sessionFile, sessionDir),
+			childConfig(sessionFile, sessionDir, agentPath),
 			{ agentDir, authStorage, modelRegistry },
 			{
 				onEvent: () => {},
@@ -71,6 +73,7 @@ describe("ManagedChildSession legacy RPC-session compatibility", () => {
 			expect(child.sessionId).toBe(sessionId);
 			expect(child.session.sessionManager.getCwd()).toBe(cwd);
 			expect(child.session.sessionManager.getHeader()).toEqual(originalHeader);
+			expect(child.session.sessionManager.getSessionName()).toBe(formatAgentPath(agentPath));
 		} finally {
 			await child.dispose();
 		}

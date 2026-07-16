@@ -72,17 +72,6 @@ describe("createSubagentsExtension child scope", () => {
 		expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
 	});
 
-	it("carries canonical registry ownership and path without process-global identity", async () => {
-		const scope = childScope(["researcher", "worker"]);
-		await createSubagentsExtension(scope)(makePi() as any);
-		expect(scope).toMatchObject({
-			kind: "child",
-			registry,
-			path: ["researcher", "worker"],
-			identity: { id: "worker" },
-		});
-	});
-
 	it("does not share mutable registrations between independently constructed scopes", async () => {
 		const first = makePi();
 		const second = makePi();

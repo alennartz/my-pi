@@ -3,7 +3,6 @@ import { SubagentManager, type AgentStatus } from "./agent-set.js";
 import type {
 	AgentNodeSnapshot,
 	AgentOperationalSnapshot,
-	AgentRegistryNode,
 	AgentSessionRegistry,
 } from "./agent-session-registry.js";
 import type { AgentPath } from "./agent-path.js";
@@ -54,7 +53,9 @@ function makeRegistry(initial: AgentNodeSnapshot[] = []): any {
 		});
 	}
 	return {
-		listChildren: vi.fn(() => snapshots),
+		listChildren: vi.fn((ownerPath: AgentPath) => snapshots.filter(
+			(entry) => JSON.stringify(entry.parentPath) === JSON.stringify(ownerPath),
+		)),
 		get: vi.fn((path: AgentPath) => nodes.get(JSON.stringify(path))),
 		getSnapshot: vi.fn((path: AgentPath) => snapshots.find((entry) => JSON.stringify(entry.path) === JSON.stringify(path))),
 		updateOperational: vi.fn(),
@@ -86,10 +87,19 @@ function createManager(registry: AgentSessionRegistry, ownerPath: AgentPath = ["
 describe("registry-backed manager status projection", () => {
 	it("reads immediate-child statuses from the canonical registry path", () => {
 		const worker = snapshot("worker", ["researcher", "worker"], {
+			agentDef: "scout",
+			channels: ["parent", "peer"],
 			operational: operational({
 				state: "waiting",
 				usage: usage({ input: 12, output: 4, cost: 0.03, turns: 2 }),
+				model: "provider/model",
+				lastActivity: "read(path)",
 				lastOutput: "still working",
+				lastError: "previous error",
+				lastTurnInput: 12,
+				contextWindow: 200_000,
+				hasSubgroup: true,
+				pendingCorrelations: ["corr-1"],
 				waitingFor: ["peer"],
 			}),
 		});
@@ -101,9 +111,18 @@ describe("registry-backed manager status projection", () => {
 		expect(statuses).toEqual([expect.objectContaining<Partial<AgentStatus>>({
 			id: "worker",
 			state: "waiting",
+			agentDef: "scout",
 			task: "task-worker",
+			channels: ["parent", "peer"],
 			usage: worker.operational.usage,
+			model: "provider/model",
+			lastActivity: "read(path)",
 			lastOutput: "still working",
+			lastError: "previous error",
+			lastTurnInput: 12,
+			contextWindow: 200_000,
+			hasSubgroup: true,
+			pendingCorrelations: ["corr-1"],
 			waitingFor: ["peer"],
 		})]);
 	});
@@ -114,15 +133,15 @@ describe("registry-backed manager status projection", () => {
 			operational: operational({ state: "idle", lastOutput: "done" }),
 		});
 		const registry = makeRegistry([running]);
-		registry.listChildren
-			.mockReturnValueOnce([running])
-			.mockReturnValueOnce([idle]);
 		const { manager } = createManager(registry);
 
-		expect(manager.getAgentStatus("worker")?.state).toBe("running");
-		expect(manager.getAgentStatus("worker")?.lastOutput).toBeUndefined();
-		expect(manager.getAgentStatus("worker")?.state).toBe("idle");
-		expect(manager.getAgentStatus("worker")?.lastOutput).toBe("done");
+		const initial = manager.getAgentStatus("worker");
+		expect(initial?.state).toBe("running");
+		expect(initial?.lastOutput).toBeUndefined();
+		registry.snapshots.splice(0, 1, idle);
+		const updated = manager.getAgentStatus("worker");
+		expect(updated?.state).toBe("idle");
+		expect(updated?.lastOutput).toBe("done");
 	});
 
 	it("reports no active children when the canonical registry has none", () => {
@@ -153,5 +172,25 @@ describe("registry-backed manager interruption", () => {
 
 		await manager.interrupt("worker");
 		expect(registry.get).toHaveBeenCalledWith(["other", "worker"]);
+	});
+
+	it("keeps failed children as an interrupt no-op for observable parity", async () => {
+		const failed = snapshot("worker", ["researcher", "worker"], {
+			operational: operational({ state: "failed", lastError: "provider failure" }),
+		});
+		const registry = makeRegistry([failed]);
+		const node = registry.get(["researcher", "worker"]);
+		const { manager } = createManager(registry);
+
+		await expect(manager.interrupt("worker")).resolves.toBeUndefined();
+		expect(node.session.abort).not.toHaveBeenCalled();
+	});
+
+	it("resolves the canonical unknown path before reporting an unknown immediate child", async () => {
+		const registry = makeRegistry([]);
+		const { manager } = createManager(registry);
+
+		await expect(manager.interrupt("missing")).rejects.toThrow(/unknown|agent/i);
+		expect(registry.get).toHaveBeenCalledWith(["researcher", "missing"]);
 	});
 });

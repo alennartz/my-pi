@@ -17,10 +17,12 @@ describe("canonical agent paths", () => {
 		expect(child).not.toBe(parent);
 	});
 
-	it("formats nested segments in their canonical order", () => {
-		expect(formatAgentPath(["researcher", "scout"])).toContain("researcher");
-		expect(formatAgentPath(["researcher", "scout"])).toContain("scout");
-		expect(formatAgentPath(["researcher", "scout"])).not.toBe(formatAgentPath(["scout", "researcher"]));
+	it("formats nested segments in their canonical order deterministically", () => {
+		const first = formatAgentPath(["researcher", "scout"]);
+		expect(first).toContain("researcher");
+		expect(first).toContain("scout");
+		expect(first).toBe(formatAgentPath(["researcher", "scout"]));
+		expect(first).not.toBe(formatAgentPath(["scout", "researcher"]));
 	});
 
 	it("escapes a segment so delimiter-bearing ids cannot collide with separate segments", () => {

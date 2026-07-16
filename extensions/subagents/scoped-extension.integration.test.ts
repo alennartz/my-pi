@@ -21,6 +21,7 @@ const managed = vi.hoisted(() => {
 		const child: any = {
 			runtime: { session },
 			eventBus: {},
+			presentation: { context: {}, attach: vi.fn(() => () => {}), reset: vi.fn() },
 			session,
 			sessionId,
 			sessionFile,
@@ -233,6 +234,89 @@ describe("child-scoped extension routing", () => {
 			content: expect.stringContaining("after shutdown"),
 		}));
 	});
+
+	it("uses the supplied child registry and path when recursively spawning a grandchild", async () => {
+		const childRegistry = {} as AgentSessionRegistry;
+		const parentUplink = makePort("worker-uplink");
+		const parentSessionFile = path.join(tmpRoot!, "worker.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools } = makePi();
+		await createSubagentsExtension({
+			kind: "child",
+			registry: childRegistry,
+			path: ["researcher", "worker"],
+			identity: { id: "worker", task: "delegate", channels: ["parent"] },
+			uplink: parentUplink,
+		})(pi as any);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "scout", task: "inspect", channels: [] }],
+		}, makeContext(parentSessionFile));
+
+		expect(managed.createManagedChildSession).toHaveBeenCalledTimes(1);
+		expect(managed.created[0].config).toMatchObject({
+			path: ["researcher", "worker", "scout"],
+			scope: {
+				registry: childRegistry,
+				path: ["researcher", "worker", "scout"],
+				identity: { id: "scout" },
+			},
+		});
+		expect(managed.created[0].config.scope.uplink).not.toBe(parentUplink);
+	});
+
+	it("uses explicit child scope rather than a conflicting process-wide parent link", async () => {
+		const previous = process.env.PI_PARENT_LINK;
+		process.env.PI_PARENT_LINK = JSON.stringify({ id: "wrong-child", brokerSocket: "/tmp/stale.sock" });
+		try {
+			const uplink = makePort("explicit-child");
+			const { pi, tools } = makePi();
+			await createSubagentsExtension({
+				kind: "child",
+				registry,
+				path: ["explicit-child"],
+				identity: { id: "explicit-child", task: "work", channels: ["parent"] },
+				uplink,
+			})(pi as any);
+
+			await execute(tools, "send", { to: "parent", message: "scope wins", expectResponse: false }, makeContext(path.join(tmpRoot!, "parent.jsonl")));
+			expect(uplink.send).toHaveBeenCalledWith({
+				to: "parent",
+				message: "scope wins",
+				expectResponse: false,
+			});
+		} finally {
+			if (previous === undefined) delete process.env.PI_PARENT_LINK;
+			else process.env.PI_PARENT_LINK = previous;
+		}
+	});
+
+	it("keeps uplink listeners and mutable child scope state isolated", async () => {
+		const firstUplink = makePort("first");
+		const secondUplink = makePort("second");
+		const first = makePi();
+		const second = makePi();
+		const firstScope: SubagentScope = {
+			kind: "child", registry, path: ["first"],
+			identity: { id: "first", task: "one", channels: ["parent"] }, uplink: firstUplink,
+		};
+		const secondScope: SubagentScope = {
+			kind: "child", registry, path: ["second"],
+			identity: { id: "second", task: "two", channels: ["parent"] }, uplink: secondUplink,
+		};
+		await createSubagentsExtension(firstScope)(first.pi as any);
+		await createSubagentsExtension(secondScope)(second.pi as any);
+		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+
+		await execute(first.tools, "send", { to: "parent", message: "from first", expectResponse: false }, ctx);
+		await execute(second.tools, "send", { to: "parent", message: "from second", expectResponse: false }, ctx);
+		firstUplink.emit({ from: "parent", message: "only first", responseExpected: false });
+
+		expect(firstUplink.send).toHaveBeenCalledTimes(1);
+		expect(secondUplink.send).toHaveBeenCalledTimes(1);
+		expect(first.pi.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining("only first") }));
+		expect(second.pi.sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining("only first") }));
+	});
 });
 
 describe("root orchestration integration", () => {
@@ -263,6 +347,10 @@ describe("root orchestration integration", () => {
 		expect(ctx.ui.setWidget).toHaveBeenCalled();
 
 		created.hooks.onEvent({ type: "agent_start" });
+		created.hooks.onUiNotify("nonfatal mid-run notification", "error");
+		const runningStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
+		expect(runningStatus.content[0].text).toMatch(/running/i);
+		expect(runningStatus.content[0].text).not.toMatch(/failed/i);
 		created.hooks.onEvent({
 			type: "message_end",
 			message: {
@@ -303,6 +391,66 @@ describe("root orchestration integration", () => {
 
 		await execute(tools, "interrupt", { agent: "worker" }, ctx);
 		expect(created.child.abort).toHaveBeenCalledTimes(1);
+	});
+
+	it("creates a separate registry for each root session", async () => {
+		const firstParentSessionFile = path.join(tmpRoot!, "first-parent.jsonl");
+		const secondParentSessionFile = path.join(tmpRoot!, "second-parent.jsonl");
+		fs.writeFileSync(firstParentSessionFile, "");
+		fs.writeFileSync(secondParentSessionFile, "");
+		const first = makePi();
+		const second = makePi();
+		await createSubagentsExtension({ kind: "root" })(first.pi as any);
+		await createSubagentsExtension({ kind: "root" })(second.pi as any);
+
+		await execute(first.tools, "subagent", {
+			agents: [{ id: "worker", task: "work in the first root", channels: [] }],
+		}, makeContext(firstParentSessionFile));
+		await execute(second.tools, "subagent", {
+			agents: [{ id: "worker", task: "work in the second root", channels: [] }],
+		}, makeContext(secondParentSessionFile));
+
+		expect(managed.created).toHaveLength(2);
+		expect(managed.created[0].config.path).toEqual(["worker"]);
+		expect(managed.created[1].config.path).toEqual(["worker"]);
+		expect(managed.created[0].config.scope.registry).not.toBe(managed.created[1].config.scope.registry);
+	});
+
+	it("forks from the parent session with its complete active tool set and thinking level", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools } = makePi();
+		pi.getActiveTools.mockReturnValue(["read", "toolscript_custom", "ask_user"]);
+		pi.getCommands.mockReturnValue([
+			{ name: "skill:debugging", source: "skill", path: "/skills/debugging/SKILL.md" },
+		]);
+		pi.getThinkingLevel.mockReturnValue("xhigh");
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+
+		await execute(tools, "fork", { id: "clone", task: "explore another path" }, ctx);
+
+		expect(managed.createManagedChildSession).toHaveBeenCalledTimes(1);
+		expect(managed.created[0].config).toMatchObject({
+			path: ["clone"],
+			target: {
+				kind: "fork",
+				sourceSessionFile: parentSessionFile,
+				cwd: tmpRoot,
+				sessionDir: path.join(tmpRoot!, "parent.subagents", "sessions"),
+			},
+			thinkingLevel: "xhigh",
+			skillPaths: ["/skills/debugging/SKILL.md"],
+			scope: {
+				kind: "child",
+				path: ["clone"],
+				identity: { id: "clone", task: "explore another path", channels: ["parent"] },
+			},
+		});
+		const allowedTools = managed.created[0].config.toolPolicy.allowedTools;
+		expect(new Set(allowedTools)).toEqual(new Set(["read", "toolscript_custom", "respond"]));
+		expect(allowedTools).toHaveLength(3);
+		expect(managed.created[0].child.submit).toHaveBeenCalledWith("Task: explore another path");
 	});
 
 	it("settles pre-agent-start headless errors and restores a torn-down session without RPC", async () => {
@@ -374,13 +522,15 @@ describe("root orchestration integration", () => {
 			path: ["reviewer"],
 			target: { kind: "new", cwd: childCwd },
 			modelRef: "pinned/model",
-			toolPolicy: { allowedTools: expect.arrayContaining(["send", "respond"]) },
 			skillPaths: ["/skills/debugging/SKILL.md"],
 			scope: {
 				path: ["reviewer"],
 				identity: { id: "reviewer" },
 			},
 		});
+		const allowedTools = managed.created[0].config.toolPolicy.allowedTools;
+		expect(new Set(allowedTools)).toEqual(new Set(["send", "respond"]));
+		expect(allowedTools).toHaveLength(2);
 		expect(managed.created[0].config.appendSystemPrompt).toContain("Review carefully.");
 	});
 });

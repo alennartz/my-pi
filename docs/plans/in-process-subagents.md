@@ -430,7 +430,7 @@ Contracts:
 - `agent_start` marks running. Terminal `agent_end` records a final assistant error, while `agent_settled` is the single completion boundary after retries, compaction, and continuations.
 - Headless pre-start error notification follows DR-041. Runtime unavailability produces failed state without process stderr or exit polling.
 - Existing `onUpdate` and completion callbacks project registry snapshots into the TUI dashboard, Pimote panel, XML notifications, and tool results.
-- `interrupt` resolves the node and calls its managed session's cooperative abort.
+- `interrupt` resolves a nonfailed node and calls its managed session's cooperative abort. It remains a no-op for a failed node, preserving the current observable tool behavior.
 - Manager spawn/fork/resurrect requests registry-owned children atomically, then writes existing persistence records and submits initial tasks. A construction rollback writes nothing.
 - User teardown writes `agent_removed` and asks the registry to remove the node subtree. Soft shutdown asks the registry to dispose live children without writing removals. Registry disposal is idempotent when nested `session_shutdown` handlers converge.
 - Completion requires every immediate child snapshot to be idle/failed and the local router to be quiet.
@@ -515,7 +515,7 @@ No new dependency is introduced.
 - `extensions/subagents/agent-session-registry.test.ts` — external root ownership, hierarchy, atomic child creation, canonical snapshots/events, removal, live path reuse, and presentation attachment.
 - `extensions/subagents/child-tool-policy.test.ts` — default, persona, and fork normalization into one SDK allowlist.
 - `extensions/subagents/delegating-extension-ui.test.ts` — stable headless context, attachment, token-aware detachment, and reset.
-- `extensions/subagents/agent-set.test.ts` — revised registry-backed manager status projection and canonical-path interruption behavior.
+- `extensions/subagents/agent-set.test.ts` — revised registry-backed manager status projection and canonical-path interruption behavior, including the failed-node no-op parity rule.
 - `extensions/subagents/managed-child-session.test.ts` — revised path/session naming, registry-aware scope, normalized policy, trust wiring, SDK lifecycle, replacement, and cooperative disposal.
 - `extensions/subagents/managed-child-session.integration.test.ts` — revised direct reopening of an RPC-era JSONL session with path-aware child configuration.
 - `extensions/subagents/scoped-extension.test.ts` — revised registry/path-aware child scope and single-policy tool registration.
@@ -556,11 +556,13 @@ No new dependency is introduced.
 #### Registry-aware manager and orchestration
 
 - Manager status getters read canonical immediate-child snapshots through the owning registry path rather than manager-local session/status state.
-- Manager interruption resolves the canonical node under its owner path and aborts the managed session cooperatively.
-- Root/child orchestration retains explicit uplink routing, lifecycle completion at `agent_settled`, status/dashboard projection, atomic dynamic membership, persistence replacement records, teardown/resurrection, persona model/skills/cwd, and normalized tools without RPC or socket ownership.
+- Manager interruption resolves the canonical node under its owner path and aborts a nonfailed managed session cooperatively; a failed node is a no-op for observable parity.
+- Root/child orchestration retains explicit uplink routing, lifecycle completion at `agent_settled`, status/dashboard projection, atomic dynamic membership, persistence replacement records, teardown/resurrection, full-active-tool fork inheritance, persona model/skills/cwd, and normalized tools without RPC or socket ownership.
 
 #### Preserved domain compatibility
 
 - Parent-local router behavior, public-SDK project-trust precedence, version-1 lifecycle logs, cwd/tool/skill compatibility, and persisted JSONL snapshot recomputation remain covered by their reviewed tests.
 
 The reopened suite intentionally adds no Pimote integration, recursive reporting, historical cost retention, or registry persistence tests.
+
+**Review status:** approved

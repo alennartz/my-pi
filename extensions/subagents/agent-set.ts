@@ -92,9 +92,9 @@ export interface SubagentManagerOptions {
 	pi: ExtensionAPI;
 	cwd: string;
 	/** Shared per-root runtime registry; manager owns only its immediate orchestration. */
-	registry?: AgentSessionRegistry;
+	registry: AgentSessionRegistry;
 	/** Canonical path of the manager's owning node in the shared registry. */
-	ownerPath?: AgentPath;
+	ownerPath: AgentPath;
 	parentSessionFile?: string;
 	skillPaths: Map<string, string[]>;
 	resolveContextWindow: (modelId: string) => number | undefined;
@@ -129,7 +129,10 @@ export class SubagentManager {
 		return this.entries.length > 0;
 	}
 
-	/** Abort the target agent's current operation (equivalent to pressing Escape in the TUI). */
+	/**
+	 * Abort the target agent's current operation (equivalent to pressing Escape
+	 * in the TUI). A failed child is deliberately a no-op for parity.
+	 */
 	async interrupt(agentId: string): Promise<void> {
 		const entry = this.entries.find((e) => e.id === agentId);
 		if (!entry) throw new Error(`Unknown agent: "${agentId}"`);

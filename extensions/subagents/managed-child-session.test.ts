@@ -349,6 +349,22 @@ describe("createManagedChildSession construction", () => {
 		expect(forked.child.sessionFile).toBe("/sessions/fork-3.jsonl");
 	});
 
+	it("uses the escaped canonical path as the initial name for delimiter-bearing IDs", async () => {
+		const agentPath = ["researcher/team", "worker"] as const;
+		await createChild(
+			{ kind: "new", cwd: "/repo", sessionDir: "/sessions" },
+			{
+				path: agentPath,
+				scope: {
+					...makeConfig({ kind: "new", cwd: "/repo", sessionDir: "/sessions" }).scope,
+					path: agentPath,
+					identity: { id: "worker", task: "inspect the change", channels: ["parent"] },
+				},
+			},
+		);
+		expect(sdk.state.managers[0].appendSessionInfo).toHaveBeenCalledWith(formatAgentPath(agentPath));
+	});
+
 	it("passes shared SDK infrastructure and one normalized tool policy into the child runtime", async () => {
 		const { dependencies } = await createChild(
 			{ kind: "new", cwd: "/repo", sessionDir: "/sessions" },
@@ -382,6 +398,7 @@ describe("createManagedChildSession construction", () => {
 
 		const sessionOptions = sdk.state.sessionArgs[0];
 		expect(sessionOptions).toMatchObject({
+			model: { provider: "provider", id: "model" },
 			tools: ["read", "send", "respond"],
 			thinkingLevel: "xhigh",
 		});
@@ -392,6 +409,41 @@ describe("createManagedChildSession construction", () => {
 			{ toolPolicy: { allowedTools: undefined, excludeTools: ["ask_user"] } },
 		);
 		expect(sdk.state.sessionArgs[1].excludeTools).toEqual(["ask_user"]);
+
+		await createChild(
+			{ kind: "new", cwd: "/repo", sessionDir: "/sessions" },
+			{ skillPaths: [] },
+		);
+		expect(sdk.state.servicesArgs[2].resourceLoaderOptions.noSkills).not.toBe(true);
+		expect(sdk.state.servicesArgs[2].resourceLoaderOptions.additionalSkillPaths).toBeUndefined();
+	});
+
+	it("isolates cwd-bound services for sibling children while sharing root auth and models", async () => {
+		const dependencies = makeDependencies();
+		const target: ChildSessionConfig["target"] = { kind: "new", cwd: "/repo", sessionDir: "/sessions" };
+		const first = await createManagedChildSession(makeConfig(target), dependencies, makeHooks());
+		const secondConfig = makeConfig(target);
+		secondConfig.path = ["researcher", "reviewer"];
+		secondConfig.scope = {
+			...secondConfig.scope,
+			path: ["researcher", "reviewer"],
+			identity: { id: "reviewer", task: "review the change", channels: ["parent"] },
+		};
+		const second = await createManagedChildSession(secondConfig, dependencies, makeHooks());
+		children.push(first, second);
+
+		expect(sdk.createEventBus).toHaveBeenCalledTimes(2);
+		expect(first.eventBus).not.toBe(second.eventBus);
+		expect((first.runtime as any).services.settingsManager).not.toBe(
+			(second.runtime as any).services.settingsManager,
+		);
+		expect(sdk.state.servicesArgs[0].resourceLoaderOptions.eventBus).not.toBe(
+			sdk.state.servicesArgs[1].resourceLoaderOptions.eventBus,
+		);
+		expect(sdk.state.servicesArgs[0].authStorage).toBe(dependencies.authStorage);
+		expect(sdk.state.servicesArgs[1].authStorage).toBe(dependencies.authStorage);
+		expect(sdk.state.servicesArgs[0].modelRegistry).toBe(dependencies.modelRegistry);
+		expect(sdk.state.servicesArgs[1].modelRegistry).toBe(dependencies.modelRegistry);
 	});
 
 	it("delegates child trust resolution to the local headless trust module", async () => {
@@ -504,10 +556,12 @@ describe("ManagedChildSession prompt, event, and shutdown behavior", () => {
 		expect(hooks.onShutdownRequested).toHaveBeenCalledTimes(1);
 	});
 
-	it("rebinds the same wrapper after session replacement and reports complete metadata", async () => {
+	it("rebinds the same wrapper and presentation delegate after session replacement", async () => {
 		const hooks = makeHooks();
 		const { child } = await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" }, {}, hooks);
 		const oldSession = child.session as any;
+		const initialContext = sdk.state.bindings[0].bindings.uiContext;
+		expect(child.presentation).toBeDefined();
 
 		await child.runtime.newSession();
 
@@ -519,13 +573,27 @@ describe("ManagedChildSession prompt, event, and shutdown behavior", () => {
 			sessionFile: "/sessions/replacement-2.jsonl",
 			cwd: "/replacement-project",
 		});
+		expect(sdk.state.managers[1].appendSessionInfo).toHaveBeenCalledWith(formatAgentPath(["researcher", "worker"]));
 		expect(oldSession.subscribe.mock.results[0].value).toHaveBeenCalledTimes(1);
+		expect(sdk.createEventBus).toHaveBeenCalledTimes(2);
+		expect(sdk.state.servicesArgs[1].resourceLoaderOptions.eventBus).not.toBe(
+			sdk.state.servicesArgs[0].resourceLoaderOptions.eventBus,
+		);
+		expect(sdk.state.servicesArgs[1].authStorage).toBe(sdk.state.servicesArgs[0].authStorage);
+		expect(sdk.state.servicesArgs[1].modelRegistry).toBe(sdk.state.servicesArgs[0].modelRegistry);
 		expect(sdk.state.bindings).toHaveLength(2);
+		expect(sdk.state.bindings[1].bindings.uiContext).toBe(initialContext);
 
 		oldSession.emit({ type: "agent_start" });
 		expect(hooks.onEvent).not.toHaveBeenCalledWith({ type: "agent_start" });
-		(child.session as any).emit({ type: "agent_start" });
+		const currentSession = child.session as any;
+		currentSession.emit({ type: "agent_start" });
 		expect(hooks.onEvent).toHaveBeenCalledWith({ type: "agent_start" });
+		const eventsBeforeDispose = hooks.onEvent.mock.calls.length;
+		await child.dispose();
+		currentSession.emit({ type: "agent_start" });
+		expect(hooks.onEvent).toHaveBeenCalledTimes(eventsBeforeDispose);
+		expect(currentSession.subscribe.mock.results[0].value).toHaveBeenCalledTimes(1);
 	});
 
 	it("uses cooperative cancellation and disposes the SDK runtime exactly once", async () => {

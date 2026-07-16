@@ -6,9 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseSessionSnapshot } from "./session-snapshot.js";
 
 let tmpRoot: string;
+let sessionSequence: number;
 
 beforeEach(() => {
 	tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-snapshot-test-"));
+	sessionSequence = 0;
 });
 
 afterEach(() => {
@@ -21,7 +23,7 @@ afterEach(() => {
 
 /** Write JSONL lines to a fresh session file and return its path. */
 function writeSession(lines: unknown[]): string {
-	const file = path.join(tmpRoot, `${Math.random().toString(36).slice(2)}.jsonl`);
+	const file = path.join(tmpRoot, `session-${++sessionSequence}.jsonl`);
 	fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n", "utf8");
 	return file;
 }

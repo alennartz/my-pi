@@ -51,6 +51,17 @@ function makeExtensions(
 	};
 }
 
+function makeExtensionsWithHandlers(handlers: Array<(...args: any[]) => unknown>): LoadExtensionsResult {
+	return {
+		extensions: [{
+			path: "/repo/.pi/extensions/trust.ts",
+			handlers: new Map([["project_trust", handlers]]),
+		}] as any[],
+		errors: [],
+		runtime: {},
+	} as LoadExtensionsResult;
+}
+
 function resolve(
 	overrides: Partial<Parameters<typeof resolveChildProjectTrust>[0]> = {},
 ): Promise<boolean> {
@@ -119,5 +130,36 @@ describe("resolveChildProjectTrust", () => {
 		expect(context.ui.select).not.toHaveBeenCalled();
 		expect(context.ui.confirm).not.toHaveBeenCalled();
 		expect(context.ui.input).not.toHaveBeenCalled();
+	});
+
+	it("persists a remembered decisive extension result", async () => {
+		const trustStore = makeTrustStore(null);
+		const remembered = vi.fn(() => ({ trusted: "yes", remember: true }));
+
+		await expect(resolve({
+			extensionsResult: makeExtensionsWithHandlers([remembered]),
+			trustStore,
+		})).resolves.toBe(true);
+		expect(trustStore.set).toHaveBeenCalledWith("/repo", true);
+	});
+
+	it("reports an async handler failure and continues in loader order to a later decision", async () => {
+		const failed = vi.fn(async () => {
+			throw new Error("trust handler failed");
+		});
+		const decides = vi.fn(async () => ({ trusted: "yes" }));
+		const onExtensionError = vi.fn();
+
+		await expect(resolve({
+			extensionsResult: makeExtensionsWithHandlers([failed, decides]),
+			defaultProjectTrust: "never",
+			onExtensionError,
+		})).resolves.toBe(true);
+		expect(onExtensionError).toHaveBeenCalledWith(expect.objectContaining({
+			extensionPath: "/repo/.pi/extensions/trust.ts",
+			event: "project_trust",
+			error: "trust handler failed",
+		}));
+		expect(decides).toHaveBeenCalledTimes(1);
 	});
 });
