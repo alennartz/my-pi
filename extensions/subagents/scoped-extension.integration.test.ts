@@ -658,7 +658,7 @@ describe("root orchestration integration", () => {
 		const allowedTools = managed.created[0].config.toolPolicy.allowedTools;
 		expect(new Set(allowedTools)).toEqual(new Set(["read", "toolscript_custom", "respond"]));
 		expect(allowedTools).toHaveLength(3);
-		expect(managed.created[0].child.submit).toHaveBeenCalledWith("Task: explore another path");
+		expect(managed.created[0].child.submit).toHaveBeenCalledWith("Task: explore another path", "followUp");
 	});
 
 	it("settles pre-agent-start headless errors and restores a torn-down session without RPC", async () => {
