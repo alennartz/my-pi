@@ -6,6 +6,8 @@ import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-c
 import { createManagedChildSession, type ChildSessionConfig } from "./managed-child-session.js";
 import type { MessagePort } from "./message-router.js";
 
+const registry = {} as ChildSessionConfig["scope"]["registry"];
+
 let tmpRoot: string | undefined;
 
 afterEach(() => {
@@ -15,10 +17,12 @@ afterEach(() => {
 
 function childConfig(sessionFile: string, sessionDir: string): ChildSessionConfig {
 	return {
-		id: "legacy-worker",
+		path: ["legacy-worker"],
 		target: { kind: "resume", sessionFile, sessionDir },
 		scope: {
 			kind: "child",
+			registry,
+			path: ["legacy-worker"],
 			identity: {
 				id: "legacy-worker",
 				task: "resume the prior task",
@@ -26,6 +30,7 @@ function childConfig(sessionFile: string, sessionDir: string): ChildSessionConfi
 			},
 			uplink: {} as MessagePort,
 		},
+		toolPolicy: { allowedTools: undefined, excludeTools: ["ask_user"] },
 		skillPaths: [],
 		appendSystemPrompt: [],
 	};

@@ -7,7 +7,8 @@ const managed = vi.hoisted(() => {
 	let sequence = 0;
 	const created: Array<{ config: any; dependencies: any; hooks: any; child: any }> = [];
 	const createManagedChildSession = vi.fn(async (config: any, dependencies: any, hooks: any) => {
-		const sessionId = `session-${config.id}-${++sequence}`;
+		const localId = config.path[config.path.length - 1];
+		const sessionId = `session-${localId}-${++sequence}`;
 		const sessionDir = config.target.sessionDir;
 		const sessionFile = config.target.kind === "resume"
 			? config.target.sessionFile
@@ -62,7 +63,10 @@ vi.mock("./broker.js", () => ({
 }));
 
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
+import type { AgentSessionRegistry } from "./agent-session-registry.js";
 import type { MessagePort, RoutedMessage, SendReceipt } from "./message-router.js";
+
+const registry = {} as AgentSessionRegistry;
 
 type RegisteredTool = {
 	name: string;
@@ -169,11 +173,12 @@ describe("child-scoped extension routing", () => {
 		const uplink = makePort("child");
 		const scope: SubagentScope = {
 			kind: "child",
+			registry,
+			path: ["child"],
 			identity: {
 				id: "child",
 				task: "work",
 				channels: ["parent"],
-				tools: ["list_models", "respond", "send"],
 			},
 			uplink,
 		};
@@ -206,11 +211,12 @@ describe("child-scoped extension routing", () => {
 		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({
 			kind: "child",
+			registry,
+			path: ["child"],
 			identity: {
 				id: "child",
 				task: "work",
 				channels: ["parent"],
-				tools: ["list_models", "send"],
 			},
 			uplink,
 		})(pi as any);
@@ -243,10 +249,13 @@ describe("root orchestration integration", () => {
 		expect(managed.createManagedChildSession).toHaveBeenCalledTimes(1);
 		const created = managed.created[0];
 		expect(created.config).toMatchObject({
-			id: "worker",
+			path: ["worker"],
 			target: { kind: "new" },
+			toolPolicy: { allowedTools: undefined, excludeTools: ["ask_user"] },
 			scope: {
 				kind: "child",
+				registry: expect.anything(),
+				path: ["worker"],
 				identity: { id: "worker", task: "inspect", channels: ["parent"] },
 			},
 		});
@@ -329,12 +338,12 @@ describe("root orchestration integration", () => {
 		}, ctx);
 		expect(managed.createManagedChildSession).toHaveBeenCalledTimes(2);
 		expect(managed.created[1].config).toMatchObject({
-			id: "worker-restored",
+			path: ["worker-restored"],
 			target: { kind: "resume", sessionFile: first.child.sessionFile },
 		});
 	});
 
-	it("propagates persona model, SDK/extension tool policies, skills, and cwd to a native child", async () => {
+	it("propagates persona model, normalized tool policy, skills, and cwd to a native child", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		const childCwd = path.join(tmpRoot!, "child-project");
 		fs.writeFileSync(parentSessionFile, "");
@@ -362,13 +371,14 @@ describe("root orchestration integration", () => {
 		}, ctx);
 
 		expect(managed.created[0].config).toMatchObject({
-			id: "reviewer",
+			path: ["reviewer"],
 			target: { kind: "new", cwd: childCwd },
 			modelRef: "pinned/model",
-			allowedTools: ["send"],
+			toolPolicy: { allowedTools: expect.arrayContaining(["send", "respond"]) },
 			skillPaths: ["/skills/debugging/SKILL.md"],
 			scope: {
-				identity: { tools: ["send"] },
+				path: ["reviewer"],
+				identity: { id: "reviewer" },
 			},
 		});
 		expect(managed.created[0].config.appendSystemPrompt).toContain("Review carefully.");

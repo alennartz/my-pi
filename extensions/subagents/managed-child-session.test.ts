@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { formatAgentPath } from "./agent-path.js";
 import type { MessagePort } from "./message-router.js";
 
 const sdk = vi.hoisted(() => {
@@ -249,6 +250,7 @@ import {
 } from "./managed-child-session.js";
 
 const uplink = {} as MessagePort;
+const registry = {} as ChildSessionConfig["scope"]["registry"];
 let children: ManagedChildSession[] = [];
 
 function makeConfig(
@@ -256,20 +258,24 @@ function makeConfig(
 	overrides: Partial<ChildSessionConfig> = {},
 ): ChildSessionConfig {
 	return {
-		id: "worker",
+		path: ["researcher", "worker"],
 		target,
 		scope: {
 			kind: "child",
+			registry,
+			path: ["researcher", "worker"],
 			identity: {
 				id: "worker",
 				task: "inspect the change",
 				channels: ["parent"],
-				tools: ["respond", "send"],
 			},
 			uplink,
 		},
 		modelRef: "provider/model:xhigh",
-		allowedTools: ["read", "send"],
+		toolPolicy: {
+			allowedTools: ["read", "send", "respond"],
+			excludeTools: undefined,
+		},
 		skillPaths: ["/repo/skills/debugging/SKILL.md"],
 		appendSystemPrompt: ["You are a child session."],
 		...overrides,
@@ -318,7 +324,7 @@ describe("createManagedChildSession construction", () => {
 	it("maps new, resume, and fork targets to their SDK session-manager operations", async () => {
 		const fresh = await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" });
 		expect(sdk.SessionManager.create).toHaveBeenCalledWith("/repo", "/sessions");
-		expect(sdk.state.managers[0].appendSessionInfo).toHaveBeenCalledWith("worker");
+		expect(sdk.state.managers[0].appendSessionInfo).toHaveBeenCalledWith(formatAgentPath(["researcher", "worker"]));
 		expect(fresh.child.sessionId).toBe("new-1");
 		expect(fresh.child.sessionFile).toBe("/sessions/new-1.jsonl");
 
@@ -329,6 +335,7 @@ describe("createManagedChildSession construction", () => {
 		});
 		expect(sdk.SessionManager.open).toHaveBeenCalledWith("/sessions/rpc-created.jsonl", "/sessions");
 		expect(sdk.state.servicesArgs[1]).toMatchObject({ cwd: "/resumed-project" });
+		expect(sdk.state.managers[1].appendSessionInfo).toHaveBeenCalledWith(formatAgentPath(["researcher", "worker"]));
 		expect(resumed.child.sessionFile).toBe("/sessions/rpc-created.jsonl");
 
 		const forked = await createChild({
@@ -338,24 +345,18 @@ describe("createManagedChildSession construction", () => {
 			sessionDir: "/sessions",
 		});
 		expect(sdk.SessionManager.forkFrom).toHaveBeenCalledWith("/parent.jsonl", "/fork-project", "/sessions");
-		expect(sdk.state.managers[2].appendSessionInfo).toHaveBeenCalledWith("worker");
+		expect(sdk.state.managers[2].appendSessionInfo).toHaveBeenCalledWith(formatAgentPath(["researcher", "worker"]));
 		expect(forked.child.sessionFile).toBe("/sessions/fork-3.jsonl");
 	});
 
-	it("passes shared SDK infrastructure and independent tool policies into the child runtime", async () => {
+	it("passes shared SDK infrastructure and one normalized tool policy into the child runtime", async () => {
 		const { dependencies } = await createChild(
 			{ kind: "new", cwd: "/repo", sessionDir: "/sessions" },
 			{
-				allowedTools: ["read", "send"],
-				scope: {
-					kind: "child",
-					identity: {
-						id: "worker",
-						task: "inspect the change",
-						channels: ["parent"],
-						tools: ["respond", "send"],
-					},
-					uplink,
+				path: ["researcher", "worker"],
+				toolPolicy: {
+					allowedTools: ["read", "send", "respond"],
+					excludeTools: undefined,
 				},
 			},
 		);
@@ -381,16 +382,16 @@ describe("createManagedChildSession construction", () => {
 
 		const sessionOptions = sdk.state.sessionArgs[0];
 		expect(sessionOptions).toMatchObject({
-			tools: ["read", "send"],
+			tools: ["read", "send", "respond"],
 			thinkingLevel: "xhigh",
 		});
-		expect(sessionOptions.tools).not.toContain("ask_user");
+		expect(sessionOptions.excludeTools).toBeUndefined();
 
 		await createChild(
 			{ kind: "new", cwd: "/repo", sessionDir: "/sessions" },
-			{ allowedTools: undefined },
+			{ toolPolicy: { allowedTools: undefined, excludeTools: ["ask_user"] } },
 		);
-		expect(sdk.state.sessionArgs[1].excludeTools).toContain("ask_user");
+		expect(sdk.state.sessionArgs[1].excludeTools).toEqual(["ask_user"]);
 	});
 
 	it("delegates child trust resolution to the local headless trust module", async () => {

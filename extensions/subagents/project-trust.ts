@@ -1,5 +1,6 @@
 import type {
 	DefaultProjectTrust,
+	ExtensionError,
 	LoadExtensionsResult,
 	ProjectTrustContext,
 	ProjectTrustStore,
@@ -12,6 +13,7 @@ export type ChildProjectTrustOptions = {
 	trustStore: Pick<ProjectTrustStore, "get" | "set">;
 	defaultProjectTrust?: DefaultProjectTrust;
 	projectTrustContext: ProjectTrustContext;
+	onExtensionError?: (error: ExtensionError) => void;
 };
 
 /**

@@ -1,163 +1,157 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { SubagentManager } from "./agent-set.js";
-import type { AgentStatus } from "./agent-set.js";
+import { describe, expect, it, vi } from "vitest";
+import { SubagentManager, type AgentStatus } from "./agent-set.js";
+import type {
+	AgentNodeSnapshot,
+	AgentOperationalSnapshot,
+	AgentRegistryNode,
+	AgentSessionRegistry,
+} from "./agent-session-registry.js";
+import type { AgentPath } from "./agent-path.js";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+function usage(overrides: Partial<AgentOperationalSnapshot["usage"]> = {}) {
+	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0, ...overrides };
+}
 
-function makeStatus(overrides: Partial<AgentStatus> = {}): AgentStatus {
+function operational(overrides: Partial<AgentOperationalSnapshot> = {}): AgentOperationalSnapshot {
 	return {
-		id: "test-agent",
 		state: "running",
-		task: "test task",
-		channels: ["parent"],
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
-		pendingCorrelations: [],
+		usage: usage(),
 		lastTurnInput: 0,
 		hasSubgroup: false,
+		pendingCorrelations: [],
 		waitingFor: [],
 		...overrides,
 	};
 }
 
-function makeEntry(overrides: Partial<Record<string, any>> = {}): any {
+function snapshot(
+	localId: string,
+	path: AgentPath = ["researcher", localId],
+	overrides: Partial<AgentNodeSnapshot> = {},
+): AgentNodeSnapshot {
 	return {
-		id: "test-agent",
-		agentDef: undefined,
-		task: "test task",
+		path,
+		parentPath: path.slice(0, -1),
+		localId,
+		ownership: "registry",
+		sessionId: `${localId}-session`,
+		sessionFile: `/sessions/${localId}.jsonl`,
+		cwd: "/repo",
+		task: `task-${localId}`,
 		channels: ["parent"],
-		rpc: { stderr: "", exitCode: null },
-		status: makeStatus(),
-		kind: "agent",
-		completionNotified: false,
-		agentStartedSinceLastPrompt: false,
+		operational: operational(),
 		...overrides,
 	};
 }
 
-function createManager() {
+function makeRegistry(initial: AgentNodeSnapshot[] = []): any {
+	const snapshots = [...initial];
+	const nodes = new Map<string, any>();
+	for (const entry of snapshots) {
+		nodes.set(JSON.stringify(entry.path), {
+			snapshot: entry,
+			session: { abort: vi.fn(async () => {}) },
+		});
+	}
+	return {
+		listChildren: vi.fn(() => snapshots),
+		get: vi.fn((path: AgentPath) => nodes.get(JSON.stringify(path))),
+		getSnapshot: vi.fn((path: AgentPath) => snapshots.find((entry) => JSON.stringify(entry.path) === JSON.stringify(path))),
+		updateOperational: vi.fn(),
+		createChildren: vi.fn(),
+		remove: vi.fn(),
+		snapshots,
+		nodes,
+	};
+}
+
+function createManager(registry: AgentSessionRegistry, ownerPath: AgentPath = ["researcher"]) {
 	const onUpdate = vi.fn();
 	const onAgentComplete = vi.fn();
 	const onParentMessage = vi.fn();
-	const agentIdled = vi.fn();
-
-	const mgr = new SubagentManager({
+	const manager = new SubagentManager({
 		pi: {} as any,
 		cwd: "/tmp",
+		registry,
+		ownerPath,
 		skillPaths: new Map(),
 		resolveContextWindow: () => undefined,
 		onUpdate,
 		onAgentComplete,
 		onParentMessage,
 	});
-
-	// Inject a mock broker so agentIdled calls are trackable.
-	(mgr as any).broker = { agentIdled, isQuiet: () => true };
-
-	return { mgr, onUpdate, onAgentComplete, agentIdled };
+	return { manager, onUpdate, onAgentComplete, onParentMessage };
 }
 
-function fireEvent(mgr: SubagentManager, entry: any, event: Record<string, any>): void {
-	(mgr as any).handleRpcEvent(entry, event);
-}
-
-const errorNotify = (message = "quota soft cap exceeded") => ({
-	type: "extension_ui_request",
-	method: "notify",
-	notifyType: "error",
-	message,
-});
-
-// ─── Tests ───────────────────────────────────────────────────────────────────
-
-describe("error-level notify before agent_start", () => {
-	it("settles the entry as failed with the notify message as lastError", () => {
-		const { mgr, onUpdate, onAgentComplete, agentIdled } = createManager();
-		const entry = makeEntry({ agentStartedSinceLastPrompt: false });
-		(mgr as any).entries = [entry];
-
-		fireEvent(mgr, entry, errorNotify("quota soft cap exceeded: spending at Jul 19's budget"));
-
-		expect(entry.status.state).toBe("failed");
-		expect(entry.status.lastError).toBe("quota soft cap exceeded: spending at Jul 19's budget");
-		expect(entry.status.lastActivity).toBeUndefined();
-		expect(agentIdled).toHaveBeenCalledWith("test-agent");
-		expect(onUpdate).toHaveBeenCalled();
-		expect(entry.completionNotified).toBe(true);
-		expect(onAgentComplete).toHaveBeenCalledWith(mgr, "test-agent", true);
-	});
-
-	it("does not settle if state is not running", () => {
-		// Sanity: the 'not running' branch calls agentIdled but does not settle.
-		const { mgr, agentIdled } = createManager();
-		const entry = makeEntry({
-			agentStartedSinceLastPrompt: false,
-			status: makeStatus({ state: "idle" }),
+describe("registry-backed manager status projection", () => {
+	it("reads immediate-child statuses from the canonical registry path", () => {
+		const worker = snapshot("worker", ["researcher", "worker"], {
+			operational: operational({
+				state: "waiting",
+				usage: usage({ input: 12, output: 4, cost: 0.03, turns: 2 }),
+				lastOutput: "still working",
+				waitingFor: ["peer"],
+			}),
 		});
-		(mgr as any).entries = [entry];
+		const registry = makeRegistry([worker]);
+		const { manager } = createManager(registry, ["researcher"]);
 
-		fireEvent(mgr, entry, errorNotify());
-
-		expect(entry.status.state).toBe("idle");
-		expect(entry.status.lastError).toBeUndefined();
-		expect(agentIdled).toHaveBeenCalledWith("test-agent");
-	});
-});
-
-describe("error-level notify after agent_start", () => {
-	it("is ignored — agents may legitimately emit error notifies mid-run", () => {
-		const { mgr, onUpdate, onAgentComplete, agentIdled } = createManager();
-		const entry = makeEntry({ agentStartedSinceLastPrompt: true });
-		(mgr as any).entries = [entry];
-
-		fireEvent(mgr, entry, errorNotify("something went wrong mid-run"));
-
-		expect(entry.status.state).toBe("running");
-		expect(entry.status.lastError).toBeUndefined();
-		expect(entry.completionNotified).toBe(false);
-		expect(agentIdled).not.toHaveBeenCalled();
-		expect(onUpdate).not.toHaveBeenCalled();
-		expect(onAgentComplete).not.toHaveBeenCalled();
+		const statuses = manager.getAgentStatuses();
+		expect(registry.listChildren).toHaveBeenCalledWith(["researcher"]);
+		expect(statuses).toEqual([expect.objectContaining<Partial<AgentStatus>>({
+			id: "worker",
+			state: "waiting",
+			task: "task-worker",
+			usage: worker.operational.usage,
+			lastOutput: "still working",
+			waitingFor: ["peer"],
+		})]);
 	});
 
-	it("agentStartedSinceLastPrompt is set to true by agent_start event", () => {
-		const { mgr } = createManager();
-		const entry = makeEntry({ agentStartedSinceLastPrompt: false });
-		(mgr as any).entries = [entry];
-
-		fireEvent(mgr, entry, { type: "agent_start" });
-
-		expect(entry.agentStartedSinceLastPrompt).toBe(true);
-		expect(entry.status.state).toBe("running");
-	});
-});
-
-describe("error-level notify to an idle entry", () => {
-	it("calls agentIdled so pending blocking sends fail fast", () => {
-		const { mgr, agentIdled, onAgentComplete } = createManager();
-		const entry = makeEntry({
-			status: makeStatus({ state: "idle" }),
-			agentStartedSinceLastPrompt: false,
+	it("reflects canonical snapshot replacement instead of retaining a manager-local status copy", () => {
+		const running = snapshot("worker");
+		const idle = snapshot("worker", ["researcher", "worker"], {
+			operational: operational({ state: "idle", lastOutput: "done" }),
 		});
-		(mgr as any).entries = [entry];
+		const registry = makeRegistry([running]);
+		registry.listChildren
+			.mockReturnValueOnce([running])
+			.mockReturnValueOnce([idle]);
+		const { manager } = createManager(registry);
 
-		fireEvent(mgr, entry, errorNotify("input blocked"));
+		expect(manager.getAgentStatus("worker")?.state).toBe("running");
+		expect(manager.getAgentStatus("worker")?.lastOutput).toBeUndefined();
+		expect(manager.getAgentStatus("worker")?.state).toBe("idle");
+		expect(manager.getAgentStatus("worker")?.lastOutput).toBe("done");
+	});
 
-		expect(agentIdled).toHaveBeenCalledWith("test-agent");
-		// Entry stays idle — not re-settled as failed.
-		expect(entry.status.state).toBe("idle");
-		expect(onAgentComplete).not.toHaveBeenCalled();
+	it("reports no active children when the canonical registry has none", () => {
+		const registry = makeRegistry([]);
+		const { manager } = createManager(registry);
+
+		expect(manager.hasAgents()).toBe(false);
+		expect(manager.getAgentStatuses()).toEqual([]);
+		expect(registry.listChildren).toHaveBeenCalledWith(["researcher"]);
 	});
 });
 
-describe("agentStartedSinceLastPrompt reset on agent_end idle", () => {
-	it("resets to false when agent ends cleanly so the next prompt starts clean", () => {
-		const { mgr } = createManager();
-		const entry = makeEntry({ agentStartedSinceLastPrompt: true });
-		(mgr as any).entries = [entry];
+describe("registry-backed manager interruption", () => {
+	it("resolves a child node through the registry and aborts its managed session", async () => {
+		const worker = snapshot("worker");
+		const registry = makeRegistry([worker]);
+		const node = registry.get(["researcher", "worker"]);
+		const { manager } = createManager(registry);
 
-		fireEvent(mgr, entry, { type: "agent_end", messages: [] });
+		await manager.interrupt("worker");
+		expect(node.session.abort).toHaveBeenCalledTimes(1);
+	});
 
-		expect(entry.agentStartedSinceLastPrompt).toBe(false);
-		expect(entry.status.state).toBe("idle");
+	it("uses the owner path when resolving a duplicate local id under another branch", async () => {
+		const worker = snapshot("worker", ["other", "worker"]);
+		const registry = makeRegistry([worker]);
+		const { manager } = createManager(registry, ["other"]);
+
+		await manager.interrupt("worker");
+		expect(registry.get).toHaveBeenCalledWith(["other", "worker"]);
 	});
 });

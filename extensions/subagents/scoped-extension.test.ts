@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AgentPath } from "./agent-path.js";
+import type { AgentSessionRegistry } from "./agent-session-registry.js";
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import type { MessagePort } from "./message-router.js";
 
@@ -19,14 +21,17 @@ function makePi(): { registerTool: ReturnType<typeof vi.fn> } {
 	return { registerTool: vi.fn() };
 }
 
-function childScope(tools?: string[]): SubagentScope {
+const registry = {} as AgentSessionRegistry;
+
+function childScope(path: AgentPath = ["worker"]): SubagentScope {
 	return {
 		kind: "child",
+		registry,
+		path,
 		identity: {
-			id: "worker",
+			id: path[path.length - 1] ?? "worker",
 			task: "do the work",
 			channels: ["parent"],
-			...(tools ? { tools } : {}),
 		},
 		uplink: {} as MessagePort,
 	};
@@ -59,34 +64,37 @@ describe("createSubagentsExtension root scope", () => {
 });
 
 describe("createSubagentsExtension child scope", () => {
-	it("applies persona tool restrictions while retaining respond as infrastructure", async () => {
+	it("registers the same tool definitions for a child; SDK policy decides availability", async () => {
 		const pi = makePi();
-		await createSubagentsExtension(childScope(["send"]))(pi as any);
-
-		const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
-		expect([...names].sort()).toEqual(["respond", "send"]);
-	});
-
-	it("allows an unrestricted child to expose the same scoped tool surface", async () => {
-		const pi = makePi();
-		await createSubagentsExtension(childScope())(pi as any);
+		await createSubagentsExtension(childScope(["researcher", "worker"]))(pi as any);
 
 		const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
 		expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
 	});
 
+	it("carries canonical registry ownership and path without process-global identity", async () => {
+		const scope = childScope(["researcher", "worker"]);
+		await createSubagentsExtension(scope)(makePi() as any);
+		expect(scope).toMatchObject({
+			kind: "child",
+			registry,
+			path: ["researcher", "worker"],
+			identity: { id: "worker" },
+		});
+	});
+
 	it("does not share mutable registrations between independently constructed scopes", async () => {
 		const first = makePi();
 		const second = makePi();
-		const firstFactory = createSubagentsExtension(childScope(["send"]));
-		const secondFactory = createSubagentsExtension(childScope(["check_status"]));
+		const firstFactory = createSubagentsExtension(childScope(["left", "worker"]));
+		const secondFactory = createSubagentsExtension(childScope(["right", "worker"]));
 
 		await firstFactory(first as any);
 		await secondFactory(second as any);
 
 		const firstNames = first.registerTool.mock.calls.map(([tool]) => tool.name);
 		const secondNames = second.registerTool.mock.calls.map(([tool]) => tool.name);
-		expect([...firstNames].sort()).toEqual(["respond", "send"]);
-		expect([...secondNames].sort()).toEqual(["check_status", "respond"]);
+		expect([...firstNames].sort()).toEqual([...ALL_TOOLS].sort());
+		expect([...secondNames].sort()).toEqual([...ALL_TOOLS].sort());
 	});
 });

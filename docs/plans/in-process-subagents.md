@@ -493,3 +493,74 @@ No new dependency is introduced.
 ### DR Supersessions
 
 - **DR-014** (Dual-Transport Architecture — RPC for Lifecycle, Unix Socket for Messaging) — superseded because child lifecycle and communication now occur within one process. New decision: a per-root registry owns SDK child sessions, while parent-local in-memory routers retain centralized channel and deadlock authority. Process-isolation guarantees are deliberately relinquished.
+
+## Tests
+
+**Pre-test-write commit:** `330932b7e65a8dfc9e51771aa31fec80934b0e99`
+
+### Interface Files
+
+- `extensions/subagents/agent-path.ts` — canonical segmented agent paths and escaped display/session names.
+- `extensions/subagents/agent-session-registry.ts` — per-root node, snapshot, event, atomic creation/removal, and presentation-attachment contracts.
+- `extensions/subagents/child-tool-policy.ts` — normalized single SDK tool-policy input/output contracts.
+- `extensions/subagents/delegating-extension-ui.ts` — stable attachable/detachable extension UI context contract.
+- `extensions/subagents/managed-child-session.ts` — path-aware child session configuration, normalized tool policy, presentation exposure, and SDK lifecycle contract.
+- `extensions/subagents/scoped-extension.ts` — registry/path-aware child scope contract without a second persona tool policy.
+- `extensions/subagents/project-trust.ts` — public-SDK child trust options extended with extension-error reporting.
+- `extensions/subagents/agent-set.ts` — structural manager options for shared registry and canonical owner path.
+
+### Test Files
+
+- `extensions/subagents/agent-path.test.ts` — root, nested, immutable, and delimiter-safe canonical path behavior.
+- `extensions/subagents/agent-session-registry.test.ts` — external root ownership, hierarchy, atomic child creation, canonical snapshots/events, removal, live path reuse, and presentation attachment.
+- `extensions/subagents/child-tool-policy.test.ts` — default, persona, and fork normalization into one SDK allowlist.
+- `extensions/subagents/delegating-extension-ui.test.ts` — stable headless context, attachment, token-aware detachment, and reset.
+- `extensions/subagents/agent-set.test.ts` — revised registry-backed manager status projection and canonical-path interruption behavior.
+- `extensions/subagents/managed-child-session.test.ts` — revised path/session naming, registry-aware scope, normalized policy, trust wiring, SDK lifecycle, replacement, and cooperative disposal.
+- `extensions/subagents/managed-child-session.integration.test.ts` — revised direct reopening of an RPC-era JSONL session with path-aware child configuration.
+- `extensions/subagents/scoped-extension.test.ts` — revised registry/path-aware child scope and single-policy tool registration.
+- `extensions/subagents/scoped-extension.integration.test.ts` — revised registry-aware orchestration, uplink routing, lifecycle projection, persistence records, dynamic membership, interruption, resurrection, persona model/skills/cwd, and normalized tools.
+- `extensions/subagents/message-router.test.ts` — preserved parent-local routing, correlation, deadlock, lifecycle-failure, reconnection, and shutdown behavior.
+- `extensions/subagents/project-trust.test.ts` — preserved public-SDK trust precedence and non-interactive fallback behavior.
+- `extensions/subagents/persistence.test.ts` and `extensions/subagents/session-snapshot.test.ts` — preserved lifecycle-log and persisted-session compatibility behavior.
+
+### Behaviors Covered
+
+#### Canonical paths and normalized child policy
+
+- The external root uses path `[]`; child paths append sibling-scoped local IDs without mutating parent paths.
+- Escaped full-path formatting preserves segment order and prevents delimiter-bearing IDs from colliding with separate segments; the escaped path is the child session naming input.
+- Default children use no allowlist while excluding `ask_user`; persona and fork inputs become one deduplicated allowlist that includes `respond`, excludes `ask_user`, and preserves extension tools.
+
+#### Agent session registry
+
+- Construction registers exactly one externally owned root at `[]`; registry disposal leaves that root host-owned.
+- Child creation derives canonical paths, rejects duplicate live siblings/reserved parent IDs, allows repeated local IDs under different parents, and passes shared registry/path/uplink context to managed sessions.
+- Batch creation reserves paths atomically; any construction failure disposes staged sessions, releases reservations, and publishes no add events.
+- Operational snapshots are replaced immutably and publish `node_updated` only for actual changes; session replacement updates metadata without changing path or parentage.
+- Removal is idempotent, disposes descendants bottom-up, emits final `node_removed` snapshots, and makes removed paths reusable without tombstones or historical cost.
+- Presentation attaches only to registry-owned descendants; subscriber failures do not interrupt lifecycle operations.
+
+#### Delegating extension UI
+
+- A child extension binds once to a stable context that forwards to a headless target initially.
+- Attachment switches forwarding without rebinding; stale detach tokens cannot displace newer attachments, and reset returns to headless behavior.
+
+#### Managed child session and scoped extension
+
+- New, resumed, forked, and replacement sessions receive the escaped full canonical path as their session name while retaining path authority and legacy session metadata.
+- Each child receives isolated settings/resources/EventBus/extensions/trust context while sharing root auth/model infrastructure; its scope carries the registry, path, identity, and uplink.
+- Child SDK tool configuration consumes exactly one normalized policy; scoped extension registration does not apply a second persona filter.
+- Existing prompt preflight, event ordering, headless UI, project-trust, cooperative interruption, replacement rebinding, idempotent disposal, and direct persisted-session reopening behavior remain covered.
+
+#### Registry-aware manager and orchestration
+
+- Manager status getters read canonical immediate-child snapshots through the owning registry path rather than manager-local session/status state.
+- Manager interruption resolves the canonical node under its owner path and aborts the managed session cooperatively.
+- Root/child orchestration retains explicit uplink routing, lifecycle completion at `agent_settled`, status/dashboard projection, atomic dynamic membership, persistence replacement records, teardown/resurrection, persona model/skills/cwd, and normalized tools without RPC or socket ownership.
+
+#### Preserved domain compatibility
+
+- Parent-local router behavior, public-SDK project-trust precedence, version-1 lifecycle logs, cwd/tool/skill compatibility, and persisted JSONL snapshot recomputation remain covered by their reviewed tests.
+
+The reopened suite intentionally adds no Pimote integration, recursive reporting, historical cost retention, or registry persistence tests.

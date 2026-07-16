@@ -7,6 +7,9 @@ import type {
 	EventBusController,
 	ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
+import type { AgentPath } from "./agent-path.js";
+import type { ChildToolPolicy } from "./child-tool-policy.js";
+import type { DelegatingExtensionUI } from "./delegating-extension-ui.js";
 import type { SubagentScope } from "./scoped-extension.js";
 
 export type ChildSessionTarget =
@@ -20,16 +23,12 @@ export type ChildSessionTarget =
 	};
 
 export type ChildSessionConfig = {
-	id: string;
+	path: AgentPath;
 	target: ChildSessionTarget;
 	scope: Extract<SubagentScope, { kind: "child" }>;
 	modelRef?: string;
 	thinkingLevel?: ThinkingLevel;
-	/**
-	 * SDK-wide child-tool allowlist, corresponding to the legacy CLI `--tools`
-	 * policy. It intersects with (but does not replace) scope.identity.tools.
-	 */
-	allowedTools?: string[];
+	toolPolicy: ChildToolPolicy;
 	skillPaths: string[];
 	appendSystemPrompt: string[];
 };
@@ -61,6 +60,7 @@ export type ManagedChildSessionDependencies = {
  */
 export class ManagedChildSession {
 	readonly runtime!: AgentSessionRuntime;
+	readonly presentation!: DelegatingExtensionUI;
 
 	get eventBus(): EventBusController {
 		throw new Error("not implemented");

@@ -15,6 +15,8 @@ import { Broker } from "./broker.js";
 import { type AgentConfig, type AgentSpec, type ForkAgentSpec, buildAgentArgs, buildForkArgs, isValidCwd, resolveSkillPaths } from "./agents.js";
 import { ensurePersistence, appendAgentAdded, appendAgentRemoved, findAgentRecordBySessionId, loadPersistedAgents, getPersistencePaths, pruneInvalidPersistedAgents, type PersistencePaths, type PersistedAgentRecord } from "./persistence.js";
 import { type Topology, buildTopology, addToTopology, removeFromTopology, validateTopology } from "./channels.js";
+import type { AgentPath } from "./agent-path.js";
+import type { AgentSessionRegistry } from "./agent-session-registry.js";
 import { parseSessionSnapshot } from "./session-snapshot.js";
 import { formatTokenCount } from "./format.js";
 import {
@@ -89,6 +91,10 @@ interface AgentEntry {
 export interface SubagentManagerOptions {
 	pi: ExtensionAPI;
 	cwd: string;
+	/** Shared per-root runtime registry; manager owns only its immediate orchestration. */
+	registry?: AgentSessionRegistry;
+	/** Canonical path of the manager's owning node in the shared registry. */
+	ownerPath?: AgentPath;
 	parentSessionFile?: string;
 	skillPaths: Map<string, string[]>;
 	resolveContextWindow: (modelId: string) => number | undefined;
