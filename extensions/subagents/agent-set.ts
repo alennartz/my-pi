@@ -619,7 +619,12 @@ export class SubagentManager {
 		if (!node || node.snapshot.ownership !== "registry") return;
 		entry.agentStartedSinceLastPrompt = false;
 		entry.pendingTerminalError = undefined;
-		void node.session.submit(`Task: ${entry.task}`).catch((error) => {
+		// A forked session may have a pending source turn when its isolated
+		// session_start hooks bind (for example, session-resume's automatic
+		// continuation). Queue the fork directive behind that turn instead of
+		// treating the expected busy preflight as a runtime failure.
+		const streamingBehavior = entry.kind === "fork" ? "followUp" : undefined;
+		void node.session.submit(`Task: ${entry.task}`, streamingBehavior).catch((error) => {
 			this.markRuntimeUnavailable(entry, errorMessage(error));
 		});
 	}
