@@ -312,6 +312,11 @@ function reportExtensionDiagnostics(
 ): void {
 	for (const diagnostic of diagnostics ?? []) {
 		if (!diagnostic?.error) continue;
+		// The SDK computes conflict diagnostics before applying extensionsOverride.
+		// Child runtimes intentionally remove the discovered root subagents
+		// extension and inject one scoped factory, so conflicts that mention that
+		// filtered path are stale loader diagnostics rather than live failures.
+		if (diagnostic.error.includes(ROOT_SUBAGENTS_EXTENSION_PATH)) continue;
 		const prefix = diagnostic.path ? `${diagnostic.path}: ` : "";
 		notifyDiagnostic(hooks, `${prefix}${diagnostic.error}`, "error");
 	}
