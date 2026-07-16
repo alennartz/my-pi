@@ -131,6 +131,7 @@ export class SubagentManager {
 	private sessionDir: string | null = null;
 	private persistence: PersistencePaths | null = null;
 	private restoring = false;
+	private mutationTail: Promise<void> = Promise.resolve();
 
 	constructor(opts: SubagentManagerOptions) {
 		this.opts = opts;
@@ -180,6 +181,10 @@ export class SubagentManager {
 	}
 
 	async start(agents: AgentSpec[], agentConfigs: AgentConfig[]): Promise<string> {
+		return this.serializeMutation(() => this.startUnlocked(agents, agentConfigs));
+	}
+
+	private async startUnlocked(agents: AgentSpec[], agentConfigs: AgentConfig[]): Promise<string> {
 		if (agents.length === 0) {
 			throw new Error("At least one agent is required");
 		}
@@ -264,6 +269,10 @@ export class SubagentManager {
 	}
 
 	async restoreFromPersistence(agentConfigs: AgentConfig[]): Promise<void> {
+		return this.serializeMutation(() => this.restoreFromPersistenceUnlocked(agentConfigs));
+	}
+
+	private async restoreFromPersistenceUnlocked(agentConfigs: AgentConfig[]): Promise<void> {
 		if (this.router || this.hasAgents()) return;
 		const parentSessionFile = this.opts.parentSessionFile;
 		if (!parentSessionFile) return;
@@ -278,14 +287,14 @@ export class SubagentManager {
 		this.sessionDir = persisted.paths.childSessionsDir;
 		this.restoring = true;
 		try {
-			await this.start(survivors.map((agent) => this.toRestoreSpec(agent)), agentConfigs);
+			await this.startUnlocked(survivors.map((agent) => this.toRestoreSpec(agent)), agentConfigs);
 		} finally {
 			this.restoring = false;
 		}
 	}
 
 	async teardown(agentId?: string): Promise<{ report: string; empty: boolean }> {
-		return agentId === undefined ? this.teardownAll() : this.teardownSingle(agentId);
+		return this.serializeMutation(() => agentId === undefined ? this.teardownAll() : this.teardownSingle(agentId));
 	}
 
 	/**
@@ -293,6 +302,10 @@ export class SubagentManager {
 	 * records remain untouched so a later session restore can reopen them.
 	 */
 	async softShutdown(): Promise<void> {
+		return this.serializeMutation(() => this.softShutdownUnlocked());
+	}
+
+	private async softShutdownUnlocked(): Promise<void> {
 		const entries = this.entries;
 		this.entries = [];
 
@@ -334,6 +347,12 @@ export class SubagentManager {
 	findPersistedAgentName(sessionId: string): string | undefined {
 		const parentSessionFile = this.opts.parentSessionFile;
 		return parentSessionFile ? findAgentRecordBySessionId(parentSessionFile, sessionId)?.agent : undefined;
+	}
+
+	private serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
+		const run = this.mutationTail.then(operation, operation);
+		this.mutationTail = run.then(() => undefined, () => undefined);
+		return run;
 	}
 
 	private initializeRouting(agents: AgentSpec[]): void {
@@ -417,7 +436,7 @@ export class SubagentManager {
 	): AgentEntry {
 		const channels = this.channelsFor(spec, batch);
 		const initialOperational = this.initialOperational(spec);
-		const forkSpec = spec.kind === "fork" ? spec as ForkAgentSpec & { tools?: string[]; skillPaths?: string[] } : undefined;
+		const forkSpec = spec.kind === "fork" ? spec : undefined;
 		return {
 			path: childAgentPath(this.opts.ownerPath, spec.id),
 			id: spec.id,
@@ -455,7 +474,7 @@ export class SubagentManager {
 			...(spec.kind === "agent" && agentConfig && !spec.resumeSessionFile ? [agentConfig.systemPrompt] : []),
 			identityXml,
 		];
-		const forkSpec = spec.kind === "fork" ? spec as ForkAgentSpec & { tools?: string[] } : undefined;
+		const forkSpec = spec.kind === "fork" ? spec : undefined;
 		const toolPolicy = spec.kind === "fork"
 			? forkSpec?.tools === undefined
 				? resolveChildToolPolicy({ kind: "default" })
@@ -481,6 +500,7 @@ export class SubagentManager {
 			hooks: {
 				onEvent: (event) => this.applyChildEvent(entry, event),
 				onUiNotify: (message, type) => this.applyChildNotification(entry, message, type),
+				onDiagnostic: (message, type) => this.applyChildDiagnostic(entry, message, type),
 				onSessionChanged: () => this.persistReplacement(entry),
 				onShutdownRequested: () => this.markRuntimeUnavailable(entry, "Child runtime became unavailable"),
 			},
@@ -681,6 +701,19 @@ export class SubagentManager {
 		}));
 	}
 
+	private applyChildDiagnostic(
+		entry: AgentEntry,
+		message: string,
+		type?: "info" | "warning" | "error",
+	): void {
+		if (!this.isActiveEntry(entry)) return;
+		const label = type === "error" ? "Child resource error" : "Child resource diagnostic";
+		this.opts.onParentMessage(
+			serializeAgentMessage({ from: entry.id, content: `${label}: ${message}`, responseExpected: false }),
+			{ responseExpected: false },
+		);
+	}
+
 	private applyChildNotification(
 		entry: AgentEntry,
 		message: string,
@@ -741,6 +774,19 @@ export class SubagentManager {
 	}
 
 	private markAgentWaiting(agentId: string, correlationId: string, targetId: string): void {
+		if (agentId === "parent") {
+			const owner = this.opts.registry.get(this.opts.ownerPath);
+			if (!owner) return;
+			const current = owner.snapshot.operational;
+			if (current.state === "failed") return;
+			this.correlationToTarget.set(correlationId, targetId);
+			this.opts.registry.updateOperational(this.opts.ownerPath, operationalWith(current, {
+				state: "waiting",
+				pendingCorrelations: [...current.pendingCorrelations, correlationId],
+				waitingFor: [...current.waitingFor, targetId],
+			}));
+			return;
+		}
 		const entry = this.findEntry(agentId);
 		if (!entry) return;
 		const current = this.operationalFor(entry);
@@ -754,11 +800,24 @@ export class SubagentManager {
 	}
 
 	private clearAgentWaiting(agentId: string, correlationId: string): void {
+		const targetId = this.correlationToTarget.get(correlationId);
+		this.correlationToTarget.delete(correlationId);
+		if (agentId === "parent") {
+			const owner = this.opts.registry.get(this.opts.ownerPath);
+			if (!owner) return;
+			const current = owner.snapshot.operational;
+			const pendingCorrelations = current.pendingCorrelations.filter((id) => id !== correlationId);
+			const waitingFor = removeOne(current.waitingFor, targetId);
+			this.opts.registry.updateOperational(this.opts.ownerPath, operationalWith(current, {
+				state: pendingCorrelations.length === 0 && current.state === "waiting" ? "running" : current.state,
+				pendingCorrelations,
+				waitingFor,
+			}));
+			return;
+		}
 		const entry = this.findEntry(agentId);
 		if (!entry) return;
 		const current = this.operationalFor(entry);
-		const targetId = this.correlationToTarget.get(correlationId);
-		this.correlationToTarget.delete(correlationId);
 		const pendingCorrelations = current.pendingCorrelations.filter((id) => id !== correlationId);
 		const waitingFor = removeOne(current.waitingFor, targetId);
 		this.replaceOperational(entry, operationalWith(current, {
@@ -957,8 +1016,8 @@ export class SubagentManager {
 				resumeSessionFile: agent.sessionFile,
 				// An absent legacy tools field is intentionally preserved as undefined:
 				// it selects the default policy rather than explicit respond-only mode.
-				tools: agent.tools as any,
-				skillPaths: agent.skillPaths ?? [],
+				tools: agent.tools,
+				skillPaths: agent.skillPaths,
 				thinkingLevel: this.opts.pi.getThinkingLevel() as string,
 			} as AgentSpec;
 		}

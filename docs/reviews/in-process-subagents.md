@@ -15,7 +15,7 @@ The implementation covers the planned in-process architecture and the full Vites
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/subagents/scoped-extension.ts:112-116`
-- **Status:** open
+- **Status:** resolved
 
 `pi.sendMessage()` is called without `{ triggerTurn: true }`. When a session is idle, the SDK appends the custom message but does not run the agent, so completion notifications and messages sent to idle children are never processed. Blocking sends can remain pending indefinitely and parent completion can stall.
 
@@ -24,7 +24,7 @@ The implementation covers the planned in-process architecture and the full Vites
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/subagents/agent-session-registry.ts:148-170,215-222`
-- **Status:** open
+- **Status:** resolved
 
 The decorated `onSessionChanged` hook closes over the construction-time `currentSnapshot`, while `updateOperational()` replaces the live node snapshot. A later resume, fork, or new-session replacement spreads that stale value back into the node, discarding accumulated usage, output, errors, and state (and potentially reverting an idle node to running). This also violates the function-level closure rule against capturing a reassignable lifecycle value.
 
@@ -33,7 +33,7 @@ The decorated `onSessionChanged` hook closes over the construction-time `current
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/subagents/message-router.ts:85,349-355`; `extensions/subagents/scoped-extension.ts:109,272-275,320-324,824-829`
-- **Status:** open
+- **Status:** resolved
 
 Each parent-local router starts its correlation sequence at `corr-1`, while a recursive scope records blocking-message origins in one map keyed only by that string for both its uplink and local child router. Concurrent requests on those ports can collide, overwrite the origin, and send `respond` through the wrong router, breaking blocking waits and response ownership.
 
@@ -42,7 +42,7 @@ Each parent-local router starts its correlation sequence at `corr-1`, while a re
 - **Category:** plan deviation
 - **Severity:** critical
 - **Location:** `extensions/subagents/managed-child-session.integration.test.ts:53-72`
-- **Status:** open
+- **Status:** resolved
 
 The plan requires test files to remain immutable during implementation and explicitly says the replacement tests remain unchanged. This diff adds an assistant-message fixture to the integration test (in addition to the planned deletion of `broker.test.ts`). Even if the fixture makes a test pass, changing a reviewed test invalidates the test/implementation boundary and must be resolved or explicitly re-planned.
 
@@ -51,7 +51,7 @@ The plan requires test files to remain immutable during implementation and expli
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/agent-session-registry.ts:127-140,225-264`
-- **Status:** open
+- **Status:** resolved
 
 Removal leaves nodes visible while awaiting disposal, snapshots descendants before that await, and has no effective removing/disposed guard (`InternalNode.disposing` is unused). A concurrent child creation can commit beneath a node already being removed and become orphaned; overlapping removals can dispose or emit the same session twice; creation after `dispose()` can leak because subsequent disposal reuses the old promise. The plan requires idempotent, subtree-safe lifecycle ownership.
 
@@ -60,7 +60,7 @@ Removal leaves nodes visible while awaiting disposal, snapshots descendants befo
 - **Category:** plan deviation
 - **Severity:** warning
 - **Location:** `extensions/subagents/agent-session-registry.ts:199-204`
-- **Status:** open
+- **Status:** resolved
 
 The implementation inserts and emits each `node_added` event one at a time after releasing reservations. A subscriber can observe a partial batch and create a duplicate for a later path after its reservation has already been released. The plan requires committing all immutable nodes before emitting any add event so creation is atomic to observers.
 
@@ -69,7 +69,7 @@ The implementation inserts and emits each `node_added` event one at a time after
 - **Category:** plan deviation
 - **Severity:** warning
 - **Location:** `extensions/subagents/agent-session-registry.ts:215-223`
-- **Status:** open
+- **Status:** resolved
 
 `updateOperational()` only looks in the committed-node map. Events can arrive after session construction starts but before the batch commits; those updates are discarded instead of being retained on staged nodes and published with the committed snapshot, contrary to the Step 5 contract.
 
@@ -78,7 +78,7 @@ The implementation inserts and emits each `node_added` event one at a time after
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/agent-set.ts:182-263,295-304,888-930`
-- **Status:** open
+- **Status:** resolved
 
 `start`, teardown, and shutdown mutate entries, router endpoints, and topology across awaits without a per-manager operation lock. Parallel tool calls can let a failed spawn roll back a successful sibling's endpoint or let teardown detach a child that was concurrently committed. Registry reservations do not protect these manager-local mutations.
 
@@ -87,7 +87,7 @@ The implementation inserts and emits each `node_added` event one at a time after
 - **Category:** plan deviation
 - **Severity:** warning
 - **Location:** `extensions/subagents/agent-session-registry.ts:102-103,215-217`; `extensions/subagents/scoped-extension.ts:191-201`
-- **Status:** open
+- **Status:** resolved
 
 The external root is stored separately from `nodes`, but `updateOperational([])` only searches `nodes`. Root lifecycle projection therefore becomes a no-op and `getSnapshot([])` remains at its construction-time state, so root status, usage, output, and completion projections are stale.
 
@@ -96,7 +96,7 @@ The external root is stored separately from `nodes`, but `updateOperational([])`
 - **Category:** plan deviation
 - **Severity:** warning
 - **Location:** `extensions/subagents/agent-set.ts:743-768`
-- **Status:** open
+- **Status:** resolved
 
 Waiting/correlation callbacks only locate an immediate child entry. When a manager's own parent endpoint is the sender (`from === "parent"`), root sends and recursive child-manager sends return without updating the owner node/root `pendingCorrelations`, `waitingFor`, or state. This omits the planned blocking-start/end projection for recursive owners.
 
@@ -105,7 +105,7 @@ Waiting/correlation callbacks only locate an immediate child entry. When a manag
 - **Category:** plan deviation
 - **Severity:** warning
 - **Location:** `extensions/subagents/scoped-extension.ts:335-365`
-- **Status:** open
+- **Status:** resolved
 
 `projectRootMessage()` updates root usage, model, output, and turn input but never writes `contextWindow`, despite Step 7 requiring the external root's assistant usage/model/context/output transitions to flow through the registry snapshot.
 
@@ -114,7 +114,7 @@ Waiting/correlation callbacks only locate an immediate child entry. When a manag
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/managed-child-session.ts:348-355`; `extensions/subagents/agent-set.ts:684-726,237-247`
-- **Status:** open
+- **Status:** resolved
 
 Project-trust handler failures are correctly non-decisive in the trust resolver, but they are reported through an error-level UI notification. During construction the manager interprets that notification as a pre-start prompt failure, marks the pending child failed, and disconnects its router endpoint, while still submitting the initial task. A recoverable trust-hook error can therefore create a child that is reported failed and unreachable.
 
@@ -123,7 +123,7 @@ Project-trust handler failures are correctly non-decisive in the trust resolver,
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/managed-child-session.ts:340-375`
-- **Status:** open
+- **Status:** resolved
 
 The managed session does not inspect or surface resource-loader extension/skill diagnostics. A broken cwd extension or explicit skill can disappear while the child is presented as successfully running, making isolated resource failures invisible and difficult to diagnose.
 
@@ -132,7 +132,7 @@ The managed session does not inspect or surface resource-loader extension/skill 
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/subagents/managed-child-session.ts:207-225`; `extensions/subagents/agent-set.ts:481-486,729-731`
-- **Status:** open
+- **Status:** resolved
 
 The shutdown callback only marks the node failed and disconnects routing; it never aborts or disposes the managed session. The SDK runtime can continue executing and retain resources behind a node reported as unavailable, and a later registry removal may race with that still-running work.
 
@@ -141,7 +141,7 @@ The shutdown callback only marks the node failed and disconnects routing; it nev
 - **Category:** plan deviation
 - **Severity:** nit
 - **Location:** `extensions/subagents/agents.ts:30-38`; `extensions/subagents/agent-set.ts:958-963`
-- **Status:** open
+- **Status:** resolved
 
 `ForkAgentSpec.tools` remains required even though Step 6 requires an absent legacy `tools` field to remain `undefined` and select the default policy. The implementation relies on `as any` at the restore boundary, so the public structural contract does not represent the compatibility case and future callers can accidentally reintroduce the explicit-empty fork policy.
 

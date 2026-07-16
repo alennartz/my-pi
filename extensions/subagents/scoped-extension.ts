@@ -106,13 +106,20 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		let rootRunError: string | undefined;
 		const skillPathsMap = new Map<string, string[]>();
 		const notifiedTierIssues = new Set<string>();
-		const correlationOrigin = new Map<string, MessagePort>();
+		// A recursive scope has two routing ports: its local parent endpoint and
+		// the explicit uplink to its own parent. Each parent-local router allocates
+		// IDs independently, and legacy callers may provide explicit IDs, so retain
+		// every possible origin rather than overwriting one port with another.
+		const correlationOrigin = new Map<string, MessagePort[]>();
 		let cachedPackageAgents: { user: AgentConfig[]; project: AgentConfig[] } | null = null;
 
 		const queue = new NotificationQueue({
 			steerDelivery: USE_STEER_DELIVERY,
 			deliver(combined: string) {
-				pi.sendMessage({ customType: "subagents", content: combined, display: true });
+				// Messages queued while the host is idle must start a turn. Without
+				// triggerTurn the SDK only appends the custom message and blocking
+				// sends to an idle child can remain pending forever.
+				pi.sendMessage({ customType: "subagents", content: combined, display: true, triggerTurn: true });
 			},
 		});
 
@@ -190,14 +197,16 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 
 		function updateRootOperational(ctx: ExtensionContext | undefined, patch: Partial<AgentOperationalSnapshot>): void {
 			if (scope.kind !== "root") return;
-			rootOperational = {
-				...rootOperational,
-				...patch,
-				usage: patch.usage ?? rootOperational.usage,
-				pendingCorrelations: patch.pendingCorrelations ?? rootOperational.pendingCorrelations,
-				waitingFor: patch.waitingFor ?? rootOperational.waitingFor,
-			};
 			const activeRegistry = registry ?? (ctx ? ensureRootRegistry(ctx) : null);
+			const canonical = activeRegistry?.getSnapshot([])?.operational;
+			const base = canonical ?? rootOperational;
+			rootOperational = {
+				...base,
+				...patch,
+				usage: patch.usage ?? base.usage,
+				pendingCorrelations: patch.pendingCorrelations ?? base.pendingCorrelations,
+				waitingFor: patch.waitingFor ?? base.waitingFor,
+			};
 			activeRegistry?.updateOperational([], rootOperational);
 		}
 
@@ -269,9 +278,15 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			return candidate && typeof candidate.send === "function" ? candidate as MessagePort : null;
 		}
 
+		function rememberCorrelationOrigin(correlationId: string, port: MessagePort): void {
+			const origins = correlationOrigin.get(correlationId) ?? [];
+			if (!origins.includes(port)) origins.push(port);
+			correlationOrigin.set(correlationId, origins);
+		}
+
 		function receiveRoutedMessage(port: MessagePort, message: RoutedMessage, source: "local" | "uplink"): void {
 			if (message.responseExpected && message.correlationId) {
-				correlationOrigin.set(message.correlationId, port);
+				rememberCorrelationOrigin(message.correlationId, port);
 			}
 			queue.queue(serializeAgentMessage({
 				from: message.from,
@@ -320,7 +335,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				onParentMessage: (xml, meta) => {
 					const port = getLocalParentPort();
 					if (meta.responseExpected && meta.correlationId && port) {
-						correlationOrigin.set(meta.correlationId, port);
+						rememberCorrelationOrigin(meta.correlationId, port);
 					}
 					queue.queue(xml, "local");
 					if (queue.isWaiting) resolveWait();
@@ -391,6 +406,8 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			const message = event?.message;
 			if (message?.role !== "assistant") return;
 			const usage = message.usage;
+			const canonical = registry?.getSnapshot([])?.operational;
+			if (canonical) rootOperational = canonical;
 			const prior = rootOperational.usage;
 			const nextUsage = {
 				input: prior.input + (usage?.input || 0),
@@ -404,9 +421,14 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			for (const part of message.content ?? []) {
 				if (part.type === "text") lastOutput = part.text;
 			}
+			const model = message.model ?? rootOperational.model;
+			const modelInfo = ctx.modelRegistry.getAvailable().find((candidate: any) =>
+				candidate?.id === model || `${candidate?.provider}/${candidate?.id}` === model,
+			);
 			updateRootOperational(ctx, {
 				usage: nextUsage,
-				model: message.model ?? rootOperational.model,
+				model,
+				contextWindow: modelInfo?.contextWindow ?? rootOperational.contextWindow,
 				lastTurnInput: (usage?.input || 0) + (usage?.cacheRead || 0) + (usage?.cacheWrite || 0),
 				lastOutput,
 			});
@@ -822,12 +844,26 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			const port = correlationOrigin.get(params.correlationId)
-				?? (scope.kind === "child" ? scope.uplink : getLocalParentPort());
-			if (!port) throw new Error("No route for this response.");
-			await port.respond(params.correlationId, params.message);
-			correlationOrigin.delete(params.correlationId);
-			return { content: [{ type: "text", text: "Response sent." }] };
+			const origins = correlationOrigin.get(params.correlationId) ?? [];
+			if (origins.length === 0) {
+				const fallback = scope.kind === "child" ? scope.uplink : getLocalParentPort();
+				if (fallback) origins.push(fallback);
+			}
+			if (origins.length === 0) throw new Error("No route for this response.");
+			let lastError: unknown;
+			for (const port of origins) {
+				try {
+					await port.respond(params.correlationId, params.message);
+					correlationOrigin.delete(params.correlationId);
+					return { content: [{ type: "text", text: "Response sent." }] };
+				} catch (error) {
+					// Explicit legacy IDs can collide across the local router and
+					// uplink. A non-target port rejects without consuming its wait;
+					// try the remaining origin before surfacing the error.
+					lastError = error;
+				}
+			}
+			throw lastError instanceof Error ? lastError : new Error(String(lastError));
 		}
 	});
 

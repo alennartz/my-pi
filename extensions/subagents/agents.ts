@@ -32,8 +32,9 @@ export interface ForkAgentSpec {
 	id: string;
 	task: string;
 	sessionFile: string;
-	tools: string[];
-	skillPaths: string[];
+	/** Optional for legacy persisted fork records; absent means default policy. */
+	tools?: string[];
+	skillPaths?: string[];
 	thinkingLevel: string;
 	resumeSessionFile?: string;
 }

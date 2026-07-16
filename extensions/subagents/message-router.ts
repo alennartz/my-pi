@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { canSend, type Topology } from "./channels.js";
 import { DeadlockGraph } from "./deadlock.js";
 
@@ -45,6 +46,8 @@ export interface MessagePort {
 
 export interface MessageRouterOptions {
 	topology: Topology;
+	/** Injectable for deterministic tests; production IDs use a per-router UUID namespace. */
+	correlationIdFactory?: () => string;
 	onBlockingSendStart?: (from: string, to: string, correlationId: string) => void;
 	onBlockingSendEnd?: (from: string, correlationId: string) => void;
 }
@@ -82,6 +85,7 @@ export class MessageRouter {
 	private readonly edgeCounts = new Map<string, Map<string, number>>();
 	private readonly onBlockingSendStart?: MessageRouterOptions["onBlockingSendStart"];
 	private readonly onBlockingSendEnd?: MessageRouterOptions["onBlockingSendEnd"];
+	private readonly correlationIdFactory: () => string;
 	private nextCorrelationSequence = 0;
 	private closed = false;
 
@@ -89,6 +93,11 @@ export class MessageRouter {
 		this.topology = options.topology;
 		this.onBlockingSendStart = options.onBlockingSendStart;
 		this.onBlockingSendEnd = options.onBlockingSendEnd;
+		const namespace = randomUUID();
+		this.correlationIdFactory = options.correlationIdFactory ?? (() => {
+			this.nextCorrelationSequence += 1;
+			return `corr-${namespace}-${this.nextCorrelationSequence}`;
+		});
 	}
 
 	/**
@@ -347,12 +356,14 @@ export class MessageRouter {
 	}
 
 	private allocateCorrelationId(): string {
-		let correlationId: string;
-		do {
-			this.nextCorrelationSequence += 1;
-			correlationId = `corr-${this.nextCorrelationSequence}`;
-		} while (this.pendingCorrelations.has(correlationId));
-		return correlationId;
+		for (let attempt = 0; attempt < 100; attempt += 1) {
+			const correlationId = this.correlationIdFactory();
+			if (typeof correlationId !== "string" || correlationId.length === 0) {
+				throw new Error("Correlation ID factory must return a non-empty string");
+			}
+			if (!this.pendingCorrelations.has(correlationId)) return correlationId;
+		}
+		throw new Error("Correlation ID factory did not produce a unique pending ID");
 	}
 
 	private addEdge(from: string, to: string): void {

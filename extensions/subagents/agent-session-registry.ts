@@ -71,6 +71,12 @@ type InternalNode = {
 	disposing?: Promise<void>;
 };
 
+type Reservation = {
+	path: AgentPath;
+	promise: Promise<void>;
+	resolve: () => void;
+};
+
 function key(path: AgentPath): string { return JSON.stringify(path); }
 function samePath(a: AgentPath, b: AgentPath): boolean { return a.length === b.length && a.every((part, i) => part === b[i]); }
 function isPrefix(prefix: AgentPath, path: AgentPath): boolean { return prefix.length <= path.length && prefix.every((part, i) => part === path[i]); }
@@ -87,20 +93,32 @@ function snapshotEqual(a: AgentNodeSnapshot, b: AgentNodeSnapshot): boolean {
 	return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/**
+ * Owns the live root-relative session tree and immutable operational snapshots.
+ *
+ * Nodes remain visible while their sessions are disposing, but their paths are
+ * marked as removing so no new child can commit beneath a subtree that is
+ * already owned by a teardown operation.
+ */
 export class AgentSessionRegistry {
 	private readonly dependencies: ManagedChildSessionDependencies;
 	private readonly createSession: typeof createManagedChildSession;
 	private readonly root: ExternalRootNode;
+	private rootSnapshot: AgentNodeSnapshot & { ownership: "external"; path: [] };
 	private readonly nodes = new Map<string, InternalNode>();
-	private readonly reservations = new Set<string>();
+	private readonly stagedSnapshots = new Map<string, AgentNodeSnapshot>();
+	private readonly reservations = new Map<string, Reservation>();
+	private readonly removing = new Set<string>();
 	private readonly listeners = new Set<(event: RegistryEvent) => void>();
 	private readonly removals = new Map<string, Promise<void>>();
+	private disposed = false;
 	private disposal?: Promise<void>;
 
 	constructor(options: AgentSessionRegistryOptions) {
 		if (options.root.path.length !== 0 || options.root.ownership !== "external") throw new Error("Registry root must be external path []");
-		const rootSnapshot = cloneFreeze({ ...options.root, path: [], parentPath: null, ownership: "external" }) as AgentNodeSnapshot & { ownership: "external"; path: [] };
-		this.root = { get snapshot() { return rootSnapshot; } };
+		this.rootSnapshot = cloneFreeze({ ...options.root, path: [], parentPath: null, ownership: "external" }) as AgentNodeSnapshot & { ownership: "external"; path: [] };
+		const registry = this;
+		this.root = { get snapshot() { return registry.rootSnapshot; } };
 		this.dependencies = options.dependencies;
 		this.createSession = options.createSession ?? createManagedChildSession;
 	}
@@ -125,7 +143,7 @@ export class AgentSessionRegistry {
 	}
 
 	async createChildren(parent: AgentPath, requests: CreateAgentNodeRequest[]): Promise<RegisteredAgentNode[]> {
-		if (!this.get(parent)) throw new Error(`Unknown parent path ${JSON.stringify(parent)}`);
+		this.assertCanCreate(parent);
 		const localIds = new Set<string>();
 		const paths: AgentPath[] = [];
 		for (const request of requests) {
@@ -134,10 +152,16 @@ export class AgentSessionRegistry {
 			localIds.add(request.localId);
 			const path = childAgentPath(parent, request.localId);
 			const pathKey = key(path);
-			if (this.nodes.has(pathKey) || this.reservations.has(pathKey)) throw new Error(`Duplicate or reserved sibling path ${request.localId}`);
+			if (this.nodes.has(pathKey) || this.reservations.has(pathKey) || this.isPathRemoving(path)) {
+				throw new Error(`Duplicate or reserved sibling path ${request.localId}`);
+			}
 			paths.push(path);
 		}
-		for (const path of paths) this.reservations.add(key(path));
+
+		// Reserve every path synchronously before the first await. A removal that
+		// starts after this point waits for these reservations and the commit check
+		// below rejects a batch that races with subtree teardown.
+		for (const path of paths) this.reserve(path);
 		const staged = new Map<string, InternalNode>();
 		const created: InternalNode[] = [];
 		try {
@@ -145,7 +169,7 @@ export class AgentSessionRegistry {
 				const request = requests[index];
 				const path = paths[index];
 				const pathKey = key(path);
-				let currentSnapshot = cloneFreeze({
+				const structuralSnapshot = cloneFreeze({
 					path: [...path],
 					parentPath: [...parent],
 					localId: request.localId,
@@ -157,17 +181,29 @@ export class AgentSessionRegistry {
 					channels: [...request.channels],
 					operational: request.initialOperational,
 				}) as AgentNodeSnapshot;
+				this.stagedSnapshots.set(pathKey, structuralSnapshot);
 				const decoratedHooks: ChildSessionHooks = {
 					onEvent: request.hooks.onEvent,
 					onUiNotify: request.hooks.onUiNotify,
+					onDiagnostic: request.hooks.onDiagnostic,
 					onShutdownRequested: request.hooks.onShutdownRequested,
 					onSessionChanged: (metadata) => {
-						const previous = currentSnapshot;
-						currentSnapshot = cloneFreeze({ ...currentSnapshot, sessionId: metadata.sessionId, sessionFile: metadata.sessionFile, cwd: metadata.cwd }) as AgentNodeSnapshot;
+						const previous = this.nodes.get(pathKey)?.snapshot ?? this.stagedSnapshots.get(pathKey);
+						if (!previous) {
+							request.hooks.onSessionChanged(metadata);
+							return;
+						}
+						const next = cloneFreeze({
+							...previous,
+							sessionId: metadata.sessionId,
+							sessionFile: metadata.sessionFile,
+							cwd: metadata.cwd,
+						}) as AgentNodeSnapshot;
+						this.stagedSnapshots.set(pathKey, next);
 						const liveNode = this.nodes.get(pathKey);
-						if (liveNode && !snapshotEqual(previous, currentSnapshot)) {
-							liveNode.snapshot = currentSnapshot;
-							this.emit({ type: "node_updated", previous, node: currentSnapshot });
+						if (liveNode && !snapshotEqual(previous, next)) {
+							liveNode.snapshot = next;
+							this.emit({ type: "node_updated", previous, node: next });
 						}
 						request.hooks.onSessionChanged(metadata);
 					},
@@ -183,61 +219,97 @@ export class AgentSessionRegistry {
 						uplink: request.session.uplink,
 					},
 				};
-				const session = await this.createSession(config, this.dependencies, decoratedHooks);
-				const managed = session as ManagedChildSession;
+				const managed = await this.createSession(config, this.dependencies, decoratedHooks);
 				const sessionObject: any = (managed as any).session;
-				const sessionId = (managed as any).sessionId ?? sessionObject?.sessionId ?? currentSnapshot.sessionId;
+				const current = this.nodes.get(pathKey)?.snapshot ?? this.stagedSnapshots.get(pathKey)!;
+				const sessionId = (managed as any).sessionId ?? sessionObject?.sessionId ?? current.sessionId;
 				const sessionFile = (managed as any).sessionFile ?? sessionObject?.sessionFile;
 				const manager = sessionObject?.sessionManager;
-				const cwd = manager?.getCwd?.() || currentSnapshot.cwd || (request.session.target.kind === "resume" ? "" : request.session.target.cwd);
-				currentSnapshot = cloneFreeze({ ...currentSnapshot, sessionId, ...(sessionFile !== undefined ? { sessionFile } : {}), cwd }) as AgentNodeSnapshot;
+				const cwd = manager?.getCwd?.() || current.cwd || (request.session.target.kind === "resume" ? "" : request.session.target.cwd);
+				const finalSnapshot = cloneFreeze({
+					...current,
+					sessionId,
+					...(sessionFile !== undefined ? { sessionFile } : {}),
+					cwd,
+				}) as AgentNodeSnapshot;
+				this.stagedSnapshots.set(pathKey, finalSnapshot);
 				const presentation = (managed as any).presentation as DelegatingExtensionUI;
-				const node: InternalNode = { snapshot: currentSnapshot, session: managed, presentation };
+				const node: InternalNode = { snapshot: finalSnapshot, session: managed, presentation };
 				staged.set(pathKey, node);
 				created.push(node);
 			}
-			for (const path of paths) this.reservations.delete(key(path));
+
+			// Commit every node before releasing reservations or notifying observers.
+			// Subscribers therefore see an all-or-nothing batch and cannot race a
+			// later request into a path that has only partially become visible.
+			if (this.disposed || this.isPathRemoving(parent) || paths.some((path) => this.isPathRemoving(path))) {
+				throw new Error("Cannot commit child sessions beneath a removed registry subtree");
+			}
 			for (const path of paths) {
-				const node = staged.get(key(path))!;
-				this.nodes.set(key(path), node);
+				const pathKey = key(path);
+				this.nodes.set(pathKey, staged.get(pathKey)!);
+			}
+			for (const path of paths) {
+				const pathKey = key(path);
+				this.stagedSnapshots.delete(pathKey);
+				this.releaseReservation(pathKey);
+			}
+			for (const path of paths) {
+				const node = this.nodes.get(key(path))!;
 				this.emit({ type: "node_added", node: node.snapshot });
 			}
 			return created.map((node) => this.publicNode(node) as RegisteredAgentNode);
 		} catch (error) {
 			for (const node of created) {
-				try { await node.session.dispose(); } catch { /* preserve original construction failure */ }
+				try { await this.disposeNode(node); } catch { /* preserve original construction failure */ }
 			}
-			for (const path of paths) this.reservations.delete(key(path));
+			for (const path of paths) {
+				this.stagedSnapshots.delete(key(path));
+				this.releaseReservation(key(path));
+			}
 			throw error;
 		}
 	}
 
 	updateOperational(path: AgentPath, next: AgentOperationalSnapshot): void {
-		const node = this.nodes.get(key(path));
-		if (!node) return;
-		const snapshot = cloneFreeze({ ...node.snapshot, operational: next }) as AgentNodeSnapshot;
-		if (snapshotEqual(node.snapshot, snapshot)) return;
-		const previous = node.snapshot;
-		node.snapshot = snapshot;
-		this.emit({ type: "node_updated", previous, node: snapshot });
+		if (path.length === 0) {
+			const snapshot = cloneFreeze({ ...this.rootSnapshot, operational: next }) as AgentNodeSnapshot & { ownership: "external"; path: [] };
+			if (snapshotEqual(this.rootSnapshot, snapshot)) return;
+			const previous = this.rootSnapshot;
+			this.rootSnapshot = snapshot;
+			this.emit({ type: "node_updated", previous, node: snapshot });
+			return;
+		}
+
+		const pathKey = key(path);
+		const node = this.nodes.get(pathKey);
+		const current = node?.snapshot ?? this.stagedSnapshots.get(pathKey);
+		if (!current) return;
+		const snapshot = cloneFreeze({ ...current, operational: next }) as AgentNodeSnapshot;
+		if (snapshotEqual(current, snapshot)) return;
+		if (node) {
+			const previous = node.snapshot;
+			node.snapshot = snapshot;
+			this.stagedSnapshots.set(pathKey, snapshot);
+			this.emit({ type: "node_updated", previous, node: snapshot });
+		} else {
+			// Construction-time SDK events are staged immutably and become the
+			// snapshot published by node_added once the batch commits.
+			this.stagedSnapshots.set(pathKey, snapshot);
+		}
 	}
 
 	remove(path: AgentPath): Promise<void> {
 		if (path.length === 0) return Promise.reject(new Error("Cannot remove external root"));
 		const pathKey = key(path);
-		const existing = this.removals.get(pathKey);
-		if (existing) return existing;
-		const operation = (async () => {
-			const targets = [...this.nodes.entries()]
-				.filter(([, node]) => isPrefix(path, node.snapshot.path))
-				.sort((a, b) => b[1].snapshot.path.length - a[1].snapshot.path.length);
-			for (const [nodeKey, node] of targets) {
-				if (!this.nodes.has(nodeKey)) continue;
-				try { await node.session.dispose(); } catch { /* removal remains best effort */ }
-				this.nodes.delete(nodeKey);
-				this.emit({ type: "node_removed", node: node.snapshot });
-			}
-		})().finally(() => this.removals.delete(pathKey));
+		const exact = this.removals.get(pathKey);
+		if (exact) return exact;
+		for (const [removingKey, operation] of this.removals) {
+			const removingPath = JSON.parse(removingKey) as AgentPath;
+			if (isPrefix(removingPath, path)) return operation;
+		}
+
+		const operation = this.removeSubtree(path, pathKey);
 		this.removals.set(pathKey, operation);
 		return operation;
 	}
@@ -255,13 +327,88 @@ export class AgentSessionRegistry {
 
 	dispose(): Promise<void> {
 		if (this.disposal) return this.disposal;
+		this.disposed = true;
 		this.disposal = (async () => {
+			await this.waitForReservations([]);
 			const topLevel = [...this.nodes.values()]
 				.filter((node) => node.snapshot.parentPath && node.snapshot.parentPath.length === 0)
 				.map((node) => node.snapshot.path);
-			for (const path of topLevel) await this.remove(path);
+			await Promise.all(topLevel.map((path) => this.remove(path)));
 		})();
 		return this.disposal;
+	}
+
+	private assertCanCreate(parent: AgentPath): void {
+		if (this.disposed || this.disposal) throw new Error("Registry is disposed");
+		if (!this.get(parent)) throw new Error(`Unknown parent path ${JSON.stringify(parent)}`);
+		if (this.isPathRemoving(parent)) throw new Error(`Registry subtree ${JSON.stringify(parent)} is being removed`);
+	}
+
+	private isPathRemoving(path: AgentPath): boolean {
+		for (let length = 1; length <= path.length; length++) {
+			if (this.removing.has(key(path.slice(0, length)))) return true;
+		}
+		return false;
+	}
+
+	private reserve(path: AgentPath): void {
+		const pathKey = key(path);
+		let resolve!: () => void;
+		const promise = new Promise<void>((done) => { resolve = done; });
+		this.reservations.set(pathKey, { path: [...path], promise, resolve });
+	}
+
+	private releaseReservation(pathKey: string): void {
+		const reservation = this.reservations.get(pathKey);
+		if (!reservation) return;
+		this.reservations.delete(pathKey);
+		reservation.resolve();
+	}
+
+	private async waitForReservations(prefix: AgentPath): Promise<void> {
+		const waits = [...this.reservations.values()]
+			.filter((reservation) => isPrefix(prefix, reservation.path))
+			.map((reservation) => reservation.promise);
+		if (waits.length > 0) await Promise.all(waits);
+	}
+
+	private async removeSubtree(path: AgentPath, pathKey: string): Promise<void> {
+		const marked = new Set<string>();
+		this.removing.add(pathKey);
+		marked.add(pathKey);
+		try {
+			// Wait for a construction that raced this removal to either commit (which
+			// is rejected by the removing marker) or dispose and release its paths.
+			await this.waitForReservations(path);
+			const targets = [...this.nodes.entries()]
+				.filter(([, node]) => isPrefix(path, node.snapshot.path))
+				.sort((a, b) => b[1].snapshot.path.length - a[1].snapshot.path.length);
+			for (const [nodeKey] of targets) {
+				if (!this.removing.has(nodeKey)) {
+					this.removing.add(nodeKey);
+					marked.add(nodeKey);
+				}
+			}
+			for (const [nodeKey, node] of targets) {
+				if (this.nodes.get(nodeKey) !== node) continue;
+				await this.disposeNode(node);
+				if (this.nodes.get(nodeKey) !== node) continue;
+				this.nodes.delete(nodeKey);
+				this.emit({ type: "node_removed", node: node.snapshot });
+			}
+		} finally {
+			for (const nodeKey of marked) this.removing.delete(nodeKey);
+			this.removals.delete(pathKey);
+		}
+	}
+
+	private disposeNode(node: InternalNode): Promise<void> {
+		if (!node.disposing) {
+			node.disposing = (async () => {
+				try { await node.session.dispose(); } catch { /* removal remains best effort */ }
+			})();
+		}
+		return node.disposing;
 	}
 
 	private publicNode(node: InternalNode): RegisteredAgentNode {

@@ -52,6 +52,8 @@ export type ChildSessionConfig = {
 export type ChildSessionHooks = {
 	onEvent(event: AgentSessionEvent): void;
 	onUiNotify(message: string, type?: "info" | "warning" | "error"): void;
+	/** Non-fatal setup diagnostics must not be mistaken for prompt failures. */
+	onDiagnostic?(message: string, type?: "info" | "warning" | "error"): void;
 	onSessionChanged(metadata: {
 		sessionId: string;
 		sessionFile?: string;
@@ -220,7 +222,13 @@ export class ManagedChildSession {
 			abortHandler: () => {
 				void session.abort().catch(() => {});
 			},
-			shutdownHandler: () => this.hooks.onShutdownRequested(),
+			shutdownHandler: () => {
+				// A shutdown request is cooperative: stop any in-flight turn before
+				// the manager marks the node unavailable. Registry removal remains the
+				// owner of the eventual runtime disposal.
+				void session.abort().catch(() => {});
+				this.hooks.onShutdownRequested();
+			},
 			onError: (error: ExtensionError) => this.hooks.onUiNotify(error.error, "error"),
 		};
 	}
@@ -271,6 +279,44 @@ const ROOT_SUBAGENTS_EXTENSION_PATH = normalizePath(fileURLToPath(new URL("./ind
 function normalizePath(value: string): string {
 	return value.replaceAll("\\", "/");
 }
+function notifyDiagnostic(
+	hooks: ChildSessionHooks,
+	message: string,
+	type: "info" | "warning" | "error" = "warning",
+): void {
+	if (hooks.onDiagnostic) {
+		hooks.onDiagnostic(message, type);
+		return;
+	}
+	// Older manager hooks only expose UI notifications. Surface setup failures
+	// as warnings there: they are diagnostics, not prompt preflight failures.
+	hooks.onUiNotify(message, type === "error" ? "warning" : type);
+}
+
+function reportRuntimeDiagnostics(
+	diagnostics: readonly { type?: string; message?: string }[] | undefined,
+	hooks: ChildSessionHooks,
+): void {
+	for (const diagnostic of diagnostics ?? []) {
+		if (!diagnostic?.message) continue;
+		const type = diagnostic.type === "info" || diagnostic.type === "error" || diagnostic.type === "warning"
+			? diagnostic.type
+			: "warning";
+		notifyDiagnostic(hooks, diagnostic.message, type);
+	}
+}
+
+function reportExtensionDiagnostics(
+	diagnostics: readonly { path?: string; error?: string }[] | undefined,
+	hooks: ChildSessionHooks,
+): void {
+	for (const diagnostic of diagnostics ?? []) {
+		if (!diagnostic?.error) continue;
+		const prefix = diagnostic.path ? `${diagnostic.path}: ` : "";
+		notifyDiagnostic(hooks, `${prefix}${diagnostic.error}`, "error");
+	}
+}
+
 function isRootSubagentsExtension(extension: { path?: string; resolvedPath?: string }): boolean {
 	return [extension.resolvedPath, extension.path]
 		.filter((candidate): candidate is string => candidate !== undefined)
@@ -351,10 +397,11 @@ export async function createManagedChildSession(
 						trustStore,
 						defaultProjectTrust: settingsManager.getDefaultProjectTrust(),
 						projectTrustContext,
-						onExtensionError: (error) => hooks.onUiNotify(error.error, "error"),
+						onExtensionError: (error) => notifyDiagnostic(hooks, error.error, "error"),
 					}),
 				},
 			});
+			reportRuntimeDiagnostics(services.diagnostics, hooks);
 			const modelResult = config.modelRef === undefined
 				? undefined
 				: await resolveCliModel({ cliModel: config.modelRef, modelRegistry: dependencies.modelRegistry });
@@ -371,6 +418,7 @@ export async function createManagedChildSession(
 					: { excludeTools: config.toolPolicy.excludeTools }),
 				sessionStartEvent: options.sessionStartEvent,
 			});
+			reportExtensionDiagnostics(sessionResult.extensionsResult?.errors, hooks);
 			bindingsBySession.set(sessionResult.session, { eventBus, uiContext: presentation.context });
 			return { ...sessionResult, services, diagnostics: services.diagnostics };
 		} catch (error) {
