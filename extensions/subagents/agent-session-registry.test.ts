@@ -6,7 +6,11 @@ import {
 	type AgentOperationalSnapshot,
 	type CreateAgentNodeRequest,
 } from "./agent-session-registry.js";
-import type { ChildSessionConfig, ManagedChildSessionDependencies } from "./managed-child-session.js";
+import type {
+	ChildSessionConfig,
+	ChildSessionHooks,
+	ManagedChildSessionDependencies,
+} from "./managed-child-session.js";
 
 function usage() {
 	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
@@ -49,6 +53,15 @@ function dependencies(): ManagedChildSessionDependencies {
 	};
 }
 
+function makeHooks(): ChildSessionHooks {
+	return {
+		onEvent: vi.fn(),
+		onUiNotify: vi.fn(),
+		onSessionChanged: vi.fn(),
+		onShutdownRequested: vi.fn(),
+	};
+}
+
 function fakeSession(sessionId: string): any {
 	return {
 		sessionId,
@@ -72,6 +85,7 @@ function request(localId: string, overrides: Partial<CreateAgentNodeRequest> = {
 		task: `task-${localId}`,
 		channels: [],
 		session,
+		hooks: makeHooks(),
 		initialOperational: operational(),
 		...overrides,
 	};
@@ -232,21 +246,37 @@ describe("AgentSessionRegistry atomic creation and snapshots", () => {
 		expect(current.operational.usage.input).toBe(0);
 	});
 
-	it("updates session metadata in place without changing canonical path or parentage", async () => {
-		const hooks: any[] = [];
+	it("updates session metadata before forwarding onSessionChanged while forwarding other hooks", async () => {
+		const decoratedHooks: any[] = [];
+		const managerHooks = makeHooks();
 		const createSession = vi.fn(async (config: any, _deps: any, childHooks: any) => {
-			hooks.push(childHooks);
+			decoratedHooks.push(childHooks);
 			return fakeSession(config.path.join("/"));
 		});
 		const { registry } = createRegistry(createSession as any);
-		await registry.createChildren([], [request("worker")]);
+		const replacement = { sessionId: "replacement", sessionFile: "/sessions/replacement.jsonl", cwd: "/other" };
+		managerHooks.onSessionChanged = vi.fn(() => {
+			expect(registry.getSnapshot(["worker"])).toMatchObject({
+				sessionId: replacement.sessionId,
+				sessionFile: replacement.sessionFile,
+				cwd: replacement.cwd,
+			});
+		});
+		await registry.createChildren([], [request("worker", { hooks: managerHooks })]);
 		const events: any[] = [];
 		registry.subscribe((event) => events.push(event));
 
-		hooks[0].onSessionChanged({ sessionId: "replacement", sessionFile: "/sessions/replacement.jsonl", cwd: "/other" });
-		const snapshot = registry.getSnapshot(["worker"]);
+		const event = { type: "agent_start" } as any;
+		decoratedHooks[0].onEvent(event);
+		decoratedHooks[0].onUiNotify("child warning", "warning");
+		decoratedHooks[0].onShutdownRequested();
+		decoratedHooks[0].onSessionChanged(replacement);
 
-		expect(snapshot).toMatchObject({
+		expect(managerHooks.onEvent).toHaveBeenCalledWith(event);
+		expect(managerHooks.onUiNotify).toHaveBeenCalledWith("child warning", "warning");
+		expect(managerHooks.onShutdownRequested).toHaveBeenCalledTimes(1);
+		expect(managerHooks.onSessionChanged).toHaveBeenCalledWith(replacement);
+		expect(registry.getSnapshot(["worker"])).toMatchObject({
 			path: ["worker"],
 			parentPath: [],
 			sessionId: "replacement",

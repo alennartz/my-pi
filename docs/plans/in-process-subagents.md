@@ -500,10 +500,12 @@ No new dependency is introduced.
 
 **Pre-test-write commit:** `330932b7e65a8dfc9e51771aa31fec80934b0e99`
 
+**Reopened test-write commit:** `22e25681409ddf66fa08eb005d30f468640964be`
+
 ### Interface Files
 
 - `extensions/subagents/agent-path.ts` — canonical segmented agent paths and escaped display/session names.
-- `extensions/subagents/agent-session-registry.ts` — per-root node, snapshot, event, atomic creation/removal, and presentation-attachment contracts.
+- `extensions/subagents/agent-session-registry.ts` — per-root node, snapshot, event, atomic creation/removal, presentation-attachment, and manager-hook decoration contracts.
 - `extensions/subagents/child-tool-policy.ts` — normalized single SDK tool-policy input/output contracts.
 - `extensions/subagents/delegating-extension-ui.ts` — stable attachable/detachable extension UI context contract.
 - `extensions/subagents/managed-child-session.ts` — path-aware child session configuration, normalized tool policy, presentation exposure, and SDK lifecycle contract.
@@ -514,14 +516,14 @@ No new dependency is introduced.
 ### Test Files
 
 - `extensions/subagents/agent-path.test.ts` — root, nested, immutable, and delimiter-safe canonical path behavior.
-- `extensions/subagents/agent-session-registry.test.ts` — external root ownership, hierarchy, atomic child creation, canonical snapshots/events, removal, live path reuse, and presentation attachment.
+- `extensions/subagents/agent-session-registry.test.ts` — external root ownership, hierarchy, atomic child creation, canonical snapshots/events, manager-hook decoration/forwarding, removal, live path reuse, and presentation attachment.
 - `extensions/subagents/child-tool-policy.test.ts` — default, persona, and fork normalization into one SDK allowlist.
 - `extensions/subagents/delegating-extension-ui.test.ts` — stable headless context, attachment, token-aware detachment, and reset.
 - `extensions/subagents/agent-set.test.ts` — revised registry-backed manager status projection and canonical-path interruption behavior, including the failed-node no-op parity rule.
 - `extensions/subagents/managed-child-session.test.ts` — revised path/session naming, registry-aware scope, normalized policy, trust wiring, SDK lifecycle, replacement, and cooperative disposal.
 - `extensions/subagents/managed-child-session.integration.test.ts` — revised direct reopening of an RPC-era JSONL session with path-aware child configuration.
 - `extensions/subagents/scoped-extension.test.ts` — revised registry/path-aware child scope and single-policy tool registration.
-- `extensions/subagents/scoped-extension.integration.test.ts` — revised registry-aware orchestration, uplink routing, lifecycle projection, persistence records, dynamic membership, interruption, resurrection, persona model/skills/cwd, and normalized tools.
+- `extensions/subagents/scoped-extension.integration.test.ts` — revised registry-aware orchestration, functional recursive child-registry creation/snapshots, uplink routing, lifecycle projection, persistence records, dynamic membership, interruption, resurrection, persona model/skills/cwd, and normalized tools.
 - `extensions/subagents/message-router.test.ts` — preserved parent-local routing, correlation, deadlock, lifecycle-failure, reconnection, and shutdown behavior.
 - `extensions/subagents/project-trust.test.ts` — preserved public-SDK trust precedence and non-interactive fallback behavior.
 - `extensions/subagents/persistence.test.ts` and `extensions/subagents/session-snapshot.test.ts` — preserved lifecycle-log and persisted-session compatibility behavior.
@@ -537,9 +539,9 @@ No new dependency is introduced.
 #### Agent session registry
 
 - Construction registers exactly one externally owned root at `[]`; registry disposal leaves that root host-owned.
-- Child creation derives canonical paths, rejects duplicate live siblings/reserved parent IDs, allows repeated local IDs under different parents, and passes shared registry/path/uplink context to managed sessions.
+- Child creation derives canonical paths, rejects duplicate live siblings/reserved parent IDs, allows repeated local IDs under different parents, passes manager-supplied hooks plus shared registry/path/uplink context to managed sessions, and decorates `onSessionChanged` before forwarding it.
 - Batch creation reserves paths atomically; any construction failure disposes staged sessions, releases reservations, and publishes no add events.
-- Operational snapshots are replaced immutably and publish `node_updated` only for actual changes; session replacement updates metadata without changing path or parentage.
+- Operational snapshots are replaced immutably and publish `node_updated` only for actual changes; session replacement updates metadata before the manager callback without changing path or parentage, while event/UI/shutdown hooks continue to reach the owning manager.
 - Removal is idempotent, disposes descendants bottom-up, emits final `node_removed` snapshots, and makes removed paths reusable without tombstones or historical cost.
 - Presentation attaches only to registry-owned descendants; subscriber failures do not interrupt lifecycle operations.
 
@@ -566,5 +568,3 @@ No new dependency is introduced.
 - Parent-local router behavior, public-SDK project-trust precedence, version-1 lifecycle logs, cwd/tool/skill compatibility, and persisted JSONL snapshot recomputation remain covered by their reviewed tests.
 
 The reopened suite intentionally adds no Pimote integration, recursive reporting, historical cost retention, or registry persistence tests.
-
-**Review status:** approved

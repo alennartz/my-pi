@@ -2,6 +2,7 @@ import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { AgentPath } from "./agent-path.js";
 import type {
 	ChildSessionConfig,
+	ChildSessionHooks,
 	ManagedChildSession,
 	ManagedChildSessionDependencies,
 	createManagedChildSession,
@@ -77,6 +78,7 @@ export type CreateAgentNodeRequest = {
 	session: Omit<ChildSessionConfig, "path" | "scope"> & {
 		uplink: MessagePort;
 	};
+	hooks: ChildSessionHooks;
 	initialOperational: AgentOperationalSnapshot;
 };
 

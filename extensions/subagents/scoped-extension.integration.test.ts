@@ -64,8 +64,99 @@ vi.mock("./broker.js", () => ({
 }));
 
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
-import type { AgentSessionRegistry } from "./agent-session-registry.js";
+import type { AgentPath } from "./agent-path.js";
+import type { AgentNodeSnapshot, AgentSessionRegistry, RegistryEvent } from "./agent-session-registry.js";
 import type { MessagePort, RoutedMessage, SendReceipt } from "./message-router.js";
+
+function makeRegistryFake(): AgentSessionRegistry {
+	const nodes = new Map<string, any>();
+	const listeners = new Set<(event: RegistryEvent) => void>();
+	const key = (agentPath: AgentPath) => JSON.stringify(agentPath);
+	const publish = (event: RegistryEvent) => {
+		for (const listener of listeners) listener(event);
+	};
+	const registry: any = {
+		get: vi.fn((agentPath: AgentPath) => nodes.get(key(agentPath))),
+		getSnapshot: vi.fn((agentPath: AgentPath) => nodes.get(key(agentPath))?.snapshot),
+		listChildren: vi.fn((parentPath: AgentPath) => [...nodes.values()]
+			.filter((node) => key(node.snapshot.parentPath) === key(parentPath))
+			.map((node) => node.snapshot)),
+		createChildren: vi.fn(async (parentPath: AgentPath, requests: any[]) => {
+			const createdNodes: any[] = [];
+			for (const request of requests) {
+				const childPath = [...parentPath, request.localId];
+				const config = {
+					...request.session,
+					path: childPath,
+					scope: {
+						kind: "child",
+						registry,
+						path: childPath,
+						identity: {
+							id: request.localId,
+							task: request.task,
+							channels: request.channels,
+						},
+						uplink: request.session.uplink,
+					},
+				};
+				const session = await managed.createManagedChildSession(config, {}, request.hooks);
+				const target = request.session.target;
+				const snapshot: AgentNodeSnapshot = {
+					path: childPath,
+					parentPath: parentPath.length === 0 ? [] : [...parentPath],
+					localId: request.localId,
+					ownership: "registry",
+					sessionId: session.sessionId,
+					sessionFile: session.sessionFile,
+					cwd: target.kind === "new" || target.kind === "fork" ? target.cwd : "/restored-cwd",
+					task: request.task,
+					agentDef: request.agentDef,
+					channels: request.channels,
+					operational: request.initialOperational,
+				};
+				const node = {
+					snapshot,
+					session,
+					presentation: session.presentation ?? { attach: vi.fn(() => () => {}), reset: vi.fn() },
+				};
+				nodes.set(key(childPath), node);
+				createdNodes.push(node);
+				publish({ type: "node_added", node: snapshot });
+			}
+			return createdNodes;
+		}),
+		updateOperational: vi.fn((agentPath: AgentPath, operational: any) => {
+			const node = nodes.get(key(agentPath));
+			if (!node) return;
+			const previous = node.snapshot;
+			node.snapshot = { ...previous, operational };
+			publish({ type: "node_updated", previous, node: node.snapshot });
+		}),
+		remove: vi.fn(async (agentPath: AgentPath) => {
+			for (const [nodeKey, node] of nodes) {
+				if (nodeKey === key(agentPath) || nodeKey.startsWith(`${key(agentPath).slice(0, -1)},`)) {
+					await node.session.dispose();
+					nodes.delete(nodeKey);
+					publish({ type: "node_removed", node: node.snapshot });
+				}
+			}
+		}),
+		attachPresentation: vi.fn((agentPath: AgentPath, target: any) => {
+			const node = nodes.get(key(agentPath));
+			return node?.presentation.attach(target) ?? (() => {});
+		}),
+		subscribe: vi.fn((listener: (event: RegistryEvent) => void) => {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		}),
+		dispose: vi.fn(async () => {
+			for (const node of nodes.values()) await node.session.dispose();
+			nodes.clear();
+		}),
+	};
+	return registry;
+}
 
 const registry = {} as AgentSessionRegistry;
 
@@ -236,7 +327,7 @@ describe("child-scoped extension routing", () => {
 	});
 
 	it("uses the supplied child registry and path when recursively spawning a grandchild", async () => {
-		const childRegistry = {} as AgentSessionRegistry;
+		const childRegistry = makeRegistryFake();
 		const parentUplink = makePort("worker-uplink");
 		const parentSessionFile = path.join(tmpRoot!, "worker.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
