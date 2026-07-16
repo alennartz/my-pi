@@ -161,6 +161,7 @@ type CreateAgentNodeRequest = {
   session: Omit<ChildSessionConfig, "path" | "scope"> & {
     uplink: MessagePort;
   };
+  hooks: ChildSessionHooks;
   initialOperational: AgentOperationalSnapshot;
 };
 
@@ -201,6 +202,7 @@ Contracts:
 - `createChildren()` requires a live parent, rejects duplicate sibling IDs and reserved `parent`, and reserves every requested path before starting SDK construction.
 - Batch creation is atomic. If any session fails, every staged session is disposed, every path reservation is released, no node events survive, and the manager writes no lifecycle records.
 - The registry derives each child path, full display/session name, child scope, and shared registry reference. Callers cannot register arbitrary parentage after session creation.
+- The parent manager supplies `ChildSessionHooks` for the deterministic child path. The registry decorates `onSessionChanged` so node session metadata is updated before forwarding the callback, while SDK events, UI notifications, and shutdown requests continue to flow to the owning manager. Lifecycle/status policy does not move into the registry.
 - Successful creation publishes immutable `node_added` snapshots only after all sessions expose real session IDs/files.
 - `updateOperational()` is the single status mutation point and emits `node_updated` only for an actual value change.
 - Managed session replacement updates session ID/file/cwd on the existing node and emits `node_updated` without changing its path.
@@ -426,7 +428,7 @@ A manager entry retains only orchestration/persistence data not owned by the reg
 Contracts:
 
 - Manager status getters read canonical immediate-child snapshots through `registry.listChildren(ownerPath)`.
-- SDK event hooks calculate the same activity, usage, model, context, subgroup, waiting, output, and failure transitions as today, then call `registry.updateOperational()`.
+- For every child request, the manager constructs path-bound `ChildSessionHooks` before registry creation. SDK event hooks calculate the same activity, usage, model, context, subgroup, waiting, output, and failure transitions as today, then call `registry.updateOperational()`.
 - `agent_start` marks running. Terminal `agent_end` records a final assistant error, while `agent_settled` is the single completion boundary after retries, compaction, and continuations.
 - Headless pre-start error notification follows DR-041. Runtime unavailability produces failed state without process stderr or exit polling.
 - Existing `onUpdate` and completion callbacks project registry snapshots into the TUI dashboard, Pimote panel, XML notifications, and tool results.
