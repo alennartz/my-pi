@@ -308,7 +308,14 @@ export class AgentSessionRegistry {
 		if (exact) return exact;
 		for (const [removingKey, operation] of this.removals) {
 			const removingPath = JSON.parse(removingKey) as AgentPath;
-			if (isPrefix(removingPath, path)) return operation;
+			if (!isPrefix(removingPath, path)) continue;
+			// A managed child runtime invokes its own session_shutdown hook while
+			// the ancestor registry removal is disposing that node. Its manager may
+			// ask to remove an already-covered descendant; waiting on the ancestor
+			// operation here would deadlock runtime.dispose(). The ancestor operation
+			// already owns that descendant's disposal, so this nested request is done.
+			if (this.nodes.get(removingKey)?.disposing) return Promise.resolve();
+			return operation;
 		}
 
 		const operation = this.removeSubtree(path, pathKey);
