@@ -159,10 +159,3 @@ Empty — the persistent primary journeys were unchanged.
 Empty — all observed product failures were localized and fixed inline.
 
 
-## Plan Updates
-
-Empty — the persistent primary journeys already cover this topic.
-
-## Open Issues
-
-_To be filled after execution._
