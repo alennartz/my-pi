@@ -624,7 +624,10 @@ export class SubagentManager {
 		// continuation). Queue the fork directive behind that turn instead of
 		// treating the expected busy preflight as a runtime failure.
 		const streamingBehavior = entry.kind === "fork" ? "followUp" : undefined;
-		void node.session.submit(`Task: ${entry.task}`, streamingBehavior).catch((error) => {
+		const submission = streamingBehavior === undefined
+			? node.session.submit(`Task: ${entry.task}`)
+			: node.session.submit(`Task: ${entry.task}`, streamingBehavior);
+		void submission.catch((error) => {
 			this.markRuntimeUnavailable(entry, errorMessage(error));
 		});
 	}
