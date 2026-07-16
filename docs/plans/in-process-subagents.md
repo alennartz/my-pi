@@ -570,3 +570,100 @@ No new dependency is introduced.
 The reopened suite intentionally adds no Pimote integration, recursive reporting, historical cost retention, or registry persistence tests.
 
 **Review status:** approved
+
+## Steps
+
+### Step 1: Reconcile the saved router and trust WIP
+
+Locate the named stash `wip: paused in-process subagents implementation before architecture rebase` by its subject and inspect its three source files with `git show`; do not apply, pop, branch from, or drop the stash, because its `managed-child-session.ts` predates the reviewed interfaces. Restore the stashed `extensions/subagents/message-router.ts` implementation into the unchanged reviewed router interface: retain its parent-local endpoint map, topology checks, correlation registration before delivery, per-edge reference counts, responder ownership, typed lifecycle failures, detach/cancel behavior, reconnection, quiet state, and exactly-once blocking callbacks.
+
+Port the stashed algorithm into the current `extensions/subagents/project-trust.ts` rather than replacing the file wholesale. Preserve the reviewed `ExtensionError` import and `onExtensionError` option; when a synchronous or asynchronous handler fails, report `{ extensionPath, event: "project_trust", error, stack }` and continue in loader order. Retain decisive `yes`/`no`, `undecided`, remembered decisions, saved trust, configured defaults, and headless `ask` behavior. Extract the stashed managed-session file only as a temporary donor for Step 4; the current path, policy, registry, and presentation interfaces remain authoritative.
+
+**Verify:** `npx vitest run extensions/subagents/message-router.test.ts extensions/subagents/project-trust.test.ts`
+**Status:** not started
+
+### Step 2: Implement canonical paths and normalized tools
+
+Implement `childAgentPath()` and `formatAgentPath()` in `extensions/subagents/agent-path.ts`. Always return a new segment array and keep `[]` as the root display name. Format each descendant segment as `encodeURIComponent(segment) || "%"` before joining segments with `/`; the literal sentinel is distinct because a literal `%` encodes as `%25`. This keeps `[]`, `[""]`, `["a/b"]`, and `["a", "b"]` distinct. Never use the formatted name as an internal registry key.
+
+Implement `resolveChildToolPolicy()` in `extensions/subagents/child-tool-policy.ts` as a pure normalization function. Default children return no allowlist and `excludeTools: ["ask_user"]`. Persona and fork inputs preserve first-seen built-in and extension tool names, remove `ask_user`, add `respond`, deduplicate deterministically, and never mutate the caller's array. An empty persona restriction therefore yields only `respond`.
+
+**Verify:** `npx vitest run extensions/subagents/agent-path.test.ts extensions/subagents/child-tool-policy.test.ts`
+**Status:** not started
+
+### Step 3: Implement the stable delegating UI
+
+Implement `DelegatingExtensionUI` in `extensions/subagents/delegating-extension-ui.ts` with one stable `ExtensionUIContext` object and an explicit mutable target held only by that instance. Forward every current UI method and read property—including `theme`, editor/theme accessors, working indicators, widgets, and tool-expansion state—to the active target with the target as the call receiver. Initialize it with the supplied headless target. Make `attach()` install a new target and return a generation/token-aware detach closure; only the detach for the current attachment may restore headless behavior. `reset()` must restore headless behavior and invalidate every older detach token without replacing `context`.
+
+**Verify:** `npx vitest run extensions/subagents/delegating-extension-ui.test.ts`
+**Status:** not started
+
+### Step 4: Rebase ManagedChildSession onto the reviewed interfaces
+
+Use the stashed `extensions/subagents/managed-child-session.ts` only as an implementation donor for SDK runtime construction, target translation, prompt preflight, command bindings, replacement rebinding, abort, and idempotent disposal. Keep the current `ChildSessionConfig`: replace the stale `id`/`allowedTools` assumptions with `path`, registry-aware `scope`, and the already-normalized `toolPolicy`; add the reviewed `presentation: DelegatingExtensionUI` surface.
+
+For every initial and replacement `SessionManager`—new, opened legacy JSONL, or forked—append `formatAgentPath(config.path)` as the initial pi session name while preserving the opened session's ID, header, file, and cwd. Create one headless UI target and one `DelegatingExtensionUI` per logical child, then bind every runtime generation to the same `presentation.context`. Per generation, create a new cwd-bound `SettingsManager`, EventBus, resource loader, trust context, tools, skills, and extension instances while sharing only the registry-provided auth storage and model registry. Omit `additionalSkillPaths`/`noSkills` for an empty list; for explicit paths, pass the absolute paths with `noSkills: true`.
+
+Apply `toolPolicy.allowedTools` or `toolPolicy.excludeTools` exactly once in `createAgentSessionFromServices()` without another `ask_user` filter or persona gate. Resolve and pass the CLI model plus explicit/suffixed thinking level. Keep normal resource discovery, filter only the resolved root `extensions/subagents/index.ts`, and inject one `createSubagentsExtension(config.scope)` factory. Wire `resolveChildProjectTrust()` with the current default, headless context, and extension-error reporting through the child UI hook.
+
+Subscribe to SDK events before `bindExtensions()`, bind in `rpc` mode with runtime-backed session actions, and on replacement unsubscribe the old session, create isolated services/EventBus, bind the new extensions to the same presentation context, and report metadata without replacing the wrapper. Preserve the stashed prompt behavior that resolves at preflight while observing the full run promise, cooperative `session.abort()`, replacement-failure notification/shutdown signaling, listener cleanup, and exactly-once `runtime.dispose()`.
+
+**Verify:** `npx vitest run extensions/subagents/managed-child-session.test.ts extensions/subagents/managed-child-session.integration.test.ts`
+**Status:** not started
+
+### Step 5: Implement the per-root session registry
+
+Implement `AgentSessionRegistry` in `extensions/subagents/agent-session-registry.ts` and import `createManagedChildSession` as the default runtime value while retaining the injectable test factory. Validate and defensively clone/freeze the external root snapshot at `[]`. Store active nodes by a segment-aware key such as `JSON.stringify(path)`, never by `formatAgentPath()`. Keep reservations, subscribers, removal/disposal promises, and registry-owned node records as instance state; public node wrappers expose getters for the current immutable snapshot plus their managed session and presentation.
+
+Deep-copy/freeze paths, parent paths, channels, operational objects, usage, pending correlations, and waiting targets on every ingress. `get()`, `getSnapshot()`, and `listChildren()` expose only immutable canonical values. `updateOperational()` performs value comparison, updates live or staged nodes through one mutation operation, and emits `node_updated` only when the value changes; staged updates remain unpublished until their batch commits.
+
+In `createChildren()`, synchronously validate the live parent, reserved `parent`, duplicate batch IDs, live siblings, and existing reservations before the first await. Derive and reserve all child paths, create request-local decorated hooks, and pass each managed session the derived path/scope, shared registry, local identity, and request uplink. Forward event/UI/shutdown callbacks unchanged. For `onSessionChanged`, update the staged or live node's session ID/file/cwd and publish any live update before calling that request's manager callback. Construct the batch behind reservations; on any failure await/clean up every successful staged session, release every reservation, and publish no add/update events. On success, take session ID/file from the managed wrapper and derive cwd from its active `session.sessionManager.getCwd()` (required for resume), with the request target cwd as the `new`/`fork` fallback used by structural adapters; then commit all immutable nodes, release reservations, and emit `node_added` in request order.
+
+Implement presentation attachment only for registry-owned nodes. Make removal segment-prefix-aware, idempotent, and bottom-up: prevent new subtree creation, dispose each managed session once, emit its final snapshot, delete active state, and make paths reusable. Subscriber failures must not interrupt lifecycle operations. `dispose()` shares the same removal operation for all descendants, is idempotent under nested `session_shutdown` convergence, and leaves the external root node/runtime intact.
+
+**Verify:** `npx vitest run extensions/subagents/agent-session-registry.test.ts`
+**Status:** not started
+
+### Step 6: Move manager ownership into registry snapshots
+
+Refactor `extensions/subagents/agent-set.ts` so a manager retains only immediate-child orchestration data: canonical child path, local identity/persona, task/channels, fork restoration fields, router port, completion notification state, prompt-start tracking, and any pending terminal/runtime error. Remove `RpcChild`, process stderr/exit polling, and the manager-local canonical `status`. Make `getAgentStatuses()`, `getAgentStatus()`, and `hasAgents()` project `registry.listChildren(ownerPath)` into the existing `AgentStatus` shape; resolve `interrupt()` with `childAgentPath(ownerPath, id)` and call the registered managed session's `abort()` unless its snapshot is failed.
+
+Replace the socket broker with one `MessageRouter` per manager, retaining the mutable `Topology` reference and a connected `parent` port. Expose the parent port for the scoped extension, subscribe it to immediate-child messages, and route blocking-start/end callbacks into immutable `registry.updateOperational()` transitions. Roll back topology/endpoints if registry batch construction fails, and close/reset first-call routing infrastructure when nothing was committed.
+
+For each spawn, restore, fork, or resurrection request, compute the deterministic path and create manager-owned `ChildSessionHooks` before calling `registry.createChildren(ownerPath, requests)`. Build initial operational snapshots from zeroed running state or `parseSessionSnapshot()` plus subgroup/context recomputation for restore. Resolve the one tool policy as default, persona, or fork; forks use the parent's complete captured active-tool list, including extension tools. Preserve an absent legacy persisted `tools` field as `undefined` through `ForkAgentSpec` and select the default policy for that case, rather than converting it to an explicit empty fork list (which correctly normalizes to infrastructure-only `respond`). Pass target, model/thinking, skills, append prompts, and the child router port in the registry request. Keep provisional entry/hook state during construction so subscribe-before-bind events can update staged registry snapshots; discard it on rollback.
+
+Translate direct SDK events into new operational values: tool starts update activity/subgroup, assistant message ends accumulate usage/model/context/output once, `agent_start` marks running, terminal `agent_end` records only the final assistant error, and `agent_settled` is the sole normal completion boundary. Preserve DR-041 for an error before `agent_start`, ignore nonfatal mid-run UI errors, mark runtime shutdown/unavailability failed, call the router's idle/unavailable lifecycle methods, and emit existing update/completion callbacks once.
+
+After successful atomic creation, write version-1 `agent_added` records from registry metadata and submit fresh tasks; automatic restore neither duplicates records nor prompts. The registry-decorated replacement hook has already changed canonical metadata when the manager appends the replacement `agent_added` record. Keep local-ID persistence, cwd pruning, persona re-resolution, session-ID resurrection lookup, fork tool/skill fields, reports, and aggregate usage. User teardown appends `agent_removed`, tombstones local routing, and calls `registry.remove(path)`; soft shutdown removes live child subtrees and closes routing without writing removals.
+
+**Verify:** `npx vitest run extensions/subagents/agent-set.test.ts extensions/subagents/persistence.test.ts extensions/subagents/session-snapshot.test.ts`, and `rg -n 'RpcChild|Broker|PI_PARENT_LINK|monitorExit|handleRpcEvent' extensions/subagents/agent-set.ts` prints no matches
+**Status:** not started
+
+### Step 7: Refactor the scoped extension around the root registry
+
+Move the operational extension implementation from `extensions/subagents/index.ts` behind `createSubagentsExtension(scope)` in `extensions/subagents/scoped-extension.ts`, and reduce `index.ts` to a default `createSubagentsExtension({ kind: "root" })` export. Keep all queues, displays, correlation origins, manager references, tier notices, skill caches, registry references, and subscriptions inside each factory invocation. Register the same ten Subagents tool definitions for root and child scopes; remove registration-time persona filtering and ignore `PI_PARENT_LINK`. Register tools before optional lifecycle/uplink setup so the reviewed structural registration adapters remain valid.
+
+For a root scope, lazily create exactly one `AgentSessionRegistry` when an `ExtensionContext` first becomes available. Build its external root snapshot from the current session ID/file/cwd and an initial operational value, and pass `getAgentDir()`, `ctx.modelRegistry.authStorage`, and the same model registry as shared dependencies. Use the SDK's `getSessionId()` in production, while tolerating the reviewed structural context adapter by deriving a stable file-stem fallback when that method is absent. Keep the registry in that root factory closure only. Once it exists, project the root session's tool activity, assistant usage/model/context/output, `agent_start`, terminal error, and `agent_settled` transitions through `registry.updateOperational([])` so the external node remains current without moving lifecycle policy into the registry. For a child scope, reuse `scope.registry` and `scope.path`; never create another registry. Construct every `SubagentManager` with that registry and owner path, preserving root-only immediate-child restore/dashboard behavior and the existing child limitation on grandchild restore.
+
+Replace `BrokerClient` with explicit ports. Subscribe child scopes to `scope.uplink`; use the manager's local parent port for immediate children and the uplink for parent/sibling targets. Track a blocking correlation's originating `MessagePort`, keep existing XML serialization and notification batching, consume `SendReceipt`, detach an interrupted blocking wait without cancellation, and deliver its late typed response as the existing asynchronous notification. Route `respond` through the recorded port. Remove broker-client setup from spawn/fork/resurrect/teardown.
+
+Preserve discovery, tier/model resolution, schemas, stop sequences, await behavior, status/report formatting, widgets/panels, resurrection, and `list_models` from the executing context. The regular spawn path lets the manager normalize default/persona policy. The fork tool passes all `pi.getActiveTools()` names, active skill paths, and thinking level rather than filtering to built-ins. On shutdown, unsubscribe the child uplink, softly shut down only the immediate manager, clear displays/queues, and let the per-root registry own runtime disposal; root shutdown also disposes and releases its registry so a later root session creates a fresh tree.
+
+**Verify:** `npx vitest run extensions/subagents/scoped-extension.test.ts extensions/subagents/scoped-extension.integration.test.ts`
+**Status:** not started
+
+### Step 8: Remove the subprocess transport and environment coupling
+
+After the replacement suites pass, delete `extensions/subagents/broker.ts`, `extensions/subagents/rpc-child.ts`, and the obsolete transport-specific `extensions/subagents/broker.test.ts`. Remove `BrokerRequest`/`BrokerResponse` and socket framing commentary from `extensions/subagents/messages.ts`, and remove the unused CLI argument builders from `extensions/subagents/agents.ts`; keep the reviewed registry-backed `agent-set.test.ts` and all replacement tests unchanged. Clean `node:net`, `node:string_decoder`, child-process, socket, signal/exit, and environment-payload imports and comments from live files.
+
+Remove the `PI_PARENT_LINK` guard from `extensions/numbered-select/index.ts`. Root sessions continue to register `ask_user`; every child excludes it through `resolveChildToolPolicy()` and SDK session configuration. Do not retain an RPC fallback, compatibility adapter, process-global registry, Pimote import, or new dependency.
+
+**Verify:** `rg -n 'PI_PARENT_LINK|RpcChild|BrokerClient|BrokerRequest|BrokerResponse|node:child_process|node:net|brokerSocket' extensions/subagents extensions/numbered-select --glob '!*.test.ts'` prints no matches, and `npx vitest run extensions/subagents`
+**Status:** not started
+
+### Step 9: Run the repository regression suite
+
+Run the complete Vitest suite with the named WIP stash still preserved for audit/recovery. Confirm the reviewed path, policy, delegating UI, registry, managed-session, scoped orchestration, router, trust, persistence, snapshot, notification, model-tier, and unrelated extension/skill tests pass. Per repository convention, do not run a build, compiler, or standalone type-check.
+
+**Verify:** `npx vitest run`
+**Status:** not started
