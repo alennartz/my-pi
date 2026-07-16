@@ -1,8 +1,9 @@
 # resume-restore
 
-Drives the **subagent resume-restore journey** against a real `pi --mode rpc`
-process and asserts that restored subagent status is faithful after a parent
-session resume.
+Drives the **subagent resume-restore journey** against a real top-level
+`pi --mode rpc` parent (its children run in-process through the pi SDK) and
+asserts that restored subagent status is faithful after a parent session
+resume.
 
 ## Purpose
 
@@ -53,10 +54,10 @@ Flags:
 
 - `pi` on PATH with this repo loaded as a package (automatic when `alenna-pi` is
   the active pi package).
-- **Scrubs `PI_PARENT_LINK` / `PI_CODING_AGENT`** from the spawned pi env. If run
-  from inside a pi subagent, those vars are inherited and would make the test pi
-  treat itself as a child (`parentLink`) and skip restore entirely. The harness
-  handles this; don't re-introduce the env vars.
+- **Scrubs inherited coding-agent markers** from the spawned parent environment
+  so the harness always exercises a top-level resume flow when invoked from
+  another pi session. Child role is supplied by the in-process extension scope,
+  not by environment variables.
 
 ## Limitations
 

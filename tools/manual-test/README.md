@@ -35,7 +35,8 @@ reports, error messages) verbatim — that transcript IS the test log.
 `check_status`.
 
 **Prerequisites:** A pi process with the subagents extension loaded
-(automatic when this package is the active pi package).
+(automatic when this package is the active pi package). Child sessions run
+in-process through the pi SDK; no child `pi --mode rpc` process is required.
 
 **Use for:** any topic that touches subagent lifecycle (spawn, message,
 teardown, resurrect, fork, await, interrupt). Limitations: only exercises
@@ -58,9 +59,9 @@ structurally cannot reach.
 **Outputs:** phase log on stderr; JSON verdict on stdout
 (`{verdict, checks, observed, expected}`); exit 0 = PASS, 1 = FAIL.
 
-**Prerequisites:** `pi` on PATH with this package loaded. Scrubs
-`PI_PARENT_LINK`/`PI_CODING_AGENT` from the spawned pi env (critical when run
-inside a pi subagent, or restore is skipped).
+**Prerequisites:** `pi` on PATH with this package loaded. The harness
+scrubs inherited coding-agent markers from the spawned parent environment so
+the top-level resume flow is exercised when invoked from another pi session.
 
 **Use for:** any topic touching subagent persistence/restore on session resume.
 Limitations: observes status via `check_status` (the `hasSubgroup` widget/panel
@@ -85,8 +86,9 @@ and `list_models` (resolution, notice, and catalog checks). See
 **Outputs:** phase log on stderr; JSON verdict on stdout
 (`{verdict, checks, observed}`); exit 0 = PASS, 1 = FAIL.
 
-**Prerequisites:** `pi` on PATH with this repo loadable as a package. Scrubs
-`PI_PARENT_LINK`/`PI_CODING_AGENT` from the spawned pi env.
+**Prerequisites:** `pi` on PATH with this repo loadable as a package. The
+harness scrubs inherited coding-agent markers from the spawned parent
+environment.
 
 **Use for:** any topic touching model-tier config, tier resolution on the
 spawn path, the tier prompt-injection block, or the `list_models` tool.

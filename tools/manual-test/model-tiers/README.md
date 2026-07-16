@@ -1,8 +1,8 @@
 # model-tiers
 
 Drive a real `pi --mode rpc` to verify the subagents extension's model-tier
-feature end-to-end — the live wiring in `extensions/subagents/index.ts` that
-the pure-function unit tests (`model-tiers.test.ts`) cannot reach.
+feature end-to-end — the live wiring in `extensions/subagents/scoped-extension.ts`
+that the pure-function unit tests (`model-tiers.test.ts`) cannot reach.
 
 ## Purpose
 
@@ -51,11 +51,10 @@ node tools/manual-test/model-tiers/run.mjs [--keep] [--timeout <sec>] [--workdir
 
 ## Prerequisites
 
-`pi` on PATH with this repo loadable as a package. Scrubs
-`PI_PARENT_LINK` / `PI_CODING_AGENT` from spawned pi env (critical when run
-inside a pi subagent). Tier config values point at real, available
-non-default models so a resolved tier is distinguishable from a
-session-default fallback.
+`pi` on PATH with this repo loadable as a package. The harness scrubs inherited
+coding-agent markers from the spawned parent environment. Tier config values
+point at real, available non-default models so a resolved tier is
+distinguishable from a session-default fallback.
 
 ## Use for
 
