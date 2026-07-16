@@ -378,3 +378,92 @@ No new dependency is introduced.
 - Blocking-status callbacks fire once at start and once at every terminal path. Router shutdown alone rejects unresolved waits and future sends.
 
 **Review status:** approved
+
+## Steps
+
+### Step 1: Implement child project-trust precedence
+
+Implement `resolveChildProjectTrust()` in `extensions/subagents/project-trust.ts` as the local public-SDK equivalent of pi's non-interactive trust decision flow. Walk `extensionsResult.extensions` and each extension's `project_trust` handlers in loader order, invoke them with `{ type: "project_trust", cwd }` and `projectTrustContext`, and stop at the first `yes` or `no`; let `undecided` continue, and persist a decisive result through `trustStore.set(cwd, decision)` when the handler requests `remember`. If no extension decides, consult `trustStore.get(cwd)`, then `defaultProjectTrust` (`always`/`never`), and finally return `false` for an unresolved `ask` without calling the headless context's dialog methods. Keep all decision data in the function arguments; do not import pi's private trust resolver or introduce process-wide trust state.
+
+**Verify:** `npx vitest run extensions/subagents/project-trust.test.ts`
+**Status:** not started
+
+### Step 2: Implement the in-memory message router
+
+Implement `MessageRouter` and its per-endpoint `MessagePort` adapters in `extensions/subagents/message-router.ts` using the supplied `Topology`, `canSend()` from `extensions/subagents/channels.ts`, and `DeadlockGraph` from `extensions/subagents/deadlock.ts`. Keep endpoint listeners, unavailable/removed tombstones, and pending correlations as router-instance state. Each pending correlation must record its sender, addressed endpoint, response resolve/reject functions, and whether its waiting edge is still attached; retain a per-`from`/`to` edge count so resolving one of several waits does not remove deadlock protection for the others.
+
+Make `connect()` reject IDs outside the current topology, clear a reconnecting endpoint's tombstone, and return a port whose methods are scoped to that endpoint. In `send()`, validate authorization, target availability/connectivity, duplicate caller IDs, and deadlock cycles before accepting delivery. For blocking sends, allocate an omitted ID, install the promise/correlation/deadlock state, and invoke `onBlockingSendStart` before notifying target subscribers so an immediate `respond()` cannot race registration. Centralize terminal cleanup so response, cancel, detach, idle, unavailable, removal, and close each remove the correct edge and invoke `onBlockingSendEnd` at most once. Accepted cancellation/lifecycle failures resolve as `RoutedResponse` errors; only router closure rejects an accepted wait. Keep detached correlations pending for late delivery, make idle endpoints reusable, tombstone unavailable/removed endpoints until `connect()`, clear sender-owned correlations on removal, and make `close()` reject all waits and discard subscribers without touching sessions or persistence.
+
+**Verify:** `npx vitest run extensions/subagents/message-router.test.ts`
+**Status:** not started
+
+### Step 3: Implement SDK-native managed child sessions
+
+Implement `ManagedChildSession` and `createManagedChildSession()` in `extensions/subagents/managed-child-session.ts` around `SessionManager`, `createAgentSessionServices()`, `createAgentSessionFromServices()`, and `createAgentSessionRuntime()`. Translate `ChildSessionTarget` to `SessionManager.create`, `open`, or `forkFrom`; append the agent ID as session info for new/forked managers; and use the opened manager's cwd for resumed sessions. Resolve an explicit `modelRef` with `resolveCliModel()`, surface resolver errors, pass `config.thinkingLevel ?? resolved.thinkingLevel`, pass an explicit `allowedTools` list after removing `ask_user`, or use `excludeTools: ["ask_user"]` when no allowlist exists.
+
+Inside the runtime factory, create a fresh `SettingsManager`, event bus, headless UI context, and resource loader services for each effective cwd while reusing `dependencies.authStorage` and `dependencies.modelRegistry`. Configure discovery with the child's append prompt, `additionalSkillPaths: config.skillPaths` and `noSkills: true` when that list is nonempty, a named inline `createSubagentsExtension(config.scope)` factory, and an `extensionsOverride` that filters only the resolved `extensions/subagents/index.ts` root entry while preserving every other extension and loader result field. Construct one `ProjectTrustStore` from `dependencies.agentDir`; wire `resourceLoaderReloadOptions.resolveProjectTrust` to `resolveChildProjectTrust()` with the current cwd, pre-trust extension result, current settings default, and that session's `{ mode: "rpc", hasUI: false }` trust context.
+
+Give the headless `ExtensionUIContext` non-interactive dialog/editor fallbacks, route `notify()` to `hooks.onUiNotify`, and make widget/status/title/custom-terminal operations local no-ops. Subscribe `hooks.onEvent` before binding extensions in `rpc` mode. Bind runtime-backed command actions (`waitForIdle`, new/fork/switch/navigation/reload), cooperative abort, `hooks.onShutdownRequested`, and extension errors routed to the UI hook. On runtime replacement, unsubscribe the old session, adopt the new session/event bus/UI context, subscribe before rebinding, and call `hooks.onSessionChanged` with the new ID, file, and cwd while retaining the same wrapper object. Distinguish initial construction from later replacement: initial factory/bind failures must reject `createManagedChildSession()`, while a factory or rebind failure after the wrapper is live must notify the error, invoke `onShutdownRequested()` to mark the now-invalid runtime unavailable, and rethrow to the initiating SDK action.
+
+Implement getters against the runtime's current session. Make `submit()` resolve or reject at prompt preflight while permanently observing the continuing `session.prompt()` promise, `abort()` await `session.abort()`, and `dispose()` retain one idempotent disposal promise that unsubscribes and invokes `runtime.dispose()` exactly once so extension shutdown handlers still run.
+
+**Verify:** `npx vitest run extensions/subagents/managed-child-session.test.ts extensions/subagents/managed-child-session.integration.test.ts`
+**Status:** not started
+
+### Step 4: Migrate the manager to sessions and ports
+
+Refactor `extensions/subagents/agent-set.ts` so `AgentEntry` holds a `ManagedChildSession` and its child `MessagePort` instead of `RpcChild`. Add the shared `ManagedChildSessionDependencies` to `SubagentManagerOptions`; replace the broker field with a `MessageRouter` plus its connected `parent` port; expose that port through a small `getParentPort()` method for the scoped extension; and keep topology mutation, status, persistence, and report state inside the manager instance. `interrupt()` must call `child.abort()`, and completion reports must stop consulting stderr/process exit state.
+
+In `start()`, retain the existing reserved-ID, model/persona, cwd, skill, topology, peer-description, and identity-XML behavior, then derive each `ChildSessionConfig` explicitly:
+
+- regular new agents use a `new` target at their resolved/default cwd; restored or resurrected regular agents use `resume`;
+- fresh forks use a `fork` target from the parent session file; restored forks use `resume`;
+- the child scope carries the computed ID/task/channels, persona Subagents-tool policy, and its connected router port;
+- the SDK allowlist comes independently from persona tools or the fork's captured built-in tools; map the fork convention `tools: []` (all built-ins were active, so the legacy CLI omitted `--tools`) to `allowedTools: undefined`, never to an empty SDK allowlist;
+- skill paths come from the spawn cache, restored fork record, or re-resolved persona declaration;
+- append prompts contain the persona prompt only for a fresh regular session and always contain the serialized subagent identity; model/thinking fields preserve the current persona/tier/fork precedence.
+
+Stage the topology additions, ports, entries, and constructed runtimes until the whole batch has constructed successfully. If any construction fails, dispose every staged runtime, mark staged endpoints removed, roll back their topology entries, restore first-call infrastructure to its empty state when applicable, and write no `agent_added` records. After successful construction, publish all entries and read real session IDs/files. Fresh spawns and explicit resurrection append existing version-1 `agent_added` records before submitting `Task:` prompts; automatic `restoreFromPersistence()` reopens the already-recorded sessions without duplicating those initial records or prompts. A prompt-preflight failure settles that live entry as failed rather than leaving it running. `onSessionChanged` must update the entry and append a new `agent_added` record with the same persona/task/channel/cwd/tool/skill metadata and replacement session metadata.
+
+Replace `handleRpcEvent()`/exit polling with typed managed-session hooks. `tool_execution_start` and assistant `message_end` retain the current activity, subgroup, usage, model, context-fill, and last-output projection. `agent_start` marks a nonfailed entry running and records prompt start. A terminal `agent_end` records only a final assistant error; `agent_settled` performs the single idle/failed transition, calls `router.agentIdle()`, updates displays, and emits completion after retries/compaction/continuations are over. Route pre-start error notifications through the existing failure operation and fail pending sends to an already-idle target without re-completing it. Preserve the rule that ordinary mid-run error notifications do not settle the child, but retain the managed wrapper's immediately preceding replacement-failure notification for its paired `onShutdownRequested` call. That shutdown/unavailable hook must settle the entry as failed, call `router.agentUnavailable()` with the retained or fallback error, update displays, and emit completion once.
+
+Preserve restore pruning and snapshot seeding. For user teardown, tombstone routing before `child.dispose()`, append `agent_removed`, and close the router when empty; for soft shutdown, dispose all children and close routing without appending removals. Completion is true only when every entry is idle/failed and `router.isQuiet()`.
+
+**Verify:** `rg -n 'RpcChild|Broker|PI_PARENT_LINK|handleRpcEvent|monitorExit' extensions/subagents/agent-set.ts` prints no matches, and `npx vitest run extensions/subagents/channels.test.ts extensions/subagents/persistence.test.ts extensions/subagents/session-snapshot.test.ts`
+**Status:** not started
+
+### Step 5: Construct root and child extension scopes
+
+Move the operational extension implementation from `extensions/subagents/index.ts` behind `createSubagentsExtension(scope)` in `extensions/subagents/scoped-extension.ts`, and reduce `index.ts` to the package's default root-scoped factory. Place the manager, dashboard/panel handles, tier-warning set, skill-path cache, notification queue, await state, correlation origins, and all other mutable extension state inside the returned factory invocation. Derive role and persona tool registration only from `scope`: root and unrestricted children register the full ten-tool surface, restricted children register only their listed Subagents tools plus infrastructure `respond`, and no code reads or writes `PI_PARENT_LINK`. Keep tool definition/registration independent from lifecycle capabilities: register the scoped tool surface before touching `pi.on` or `scope.uplink`, and skip only lifecycle/uplink hookup when a structural test adapter does not provide those methods; the real SDK path still installs every hook and subscription.
+
+Preserve current agent discovery, tier/model resolution, tool schemas, status formatting, notification batching, stop sequences, persistence restore, resurrection, await, interruption, and dashboard/Pimote projection. Create `SubagentManager` with `getAgentDir()`, the scoped context's `modelRegistry` and its `authStorage`, and the existing callbacks. Root sessions may restore their immediate children and create a dashboard; child sessions skip recursive restore and parent-facing display creation. Remove broker-client initialization from spawn/fork/resurrect/teardown paths. On `session_shutdown`, detach the scope's uplink subscription, clear local queues/UI state, and softly shut down only the scope's immediate-child manager; do not dispose a child scope's parent-owned runtime.
+
+Keep `list_models` session-local by reading the executing context's model registry and retaining the current table format. Update process-specific prompt guidance/comments to describe isolated SDK sessions without promising OS process isolation.
+
+**Verify:** `npx vitest run extensions/subagents/scoped-extension.test.ts`
+**Status:** not started
+
+### Step 6: Route scoped tools through explicit ports
+
+In `extensions/subagents/scoped-extension.ts`, replace `BrokerClient` and origin strings with explicit `MessagePort` references. Subscribe a child factory to `scope.uplink`, subscribe the local manager callback/parent port to immediate-child messages, serialize incoming `RoutedMessage` values with the unchanged XML serializer, and record the originating port for blocking correlations. Preserve notification queue tags so uplink and local completion/message delivery continue to drain correctly.
+
+Implement `send` routing exactly at the parent-local seam: use `manager.getParentPort()` when the target is an immediate child, otherwise use `scope.uplink` for a child scope, and report no available agent for a root without that local target. Consume `SendReceipt` directly. Fire-and-forget sends return after acceptance; blocking sends await the typed response, race the tool abort signal by calling `port.detach(correlationId)`, and turn a detached late response/error into the existing asynchronous `<agent_message>` notification. Implement `respond` by using the recorded origin port (with the same local/uplink fallback rules), then remove the correlation origin only after routing the response. Keep cancellation, waiting-state callbacks, and deadlock ownership inside `MessageRouter`, not the extension.
+
+**Verify:** `npx vitest run extensions/subagents/scoped-extension.integration.test.ts`
+**Status:** not started
+
+### Step 7: Remove subprocess and socket remnants
+
+After the managed path satisfies the reviewed replacement tests, delete `extensions/subagents/broker.ts`, `extensions/subagents/rpc-child.ts`, and their obsolete implementation-coupled coverage in `extensions/subagents/broker.test.ts` and `extensions/subagents/agent-set.test.ts`. Remove `BrokerRequest`/`BrokerResponse` and socket-protocol commentary from `extensions/subagents/messages.ts`, and remove the now-unused CLI argument builders (`buildAgentArgs()` and `buildForkArgs()`) from `extensions/subagents/agents.ts`. Clean obsolete `node:net`, `node:string_decoder`, child-process, socket, environment-payload, and process-exit imports/comments from the live extension files.
+
+Remove the `PI_PARENT_LINK` registration guard from `extensions/numbered-select/index.ts`: root sessions always register `ask_user`, while `ManagedChildSession`'s SDK-wide child tool policy excludes it. Do not add a compatibility transport, environment fallback, or new dependency.
+
+**Verify:** `rg -n 'PI_PARENT_LINK|RpcChild|BrokerClient|BrokerRequest|BrokerResponse|node:child_process|node:net|brokerSocket' extensions/subagents extensions/numbered-select --glob '!*.test.ts'` prints no matches, and `npx vitest run extensions/subagents`
+**Status:** not started
+
+### Step 8: Run the repository regression suite
+
+Run the complete Vitest suite after the transport removal. Confirm the reviewed trust, managed-session, router, scoped-extension, persistence, topology, serialization, model-tier, notification, and unrelated extension/skill tests all pass. Per repository convention, do not run a build, compiler, or standalone type-check; runtime-loaded TypeScript plus the test suite is the verification path.
+
+**Verify:** `npx vitest run`
+**Status:** not started
