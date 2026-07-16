@@ -2,7 +2,6 @@
  * Structured message formats for inter-agent communication.
  *
  * LLM-facing messages use XML serialization.
- * Broker wire protocol uses JSONL (newline-delimited JSON) over unix sockets.
  */
 
 // ─── LLM-facing XML types and serializers ────────────────────────────────────
@@ -195,18 +194,3 @@ export function serializeSubagentIdentity(data: SubagentIdentityData): string {
 	return lines.join("\n");
 }
 
-// ─── Broker wire protocol types (JSONL over unix socket) ─────────────────────
-
-export type BrokerRequest =
-	| { type: "register"; agentId: string }
-	| { type: "send"; from: string; to: string; message: string; correlationId?: string; expectResponse?: boolean }
-	| { type: "respond"; from: string; correlationId: string; message: string }
-	| { type: "cancel"; correlationId: string }
-	| { type: "detach"; correlationId: string };
-
-export type BrokerResponse =
-	| { type: "registered" }
-	| { type: "message"; from: string; message: string; correlationId?: string; responseExpected?: boolean }
-	| { type: "response"; correlationId: string; message: string }
-	| { type: "send_ack" }
-	| { type: "error"; correlationId?: string; error: string };

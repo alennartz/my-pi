@@ -4,7 +4,6 @@
  * Forked from examples/extensions/subagent/agents.ts, extended with:
  * - `skills` field in AgentConfig (parsed from frontmatter, comma-separated)
  * - resolveSkillPaths() — resolves skill names to filesystem paths via pi.getCommands()
- * - buildAgentArgs() — builds CLI args for spawning agent processes
  */
 
 import * as fs from "node:fs";
@@ -314,58 +313,3 @@ export function resolveSkillPaths(
 	return paths;
 }
 
-/**
- * Build CLI args for spawning a pi child process for this agent.
- */
-export function buildAgentArgs(
-	agentId: string,
-	agent: AgentConfig | undefined,
-	skillPaths: string[],
-	sessionDir: string,
-	resumeSessionFile?: string,
-	modelOverride?: string,
-): string[] {
-	const args: string[] = resumeSessionFile ? ["--session", resumeSessionFile] : ["--session-dir", sessionDir];
-	// Give the child session a greppable display name (e.g. in `pi-ps`).
-	args.push("--name", agentId);
-	const model = modelOverride ?? agent?.model;
-	if (model) args.push("--model", model);
-	if (agent?.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
-	if (skillPaths.length > 0) {
-		args.push("--no-skills");
-		for (const p of skillPaths) {
-			args.push("--skill", p);
-		}
-	}
-	return args;
-}
-
-/**
- * Build CLI args for spawning a forked pi child process.
- * The fork branches from the parent's session file and inherits
- * its tool restrictions, skills, and thinking level.
- */
-export function buildForkArgs(spec: ForkAgentSpec, sessionDir: string): string[] {
-	const args: string[] = spec.resumeSessionFile
-		? [
-			"--session", spec.resumeSessionFile,
-			"--thinking", spec.thinkingLevel,
-		]
-		: [
-			"--fork", spec.sessionFile,
-			"--session-dir", sessionDir,
-			"--thinking", spec.thinkingLevel,
-		];
-	// Give the child session a greppable display name (e.g. in `pi-ps`).
-	args.push("--name", spec.id);
-	if (spec.tools.length > 0) {
-		args.push("--tools", spec.tools.join(","));
-	}
-	if (spec.skillPaths.length > 0) {
-		args.push("--no-skills");
-		for (const p of spec.skillPaths) {
-			args.push("--skill", p);
-		}
-	}
-	return args;
-}
