@@ -9,17 +9,40 @@ export type DelegatingExtensionUIOptions = {
  * Extensions bind to `context` once for the logical child session.
  */
 export class DelegatingExtensionUI {
-	readonly context!: ExtensionUIContext;
+	readonly context: ExtensionUIContext;
+	private readonly headless: ExtensionUIContext;
+	private target: ExtensionUIContext;
+	private generation = 0;
 
-	constructor(_options: DelegatingExtensionUIOptions) {
-		throw new Error("not implemented");
+	constructor(options: DelegatingExtensionUIOptions) {
+		this.headless = options.headless;
+		this.target = options.headless;
+		const owner = this;
+		this.context = new Proxy({} as ExtensionUIContext, {
+			get(_unused, property) {
+				const value = (owner.target as any)[property];
+				if (typeof value === "function") return value.bind(owner.target);
+				return value;
+			},
+			set(_unused, property, value) {
+				(owner.target as any)[property] = value;
+				return true;
+			},
+		});
 	}
 
-	attach(_target: ExtensionUIContext): () => void {
-		throw new Error("not implemented");
+	attach(target: ExtensionUIContext): () => void {
+		this.target = target;
+		const token = ++this.generation;
+		return () => {
+			if (this.generation !== token) return;
+			this.target = this.headless;
+			this.generation++;
+		};
 	}
 
 	reset(): void {
-		throw new Error("not implemented");
+		this.target = this.headless;
+		this.generation++;
 	}
 }

@@ -50,6 +50,26 @@ describe("ManagedChildSession legacy RPC-session compatibility", () => {
 		// real SDK, then require the managed SDK path to reopen that exact file.
 		const legacy = SessionManager.create(cwd, sessionDir, { id: "11111111-1111-4111-8111-111111111111" });
 		legacy.appendSessionInfo("old-rpc-child-name");
+		// Materialize the ordinary JSONL file. Pi intentionally defers flushing a
+		// session that has no assistant message yet; a real RPC child always emits
+		// at least one assistant turn before its persisted session is reopened.
+		legacy.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "legacy child" }],
+			api: "openai-completions",
+			provider: "legacy-provider",
+			model: "legacy-model",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		});
 		const sessionFile = legacy.getSessionFile()!;
 		const agentPath = childAgentPath(["legacy/project"], "legacy-worker");
 		const sessionId = legacy.getSessionId();

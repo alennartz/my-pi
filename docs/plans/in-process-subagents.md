@@ -573,6 +573,8 @@ The reopened suite intentionally adds no Pimote integration, recursive reporting
 
 ## Steps
 
+**Pre-implementation commit:** `84b803a3b3715543e37e02b642f8d5cc1f935866`
+
 ### Step 1: Reconcile the saved router and trust WIP
 
 Locate the named stash `wip: paused in-process subagents implementation before architecture rebase` by its subject and inspect its three source files with `git show`; do not apply, pop, branch from, or drop the stash, because its `managed-child-session.ts` predates the reviewed interfaces. Restore the stashed `extensions/subagents/message-router.ts` implementation into the unchanged reviewed router interface: retain its parent-local endpoint map, topology checks, correlation registration before delivery, per-edge reference counts, responder ownership, typed lifecycle failures, detach/cancel behavior, reconnection, quiet state, and exactly-once blocking callbacks.
@@ -580,7 +582,7 @@ Locate the named stash `wip: paused in-process subagents implementation before a
 Port the stashed algorithm into the current `extensions/subagents/project-trust.ts` rather than replacing the file wholesale. Preserve the reviewed `ExtensionError` import and `onExtensionError` option; when a synchronous or asynchronous handler fails, report `{ extensionPath, event: "project_trust", error, stack }` and continue in loader order. Retain decisive `yes`/`no`, `undecided`, remembered decisions, saved trust, configured defaults, and headless `ask` behavior. Extract the stashed managed-session file only as a temporary donor for Step 4; the current path, policy, registry, and presentation interfaces remain authoritative.
 
 **Verify:** `npx vitest run extensions/subagents/message-router.test.ts extensions/subagents/project-trust.test.ts`
-**Status:** not started
+**Status:** done
 
 ### Step 2: Implement canonical paths and normalized tools
 
@@ -589,14 +591,14 @@ Implement `childAgentPath()` and `formatAgentPath()` in `extensions/subagents/ag
 Implement `resolveChildToolPolicy()` in `extensions/subagents/child-tool-policy.ts` as a pure normalization function. Default children return no allowlist and `excludeTools: ["ask_user"]`. Persona and fork inputs preserve first-seen built-in and extension tool names, remove `ask_user`, add `respond`, deduplicate deterministically, and never mutate the caller's array. An empty persona restriction therefore yields only `respond`.
 
 **Verify:** `npx vitest run extensions/subagents/agent-path.test.ts extensions/subagents/child-tool-policy.test.ts`
-**Status:** not started
+**Status:** done
 
 ### Step 3: Implement the stable delegating UI
 
 Implement `DelegatingExtensionUI` in `extensions/subagents/delegating-extension-ui.ts` with one stable `ExtensionUIContext` object and an explicit mutable target held only by that instance. Forward every current UI method and read property—including `theme`, editor/theme accessors, working indicators, widgets, and tool-expansion state—to the active target with the target as the call receiver. Initialize it with the supplied headless target. Make `attach()` install a new target and return a generation/token-aware detach closure; only the detach for the current attachment may restore headless behavior. `reset()` must restore headless behavior and invalidate every older detach token without replacing `context`.
 
 **Verify:** `npx vitest run extensions/subagents/delegating-extension-ui.test.ts`
-**Status:** not started
+**Status:** done
 
 ### Step 4: Rebase ManagedChildSession onto the reviewed interfaces
 
@@ -609,7 +611,7 @@ Apply `toolPolicy.allowedTools` or `toolPolicy.excludeTools` exactly once in `cr
 Subscribe to SDK events before `bindExtensions()`, bind in `rpc` mode with runtime-backed session actions, and on replacement unsubscribe the old session, create isolated services/EventBus, bind the new extensions to the same presentation context, and report metadata without replacing the wrapper. Preserve the stashed prompt behavior that resolves at preflight while observing the full run promise, cooperative `session.abort()`, replacement-failure notification/shutdown signaling, listener cleanup, and exactly-once `runtime.dispose()`.
 
 **Verify:** `npx vitest run extensions/subagents/managed-child-session.test.ts extensions/subagents/managed-child-session.integration.test.ts`
-**Status:** not started
+**Status:** done
 
 ### Step 5: Implement the per-root session registry
 
@@ -622,7 +624,7 @@ In `createChildren()`, synchronously validate the live parent, reserved `parent`
 Implement presentation attachment only for registry-owned nodes. Make removal segment-prefix-aware, idempotent, and bottom-up: prevent new subtree creation, dispose each managed session once, emit its final snapshot, delete active state, and make paths reusable. Subscriber failures must not interrupt lifecycle operations. `dispose()` shares the same removal operation for all descendants, is idempotent under nested `session_shutdown` convergence, and leaves the external root node/runtime intact.
 
 **Verify:** `npx vitest run extensions/subagents/agent-session-registry.test.ts`
-**Status:** not started
+**Status:** done
 
 ### Step 6: Move manager ownership into registry snapshots
 
@@ -637,7 +639,7 @@ Translate direct SDK events into new operational values: tool starts update acti
 After successful atomic creation, write version-1 `agent_added` records from registry metadata and submit fresh tasks; automatic restore neither duplicates records nor prompts. The registry-decorated replacement hook has already changed canonical metadata when the manager appends the replacement `agent_added` record. Keep local-ID persistence, cwd pruning, persona re-resolution, session-ID resurrection lookup, fork tool/skill fields, reports, and aggregate usage. User teardown appends `agent_removed`, tombstones local routing, and calls `registry.remove(path)`; soft shutdown removes live child subtrees and closes routing without writing removals.
 
 **Verify:** `npx vitest run extensions/subagents/agent-set.test.ts extensions/subagents/persistence.test.ts extensions/subagents/session-snapshot.test.ts`, and `rg -n 'RpcChild|Broker|PI_PARENT_LINK|monitorExit|handleRpcEvent' extensions/subagents/agent-set.ts` prints no matches
-**Status:** not started
+**Status:** done
 
 ### Step 7: Refactor the scoped extension around the root registry
 
@@ -650,7 +652,7 @@ Replace `BrokerClient` with explicit ports. Subscribe child scopes to `scope.upl
 Preserve discovery, tier/model resolution, schemas, stop sequences, await behavior, status/report formatting, widgets/panels, resurrection, and `list_models` from the executing context. The regular spawn path lets the manager normalize default/persona policy. The fork tool passes all `pi.getActiveTools()` names, active skill paths, and thinking level rather than filtering to built-ins. On shutdown, unsubscribe the child uplink, softly shut down only the immediate manager, clear displays/queues, and let the per-root registry own runtime disposal; root shutdown also disposes and releases its registry so a later root session creates a fresh tree.
 
 **Verify:** `npx vitest run extensions/subagents/scoped-extension.test.ts extensions/subagents/scoped-extension.integration.test.ts`
-**Status:** not started
+**Status:** done
 
 ### Step 8: Remove the subprocess transport and environment coupling
 
@@ -659,11 +661,11 @@ After the replacement suites pass, delete `extensions/subagents/broker.ts`, `ext
 Remove the `PI_PARENT_LINK` guard from `extensions/numbered-select/index.ts`. Root sessions continue to register `ask_user`; every child excludes it through `resolveChildToolPolicy()` and SDK session configuration. Do not retain an RPC fallback, compatibility adapter, process-global registry, Pimote import, or new dependency.
 
 **Verify:** `rg -n 'PI_PARENT_LINK|RpcChild|BrokerClient|BrokerRequest|BrokerResponse|node:child_process|node:net|brokerSocket' extensions/subagents extensions/numbered-select --glob '!*.test.ts'` prints no matches, and `npx vitest run extensions/subagents`
-**Status:** not started
+**Status:** done
 
 ### Step 9: Run the repository regression suite
 
 Run the complete Vitest suite with the named WIP stash still preserved for audit/recovery. Confirm the reviewed path, policy, delegating UI, registry, managed-session, scoped orchestration, router, trust, persistence, snapshot, notification, model-tier, and unrelated extension/skill tests pass. Per repository convention, do not run a build, compiler, or standalone type-check.
 
 **Verify:** `npx vitest run`
-**Status:** not started
+**Status:** done
