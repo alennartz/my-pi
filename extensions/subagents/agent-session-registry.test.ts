@@ -286,6 +286,33 @@ describe("AgentSessionRegistry atomic creation and snapshots", () => {
 		expect(events).toHaveLength(1);
 		expect(events[0].type).toBe("node_updated");
 	});
+
+	it("decorates each request's hooks independently in a creation batch", async () => {
+		const hooksByPath = new Map<string, ChildSessionHooks>();
+		const firstHooks = makeHooks();
+		const secondHooks = makeHooks();
+		const createSession = vi.fn(async (config: any, _deps: any, hooks: ChildSessionHooks) => {
+			hooksByPath.set(JSON.stringify(config.path), hooks);
+			return fakeSession(config.path.join("/"));
+		});
+		const { registry } = createRegistry(createSession as any);
+		await registry.createChildren([], [
+			request("first", { hooks: firstHooks }),
+			request("second", { hooks: secondHooks }),
+		]);
+
+		const firstMetadata = { sessionId: "first-replacement", cwd: "/first" };
+		const secondMetadata = { sessionId: "second-replacement", cwd: "/second" };
+		hooksByPath.get('["first"]')!.onSessionChanged(firstMetadata);
+		hooksByPath.get('["second"]')!.onSessionChanged(secondMetadata);
+
+		expect(firstHooks.onSessionChanged).toHaveBeenCalledWith(firstMetadata);
+		expect(secondHooks.onSessionChanged).toHaveBeenCalledWith(secondMetadata);
+		expect(firstHooks.onSessionChanged).not.toHaveBeenCalledWith(secondMetadata);
+		expect(secondHooks.onSessionChanged).not.toHaveBeenCalledWith(firstMetadata);
+		expect(registry.getSnapshot(["first"])).toMatchObject(firstMetadata);
+		expect(registry.getSnapshot(["second"])).toMatchObject(secondMetadata);
+	});
 });
 
 describe("AgentSessionRegistry removal, attachment, and lifecycle", () => {

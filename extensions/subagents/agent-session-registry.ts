@@ -78,6 +78,7 @@ export type CreateAgentNodeRequest = {
 	session: Omit<ChildSessionConfig, "path" | "scope"> & {
 		uplink: MessagePort;
 	};
+	/** Path-bound lifecycle callbacks owned by the parent manager. */
 	hooks: ChildSessionHooks;
 	initialOperational: AgentOperationalSnapshot;
 };

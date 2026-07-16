@@ -68,23 +68,101 @@ import type { AgentPath } from "./agent-path.js";
 import type { AgentNodeSnapshot, AgentSessionRegistry, RegistryEvent } from "./agent-session-registry.js";
 import type { MessagePort, RoutedMessage, SendReceipt } from "./message-router.js";
 
-function makeRegistryFake(): AgentSessionRegistry {
+/** Minimal live-registry fixture for recursive manager integration. */
+function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 	const nodes = new Map<string, any>();
 	const listeners = new Set<(event: RegistryEvent) => void>();
 	const key = (agentPath: AgentPath) => JSON.stringify(agentPath);
+	const livePaths = new Set<string>([key([])]);
 	const publish = (event: RegistryEvent) => {
 		for (const listener of listeners) listener(event);
 	};
+	const rootSnapshot: AgentNodeSnapshot = {
+		path: [],
+		parentPath: null,
+		localId: null,
+		ownership: "external",
+		sessionId: "root-session",
+		cwd: "/repo",
+		channels: [],
+		operational: {
+			state: "idle",
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
+			lastTurnInput: 0,
+			hasSubgroup: false,
+			pendingCorrelations: [],
+			waitingFor: [],
+		},
+	};
+	nodes.set(key([]), { snapshot: rootSnapshot });
+	const seedPath = (agentPath: AgentPath) => {
+		for (let length = 1; length <= agentPath.length; length++) {
+			const pathAtDepth = [...agentPath.slice(0, length)];
+			if (nodes.has(key(pathAtDepth))) continue;
+			const snapshot: AgentNodeSnapshot = {
+				path: pathAtDepth,
+				parentPath: pathAtDepth.slice(0, -1),
+				localId: pathAtDepth[pathAtDepth.length - 1] ?? null,
+				ownership: "registry",
+				sessionId: `seed-${pathAtDepth.join("-")}`,
+				cwd: "/repo",
+				channels: ["parent"],
+				operational: {
+					state: "idle",
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
+					lastTurnInput: 0,
+					hasSubgroup: false,
+					pendingCorrelations: [],
+					waitingFor: [],
+				},
+			};
+			nodes.set(key(pathAtDepth), {
+				snapshot,
+				session: { dispose: vi.fn(async () => {}) },
+				presentation: { attach: vi.fn(() => () => {}), reset: vi.fn() },
+			});
+			livePaths.add(key(pathAtDepth));
+		}
+	};
+	seedPath(ownerPath);
+
 	const registry: any = {
 		get: vi.fn((agentPath: AgentPath) => nodes.get(key(agentPath))),
 		getSnapshot: vi.fn((agentPath: AgentPath) => nodes.get(key(agentPath))?.snapshot),
 		listChildren: vi.fn((parentPath: AgentPath) => [...nodes.values()]
-			.filter((node) => key(node.snapshot.parentPath) === key(parentPath))
+			.filter((node) => node.snapshot.parentPath !== null && key(node.snapshot.parentPath) === key(parentPath))
 			.map((node) => node.snapshot)),
 		createChildren: vi.fn(async (parentPath: AgentPath, requests: any[]) => {
+			if (!livePaths.has(key(parentPath))) {
+				throw new Error(`Unknown parent path: ${key(parentPath)}`);
+			}
+			const requestedPaths = new Set<string>();
+			for (const request of requests) {
+				const childPath = [...parentPath, request.localId];
+				const childKey = key(childPath);
+				if (request.localId === "parent" || nodes.has(childKey) || requestedPaths.has(childKey)) {
+					throw new Error(`Duplicate or reserved child path: ${childKey}`);
+				}
+				requestedPaths.add(childKey);
+			}
+
 			const createdNodes: any[] = [];
 			for (const request of requests) {
 				const childPath = [...parentPath, request.localId];
+				let node: any;
+				const childHooks = {
+					onEvent: (event: any) => request.hooks.onEvent(event),
+					onUiNotify: (message: string, type?: "info" | "warning" | "error") => request.hooks.onUiNotify(message, type),
+					onSessionChanged: (metadata: any) => {
+						if (node) {
+							const previous = node.snapshot;
+							node.snapshot = { ...previous, ...metadata };
+							publish({ type: "node_updated", previous, node: node.snapshot });
+						}
+						request.hooks.onSessionChanged(metadata);
+					},
+					onShutdownRequested: () => request.hooks.onShutdownRequested(),
+				};
 				const config = {
 					...request.session,
 					path: childPath,
@@ -100,11 +178,11 @@ function makeRegistryFake(): AgentSessionRegistry {
 						uplink: request.session.uplink,
 					},
 				};
-				const session = await managed.createManagedChildSession(config, {}, request.hooks);
+				const session = await managed.createManagedChildSession(config, {}, childHooks);
 				const target = request.session.target;
 				const snapshot: AgentNodeSnapshot = {
 					path: childPath,
-					parentPath: parentPath.length === 0 ? [] : [...parentPath],
+					parentPath: [...parentPath],
 					localId: request.localId,
 					ownership: "registry",
 					sessionId: session.sessionId,
@@ -115,12 +193,13 @@ function makeRegistryFake(): AgentSessionRegistry {
 					channels: request.channels,
 					operational: request.initialOperational,
 				};
-				const node = {
+				node = {
 					snapshot,
 					session,
 					presentation: session.presentation ?? { attach: vi.fn(() => () => {}), reset: vi.fn() },
 				};
 				nodes.set(key(childPath), node);
+				livePaths.add(key(childPath));
 				createdNodes.push(node);
 				publish({ type: "node_added", node: snapshot });
 			}
@@ -135,9 +214,10 @@ function makeRegistryFake(): AgentSessionRegistry {
 		}),
 		remove: vi.fn(async (agentPath: AgentPath) => {
 			for (const [nodeKey, node] of nodes) {
-				if (nodeKey === key(agentPath) || nodeKey.startsWith(`${key(agentPath).slice(0, -1)},`)) {
+				if (node.snapshot.ownership === "registry" && (nodeKey === key(agentPath) || nodeKey.startsWith(`${key(agentPath).slice(0, -1)},`))) {
 					await node.session.dispose();
 					nodes.delete(nodeKey);
+					livePaths.delete(nodeKey);
 					publish({ type: "node_removed", node: node.snapshot });
 				}
 			}
@@ -151,8 +231,13 @@ function makeRegistryFake(): AgentSessionRegistry {
 			return () => listeners.delete(listener);
 		}),
 		dispose: vi.fn(async () => {
-			for (const node of nodes.values()) await node.session.dispose();
+			for (const node of nodes.values()) {
+				if (node.snapshot.ownership === "registry") await node.session.dispose();
+			}
 			nodes.clear();
+			nodes.set(key([]), { snapshot: rootSnapshot });
+			livePaths.clear();
+			livePaths.add(key([]));
 		}),
 	};
 	return registry;
@@ -327,7 +412,7 @@ describe("child-scoped extension routing", () => {
 	});
 
 	it("uses the supplied child registry and path when recursively spawning a grandchild", async () => {
-		const childRegistry = makeRegistryFake();
+		const childRegistry = makeRegistryFake(["researcher", "worker"]);
 		const parentUplink = makePort("worker-uplink");
 		const parentSessionFile = path.join(tmpRoot!, "worker.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
@@ -344,15 +429,47 @@ describe("child-scoped extension routing", () => {
 			agents: [{ id: "scout", task: "inspect", channels: [] }],
 		}, makeContext(parentSessionFile));
 
+		const grandchildPath = ["researcher", "worker", "scout"];
+		expect((childRegistry.createChildren as any)).toHaveBeenCalledWith(
+			["researcher", "worker"],
+			[expect.objectContaining({
+				localId: "scout",
+				task: "inspect",
+				hooks: expect.objectContaining({
+					onEvent: expect.any(Function),
+					onUiNotify: expect.any(Function),
+					onSessionChanged: expect.any(Function),
+					onShutdownRequested: expect.any(Function),
+				}),
+			})],
+		);
 		expect(managed.createManagedChildSession).toHaveBeenCalledTimes(1);
 		expect(managed.created[0].config).toMatchObject({
-			path: ["researcher", "worker", "scout"],
+			path: grandchildPath,
 			scope: {
 				registry: childRegistry,
-				path: ["researcher", "worker", "scout"],
+				path: grandchildPath,
 				identity: { id: "scout" },
 			},
 		});
+		expect(childRegistry.getSnapshot(grandchildPath)).toMatchObject({
+			path: grandchildPath,
+			parentPath: ["researcher", "worker"],
+			localId: "scout",
+		});
+		expect(childRegistry.listChildren(["researcher", "worker"])).toEqual([
+			expect.objectContaining({ path: grandchildPath }),
+		]);
+		const recursiveRequest = (childRegistry.createChildren as any).mock.calls[0][1][0];
+		const managerSessionChanged = vi.spyOn(recursiveRequest.hooks, "onSessionChanged");
+		const replacement = {
+			sessionId: "replacement-scout",
+			sessionFile: "/sessions/replacement-scout.jsonl",
+			cwd: "/replacement-project",
+		};
+		managed.created[0].hooks.onSessionChanged(replacement);
+		expect(managerSessionChanged).toHaveBeenCalledWith(replacement);
+		expect(childRegistry.getSnapshot(grandchildPath)).toMatchObject(replacement);
 		expect(managed.created[0].config.scope.uplink).not.toBe(parentUplink);
 	});
 
