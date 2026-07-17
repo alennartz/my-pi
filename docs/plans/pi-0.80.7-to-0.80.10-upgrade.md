@@ -87,3 +87,37 @@ No custom locking or credential-store adapter is added. Pi's file-backed auth an
 - Session replacement creates a fresh model runtime and resolves the replacement session's model against it.
 
 **Review status:** approved
+
+## Steps
+
+### Step 1: Resolve the aligned Pi SDK pair
+
+Use npm to update the root `@earendil-works/pi-ai` dependency and `@earendil-works/pi-coding-agent` peer dependency to their matching 0.80.10 releases. Let npm update `package-lock.json`; do not hand-edit dependency metadata.
+
+**Verify:** `npm ls @earendil-works/pi-ai @earendil-works/pi-coding-agent --depth=0 --json` resolves both packages to `0.80.10` without peer-resolution errors.
+**Status:** not started
+
+### Step 2: Move child-session construction onto SDK-owned ModelRuntime instances
+
+Update `extensions/subagents/managed-child-session.ts` so `ManagedChildSessionDependencies` contains only `agentDir`. Remove the legacy `AuthStorage` dependency and the legacy auth/registry arguments to `createAgentSessionServices()`. Resolve `config.modelRef` against the `modelRuntime` returned from those services, then create the child session from the same services.
+
+Update `extensions/subagents/scoped-extension.ts` to construct the root registry without reading `ctx.modelRegistry.authStorage`. Keep root-side availability validation on `ctx.modelRegistry` unchanged.
+
+Adapt the affected subagent test fixtures and integration setup to the child-local runtime seam, including `managed-child-session.test.ts`, `managed-child-session.integration.test.ts`, `agent-session-registry.test.ts`, and any structural scoped-extension fakes that model the old dependency object. Do not change the approved behavioral assertions in the red tests except to make fixture types match the new SDK surface.
+
+**Verify:** the approved managed-child-session tests pass, including child creation, sibling isolation, runtime replacement, resume, and legacy-session reopening.
+**Status:** not started
+
+### Step 3: Replace Pi-AI's deprecated static catalog adapter
+
+In `extensions/quota-providers/lib/registration.ts`, replace the `@earendil-works/pi-ai/compat` `getModel` import with the supported built-in catalog lookup. Preserve `resolveModelMeta()`'s synchronous lookup and conservative defaults for missing catalog providers or models.
+
+**Verify:** `extensions/quota-providers/lib/registration.test.ts` passes, including known-catalog and fallback metadata cases.
+**Status:** not started
+
+### Step 4: Verify the upgraded extension seams
+
+Run the focused subagent and quota-provider test files named in the Tests section, plus the directly affected registry and scoped-extension integration tests. Confirm the installed package pair remains aligned and that no test still imports removed `AuthStorage` APIs or relies on `ctx.modelRegistry.authStorage`.
+
+**Verify:** focused test command exits successfully and `npm ls` reports the aligned 0.80.10 pair.
+**Status:** not started
