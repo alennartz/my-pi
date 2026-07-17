@@ -90,12 +90,14 @@ No custom locking or credential-store adapter is added. Pi's file-backed auth an
 
 ## Steps
 
+**Pre-implementation commit:** `0962a19d2c182acfab1702e596675d86f9f98c8d`
+
 ### Step 1: Resolve the aligned Pi SDK pair
 
 Use npm to update the root `@earendil-works/pi-ai` dependency and `@earendil-works/pi-coding-agent` peer dependency to their matching 0.80.10 releases. Let npm update `package-lock.json`; do not hand-edit dependency metadata.
 
 **Verify:** `npm ls @earendil-works/pi-ai @earendil-works/pi-coding-agent --depth=0 --json` resolves both packages to `0.80.10` without peer-resolution errors.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Move child-session construction onto SDK-owned ModelRuntime instances
 
