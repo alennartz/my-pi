@@ -46,11 +46,7 @@ function rootSnapshot(overrides: Partial<AgentNodeSnapshot> = {}): AgentNodeSnap
 }
 
 function dependencies(): ManagedChildSessionDependencies {
-	return {
-		agentDir: "/agent",
-		authStorage: {} as ManagedChildSessionDependencies["authStorage"],
-		modelRegistry: {} as ManagedChildSessionDependencies["modelRegistry"],
-	};
+	return { agentDir: "/agent" };
 }
 
 function makeHooks(): ChildSessionHooks {

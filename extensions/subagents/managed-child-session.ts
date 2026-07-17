@@ -12,13 +12,11 @@ import {
 	type AgentSession,
 	type AgentSessionEvent,
 	type AgentSessionRuntime,
-	type AuthStorage,
 	type EventBusController,
 	type ExtensionCommandContextActions,
 	type ExtensionError,
 	type ExtensionUIContext,
 	type LoadExtensionsResult,
-	type ModelRegistry,
 	type ProjectTrustContext,
 	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
@@ -64,8 +62,6 @@ export type ChildSessionHooks = {
 
 export type ManagedChildSessionDependencies = {
 	agentDir: string;
-	authStorage: AuthStorage;
-	modelRegistry: ModelRegistry;
 };
 
 type SessionBinding = {
@@ -391,8 +387,6 @@ export async function createManagedChildSession(
 			const services = await createAgentSessionServices({
 				cwd: effectiveCwd,
 				agentDir: options.agentDir,
-				authStorage: dependencies.authStorage,
-				modelRegistry: dependencies.modelRegistry,
 				settingsManager,
 				resourceLoaderOptions,
 				resourceLoaderReloadOptions: {
@@ -409,7 +403,7 @@ export async function createManagedChildSession(
 			reportRuntimeDiagnostics(services.diagnostics, hooks);
 			const modelResult = config.modelRef === undefined
 				? undefined
-				: await resolveCliModel({ cliModel: config.modelRef, modelRegistry: dependencies.modelRegistry });
+				: resolveCliModel({ cliModel: config.modelRef, modelRuntime: services.modelRuntime });
 			if (modelResult?.error) throw new Error(modelResult.error);
 			const sessionResult = await createAgentSessionFromServices({
 				services,

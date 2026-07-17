@@ -178,7 +178,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 						uplink: request.session.uplink,
 					},
 				};
-				const session = await managed.createManagedChildSession(config, {}, childHooks);
+				const session = await managed.createManagedChildSession(config, { agentDir: "/agent" }, childHooks);
 				const target = request.session.target;
 				const snapshot: AgentNodeSnapshot = {
 					path: childPath,

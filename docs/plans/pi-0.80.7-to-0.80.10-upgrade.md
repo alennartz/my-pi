@@ -108,18 +108,18 @@ Update `extensions/subagents/scoped-extension.ts` to construct the root registry
 Adapt the affected subagent test fixtures and integration setup to the child-local runtime seam, including `managed-child-session.test.ts`, `managed-child-session.integration.test.ts`, `agent-session-registry.test.ts`, and any structural scoped-extension fakes that model the old dependency object. Do not change the approved behavioral assertions in the red tests except to make fixture types match the new SDK surface.
 
 **Verify:** the approved managed-child-session tests pass, including child creation, sibling isolation, runtime replacement, resume, and legacy-session reopening.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Replace Pi-AI's deprecated static catalog adapter
 
 In `extensions/quota-providers/lib/registration.ts`, replace the `@earendil-works/pi-ai/compat` `getModel` import with the supported built-in catalog lookup. Preserve `resolveModelMeta()`'s synchronous lookup and conservative defaults for missing catalog providers or models.
 
 **Verify:** `extensions/quota-providers/lib/registration.test.ts` passes, including known-catalog and fallback metadata cases.
-**Status:** not started
+**Status:** done
 
 ### Step 4: Verify the upgraded extension seams
 
 Run the focused subagent and quota-provider test files named in the Tests section, plus the directly affected registry and scoped-extension integration tests. Confirm the installed package pair remains aligned and that no test still imports removed `AuthStorage` APIs or relies on `ctx.modelRegistry.authStorage`.
 
 **Verify:** focused test command exits successfully and `npm ls` reports the aligned 0.80.10 pair.
-**Status:** not started
+**Status:** done

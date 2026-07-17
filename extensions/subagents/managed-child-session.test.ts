@@ -282,7 +282,7 @@ function makeConfig(
 }
 
 function makeDependencies(): ManagedChildSessionDependencies {
-	return { agentDir: "/agent-dir" } as ManagedChildSessionDependencies;
+	return { agentDir: "/agent-dir" };
 }
 
 function makeHooks(): ChildSessionHooks {

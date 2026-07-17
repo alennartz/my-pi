@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { getModel } from "@earendil-works/pi-ai/compat";
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 import type { ModelEntry } from "./types.js";
 
 // =============================================================================
@@ -39,7 +39,7 @@ export function resolveModelMeta(
 	modelName: string,
 ): ModelMeta {
 	if (!catalogProvider) return { ...DEFAULTS };
-	const model = getModel(catalogProvider as never, modelName as never);
+	const model = getBuiltinModel(catalogProvider as never, modelName as never);
 	if (!model) return { ...DEFAULTS };
 	return {
 		reasoning: model.reasoning ?? false,

@@ -199,8 +199,6 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				},
 				dependencies: {
 					agentDir: getAgentDir(),
-					authStorage: ctx.modelRegistry.authStorage,
-					modelRegistry: ctx.modelRegistry,
 				},
 			});
 			return registry;

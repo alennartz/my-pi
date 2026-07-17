@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { childAgentPath, formatAgentPath, type AgentPath } from "./agent-path.js";
 import { createManagedChildSession, type ChildSessionConfig } from "./managed-child-session.js";
 import type { MessagePort } from "./message-router.js";
@@ -75,11 +75,9 @@ describe("ManagedChildSession legacy RPC-session compatibility", () => {
 		const sessionId = legacy.getSessionId();
 		const originalHeader = legacy.getHeader();
 
-		const authStorage = AuthStorage.inMemory();
-		const modelRegistry = ModelRegistry.inMemory(authStorage);
 		const child = await createManagedChildSession(
 			childConfig(sessionFile, sessionDir, agentPath),
-			{ agentDir, authStorage, modelRegistry },
+			{ agentDir },
 			{
 				onEvent: () => {},
 				onUiNotify: () => {},
