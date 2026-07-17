@@ -105,8 +105,7 @@ const sdk = vi.hoisted(() => {
 		return {
 			cwd: options.cwd,
 			agentDir: options.agentDir,
-			authStorage: options.authStorage,
-			modelRegistry: options.modelRegistry,
+			modelRuntime: { id: `runtime-${state.servicesArgs.length}` },
 			settingsManager: {
 				getDefaultProjectTrust: vi.fn(() => state.defaultProjectTrust),
 			},
@@ -283,11 +282,7 @@ function makeConfig(
 }
 
 function makeDependencies(): ManagedChildSessionDependencies {
-	return {
-		agentDir: "/agent-dir",
-		authStorage: { marker: "shared-auth" } as ManagedChildSessionDependencies["authStorage"],
-		modelRegistry: { marker: "shared-registry" } as ManagedChildSessionDependencies["modelRegistry"],
-	};
+	return { agentDir: "/agent-dir" } as ManagedChildSessionDependencies;
 }
 
 function makeHooks(): ChildSessionHooks {
@@ -365,8 +360,8 @@ describe("createManagedChildSession construction", () => {
 		expect(sdk.state.managers[0].appendSessionInfo).toHaveBeenCalledWith(formatAgentPath(agentPath));
 	});
 
-	it("passes shared SDK infrastructure and one normalized tool policy into the child runtime", async () => {
-		const { dependencies } = await createChild(
+	it("creates a child-local model runtime before resolving its model and applying tool policy", async () => {
+		const { child } = await createChild(
 			{ kind: "new", cwd: "/repo", sessionDir: "/sessions" },
 			{
 				path: ["researcher", "worker"],
@@ -377,17 +372,18 @@ describe("createManagedChildSession construction", () => {
 			},
 		);
 
+		const services = sdk.state.servicesArgs[0];
+		const modelRuntime = (child.runtime as any).services.modelRuntime;
 		expect(sdk.resolveCliModel).toHaveBeenCalledWith(expect.objectContaining({
 			cliModel: "provider/model:xhigh",
-			modelRegistry: dependencies.modelRegistry,
+			modelRuntime,
 		}));
-		const services = sdk.state.servicesArgs[0];
 		expect(services).toMatchObject({
 			cwd: "/repo",
 			agentDir: "/agent-dir",
-			authStorage: dependencies.authStorage,
-			modelRegistry: dependencies.modelRegistry,
 		});
+		expect(services).not.toHaveProperty("authStorage");
+		expect(services).not.toHaveProperty("modelRegistry");
 		expect(services.resourceLoaderOptions).toMatchObject({
 			noSkills: true,
 			additionalSkillPaths: ["/repo/skills/debugging/SKILL.md"],
@@ -418,7 +414,7 @@ describe("createManagedChildSession construction", () => {
 		expect(sdk.state.servicesArgs[2].resourceLoaderOptions.additionalSkillPaths).toBeUndefined();
 	});
 
-	it("isolates cwd-bound services for sibling children while sharing root auth and models", async () => {
+	it("isolates model runtimes for sibling children", async () => {
 		const dependencies = makeDependencies();
 		const target: ChildSessionConfig["target"] = { kind: "new", cwd: "/repo", sessionDir: "/sessions" };
 		const first = await createManagedChildSession(makeConfig(target), dependencies, makeHooks());
@@ -440,10 +436,15 @@ describe("createManagedChildSession construction", () => {
 		expect(sdk.state.servicesArgs[0].resourceLoaderOptions.eventBus).not.toBe(
 			sdk.state.servicesArgs[1].resourceLoaderOptions.eventBus,
 		);
-		expect(sdk.state.servicesArgs[0].authStorage).toBe(dependencies.authStorage);
-		expect(sdk.state.servicesArgs[1].authStorage).toBe(dependencies.authStorage);
-		expect(sdk.state.servicesArgs[0].modelRegistry).toBe(dependencies.modelRegistry);
-		expect(sdk.state.servicesArgs[1].modelRegistry).toBe(dependencies.modelRegistry);
+		const firstModelRuntime = (first.runtime as any).services.modelRuntime;
+		const secondModelRuntime = (second.runtime as any).services.modelRuntime;
+		expect(firstModelRuntime).not.toBe(secondModelRuntime);
+		expect(sdk.resolveCliModel).toHaveBeenNthCalledWith(1, expect.objectContaining({ modelRuntime: firstModelRuntime }));
+		expect(sdk.resolveCliModel).toHaveBeenNthCalledWith(2, expect.objectContaining({ modelRuntime: secondModelRuntime }));
+		for (const services of sdk.state.servicesArgs) {
+			expect(services).not.toHaveProperty("authStorage");
+			expect(services).not.toHaveProperty("modelRegistry");
+		}
 	});
 
 	it("delegates child trust resolution to the local headless trust module", async () => {
@@ -561,6 +562,7 @@ describe("ManagedChildSession prompt, event, and shutdown behavior", () => {
 		const { child } = await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" }, {}, hooks);
 		const oldSession = child.session as any;
 		const initialContext = sdk.state.bindings[0].bindings.uiContext;
+		const initialModelRuntime = (child.runtime as any).services.modelRuntime;
 		expect(child.presentation).toBeDefined();
 
 		await child.runtime.newSession();
@@ -579,8 +581,11 @@ describe("ManagedChildSession prompt, event, and shutdown behavior", () => {
 		expect(sdk.state.servicesArgs[1].resourceLoaderOptions.eventBus).not.toBe(
 			sdk.state.servicesArgs[0].resourceLoaderOptions.eventBus,
 		);
-		expect(sdk.state.servicesArgs[1].authStorage).toBe(sdk.state.servicesArgs[0].authStorage);
-		expect(sdk.state.servicesArgs[1].modelRegistry).toBe(sdk.state.servicesArgs[0].modelRegistry);
+		const replacementModelRuntime = (child.runtime as any).services.modelRuntime;
+		expect(replacementModelRuntime).not.toBe(initialModelRuntime);
+		expect(sdk.resolveCliModel).toHaveBeenLastCalledWith(expect.objectContaining({
+			modelRuntime: replacementModelRuntime,
+		}));
 		expect(sdk.state.bindings).toHaveLength(2);
 		expect(sdk.state.bindings[1].bindings.uiContext).toBe(initialContext);
 

@@ -64,3 +64,24 @@ No custom locking or credential-store adapter is added. Pi's file-backed auth an
 ### DR Supersessions
 
 - **DR-044** (In-Process Child Sessions with Parent-Local Routing) — superseded only in its statement that root auth storage and the model registry are shared with children. Pi 0.80.10 replaces those public SDK construction inputs with `ModelRuntime`, and does not expose the root runtime through `ExtensionContext`. New decision: each child owns an SDK-created `ModelRuntime` backed by the common persisted Pi configuration and stores; routing, registry ownership, scoped session construction, and all other DR-044 decisions remain unchanged.
+
+## Tests
+
+**Pre-test-write commit:** `322bfb71e00e79c49a7ec759f122fdba4baf700f`
+
+### Interface Files
+
+- `extensions/subagents/managed-child-session.ts` — existing managed-child construction seam under test; its production interface is intentionally unchanged during this red-test phase.
+
+### Test Files
+
+- `extensions/subagents/managed-child-session.test.ts` — child-runtime construction and replacement contracts for the ModelRuntime migration.
+
+### Behaviors Covered
+
+#### Managed child runtime construction
+
+- A child resolves its requested model against the `ModelRuntime` returned by its own cwd-bound services.
+- Child-service creation receives only its cwd and agent directory, not a parent auth store or model registry.
+- Sibling child sessions receive distinct model-runtime instances while retaining distinct event buses and settings services.
+- Session replacement creates a fresh model runtime and resolves the replacement session's model against it.
