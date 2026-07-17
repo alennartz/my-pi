@@ -85,3 +85,5 @@ No custom locking or credential-store adapter is added. Pi's file-backed auth an
 - Child-service creation receives only its cwd and agent directory, not a parent auth store or model registry.
 - Sibling child sessions receive distinct model-runtime instances while retaining distinct event buses and settings services.
 - Session replacement creates a fresh model runtime and resolves the replacement session's model against it.
+
+**Review status:** approved
