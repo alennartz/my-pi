@@ -64,7 +64,7 @@ Brainstorm and architect are interactive; the remaining phases run autonomously 
 
 ### Subagents
 
-Long-lived in-process subagent orchestration — run child pi SDK sessions (optionally pinned to per-agent working directories), communicate over parent-local channels, fork sessions, await with interrupts. Ships with `orchestrating-agents` and `specialist-design` skills and a starter `scout` agent definition.
+Long-lived in-process subagent orchestration — run child pi SDK sessions (optionally pinned to per-agent working directories), communicate over parent-local channels, fork sessions, await with interrupts. Each child owns a fresh Pi model runtime backed by the standard persisted Pi configuration, keeping live child state isolated. Ships with `orchestrating-agents` and `specialist-design` skills and a starter `scout` agent definition.
 
 ### Standalone skills
 
