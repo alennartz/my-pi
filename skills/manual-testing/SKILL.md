@@ -1,6 +1,7 @@
 ---
 name: manual-testing
 description: "Exercise shipped functionality the way a human would — a persistent smoke suite of primary user journeys plus topic-specific tests, fixing straightforward issues inline. Use after handle-review and before cleanup to close the outer loop. Requires a plan in docs/plans/<topic>.md — if it doesn't exist, run the earlier pipeline phases first."
+disable-model-invocation: true
 ---
 
 # Manual Testing
@@ -15,10 +16,10 @@ This skill is autonomous. When a manual test fails and the fix is obvious and al
 
 ## Invocation
 
-This skill is invoked inside a subagent spawned by the autoflow orchestrator. The spawn message loads this skill for a given topic and may include optional focus hints. Expected task-string shape:
+This skill is invoked inside a subagent spawned by the autoflow orchestrator. Because this skill is hidden from the system prompt (`disable-model-invocation: true`), the orchestrator resolves this file's absolute path itself (see autoflow's Locating Sibling Phase Skills) rather than naming the skill — the spawn message hands the subagent that literal absolute path, not this skill's name. The spawn message loads this skill for a given topic and may include optional focus hints. Expected task-string shape:
 
 ```
-Read and follow the skill at `skills/manual-testing/SKILL.md` for topic `<topic>`.
+Read and follow the skill at `<absolute path to this skill's SKILL.md>` for topic `<topic>`.
 
 Working directory: <cwd>
 

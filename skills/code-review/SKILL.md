@@ -1,6 +1,7 @@
 ---
 name: code-review
 description: "Review implemented code against its plan. Use when changes have been made and need checking — after implementation, before pushing, or when the user asks for a review. Requires a plan in docs/plans/<topic>.md — if the plan doesn't exist, suggest running the earlier pipeline phases first."
+disable-model-invocation: true
 ---
 
 # Code Review

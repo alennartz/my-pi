@@ -23,17 +23,27 @@ Drive the full development workflow pipeline — brainstorm through cleanup — 
 
 Invoke with `/autoflow <description of what you want to build or change>`.
 
+## Locating Sibling Phase Skills
+
+Every phase skill this workflow drives (`brainstorming`, `architecting`, `test-writing`, `test-review`, `impl-planning`, `implementing`, `code-review`, `handle-review`, `manual-testing`, `cleanup`) is flagged `disable-model-invocation: true`. That hides each one from every agent's available-skills list — including yours and any subagent's — so none of them gets picked up outside this pipeline. It also means you cannot look one up by name; you must resolve its file yourself:
+
+1. Take the absolute path this autoflow skill was loaded from — the `location` on this skill's own `<skill>` wrapper (or, if you read this file directly, the path you read it from).
+2. That path's directory is this skill's own directory: `.../skills/autoflow`.
+3. A sibling phase skill's file sits one level up, then into its own directory: `.../skills/<skill-name>/SKILL.md`.
+
+Use this for every reference below. When you read a sibling skill yourself (Interactive Phases), just `read` the resolved absolute path. When you hand a phase to a subagent (Autonomous Phase Orchestration), resolve the absolute path yourself first and put that literal absolute path in the task string — a fresh subagent has no anchor of its own, so a bare skill name or repo-relative fragment won't resolve for it.
+
 ## Interactive Phases
 
 ### Brainstorm
 
-1. Read and follow the `brainstorming` skill (`skills/brainstorming/SKILL.md`) for the topic.
+1. Resolve the `brainstorming` skill's file per Locating Sibling Phase Skills, then read and follow it for the topic.
 2. When the brainstorm is complete, commit the artifact (`docs/brainstorms/<topic>.md`).
 3. Proceed to architect.
 
 ### Architect
 
-1. Read and follow the `architecting` skill (`skills/architecting/SKILL.md`) for the topic.
+1. Resolve the `architecting` skill's file per Locating Sibling Phase Skills, then read and follow it for the topic.
 2. When the architecture is complete, commit the artifact (`docs/plans/<topic>.md`).
 3. Before proceeding, evaluate skip decisions (see below).
 
@@ -87,9 +97,9 @@ Start from whichever phase the skip decision targets (or test-write for the full
 
 ### Spawning Phase Subagents
 
-For each phase, spawn a single subagent using the `subagent` tool. The task string must contain:
+For each phase, spawn a single subagent using the `subagent` tool. Before building the task string, resolve the target skill's absolute path per Locating Sibling Phase Skills — the subagent's own available-skills list won't contain it, and it has no anchor to resolve a relative fragment against, so the path in the task string must already be absolute. The task string must contain:
 
-1. **Skill reference** — which skill file to read and follow.
+1. **Skill reference** — the resolved absolute path to the skill file to read and follow.
 2. **Topic** — the filename slug.
 3. **Working directory** — the repo root.
 4. **Clarification invariant** — the following exact text:
@@ -101,12 +111,14 @@ Additionally, set the subagent's `model` field to the phase's tier from the mapp
 **Task string template:**
 
 ```
-Read and follow the skill at `skills/<skill-name>/SKILL.md` for topic `<topic>`.
+Read and follow the skill at `<resolved-absolute-path>` for topic `<topic>`.
 
 Working directory: <cwd>
 
 If you need clarification or encounter ambiguity, use `send(to='parent', expectResponse=true)` to ask. Do not stop or complete without finishing the phase.
 ```
+
+`<resolved-absolute-path>` is the absolute path from step 1 above — never paste the `skills/<skill-name>/SKILL.md` fragment from the mapping table verbatim; it's a suffix to resolve against this skill's own directory, not a path any agent's cwd can reach.
 
 The skill-to-phase mapping:
 

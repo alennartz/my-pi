@@ -1,6 +1,7 @@
 ---
 name: cleanup
 description: "Close out completed work — extract decision records, refresh the codemap, update user-facing docs, and delete working artifacts. Use when a feature or change is done and the repo needs tidying: plans consumed, decisions captured, documentation refreshed. Requires at minimum a plan in docs/plans/<topic>.md — if it doesn't exist, there's nothing to clean up."
+disable-model-invocation: true
 ---
 
 # Cleanup

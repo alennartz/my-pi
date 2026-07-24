@@ -1,6 +1,7 @@
 ---
 name: test-review
 description: "Validate tests against brainstorm intent and architecture. Use when tests have been written in the test-write phase and need checking before implementation planning begins. Fixes clear issues autonomously and escalates ambiguity to the user in a single batch. Produces docs/reviews/<topic>-tests.md."
+disable-model-invocation: true
 ---
 
 # Test Review

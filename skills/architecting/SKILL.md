@@ -1,6 +1,7 @@
 ---
 name: architecting
 description: "Make architectural decisions for a feature or change, grounded in the actual codebase. Use when the user needs to evaluate approaches, choose between designs, or define the technical shape of upcoming work — whether following a brainstorm or starting from a clear direction. Produces docs/plans/<topic>.md with the architecture section."
+disable-model-invocation: true
 ---
 
 # Architecting

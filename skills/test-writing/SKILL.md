@@ -1,6 +1,7 @@
 ---
 name: test-writing
 description: "Write component-level behavioral tests against architecture interfaces. Use when an architecture exists in docs/plans/<topic>.md with an Interfaces subsection and the next step is to materialize those interfaces as code and write tests before implementation. Produces interface code, test files, and a Tests section in the plan."
+disable-model-invocation: true
 ---
 
 # Test Writing

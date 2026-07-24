@@ -1,6 +1,7 @@
 ---
 name: brainstorming
 description: "Collaborative brainstorming for exploring ideas before building. Use before any creative or design work — features, components, projects, or changes. Turns rough ideas into well-explored directions through dialogue."
+disable-model-invocation: true
 ---
 
 # Brainstorming

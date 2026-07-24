@@ -1,6 +1,7 @@
 ---
 name: handle-review
 description: "Resolve code review findings — fix what's clearly correct, escalate what's ambiguous. Use when a review file exists in docs/reviews/ with open findings that need to be addressed. If no review file exists, suggest running the code-review skill first."
+disable-model-invocation: true
 ---
 
 # Handle Review

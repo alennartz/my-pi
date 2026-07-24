@@ -1,6 +1,7 @@
 ---
 name: implementing
 description: "Execute an implementation plan — directly for small plans, or by orchestrating module-aligned workers for larger ones. Use when there's a plan ready to build. Requires a plan with steps in docs/plans/<topic>.md — if the plan doesn't exist or has no steps, suggest the impl-planning skill first."
+disable-model-invocation: true
 ---
 
 # Implementing
