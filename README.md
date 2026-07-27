@@ -86,7 +86,7 @@ Long-lived in-process subagent orchestration — run child pi SDK sessions (opti
 
 ### Prompts
 
-- `onboard` — get oriented in an unfamiliar repo
+- `onboard` — initialize this package on a new machine, configure it's extensions etc.
 - `tidy` — clean up working state
 
 ## Layout
