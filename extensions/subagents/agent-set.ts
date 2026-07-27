@@ -490,7 +490,9 @@ export class SubagentManager {
 			channels: [...entry.channels],
 			session: {
 				target,
-				modelRef: spec.kind === "agent" ? agentConfig?.model ?? spec.model : undefined,
+				// Fresh specs already carry the resolved persona/tool model. Resumed specs
+				// intentionally omit it so the persisted session keeps its concrete model.
+				modelRef: spec.kind === "agent" ? spec.model : undefined,
 				thinkingLevel: spec.kind === "fork" ? spec.thinkingLevel as any : undefined,
 				toolPolicy,
 				skillPaths,

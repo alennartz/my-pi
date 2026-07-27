@@ -699,6 +699,30 @@ describe("root orchestration integration", () => {
 		});
 	});
 
+	it("passes a persona's resolved model tier to the native child", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		fs.mkdirSync(path.join(tmpRoot!, ".pi", "agents"), { recursive: true });
+		fs.writeFileSync(
+			path.join(tmpRoot!, ".pi", "model-tiers.json"),
+			JSON.stringify({ cheap: "provider/model:high" }),
+		);
+		fs.writeFileSync(
+			path.join(tmpRoot!, ".pi", "agents", "scout.md"),
+			`---\nname: scout\ndescription: Locate code\nmodel: cheap\n---\nSearch only.`,
+		);
+
+		const { pi, tools } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "scout", agent: "scout", task: "locate code" }],
+		}, ctx);
+
+		expect(managed.created[0].config.modelRef).toBe("provider/model:high");
+	});
+
 	it("propagates persona model, normalized tool policy, skills, and cwd to a native child", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		const childCwd = path.join(tmpRoot!, "child-project");
