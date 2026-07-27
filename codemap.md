@@ -131,26 +131,7 @@ Generic quota-aware provider extension. Out-of-repo provider implementations plu
 **Dependencies:** none (standalone extension loaded by pi); uses `@earendil-works/pi-ai` for catalog metadata lookup
 
 **Files:**
-- `extensions/quota-providers/index.ts`
-- `extensions/quota-providers/package.json`
-- `extensions/quota-providers/runner.mjs`
-- `extensions/quota-providers/lib/types.ts`
-- `extensions/quota-providers/lib/config.ts`
-- `extensions/quota-providers/lib/config.test.ts`
-- `extensions/quota-providers/lib/quota.ts`
-- `extensions/quota-providers/lib/quota.test.ts`
-- `extensions/quota-providers/lib/ledger.ts`
-- `extensions/quota-providers/lib/ledger.test.ts`
-- `extensions/quota-providers/lib/bypass.ts`
-- `extensions/quota-providers/lib/bypass.test.ts`
-- `extensions/quota-providers/lib/registration.ts`
-- `extensions/quota-providers/lib/registration.test.ts`
-- `extensions/quota-providers/lib/enforce.ts`
-- `extensions/quota-providers/lib/enforce.test.ts`
-- `extensions/quota-providers/lib/fsio.ts`
-- `extensions/quota-providers/lib/snapshot.ts`
-- `extensions/quota-providers/runner.test.ts`
-- `extensions/quota-providers/test/fake-impl.ts`
+- `extensions/quota-providers/**`
 
 ### Azure Foundry
 
