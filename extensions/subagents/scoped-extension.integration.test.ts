@@ -378,9 +378,12 @@ describe("child-scoped extension routing", () => {
 		});
 		await execute(tools, "respond", { correlationId: "corr-parent", message: "answer" }, ctx);
 		expect(uplink.respond).toHaveBeenCalledWith("corr-parent", "answer");
-		expect(pi.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-			content: expect.stringContaining("<agent_message"),
-		}));
+		expect(pi.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				content: expect.stringContaining("<agent_message"),
+			}),
+			{ triggerTurn: true },
+		);
 	});
 
 	it("keeps child notifications local after session shutdown and renders the scoped model catalog", async () => {

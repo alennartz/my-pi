@@ -130,7 +130,10 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				// Messages queued while the host is idle must start a turn. Without
 				// triggerTurn the SDK only appends the custom message and blocking
 				// sends to an idle child can remain pending forever.
-				pi.sendMessage({ customType: "subagents", content: combined, display: true, triggerTurn: true });
+				pi.sendMessage(
+					{ customType: "subagents", content: combined, display: true },
+					{ triggerTurn: true },
+				);
 			},
 		});
 
