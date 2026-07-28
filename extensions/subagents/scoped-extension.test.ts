@@ -48,6 +48,17 @@ describe("createSubagentsExtension root scope", () => {
 		expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
 	});
 
+	it("teaches send users to reserve it for coordination, not completion reporting", async () => {
+		const pi = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+
+		const sendTool = pi.registerTool.mock.calls.find(([tool]) => tool.name === "send")?.[0];
+		expect(sendTool.promptGuidelines).toEqual(expect.arrayContaining([
+			"Use send only for mid-task clarification or coordination (including peer handoffs), not as a completion or reporting channel.",
+			"Never send a completed-task summary to the parent, with or without expectResponse; your final text is delivered automatically via <agent_idle>. Do not duplicate the final result in both send and your final output.",
+		]));
+	});
+
 	it("keeps root scope independent from process-wide parent-link state", async () => {
 		const previous = process.env.PI_PARENT_LINK;
 		process.env.PI_PARENT_LINK = JSON.stringify({ id: "stale-child", tools: ["send"] });

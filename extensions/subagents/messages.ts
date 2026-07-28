@@ -185,10 +185,11 @@ export function serializeSubagentIdentity(data: SubagentIdentityData): string {
 	lines.push('    If response_expected="false", the message is informational — no response needed.');
 	lines.push("");
 	lines.push("    Completion: your final output (last message before going idle) is automatically");
-	lines.push("    delivered to parent via <agent_idle>. Do NOT call send to parent just to report");
-	lines.push("    results — simply produce your final output and stop. Use send to parent only for");
-	lines.push("    mid-task clarification or questions you need answered before you can continue.");
-	lines.push("    Peer-to-peer communication with other agents still goes through send as normal.");
+	lines.push("    delivered to parent via <agent_idle>. Do not use send as a completion or");
+	lines.push("    reporting channel, and never send a completed-task summary to parent just to");
+	lines.push("    report results. Put the complete result in your final output and stop; do not");
+	lines.push("    duplicate it in a send message. Use send only for mid-task clarification or");
+	lines.push("    coordination. Peer-to-peer communication still goes through send as needed.");
 	lines.push("  </protocol>");
 	lines.push("</subagent_identity>");
 	return lines.join("\n");

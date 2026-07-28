@@ -728,10 +728,12 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 	pi.registerTool({
 		name: "send",
 		label: "Send Message",
-		description: "Send a message to another active agent.",
+		description: "Send a mid-task clarification or coordination message to another active agent; do not use for final task reporting.",
 
 		promptGuidelines: [
 			"Fire-and-forget by default: sends the message and returns immediately. The target agent will receive it as an <agent_message> block.",
+			"Use send only for mid-task clarification or coordination (including peer handoffs), not as a completion or reporting channel.",
+			"Never send a completed-task summary to the parent, with or without expectResponse; your final text is delivered automatically via <agent_idle>. Do not duplicate the final result in both send and your final output.",
 			"Set expectResponse=true for blocking sends: the tool call stays open until the target calls respond. Use for synchronous coordination (e.g., asking a question and waiting for the answer).",
 			"For scatter-gather: call send(expectResponse=true) to multiple agents in the same turn. Each returns when its target responds.",
 			"Channel enforcement: you can only send to agents in your channel list. Parent is always allowed.",

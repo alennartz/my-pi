@@ -94,7 +94,7 @@ backend.channels: [reviewer]
 reviewer.channels: [frontend, backend]
 ```
 
-Each agent works on its own task. Peers can send messages for consultation — fire-and-forget for FYI updates, blocking sends for questions that gate progress. The parent gets completion notifications as usual.
+Each agent works on its own task. Peers can send messages for mid-task consultation and coordination — fire-and-forget for FYI updates, blocking sends for questions that gate progress. The parent gets the agent's final output through `<agent_idle>` as each agent finishes.
 
 **When to use:** Loosely coupled work where agents occasionally need each other's input. Examples: coordinated feature development across modules, parallel implementation with a shared reviewer.
 
@@ -142,7 +142,7 @@ writer.channels: [reviewer]
 reviewer.channels: [writer]
 ```
 
-Writer produces and sends to reviewer. Reviewer critiques and sends back. They iterate until satisfied, then report to parent.
+Writer produces and sends intermediate work to reviewer. Reviewer critiques and sends back. They iterate until satisfied, then finish; the parent's completion report comes from the agent's final output via `<agent_idle>`, not a final `send`.
 
 **When to use:** Work that benefits from multiple revision passes. Examples: document drafting with editorial review, code generation with correctness checking.
 
@@ -190,7 +190,11 @@ All channel references are validated at spawn time — referencing a non-existen
 
 The default `send` mode. The message is delivered and the sender continues immediately. The target receives it as an `<agent_message>` block with `response_expected="false"`.
 
-Use for: status updates, heads-ups, sharing intermediate findings, handing off work. Any time the sender doesn't need to wait for a reply.
+Use for: mid-task status updates, heads-ups, sharing intermediate findings, and coordination or handoffs. Any time the sender doesn't need to wait for a reply. Do not use it to report a completed task to the parent or to duplicate the final output.
+
+### Completion reporting
+
+A subagent completes a task by writing its final text response and going idle. That final output is delivered to the parent automatically in `<agent_idle>`. `send` is not a completion signal: use it only for clarification or coordination while work is in progress. In particular, never send a completed-task summary to the parent and then repeat it in the final response.
 
 ### Blocking Sends
 
