@@ -76,7 +76,7 @@ Long-lived in-process subagent orchestration — run child pi SDK sessions (opti
 
 - **subagents** — subagent lifecycle, channel messaging, TUI dashboard
 - **azure-foundry** — auto-discovers Azure AI Foundry deployments as pi models
-- **quota-providers** — generic provider framework with pro-rated soft-cap enforcement, session-scoped bypass, `/quota` command, and footer indicator. Config at `~/.pi/agent/quota-providers.json`.
+- **quota-providers** — generic provider framework with pro-rated soft-cap enforcement, in-memory agent-tree-scoped bypass, `/quota` command, and footer indicator. Config at `~/.pi/agent/quota-providers.json`.
 - **worktree** — `/worktree` command for git worktree-based branch sessions
 - **session-resume** — detects interrupted sessions and injects resume markers
 - **model-prompt-overlays** — appends `AGENTS.<model>.md` overlays to the system prompt based on the active model

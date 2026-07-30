@@ -174,12 +174,11 @@ export interface CachePaths {
 	token: string;
 	usage: string;
 	ledger: string;
-	bypass: string;
 }
 
 /**
- * Pure: returns all file paths for a given implementation's cache directory
- * under `<agentDir>/cache/quota-providers/<implId>/`.
+ * Pure: returns all cache paths for a given implementation under
+ * `<agentDir>/cache/quota-providers/<implId>/`.
  */
 export function cachePaths(agentDir: string, implId: string): CachePaths {
 	const dir = join(agentDir, "cache", "quota-providers", implId);
@@ -189,6 +188,5 @@ export function cachePaths(agentDir: string, implId: string): CachePaths {
 		token: join(dir, "token.json"),
 		usage: join(dir, "usage.json"),
 		ledger: join(dir, "ledger.jsonl"),
-		bypass: join(dir, "bypass.json"),
 	};
 }

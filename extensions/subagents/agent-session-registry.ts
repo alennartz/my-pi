@@ -9,6 +9,8 @@ import {
 } from "./managed-child-session.js";
 import type { DelegatingExtensionUI } from "./delegating-extension-ui.js";
 import type { MessagePort } from "./message-router.js";
+import { createSessionTreeStore } from "./scoped-store.js";
+import type { SessionTreeStore } from "../../lib/session-tree-store.js";
 
 export type NodeOwnership = "external" | "registry";
 export type AgentUsage = Readonly<{ input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number }>;
@@ -61,6 +63,7 @@ export type CreateAgentNodeRequest = {
 export type AgentSessionRegistryOptions = {
 	root: AgentNodeSnapshot & { path: []; ownership: "external" };
 	dependencies: ManagedChildSessionDependencies;
+	store?: SessionTreeStore;
 	createSession?: typeof createManagedChildSession;
 };
 
@@ -103,6 +106,7 @@ function snapshotEqual(a: AgentNodeSnapshot, b: AgentNodeSnapshot): boolean {
 export class AgentSessionRegistry {
 	private readonly dependencies: ManagedChildSessionDependencies;
 	private readonly createSession: typeof createManagedChildSession;
+	private readonly scopedStore: SessionTreeStore;
 	private readonly root: ExternalRootNode;
 	private rootSnapshot: AgentNodeSnapshot & { ownership: "external"; path: [] };
 	private readonly nodes = new Map<string, InternalNode>();
@@ -121,6 +125,11 @@ export class AgentSessionRegistry {
 		this.root = { get snapshot() { return registry.rootSnapshot; } };
 		this.dependencies = options.dependencies;
 		this.createSession = options.createSession ?? createManagedChildSession;
+		this.scopedStore = options.store ?? createSessionTreeStore();
+	}
+
+	getScopedStore(): SessionTreeStore {
+		return this.scopedStore;
 	}
 
 	get(path: AgentPath): AgentRegistryNode | undefined {

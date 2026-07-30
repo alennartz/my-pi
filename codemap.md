@@ -126,12 +126,13 @@ Extension that manages git worktree–based branch sessions — create a worktre
 
 Generic quota-aware provider extension. Out-of-repo provider implementations plug in through typed seams (model discovery, auth, usage). Core adds pro-rated spend backpressure so a provider's billing window isn't burned early. Implementations are loaded via jiti from a config file at `~/.pi/agent/quota-providers.json`.
 
-**Responsibilities:** implementation discovery and registration via config file, provider model discovery (block-once cold start, background refresh), token management via out-of-band runner, usage polling via out-of-band runner, ledger-based spend tracking (local accumulation between snapshots), pro-rated soft-cap enforcement at prompt boundary, opt-in hard-cap enforcement, session-scoped bypass with shared-file propagation to subagents, `/quota` command (status + bypass toggle), footer/statusline indicator
+**Responsibilities:** implementation discovery and registration via config file, provider model discovery (block-once cold start, background refresh), token management via out-of-band runner, usage polling via out-of-band runner, ledger-based spend tracking (local accumulation between snapshots), pro-rated soft-cap enforcement at prompt boundary, opt-in hard-cap enforcement, in-memory agent-tree-scoped bypass propagated to in-process subagents, `/quota` command (status + bypass toggle), footer/statusline indicator
 
-**Dependencies:** none (standalone extension loaded by pi); uses `@earendil-works/pi-ai` for catalog metadata lookup
+**Dependencies:** Subagents' tree-scoped key/value store; uses `@earendil-works/pi-ai` for catalog metadata lookup
 
 **Files:**
 - `extensions/quota-providers/**`
+- `lib/session-tree-store.ts` — shared interface for tree-scoped extension state
 
 ### Azure Foundry
 

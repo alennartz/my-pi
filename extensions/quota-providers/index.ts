@@ -23,8 +23,10 @@ import {
 import type { ProviderImplementation, QuotaPolicy } from "./lib/types.js";
 import { appendLedgerEntry, readLedger } from "./lib/ledger.js";
 import { readUsageSnapshot } from "./lib/snapshot.js";
-import { readBypass, writeBypass, isBypassActive, pruneBypass } from "./lib/bypass.js";
+import { readBypass, writeBypass } from "./lib/bypass.js";
 import { evaluateQuota, effectiveSpend } from "./lib/quota.js";
+import { getOrCreateSessionTreeStore } from "../subagents/scoped-store.js";
+import type { SessionTreeStore } from "../../lib/session-tree-store.js";
 import { decideBlock } from "./lib/enforce.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -67,7 +69,11 @@ function formatShortDate(ms: number): string {
  * budget date inside that stale (e.g. last month's) window — so we refuse to
  * show an expired snapshot at all and let a background poll replace it.
  */
-function buildFooterLine(record: ProviderRecord, now: number): string | undefined {
+function buildFooterLine(
+	record: ProviderRecord,
+	now: number,
+	store: SessionTreeStore,
+): string | undefined {
 	if (!record.hasUsageSeam) return undefined;
 	const cached = readUsageSnapshot(record.paths.usage);
 	if (!cached) return undefined;
@@ -78,9 +84,7 @@ function buildFooterLine(record: ProviderRecord, now: number): string | undefine
 	const verdict = evaluateQuota(snap, ledger, record.policy, now);
 	const spend = effectiveSpend(snap, ledger);
 
-	const windowLengthMs = snap.windowEnd - snap.windowStart;
-	const bypassEntries = pruneBypass(readBypass(record.paths.bypass), now, windowLengthMs);
-	const bypassActive = isBypassActive(bypassEntries, process.env.PI_QUOTA_SCOPE ?? "");
+	const bypassActive = record.policy.bypassAllowed && readBypass(store);
 
 	// Budget date: the point in the window whose prorated budget equals current
 	// spend. daysAhead is the signed delta in days between that date and now.
@@ -108,7 +112,8 @@ function refreshStatusline(
 	ctx: ExtensionContext,
 ): void {
 	if (!ctx.hasUI) return;
-	const line = record ? buildFooterLine(record, Date.now()) : undefined;
+	const store = getOrCreateSessionTreeStore(ctx.sessionManager);
+	const line = record ? buildFooterLine(record, Date.now(), store) : undefined;
 	ctx.ui.setStatus("quota-providers", line);
 }
 
@@ -302,13 +307,14 @@ export default async function (pi: ExtensionAPI) {
 		} catch { /* best-effort */ }
 	}
 
-	// Scope id: the root session id is inherited by child processes via
-	// process.env, so all subagents spawned from the same root session share
-	// the same quota scope without extra coordination.
+	// The store is owned by the current root's AgentSessionRegistry. The
+	// subagents extension associates child session managers with that same store
+	// before their session_start hooks run. Independent roots get independent
+	// stores even when they live in one Node process.
+	let treeStore: SessionTreeStore | undefined;
+
 	pi.on("session_start", (_event, ctx) => {
-		if (!process.env.PI_QUOTA_SCOPE) {
-			process.env.PI_QUOTA_SCOPE = ctx.sessionManager.getSessionId();
-		}
+		treeStore = getOrCreateSessionTreeStore(ctx.sessionManager);
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
 		if (record) maybeRefreshUsage(record);
 		refreshStatusline(record, ctx);
@@ -359,10 +365,8 @@ export default async function (pi: ExtensionAPI) {
 		const ledger = readLedger(record.paths.ledger);
 		const verdict = evaluateQuota(cached.snapshot, ledger, record.policy, now);
 
-		const windowLengthMs = cached.snapshot.windowEnd - cached.snapshot.windowStart;
-		const rawBypass = readBypass(record.paths.bypass);
-		const bypassEntries = pruneBypass(rawBypass, now, windowLengthMs);
-		const bypassActive = isBypassActive(bypassEntries, process.env.PI_QUOTA_SCOPE ?? "");
+		const store = treeStore ?? getOrCreateSessionTreeStore(ctx.sessionManager);
+		const bypassActive = record.policy.bypassAllowed && readBypass(store);
 
 		const decision = decideBlock({ verdict, policy: record.policy, bypassActive });
 
@@ -406,39 +410,13 @@ export default async function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const scopeId = process.env.PI_QUOTA_SCOPE ?? "";
+				const store = treeStore ?? getOrCreateSessionTreeStore(ctx.sessionManager);
 				const subcommand = parts[1]; // "on", "off", or undefined (toggle)
-				const now = Date.now();
-				let newState: boolean | undefined;
+				const shouldEnable =
+					subcommand === "on" ? true : subcommand === "off" ? false : !readBypass(store);
 
-				// For a bare toggle, compute the target state once from any-active
-				// across all providers, so they all flip uniformly rather than each
-				// independently inverting its own current state.
-				const toggleTarget: boolean | undefined =
-					subcommand === undefined
-						? !allowed.some((r) => isBypassActive(readBypass(r.paths.bypass), scopeId))
-						: undefined;
-
-				for (const record of allowed) {
-					const entries = readBypass(record.paths.bypass);
-					const cached = readUsageSnapshot(record.paths.usage);
-					const windowLengthMs =
-						cached
-							? cached.snapshot.windowEnd - cached.snapshot.windowStart
-							: 30 * 24 * 3_600_000;
-
-					const pruned = pruneBypass(entries, now, windowLengthMs);
-					const shouldEnable =
-						subcommand === "on" ? true : subcommand === "off" ? false : toggleTarget!;
-
-					if (shouldEnable) {
-						pruned[scopeId] = { enabledAt: now };
-					} else {
-						delete pruned[scopeId];
-					}
-					writeBypass(record.paths.bypass, pruned);
-					newState = shouldEnable;
-				}
+				writeBypass(store, shouldEnable);
+				const newState = shouldEnable;
 
 				ctx.ui.notify(`Quota bypass turned ${newState ? "on" : "off"}.`);
 				refreshStatusline(providerIdToRecord.get(ctx.model?.provider ?? ""), ctx);
@@ -463,7 +441,8 @@ export default async function (pi: ExtensionAPI) {
 			}
 
 			maybeRefreshUsage(record);
-			const line = buildFooterLine(record, Date.now());
+			const store = treeStore ?? getOrCreateSessionTreeStore(ctx.sessionManager);
+			const line = buildFooterLine(record, Date.now(), store);
 			if (!line) {
 				ctx.ui.notify(`${record.id}: no quota data yet.`);
 				return;

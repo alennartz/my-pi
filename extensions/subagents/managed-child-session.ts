@@ -25,6 +25,7 @@ import type { ChildToolPolicy } from "./child-tool-policy.js";
 import { DelegatingExtensionUI } from "./delegating-extension-ui.js";
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import { resolveChildProjectTrust } from "./project-trust.js";
+import { registerSessionTreeStore } from "./scoped-store.js";
 
 export type ChildSessionTarget =
 	| { kind: "new"; cwd: string; sessionDir: string }
@@ -417,6 +418,10 @@ export async function createManagedChildSession(
 					: { excludeTools: config.toolPolicy.excludeTools }),
 				sessionStartEvent: options.sessionStartEvent,
 			});
+			const treeStore = config.scope.registry.getScopedStore?.();
+			if (treeStore) {
+				registerSessionTreeStore(options.sessionManager, treeStore);
+			}
 			reportExtensionDiagnostics(sessionResult.extensionsResult?.errors, hooks);
 			bindingsBySession.set(sessionResult.session, { eventBus, uiContext: presentation.context });
 			return { ...sessionResult, services, diagnostics: services.diagnostics };

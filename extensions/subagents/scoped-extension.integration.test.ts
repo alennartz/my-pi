@@ -386,6 +386,29 @@ describe("child-scoped extension routing", () => {
 		);
 	});
 
+	it("starts a turn when an idle child receives a routed message", async () => {
+		const uplink = makePort("child");
+		const { pi } = makePi();
+		await createSubagentsExtension({
+			kind: "child",
+			registry,
+			path: ["child"],
+			identity: { id: "child", task: "work", channels: ["parent"] },
+			uplink,
+		})(pi as any);
+
+		uplink.emit({ from: "parent", message: "continue", responseExpected: false });
+
+		expect(pi.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				customType: "subagents",
+				content: expect.stringContaining("continue"),
+				display: true,
+			}),
+			{ triggerTurn: true },
+		);
+	});
+
 	it("keeps child notifications local after session shutdown and renders the scoped model catalog", async () => {
 		const uplink = makePort("child");
 		const { pi, tools, handlers } = makePi();

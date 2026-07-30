@@ -17,6 +17,11 @@ import {
 import { Type } from "typebox";
 import { detect } from "@pimote/panels";
 import type { PanelHandle, Card, CardColor } from "@pimote/panels";
+import {
+	getOrCreateSessionTreeStore,
+	registerSessionTreeStore,
+	unregisterSessionTreeStore,
+} from "./scoped-store.js";
 
 import {
 	type AgentConfig,
@@ -186,8 +191,12 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 
 		function ensureRootRegistry(ctx: ExtensionContext): AgentSessionRegistry {
 			if (scope.kind === "child") return scope.registry;
-			if (registry) return registry;
+			if (registry) {
+				registerSessionTreeStore(ctx.sessionManager, registry.getScopedStore());
+				return registry;
+			}
 			const sessionFile = ctx.sessionManager.getSessionFile();
+			const scopedStore = getOrCreateSessionTreeStore(ctx.sessionManager);
 			registry = new AgentSessionRegistry({
 				root: {
 					path: [],
@@ -203,7 +212,9 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				dependencies: {
 					agentDir: getAgentDir(),
 				},
+				store: scopedStore,
 			});
+			registerSessionTreeStore(ctx.sessionManager, registry.getScopedStore());
 			return registry;
 		}
 
@@ -1296,6 +1307,10 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				const ownedRegistry = registry;
 				registry = null;
 				await ownedRegistry?.dispose();
+				if (ownedRegistry) {
+					unregisterSessionTreeStore(ctx.sessionManager, ownedRegistry.getScopedStore());
+					ownedRegistry.getScopedStore().clear();
+				}
 			}
 		});
 	};
