@@ -702,10 +702,10 @@ describe("root orchestration integration", () => {
 		fs.writeFileSync(first.child.sessionFile, "");
 		first.hooks.onUiNotify("input blocked", "error");
 
-		const failedStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
-		expect(failedStatus.content[0].text).toMatch(/failed|input blocked/i);
+		const erroredStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
+		expect(erroredStatus.content[0].text).toMatch(/errored|input blocked/i);
 		expect(pi.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-			content: expect.stringContaining("status=\"failed\""),
+			content: expect.stringContaining("status=\"errored\""),
 		}));
 
 		await execute(tools, "teardown", { agent: "worker" }, ctx);
@@ -723,6 +723,47 @@ describe("root orchestration integration", () => {
 			path: ["worker-restored"],
 			target: { kind: "resume", sessionFile: first.child.sessionFile },
 		});
+	});
+
+	it("revives an errored child on a later send but keeps a dead runtime unreachable", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "inspect", channels: [] }, { id: "doomed", task: "inspect", channels: [] }],
+		}, ctx);
+		const worker = managed.created[0];
+		const doomed = managed.created[1];
+
+		// A run that errors leaves a live session: errored, not dead.
+		worker.hooks.onEvent({ type: "agent_start" });
+		worker.hooks.onEvent({
+			type: "agent_end",
+			willRetry: false,
+			messages: [{ role: "assistant", stopReason: "error", errorMessage: "provider returned 401" }],
+		});
+		worker.hooks.onEvent({ type: "agent_settled" });
+		const erroredStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
+		expect(erroredStatus.content[0].text).toMatch(/errored/i);
+
+		// The operator cleared the source condition — a retry must be delivered
+		// rather than replaying the cached failure.
+		const retry = await execute(tools, "send", { to: "worker", message: "try again", expectResponse: false }, ctx);
+		expect(retry.content[0].text).toContain("Message sent to worker.");
+		worker.hooks.onEvent({ type: "agent_start" });
+		const revivedStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
+		expect(revivedStatus.content[0].text).toMatch(/running/i);
+		expect(revivedStatus.content[0].text).not.toMatch(/401/);
+
+		// A runtime that shut itself down is genuinely gone and stays unreachable.
+		doomed.hooks.onShutdownRequested();
+		const deadStatus = await execute(tools, "check_status", { agent: "doomed" }, ctx);
+		expect(deadStatus.content[0].text).toMatch(/dead/i);
+		await expect(execute(tools, "send", { to: "doomed", message: "anyone home", expectResponse: false }, ctx))
+			.rejects.toThrow(/unavailable|dead/i);
 	});
 
 	it("passes a persona's resolved model tier to the native child", async () => {

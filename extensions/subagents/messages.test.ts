@@ -21,16 +21,30 @@ describe("serializeAgentComplete", () => {
 		expect(xml).toContain("all done");
 	});
 
-	it("includes session_id and hint on failed status too", () => {
+	it("points an errored agent at a retry, not at resurrection", () => {
 		const xml = serializeAgentComplete({
 			id: "scout-1",
-			status: "failed",
+			status: "errored",
 			error: "boom",
 			sessionId: "abc-123",
 		});
-		expect(xml).toContain('status="failed"');
+		expect(xml).toContain('status="errored"');
+		expect(xml).toContain("<error>boom</error>");
 		expect(xml).toContain('session_id="abc-123"');
-		expect(xml).toContain("<hint>");
+		expect(xml).toContain("send it a message to retry");
+		expect(xml).not.toContain("resurrect tool");
+	});
+
+	it("includes session_id and the resurrect hint on dead status", () => {
+		const xml = serializeAgentComplete({
+			id: "scout-1",
+			status: "dead",
+			error: "boom",
+			sessionId: "abc-123",
+		});
+		expect(xml).toContain('status="dead"');
+		expect(xml).toContain('session_id="abc-123"');
+		expect(xml).toContain("resurrect tool");
 	});
 
 	it("omits session_id and hint when sessionId is absent", () => {
@@ -76,7 +90,7 @@ describe("serializeGroupComplete", () => {
 	it("includes hint when at least one agent has a sessionId", () => {
 		const xml = serializeGroupComplete({
 			agents: [
-				{ id: "a", status: "failed" as const, error: "x" },
+				{ id: "a", status: "errored" as const, error: "x" },
 				{ id: "b", status: "idle" as const, sessionId: "uuid-x" },
 			] satisfies AgentCompleteData[],
 			usage,
@@ -127,28 +141,38 @@ describe("serializeAgentTorndown", () => {
 		expect(xml).toContain("<hint>");
 	});
 
-	it("includes error body when failed and not yet notified", () => {
-		const xml = serializeAgentTorndown({
+	it("includes error body when errored or dead and not yet notified", () => {
+		const errored = serializeAgentTorndown({
 			id: "scout-1",
-			status: "failed",
+			status: "errored",
 			error: "boom",
 			sessionId: "uuid-1",
 			alreadyNotified: false,
 		});
-		expect(xml).toContain('status="failed"');
-		expect(xml).toContain("<error>boom</error>");
+		expect(errored).toContain('status="errored"');
+		expect(errored).toContain("<error>boom</error>");
+
+		const dead = serializeAgentTorndown({
+			id: "scout-1",
+			status: "dead",
+			error: "gone",
+			sessionId: "uuid-1",
+			alreadyNotified: false,
+		});
+		expect(dead).toContain('status="dead"');
+		expect(dead).toContain("<error>gone</error>");
 	});
 
-	it("omits error body when failed and already notified", () => {
+	it("omits error body when errored and already notified", () => {
 		const xml = serializeAgentTorndown({
 			id: "scout-1",
-			status: "failed",
+			status: "errored",
 			error: "boom",
 			sessionId: "uuid-1",
 			alreadyNotified: true,
 		});
 		expect(xml).not.toContain("boom");
-		expect(xml).toContain('status="failed"');
+		expect(xml).toContain('status="errored"');
 		expect(xml).toContain('session_id="uuid-1"');
 	});
 
@@ -207,14 +231,14 @@ describe("serializeGroupTorndown", () => {
 		expect(xml).toContain("</agent>");
 	});
 
-	it("expands entry body with <error> for failed not-yet-notified agents", () => {
+	it("expands entry body with <error> for errored not-yet-notified agents", () => {
 		const xml = serializeGroupTorndown({
 			agents: [
-				{ id: "a", status: "failed" as const, error: "crashed", sessionId: "uuid-1", alreadyNotified: false },
+				{ id: "a", status: "errored" as const, error: "crashed", sessionId: "uuid-1", alreadyNotified: false },
 			] satisfies AgentCompleteData[],
 			usage,
 		});
-		expect(xml).toContain('<agent id="a" status="failed" session_id="uuid-1">');
+		expect(xml).toContain('<agent id="a" status="errored" session_id="uuid-1">');
 		expect(xml).toContain("<error>crashed</error>");
 	});
 

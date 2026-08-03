@@ -15,7 +15,11 @@ export interface AgentMessageData {
 
 export interface AgentCompleteData {
 	id: string;
-	status: "idle" | "failed";
+	/**
+	 * `idle` and `errored` both describe a settled agent with a live session — a
+	 * send revives either. `dead` is terminal: the runtime is gone.
+	 */
+	status: "idle" | "errored" | "dead";
 	output?: string;
 	error?: string;
 	sessionId?: string;
@@ -27,6 +31,7 @@ export interface AgentCompleteData {
 	alreadyNotified?: boolean;
 }
 
+const RETRY_HINT = "Its session is still alive: if you have cleared the cause, send it a message to retry. Use teardown + resurrect only if it cannot recover.";
 const RESURRECT_HINT_SINGLE = "Pass session_id to the resurrect tool to bring this agent back online with its prior conversation.";
 const RESURRECT_HINT_GROUP = "Pass any session_id above to the resurrect tool to bring an agent back online with its prior conversation.";
 
@@ -65,9 +70,13 @@ export function serializeAgentMessage(data: AgentMessageData): string {
 export function serializeAgentComplete(agent: AgentCompleteData): string {
 	const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
 	const hint = agent.sessionId ? `<hint>${RESURRECT_HINT_SINGLE}</hint>\n` : "";
-	if (agent.status === "failed") {
+	if (agent.status === "errored") {
 		const errorContent = agent.error ? `\n<error>${agent.error}</error>\n` : "";
-		return `<agent_idle id="${agent.id}" status="failed"${sessionAttr}>${errorContent}${hint}</agent_idle>`;
+		return `<agent_idle id="${agent.id}" status="errored"${sessionAttr}>${errorContent}<hint>${RETRY_HINT}</hint>\n</agent_idle>`;
+	}
+	if (agent.status === "dead") {
+		const errorContent = agent.error ? `\n<error>${agent.error}</error>\n` : "";
+		return `<agent_idle id="${agent.id}" status="dead"${sessionAttr}>${errorContent}${hint}</agent_idle>`;
 	}
 	const output = agent.output ?? "(no output)";
 	return `<agent_idle id="${agent.id}" status="idle"${sessionAttr}>\n${output}\n${hint}</agent_idle>`;
@@ -90,7 +99,7 @@ export function serializeAgentTorndown(data: AgentCompleteData): string {
 	}
 	// Not yet notified — include body.
 	const bodyParts: string[] = [];
-	if (data.status === "failed") {
+	if (data.status !== "idle") {
 		if (data.error) bodyParts.push(`<error>${data.error}</error>`);
 	} else {
 		bodyParts.push(data.output ?? "(no output)");
@@ -128,7 +137,7 @@ function serializeGroupReport(
 		}
 		// Not yet notified — include body so output/error isn't lost.
 		lines.push(`  <agent id="${agent.id}" status="${agent.status}"${sessionAttr}>`);
-		if (agent.status === "failed") {
+		if (agent.status !== "idle") {
 			if (agent.error) lines.push(`    <error>${agent.error}</error>`);
 		} else {
 			lines.push(`    <output>${agent.output ?? "(no output)"}</output>`);

@@ -229,6 +229,36 @@ describe("MessageRouter cancellation and terminal lifecycle", () => {
 		expect(router.isQuiet()).toBe(true);
 	});
 
+	it("keeps an errored endpoint connected and subscribed so a later send revives it", async () => {
+		const router = makeRouter();
+		const parent = router.connect("parent");
+		const worker = router.connect("worker");
+		const delivered: unknown[] = [];
+		worker.subscribe((message) => delivered.push(message));
+		const wait = await parent.send({
+			to: "worker",
+			message: "finish",
+			expectResponse: true,
+			correlationId: "corr-errored",
+		});
+
+		router.agentErrored("worker", "provider returned 401");
+
+		// The wait ends with the real failure, not a generic idle message.
+		await expect(wait.response).resolves.toEqual({ type: "error", error: "provider returned 401" });
+		// No tombstone: the same endpoint object stays live and subscribed, so a
+		// retry after the operator clears the source condition is delivered.
+		await expect(parent.send({ to: "worker", message: "retry", expectResponse: false })).resolves.toEqual({});
+		expect(delivered).toEqual([
+			{ from: "parent", message: "finish", correlationId: "corr-errored", responseExpected: true },
+			{ from: "parent", message: "retry", responseExpected: false },
+		]);
+		// A still-usable endpoint must still be able to answer a fresh blocking send.
+		const second = await parent.send({ to: "worker", message: "question", expectResponse: true });
+		await worker.respond(second.correlationId!, "answer");
+		await expect(second.response).resolves.toEqual({ type: "response", message: "answer" });
+	});
+
 	it("returns typed errors for idle, unavailable, and removed targets while preserving their distinct reuse rules", async () => {
 		const idleRouter = makeRouter();
 		const idleParent = idleRouter.connect("parent");

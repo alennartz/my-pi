@@ -15,7 +15,7 @@ import type { SessionTreeStore } from "../../lib/session-tree-store.js";
 export type NodeOwnership = "external" | "registry";
 export type AgentUsage = Readonly<{ input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number }>;
 export type AgentOperationalSnapshot = Readonly<{
-	state: "running" | "idle" | "waiting" | "failed";
+	state: "running" | "idle" | "waiting" | "errored" | "dead";
 	usage: AgentUsage;
 	model?: string;
 	lastActivity?: string;

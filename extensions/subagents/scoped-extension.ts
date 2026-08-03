@@ -33,7 +33,7 @@ import {
 	resolveAgentCwds,
 	formatAgentList,
 } from "./agents.js";
-import { SubagentManager, type AgentStatus, type AgentState } from "./agent-set.js";
+import { SubagentManager, isSettledState, type AgentStatus, type AgentState } from "./agent-set.js";
 import {
 	AgentSessionRegistry,
 	type AgentOperationalSnapshot,
@@ -262,7 +262,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		async function awaitAgentCompletion(ids: string[], mgr: SubagentManager, signal?: AbortSignal | null): Promise<string> {
 			const isSatisfied = () => ids.every((id) => {
 				const status = mgr.getAgentStatus(id);
-				return !status || status.state === "idle" || status.state === "failed";
+				return !status || isSettledState(status.state);
 			});
 			if (isSatisfied()) {
 				const result = queue.drainAll();
@@ -358,14 +358,16 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 					if (!status) return;
 					const data: AgentCompleteData = {
 						id: agentId,
-						status: status.state === "failed" ? "failed" : "idle",
+						status: status.state === "errored" ? "errored" : status.state === "dead" ? "dead" : "idle",
 						output: status.lastOutput,
-						error: status.state === "failed" ? (status.lastError || "Agent failed") : undefined,
+						error: status.state === "errored" || status.state === "dead"
+							? (status.lastError || "Agent run ended with an error")
+							: undefined,
 					};
 					let xml = serializeAgentComplete(data);
 					if (allDone) {
 						const total = current.getAgentStatuses().length;
-						xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} are now idle. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
+						xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have settled. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
 					}
 					queue.queue(xml, "local");
 					if (queue.isWaiting && waitState?.satisfied()) resolveWait();
@@ -748,6 +750,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			"Set expectResponse=true for blocking sends: the tool call stays open until the target calls respond. Use for synchronous coordination (e.g., asking a question and waiting for the answer).",
 			"For scatter-gather: call send(expectResponse=true) to multiple agents in the same turn. Each returns when its target responds.",
 			"Channel enforcement: you can only send to agents in your channel list. Parent is always allowed.",
+			"An agent reported as status=\"errored\" is still alive: sending to it starts a new run, so retry it directly once you have cleared whatever caused the error. Only status=\"dead\" is unreachable, and that needs teardown + resurrect.",
 		],
 		parameters: Type.Object({
 			to: Type.String({ description: "Target agent id or 'parent'" }),
@@ -938,7 +941,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		label: "Teardown",
 		description: "Remove an agent or tear down all agents. Returns a completion report.",
 		promptGuidelines: [
-			"Call when an agent or all agents are no longer needed. Idle agents remain fully functional — you can send new messages to restart work or use agents as persistent specialists.",
+			"Call when an agent or all agents are no longer needed. Idle and errored agents remain fully functional — you can send new messages to restart work or use agents as persistent specialists. Only a dead agent must be torn down.",
 			"With an agent id: removes that single agent and returns an <agent_torn_down> report. Without: tears down all active agents and returns a <group_torn_down> summary with aggregate usage. The teardown report is slim for agents that already idled (the model already received their full <agent_idle> notification) — it surfaces session_id and a resurrection hint, but not the output. Agents torn down while still running include their last output/error so it isn't lost.",
 			"When the last agent is removed (either explicitly or via full teardown), infrastructure is cleaned up automatically.",
 		],
@@ -1193,7 +1196,9 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			queue.setParentBusy(false);
 			if (scope.kind === "root") {
 				updateRootOperational(ctx, {
-					state: rootRunError ? "failed" : "idle",
+					// A failed run leaves this session alive and promptable, so the
+					// parent-visible state is errored, never dead.
+					state: rootRunError ? "errored" : "idle",
 					lastActivity: undefined,
 				});
 			}
@@ -1319,7 +1324,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatAgentStatusSummary(s: import("./agent-set.js").AgentStatus): string {
-	const icon = { running: "⏳", idle: "✓", failed: "✗", waiting: "⏸" }[s.state];
+	const icon = { running: "⏳", idle: "✓", errored: "✗", dead: "⊘", waiting: "⏸" }[s.state];
 	const usage = s.usage.cost > 0 ? ` ($${s.usage.cost.toFixed(4)})` : "";
 	return `${icon} ${s.id}: ${s.state}${s.lastActivity ? ` — ${s.lastActivity}` : ""}${usage}`;
 }
@@ -1330,14 +1335,16 @@ const STATE_COLORS: Record<AgentState, CardColor> = {
 	running: "accent",
 	idle: "success",
 	waiting: "warning",
-	failed: "error",
+	errored: "error",
+	dead: "error",
 };
 
 const STATE_LABELS: Record<AgentState, string> = {
 	running: "running",
 	idle: "idle",
 	waiting: "waiting",
-	failed: "failed",
+	errored: "errored",
+	dead: "dead",
 };
 
 function statusesToCards(statuses: AgentStatus[]): Card[] {

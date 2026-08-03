@@ -58,7 +58,18 @@ import {
 	type AgentCompleteData,
 } from "./messages.js";
 
-export type AgentState = "running" | "idle" | "waiting" | "failed";
+/**
+ * `idle` and `errored` are both settled-with-a-live-session: a later send
+ * revives either one. `errored` only records that the last run ended badly.
+ * `dead` is the single terminal state — the child runtime is gone and the id
+ * is unreachable until teardown + resurrect replaces it.
+ */
+export type AgentState = "running" | "idle" | "waiting" | "errored" | "dead";
+
+/** States in which no further work is in flight for an agent. */
+export function isSettledState(state: AgentState): boolean {
+	return state === "idle" || state === "errored" || state === "dead";
+}
 
 export interface AgentStatus {
 	id: string;
@@ -70,7 +81,7 @@ export interface AgentStatus {
 	usage: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number };
 	model?: string;
 	lastOutput?: string;
-	/** Error from the final failed run, surfaced in idle notifications. */
+	/** Error from the last errored run, surfaced in idle notifications. */
 	lastError?: string;
 	pendingCorrelations: string[];
 	lastTurnInput: number;
@@ -159,7 +170,7 @@ export class SubagentManager {
 
 	/**
 	 * Abort the target agent's current operation (equivalent to pressing Escape
-	 * in the TUI). A failed child is deliberately a no-op for parity.
+	 * in the TUI). An already-settled child is deliberately a no-op for parity.
 	 */
 	async interrupt(agentId: string): Promise<void> {
 		const childPath = childAgentPath(this.opts.ownerPath, agentId);
@@ -167,7 +178,8 @@ export class SubagentManager {
 		if (!node || node.snapshot.ownership !== "registry") {
 			throw new Error(`Unknown agent: "${agentId}"`);
 		}
-		if (node.snapshot.operational.state === "failed") return;
+		const state = node.snapshot.operational.state;
+		if (state === "errored" || state === "dead") return;
 		await node.session.abort();
 	}
 
@@ -504,7 +516,7 @@ export class SubagentManager {
 				onUiNotify: (message, type) => this.applyChildNotification(entry, message, type),
 				onDiagnostic: (message, type) => this.applyChildDiagnostic(entry, message, type),
 				onSessionChanged: () => this.persistReplacement(entry),
-				onShutdownRequested: () => this.markRuntimeUnavailable(entry, "Child runtime became unavailable"),
+				onShutdownRequested: () => this.markRuntimeDead(entry, "Child runtime became unavailable"),
 			},
 			initialOperational: entry.provisionalOperational!,
 		};
@@ -630,7 +642,10 @@ export class SubagentManager {
 			? node.session.submit(`Task: ${entry.task}`)
 			: node.session.submit(`Task: ${entry.task}`, streamingBehavior);
 		void submission.catch((error) => {
-			this.markRuntimeUnavailable(entry, errorMessage(error));
+			// A rejected submit means the task never landed, but the session is
+			// still there: treat it as errored so a send can retry the prompt.
+			if (!this.isActiveEntry(entry)) return;
+			this.settleErrored(entry, errorMessage(error) || "Child rejected its initial task");
 		});
 	}
 
@@ -658,10 +673,15 @@ export class SubagentManager {
 
 		if (event.type === "agent_start") {
 			const current = this.operationalFor(entry);
-			if (current.state !== "failed") {
+			// A run starting on an errored agent is its revival: clear the recorded
+			// error. Only a dead runtime can never start again.
+			if (current.state !== "dead") {
 				entry.agentStartedSinceLastPrompt = true;
 				entry.pendingTerminalError = undefined;
-				this.replaceOperational(entry, operationalWith(current, { state: "running" }));
+				this.replaceOperational(entry, operationalWith(current, {
+					state: "running",
+					lastError: undefined,
+				}));
 			}
 			return;
 		}
@@ -732,7 +752,7 @@ export class SubagentManager {
 		if (type !== "error" || !this.isActiveEntry(entry)) return;
 		const current = this.operationalFor(entry);
 		if (current.state === "running" && !entry.agentStartedSinceLastPrompt) {
-			this.settleFailed(entry, message || "Child input was rejected");
+			this.settleErrored(entry, message || "Child input was rejected");
 			return;
 		}
 		if (current.state !== "running") this.router?.agentIdle(entry.id);
@@ -740,9 +760,9 @@ export class SubagentManager {
 
 	private settleAtBoundary(entry: AgentEntry): void {
 		const current = this.operationalFor(entry);
-		if (current.state === "failed" || current.state === "idle") return;
+		if (isSettledState(current.state)) return;
 		if (entry.pendingTerminalError) {
-			this.settleFailed(entry, entry.pendingTerminalError);
+			this.settleErrored(entry, entry.pendingTerminalError);
 			return;
 		}
 		entry.agentStartedSinceLastPrompt = false;
@@ -755,23 +775,44 @@ export class SubagentManager {
 		this.notifyCompletion(entry);
 	}
 
-	private settleFailed(entry: AgentEntry, error: string): void {
+	/**
+	 * Settle an agent whose run ended in an error. The session stays live and
+	 * reachable: pending waits are completed with the error, but the routing
+	 * endpoint is left connected so a later send revives the agent.
+	 */
+	private settleErrored(entry: AgentEntry, error: string): void {
 		const current = this.operationalFor(entry);
-		if (current.state === "failed") return;
+		if (current.state === "errored" || current.state === "dead") return;
 		entry.agentStartedSinceLastPrompt = false;
 		entry.pendingTerminalError = undefined;
 		this.replaceOperational(entry, operationalWith(current, {
-			state: "failed",
+			state: "errored",
 			lastActivity: undefined,
 			lastError: error,
 		}));
-		this.router?.agentUnavailable(entry.id, error);
+		this.router?.agentErrored(entry.id, error);
 		this.notifyCompletion(entry);
 	}
 
-	private markRuntimeUnavailable(entry: AgentEntry, error: string): void {
+	/**
+	 * Settle an agent whose runtime is gone. This is the one terminal state:
+	 * the endpoint is tombstoned, and only teardown + resurrect brings the id
+	 * back.
+	 */
+	private markRuntimeDead(entry: AgentEntry, error: string): void {
 		if (!this.isActiveEntry(entry)) return;
-		this.settleFailed(entry, error || "Child runtime became unavailable");
+		const current = this.operationalFor(entry);
+		if (current.state === "dead") return;
+		const failure = error || "Child runtime became unavailable";
+		entry.agentStartedSinceLastPrompt = false;
+		entry.pendingTerminalError = undefined;
+		this.replaceOperational(entry, operationalWith(current, {
+			state: "dead",
+			lastActivity: undefined,
+			lastError: failure,
+		}));
+		this.router?.agentUnavailable(entry.id, failure);
+		this.notifyCompletion(entry);
 	}
 
 	private notifyCompletion(entry: AgentEntry): void {
@@ -788,7 +829,7 @@ export class SubagentManager {
 			const owner = this.opts.registry.get(this.opts.ownerPath);
 			if (!owner) return;
 			const current = owner.snapshot.operational;
-			if (current.state === "failed") return;
+			if (current.state === "dead") return;
 			this.correlationToTarget.set(correlationId, targetId);
 			this.opts.registry.updateOperational(this.opts.ownerPath, operationalWith(current, {
 				state: "waiting",
@@ -800,7 +841,7 @@ export class SubagentManager {
 		const entry = this.findEntry(agentId);
 		if (!entry) return;
 		const current = this.operationalFor(entry);
-		if (current.state === "failed") return;
+		if (current.state === "dead") return;
 		this.correlationToTarget.set(correlationId, targetId);
 		this.replaceOperational(entry, operationalWith(current, {
 			state: "waiting",
@@ -908,7 +949,7 @@ export class SubagentManager {
 	private allDone(): boolean {
 		const allSettled = this.opts.registry
 			.listChildren(this.opts.ownerPath)
-			.every((snapshot) => snapshot.operational.state === "idle" || snapshot.operational.state === "failed");
+			.every((snapshot) => isSettledState(snapshot.operational.state));
 		return allSettled && (this.router?.isQuiet() ?? true);
 	}
 
@@ -920,11 +961,9 @@ export class SubagentManager {
 				const entry = entriesById.get(snapshot.localId ?? "");
 				return {
 					id: snapshot.localId ?? "",
-					status: snapshot.operational.state === "failed" ? "failed" : "idle",
+					status: completionStatus(snapshot.operational.state),
 					output: snapshot.operational.lastOutput,
-					error: snapshot.operational.state === "failed"
-						? snapshot.operational.lastError || "Child runtime failed"
-						: undefined,
+					error: completionError(snapshot.operational),
 					sessionId: snapshot.sessionId,
 					alreadyNotified: entry?.completionNotified ?? false,
 				};
@@ -978,11 +1017,9 @@ export class SubagentManager {
 
 		const data: AgentCompleteData = {
 			id: entry.id,
-			status: snapshot.operational.state === "failed" ? "failed" : "idle",
+			status: completionStatus(snapshot.operational.state),
 			output: snapshot.operational.lastOutput,
-			error: snapshot.operational.state === "failed"
-				? snapshot.operational.lastError || "Child runtime failed"
-				: undefined,
+			error: completionError(snapshot.operational),
 			sessionId: snapshot.sessionId,
 			alreadyNotified: entry.completionNotified,
 		};
@@ -1118,6 +1155,19 @@ function removeOne(values: readonly string[], value: string | undefined): string
 	if (value === undefined) return [...values];
 	const index = values.indexOf(value);
 	return index === -1 ? [...values] : [...values.slice(0, index), ...values.slice(index + 1)];
+}
+
+/** Project a settled agent state onto the vocabulary the model is shown. */
+function completionStatus(state: AgentState): AgentCompleteData["status"] {
+	if (state === "errored") return "errored";
+	if (state === "dead") return "dead";
+	return "idle";
+}
+
+function completionError(operational: { state: AgentState; lastError?: string }): string | undefined {
+	if (operational.state === "errored") return operational.lastError || "Child run ended with an error";
+	if (operational.state === "dead") return operational.lastError || "Child runtime became unavailable";
+	return undefined;
 }
 
 function finalAssistantError(messages: unknown): string | undefined {

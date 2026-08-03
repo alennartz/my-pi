@@ -149,6 +149,18 @@ export class MessageRouter {
 	}
 
 	/**
+	 * End waits involving an endpoint whose run ended in an error. The session
+	 * behind the endpoint is still alive, so — unlike agentUnavailable — no
+	 * tombstone is recorded and the endpoint stays connected and subscribed: a
+	 * later send must be deliverable once the source condition is cleared.
+	 */
+	agentErrored(agentId: string, error: string): void {
+		if (this.closed) return;
+		const failure = error || `Agent "${agentId}" ended its run with an error`;
+		this.failCorrelationsForAgent(agentId, failure);
+	}
+
+	/**
 	 * Mark an endpoint's runtime unavailable. Existing waits are completed with
 	 * the supplied error, the endpoint is disconnected, and a replacement must
 	 * reconnect before new sends are accepted.

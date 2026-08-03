@@ -174,11 +174,23 @@ describe("registry-backed manager interruption", () => {
 		expect(registry.get).toHaveBeenCalledWith(["other", "worker"]);
 	});
 
-	it("keeps failed children as an interrupt no-op for observable parity", async () => {
-		const failed = snapshot("worker", ["researcher", "worker"], {
-			operational: operational({ state: "failed", lastError: "provider failure" }),
+	it("keeps errored children as an interrupt no-op for observable parity", async () => {
+		const errored = snapshot("worker", ["researcher", "worker"], {
+			operational: operational({ state: "errored", lastError: "provider failure" }),
 		});
-		const registry = makeRegistry([failed]);
+		const registry = makeRegistry([errored]);
+		const node = registry.get(["researcher", "worker"]);
+		const { manager } = createManager(registry);
+
+		await expect(manager.interrupt("worker")).resolves.toBeUndefined();
+		expect(node.session.abort).not.toHaveBeenCalled();
+	});
+
+	it("keeps dead children as an interrupt no-op", async () => {
+		const dead = snapshot("worker", ["researcher", "worker"], {
+			operational: operational({ state: "dead", lastError: "runtime gone" }),
+		});
+		const registry = makeRegistry([dead]);
 		const node = registry.get(["researcher", "worker"]);
 		const { manager } = createManager(registry);
 
