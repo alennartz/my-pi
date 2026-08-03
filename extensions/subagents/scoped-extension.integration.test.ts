@@ -132,6 +132,10 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 		listChildren: vi.fn((parentPath: AgentPath) => [...nodes.values()]
 			.filter((node) => node.snapshot.parentPath !== null && key(node.snapshot.parentPath) === key(parentPath))
 			.map((node) => node.snapshot)),
+		listDescendants: vi.fn((parentPath: AgentPath) => [...nodes.values()]
+			.filter((node) => node.snapshot.path.length > parentPath.length
+				&& parentPath.every((segment: string, index: number) => segment === node.snapshot.path[index]))
+			.map((node) => node.snapshot)),
 		createChildren: vi.fn(async (parentPath: AgentPath, requests: any[]) => {
 			if (!livePaths.has(key(parentPath))) {
 				throw new Error(`Unknown parent path: ${key(parentPath)}`);

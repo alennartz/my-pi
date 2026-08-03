@@ -140,6 +140,27 @@ describe("AgentSessionRegistry root ownership and paths", () => {
 		await expect(registry.createChildren([], [request("parent")])).rejects.toThrow(/parent|reserved/i);
 	});
 
+	it("flattens a whole subtree depth-first so each node precedes its own descendants", async () => {
+		const { registry } = createRegistry();
+		await registry.createChildren([], [request("left"), request("right")]);
+		await registry.createChildren(["left"], [request("scout")]);
+		await registry.createChildren(["left", "scout"], [request("probe")]);
+		await registry.createChildren(["right"], [request("scout")]);
+
+		expect(registry.listDescendants([]).map((node) => node.path)).toEqual([
+			["left"],
+			["left", "scout"],
+			["left", "scout", "probe"],
+			["right"],
+			["right", "scout"],
+		]);
+		expect(registry.listDescendants(["left"]).map((node) => node.path)).toEqual([
+			["left", "scout"],
+			["left", "scout", "probe"],
+		]);
+		expect(registry.listDescendants(["right", "scout"])).toEqual([]);
+	});
+
 	it("allows the same local id under different live parents without path collision", async () => {
 		const { registry } = createRegistry();
 		await registry.createChildren([], [request("left"), request("right")]);

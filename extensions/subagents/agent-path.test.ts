@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { childAgentPath, formatAgentPath, type AgentPath } from "./agent-path.js";
+import { childAgentPath, formatAgentPath, qualifiedAgentId, type AgentPath } from "./agent-path.js";
 
 describe("canonical agent paths", () => {
 	it("represents the external root as an empty path", () => {
@@ -32,5 +32,17 @@ describe("canonical agent paths", () => {
 		expect(oneSegment).not.toBe(twoSegments);
 		expect(oneSegment).toContain("a");
 		expect(oneSegment).toContain("b");
+	});
+
+	it("qualifies a descendant relative to its owner so the trail shows tree depth", () => {
+		expect(qualifiedAgentId([], ["worker"])).toBe("worker");
+		expect(qualifiedAgentId([], ["worker", "scout"])).toBe("worker/scout");
+		expect(qualifiedAgentId(["worker"], ["worker", "scout", "probe"])).toBe("scout/probe");
+	});
+
+	it("returns no qualified id for a path that is not below the owner", () => {
+		expect(qualifiedAgentId(["worker"], ["worker"])).toBe("");
+		expect(qualifiedAgentId(["worker"], ["other", "scout"])).toBe("");
+		expect(qualifiedAgentId(["worker"], [])).toBe("");
 	});
 });

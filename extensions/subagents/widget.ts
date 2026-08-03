@@ -40,6 +40,24 @@ function fmtPct(input: number, window: number): string {
 	return `${Math.round((input / window) * 100)}%`;
 }
 
+// ─── Qualified id fitting ───────────────────────────────────────────
+
+/**
+ * Fit a possibly path-qualified agent id (`worker/scout/probe`) into `max`
+ * columns, dropping leading ancestors before ever cutting the leaf — the leaf
+ * is the agent this card is about, the ancestors only hint at tree shape.
+ */
+export function fitAgentId(id: string, max: number): string {
+	if (max <= 0) return "";
+	if (visibleWidth(id) <= max) return id;
+	const segments = id.split("/");
+	for (let start = 1; start < segments.length; start++) {
+		const candidate = `…/${segments.slice(start).join("/")}`;
+		if (visibleWidth(candidate) <= max) return candidate;
+	}
+	return truncateToWidth(segments[segments.length - 1] ?? id, max);
+}
+
 // ─── Dashboard component ────────────────────────────────────────────
 
 export class SubagentDashboard implements Component {
@@ -135,16 +153,19 @@ export class SubagentDashboard implements Component {
 
 		// ── Top border ──
 		const turns = `(${s.usage.turns})`;
-		let topLabel = ` ${s.id} ${turns}`;
 		let topExtra = "";
 		if (s.hasSubgroup) {
 			topExtra = " " + t.fg("accent", SUBGROUP_ICON);
 		}
 		const icon = " " + STATUS_ICONS[s.state];
-		// Budget: innerWidth must fit topLabel + topExtra(visible) + fill + icon
+		// Budget: innerWidth must fit topLabel + topExtra(visible) + fill + icon.
+		// Path-qualified ids of nested agents can outgrow the box, so fit the id
+		// itself: an overflowing top line breaks row alignment (stitchRow only pads).
 		const topExtraVis = s.hasSubgroup ? 1 + visibleWidth(SUBGROUP_ICON) : 0;
-		const topLabelVis = visibleWidth(topLabel);
 		const iconVis = visibleWidth(icon);
+		const idBudget = innerWidth - topExtraVis - iconVis - visibleWidth(` ${turns}`) - 2;
+		const topLabel = ` ${fitAgentId(s.id, Math.max(0, idBudget))} ${turns}`;
+		const topLabelVis = visibleWidth(topLabel);
 		// Account for trailing space before tr corner: topLabel + extra + fill + icon + " " = innerWidth
 		const fillCount = Math.max(0, innerWidth - topLabelVis - topExtraVis - iconVis - 1);
 		const topLine = bc(tl) + topLabel + topExtra + bc(hFill.repeat(fillCount)) + icon + " " + bc(tr);

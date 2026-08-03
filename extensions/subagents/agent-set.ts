@@ -16,7 +16,7 @@ import {
 	isValidCwd,
 	resolveSkillPaths,
 } from "./agents.js";
-import { childAgentPath, type AgentPath } from "./agent-path.js";
+import { childAgentPath, qualifiedAgentId, type AgentPath } from "./agent-path.js";
 import {
 	type AgentNodeSnapshot,
 	type AgentOperationalSnapshot,
@@ -150,6 +150,23 @@ export class SubagentManager {
 
 	getAgentStatuses(): AgentStatus[] {
 		return this.opts.registry.listChildren(this.opts.ownerPath).map(projectStatus);
+	}
+
+	/**
+	 * Statuses for this manager's entire live subtree, flattened depth-first with
+	 * path-qualified ids (`worker/scout`). Presentation only — tools, routing and
+	 * notifications stay scoped to immediate children via `getAgentStatuses`.
+	 */
+	getDisplayStatuses(): AgentStatus[] {
+		const owner = this.opts.ownerPath;
+		const listDescendants = this.opts.registry.listDescendants;
+		const snapshots = typeof listDescendants === "function"
+			? listDescendants.call(this.opts.registry, owner)
+			: this.opts.registry.listChildren(owner);
+		return snapshots.map((snapshot) => ({
+			...projectStatus(snapshot),
+			id: qualifiedAgentId(owner, snapshot.path) || snapshot.localId || "",
+		}));
 	}
 
 	getAgentStatus(agentId: string): AgentStatus | undefined {

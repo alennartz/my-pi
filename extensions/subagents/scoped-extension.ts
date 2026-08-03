@@ -233,7 +233,13 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			activeRegistry?.updateOperational([], rootOperational);
 		}
 
-		function refreshDisplays(statuses: AgentStatus[]): void {
+		/**
+		 * Repaint both UI surfaces from the manager's whole live subtree, so
+		 * nested subagents appear in the same flat list under path-qualified ids.
+		 */
+		function refreshDisplays(mgr: SubagentManager | null): void {
+			if (!dashboard && !panelHandle) return;
+			const statuses = mgr ? mgr.getDisplayStatuses() : [];
 			if (dashboard && tuiRef) {
 				dashboard.update(statuses);
 				tuiRef.requestRender();
@@ -369,7 +375,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 					);
 					return found?.contextWindow;
 				},
-				onUpdate: (current) => refreshDisplays(current.getAgentStatuses()),
+				onUpdate: (current) => refreshDisplays(current),
 				onAgentComplete: (current, agentId, allDone) => {
 					const status = current.getAgentStatus(agentId);
 					if (!status) return;
@@ -401,10 +407,13 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			const subscribe = (activeRegistry as any).subscribe;
 			if (typeof subscribe === "function") {
 				registryUnsubscribe = subscribe.call(activeRegistry, (event: any) => {
+					// Any descendant, not just an immediate child: the dashboard shows
+					// the whole subtree, so nested lifecycle changes must repaint too.
 					const node = event.node;
-					if (!node?.parentPath || node.parentPath.length !== ownerPath.length) return;
-					if (!node.parentPath.every((segment: string, index: number) => segment === ownerPath[index])) return;
-					refreshDisplays(manager?.getAgentStatuses() ?? []);
+					const path: string[] | undefined = node?.path;
+					if (!path || path.length <= ownerPath.length) return;
+					if (!ownerPath.every((segment: string, index: number) => segment === path[index])) return;
+					refreshDisplays(manager);
 				});
 			}
 			return manager;
@@ -657,7 +666,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			const ack = await mgr.start(agentSpecs, allAgentConfigs);
 
 			// Push initial statuses so the widget renders immediately
-			refreshDisplays(mgr.getAgentStatuses());
+			refreshDisplays(mgr);
 
 			stopSequences?.addOnce("<agent_idle");
 
@@ -736,7 +745,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			const ack = await mgr.start([forkSpec], []);
 
 			// Push initial statuses
-			refreshDisplays(mgr.getAgentStatuses());
+			refreshDisplays(mgr);
 
 			stopSequences?.addOnce("<agent_idle");
 
@@ -983,7 +992,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				clearDisplays(ctx);
 				skillPathsMap.clear();
 			} else {
-				refreshDisplays(manager.getAgentStatuses());
+				refreshDisplays(manager);
 			}
 
 			const label = params.agent ? `Agent "${params.agent}" removed.` : "All agents terminated.";
@@ -1065,7 +1074,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			await ensureWidget(ctx);
 			const ack = await mgr.start(specs, discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined).agents);
 
-			refreshDisplays(mgr.getAgentStatuses());
+			refreshDisplays(mgr);
 
 			stopSequences?.addOnce("<agent_idle");
 
@@ -1267,7 +1276,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			await current.restoreFromPersistence(discovery.agents);
 			if (!current.hasAgents()) return;
 			await ensureWidget(ctx);
-			refreshDisplays(current.getAgentStatuses());
+			refreshDisplays(current);
 			stopSequences?.addOnce("<agent_idle");
 		});
 

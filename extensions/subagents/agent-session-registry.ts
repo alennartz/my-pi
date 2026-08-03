@@ -151,6 +151,32 @@ export class AgentSessionRegistry {
 		return result;
 	}
 
+	/**
+	 * Every live node below `parent`, depth-first: each node is immediately
+	 * followed by its own descendants, and siblings keep registry insertion
+	 * order. Presentation surfaces render this as one flat list whose tree shape
+	 * is inferable from the paths; orchestration stays on `listChildren`.
+	 */
+	listDescendants(parent: AgentPath): AgentNodeSnapshot[] {
+		const byParent = new Map<string, AgentNodeSnapshot[]>();
+		for (const node of this.nodes.values()) {
+			const parentPath = node.snapshot.parentPath;
+			if (!parentPath) continue;
+			const bucket = byParent.get(key(parentPath));
+			if (bucket) bucket.push(node.snapshot);
+			else byParent.set(key(parentPath), [node.snapshot]);
+		}
+		const result: AgentNodeSnapshot[] = [];
+		const visit = (path: AgentPath): void => {
+			for (const child of byParent.get(key(path)) ?? []) {
+				result.push(child);
+				visit(child.path);
+			}
+		};
+		visit(parent);
+		return result;
+	}
+
 	async createChildren(parent: AgentPath, requests: CreateAgentNodeRequest[]): Promise<RegisteredAgentNode[]> {
 		this.assertCanCreate(parent);
 		const localIds = new Set<string>();
