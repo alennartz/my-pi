@@ -268,6 +268,23 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				const result = queue.drainAll();
 				return result || "All specified agents have already completed. No pending notifications.";
 			}
+			// A scoped agent blocked on this session can never settle: only a respond,
+			// a reject, or its own death clears the correlation, and none of those can
+			// happen from inside the wait. Refuse rather than install a wait that no
+			// event will ever satisfy. Do not rely on the notification still sitting in
+			// the queue — steer delivery may already have flushed it into the stream.
+			const blocked = mgr.getBlockedSenders().filter((pending) => ids.includes(pending.from));
+			if (blocked.length > 0) {
+				const listed = blocked
+					.map((pending) => `${pending.from} (correlation_id="${pending.correlationId}")`)
+					.join(", ");
+				const notice =
+					`Cannot wait: ${listed} ${blocked.length === 1 ? "is" : "are"} blocked on a response from you, ` +
+					`so ${blocked.length === 1 ? "it" : "they"} cannot settle until you answer. ` +
+					"Call respond for each pending correlation_id (the question arrived as an <agent_message>), " +
+					"then call await_agents again if you still need to wait.";
+				return [queue.drainAll(), notice].filter(Boolean).join("\n");
+			}
 			if (waitState) throw new Error("Another await_agents call is already active.");
 			queue.setWaiting(true);
 			try {
@@ -1067,6 +1084,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		promptGuidelines: [
 			"Use `await_agents` when you need results before your next step — it blocks until all specified agents complete (or all agents, if none specified).",
 			"Any agent message (including fire-and-forget) interrupts the wait. If an expect-response message interrupts, you must call `respond` before waiting again.",
+			"An agent blocked on a response from you cannot settle, so the wait is refused while one is pending: call `respond` first, then await again.",
 			"After handling an interruption, call `await_agents` again to resume waiting.",
 		],
 		parameters: Type.Object({

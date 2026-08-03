@@ -202,6 +202,29 @@ describe("MessageRouter cancellation and terminal lifecycle", () => {
 		expect(router.isQuiet()).toBe(true);
 	});
 
+	it("reports the senders blocked on a given target and prunes them as they resolve", async () => {
+		const router = makeRouter(["first", "second"]);
+		const parent = router.connect("parent");
+		const first = router.connect("first");
+		const second = router.connect("second");
+
+		expect(router.pendingSendersTo("parent")).toEqual([]);
+		await first.send({ to: "parent", message: "decide", expectResponse: true, correlationId: "corr-first" });
+		await second.send({ to: "parent", message: "also decide", expectResponse: true, correlationId: "corr-second" });
+		await second.send({ to: "first", message: "peer question", expectResponse: true, correlationId: "corr-peer" });
+
+		expect(router.pendingSendersTo("parent")).toEqual([
+			{ from: "first", correlationId: "corr-first" },
+			{ from: "second", correlationId: "corr-second" },
+		]);
+		expect(router.pendingSendersTo("first")).toEqual([{ from: "second", correlationId: "corr-peer" }]);
+
+		await parent.respond("corr-first", "answered");
+		expect(router.pendingSendersTo("parent")).toEqual([{ from: "second", correlationId: "corr-second" }]);
+		await parent.reject?.("corr-second", "declined");
+		expect(router.pendingSendersTo("parent")).toEqual([]);
+	});
+
 	it("detaches only the waiting edge, allowing reverse work and a late response", async () => {
 		const router = makeRouter();
 		const parent = router.connect("parent");

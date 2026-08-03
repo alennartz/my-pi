@@ -169,6 +169,16 @@ export class SubagentManager {
 	}
 
 	/**
+	 * Agents blocked on a response from this parent, as recorded by the router.
+	 * Read from the routing authority rather than projected agent status: the
+	 * status projection is maintained through callbacks whose failures are
+	 * swallowed, and a later child event can overwrite the `waiting` state.
+	 */
+	getBlockedSenders(): Array<{ from: string; correlationId: string }> {
+		return this.router?.pendingSendersTo("parent") ?? [];
+	}
+
+	/**
 	 * Abort the target agent's current operation (equivalent to pressing Escape
 	 * in the TUI). An already-settled child is deliberately a no-op for parity.
 	 */

@@ -627,6 +627,41 @@ describe("root orchestration integration", () => {
 		expect(created.child.abort).toHaveBeenCalledTimes(1);
 	});
 
+	it("refuses to await an agent already blocked on the parent's response", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "inspect", channels: [] }],
+		}, ctx);
+		managed.created[0].hooks.onEvent({ type: "agent_start" });
+
+		// The blocking send lands before the wait starts, so its notification is
+		// already flushed out of the queue — the wait cannot rely on draining it.
+		const uplink: MessagePort = managed.created[0].config.scope.uplink;
+		await uplink.send({
+			to: "parent",
+			message: "which approach should I take?",
+			expectResponse: true,
+			correlationId: "corr-blocked",
+		});
+		expect(pi.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("corr-blocked") }),
+			expect.anything(),
+		);
+
+		const settled = await Promise.race([
+			execute(tools, "await_agents", {}, ctx).then((result: any) => result.content[0].text),
+			new Promise<string>((resolve) => setTimeout(() => resolve("WAIT DID NOT RETURN"), 100)),
+		]);
+		expect(settled).toContain("worker");
+		expect(settled).toContain("corr-blocked");
+		expect(settled).toMatch(/respond/i);
+	});
+
 	it("creates a separate registry for each root session", async () => {
 		const firstParentSessionFile = path.join(tmpRoot!, "first-parent.jsonl");
 		const secondParentSessionFile = path.join(tmpRoot!, "second-parent.jsonl");

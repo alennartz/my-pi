@@ -193,6 +193,22 @@ export class MessageRouter {
 	}
 
 	/**
+	 * Endpoints currently blocked on a response from `targetId`. The router is the
+	 * only authority on this: a caller that waits on an endpoint blocked on it
+	 * would never be satisfied, because nothing but a response, a rejection, or
+	 * the sender's own death clears the correlation.
+	 */
+	pendingSendersTo(targetId: string): Array<{ from: string; correlationId: string }> {
+		const blocked: Array<{ from: string; correlationId: string }> = [];
+		for (const pending of this.pendingCorrelations.values()) {
+			if (pending.to === targetId) {
+				blocked.push({ from: pending.from, correlationId: pending.correlationId });
+			}
+		}
+		return blocked;
+	}
+
+	/**
 	 * Reject all unresolved waits because the routing authority itself is gone.
 	 * Unlike accepted lifecycle failures, router shutdown rejects the response
 	 * promises. No topology or SDK/session state is changed here.
