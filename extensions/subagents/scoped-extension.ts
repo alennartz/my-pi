@@ -543,7 +543,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			"When using `subagent` without awaiting resist the urge to also do the same work you just delegated it is NOT your responsibility.",
       "Prefer `subagent` over `fork` when the work needs multiple coordinated agents, specialized personas, or a clean slate. Prefer `fork` when you want a copy of yourself with your full context to explore something. as a tangent without bloating your primary context.",
 			"for `subagent` use guidance about task decomposition, pattern selection, and when-to-delegate, read the orchestrating-agents skill.",
-		],
+		],FYI
 		parameters: Type.Object({
 			agents: Type.Array(AgentItem, { description: "Agents to spawn under this parent session" }),
 			await: Type.Optional(Type.Boolean({ description: "Block until all spawned agents complete. Default: false.", default: false })),
@@ -687,12 +687,9 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 	pi.registerTool({
 		name: "fork",
 		label: "Fork",
-		description: "Clone yourself into a sub-agent with your full conversation history.",
+		description: "Clone yourself into a sub-agent with your full conversation history. Useful for existing context dependent side quests where data explored is much larger that required retained output.",
 		promptGuidelines: [
-			"Clones yourself into a sub-agent with your full conversation history. The clone explores independently while you continue working — use for divergent exploration without committing context.",
-			"Two parameters: id and task. Use fork when you want a copy of yourself with full context to explore an alternative path. Use subagent for multiple agents, specialized personas, or a clean slate.",
-			"Fork adds a single agent — send, respond, check_status, and teardown all work normally. Notifications arrive the same way as subagent spawns.",
-			"Forking is non-blocking — results arrive later as a system notification. Unless explicitly told to do other work after forking, briefly describe what you launched and end your turn immediately with no further actions.",
+			"`fork` generally functions exactly like `subagent` except that you keep your current session context, model and cwd without the ability to overrie them",
 		],
 		parameters: Type.Object({
 			id: Type.String({ description: "Unique identifier for the forked agent" }),
