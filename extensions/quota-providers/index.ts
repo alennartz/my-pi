@@ -12,6 +12,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getApiProvider } from "@earendil-works/pi-ai/compat";
 import { loadProvidersConfig, cachePaths, resolveAgentDir } from "./lib/config.js";
 import type { CachePaths } from "./lib/config.js";
 import {
@@ -20,6 +21,7 @@ import {
 	buildProviderConfig,
 	discoveryRefreshDue,
 } from "./lib/registration.js";
+import { guardStreamSimple } from "./lib/stream-guard.js";
 import type { ProviderImplementation, QuotaPolicy } from "./lib/types.js";
 import { appendLedgerEntry, readLedger } from "./lib/ledger.js";
 import { readUsageSnapshot } from "./lib/snapshot.js";
@@ -44,8 +46,42 @@ export interface ProviderRecord {
 	providerIds: string[];
 }
 
+type QuotaRecordFacts = Pick<ProviderRecord, "paths" | "policy" | "hasUsageSeam">;
+
+/**
+ * Evaluate the current quota at the provider boundary. Returning undefined
+ * means there is no usable snapshot yet or the cached window has reset, so the
+ * request is allowed while a background refresh catches up.
+ */
+function evaluateProviderQuota(
+	record: QuotaRecordFacts,
+	store: SessionTreeStore | undefined,
+	now = Date.now(),
+): ReturnType<typeof decideBlock> | undefined {
+	if (!record.hasUsageSeam) return undefined;
+	const cached = readUsageSnapshot(record.paths.usage);
+	if (!cached || now >= cached.snapshot.windowEnd) return undefined;
+
+	const verdict = evaluateQuota(
+		cached.snapshot,
+		readLedger(record.paths.ledger),
+		record.policy,
+		now,
+	);
+	const bypassActive = record.policy.bypassAllowed && store ? readBypass(store) : false;
+	return decideBlock({ verdict, policy: record.policy, bypassActive });
+}
+
+/** Keep quota rejection observable in both TUI and headless child sessions. */
+export function notifyQuotaBlocked(
+	ctx: Pick<ExtensionContext, "ui">,
+	message: string,
+): void {
+	ctx.ui.notify(message, "error");
+}
+
 // =============================================================================
-// Pure helpers
+// Helpers
 // =============================================================================
 
 function formatDollars(amount: number): string {
@@ -160,6 +196,10 @@ export default async function (pi: ExtensionAPI) {
 	const runnerPath = fileURLToPath(new URL("./runner.mjs", import.meta.url));
 	const now = Date.now();
 
+	// Set during session_start and captured by provider stream guards. The
+	// provider boundary can be reached by extension-triggered turns that never
+	// emit the input event, so it must read the live tree-scoped bypass state.
+	let treeStore: SessionTreeStore | undefined;
 	const records: ProviderRecord[] = [];
 
 	for (const resolved of providers) {
@@ -238,6 +278,8 @@ export default async function (pi: ExtensionAPI) {
 		}
 
 		const groups = groupModels(id, cache.models, impl.authHeader);
+		const hasUsageSeam = typeof impl.getUsage === "function";
+		let providerRecord: ProviderRecord | undefined;
 
 		// Single-quote escaping for /bin/sh -c — safe against $, backticks, and
 		// embedded double quotes in paths. Replace ' with '\'' to embed a literal
@@ -256,21 +298,42 @@ export default async function (pi: ExtensionAPI) {
 
 		const providerIds: string[] = [];
 		for (const group of groups) {
-			pi.registerProvider(group.providerId, buildProviderConfig(implMeta, group, apiKeyCmd));
+			// The stream guard is the authoritative gate. It runs after session
+			// orchestration has selected a provider but before that provider can issue
+			// an HTTP request, including for triggerTurn/custom-message paths.
+
+			const streamSimple = hasUsageSeam
+				? guardStreamSimple(
+					(model, context, options) => {
+						const apiProvider = getApiProvider(group.api);
+						if (!apiProvider) {
+							throw new Error(`No API provider registered for api: ${group.api}`);
+						}
+						return apiProvider.streamSimple(model, context, options);
+					},
+					() => {
+						if (providerRecord) maybeRefreshUsage(providerRecord);
+						return evaluateProviderQuota({ paths, policy, hasUsageSeam }, treeStore);
+					},
+				)
+				: undefined;
+			pi.registerProvider(
+				group.providerId,
+				buildProviderConfig(implMeta, group, apiKeyCmd, streamSimple),
+			);
 			providerIds.push(group.providerId);
 		}
 
-		records.push(
-			Object.freeze({
-				id,
-				implPath,
-				configPath,
-				paths,
-				policy,
-				hasUsageSeam: typeof impl.getUsage === "function",
-				providerIds,
-			}),
-		);
+		providerRecord = Object.freeze({
+			id,
+			implPath,
+			configPath,
+			paths,
+			policy,
+			hasUsageSeam,
+			providerIds,
+		});
+		records.push(providerRecord);
 	}
 
 	const providerRecords = Object.freeze(records);
@@ -311,13 +374,19 @@ export default async function (pi: ExtensionAPI) {
 	// subagents extension associates child session managers with that same store
 	// before their session_start hooks run. Independent roots get independent
 	// stores even when they live in one Node process.
-	let treeStore: SessionTreeStore | undefined;
-
 	pi.on("session_start", (_event, ctx) => {
 		treeStore = getOrCreateSessionTreeStore(ctx.sessionManager);
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
 		if (record) maybeRefreshUsage(record);
 		refreshStatusline(record, ctx);
+	});
+
+	// A session_start handler from another extension can enqueue a triggerTurn
+	// before this extension's session_start handler runs. Capture the tree store
+	// again at the universal agent boundary so bypass state is available for that
+	// first provider request too.
+	pi.on("agent_start", (_event, ctx) => {
+		if (!treeStore) treeStore = getOrCreateSessionTreeStore(ctx.sessionManager);
 	});
 
 	// Retarget the footer to the newly-selected model's provider (or clear it when
@@ -342,43 +411,30 @@ export default async function (pi: ExtensionAPI) {
 		refreshStatusline(providerIdToRecord.get(ctx.model?.provider ?? ""), ctx);
 	});
 
-	// Block new prompts when quota is exceeded.
+	// Fast-path ordinary user prompts so a blocked message is not appended to
+	// session history. The provider stream guard above remains authoritative for
+	// every other request path (tool loops, retries, compaction, and extensions).
 	pi.on("input", (event, ctx) => {
-		// Skip extension commands so /quota bypass on is reachable while blocked.
-		if (event.text.startsWith("/")) return;
-
+		// Registered extension commands are handled before this event by the SDK,
+		// so `/quota bypass on` remains reachable without exempting unknown slash
+		// prompts from the quota gate.
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
 		if (!record || !record.hasUsageSeam) return;
 
 		maybeRefreshUsage(record);
 
-		const cached = readUsageSnapshot(record.paths.usage);
-		if (!cached) return; // no data yet — never block on missing data
-
-		const now = Date.now();
-		// Window already reset — the cached snapshot is stale; never block on it. A
-		// refresh was already kicked above.
-		if (now >= cached.snapshot.windowEnd) {
-			refreshStatusline(record, ctx);
-			return;
-		}
-		const ledger = readLedger(record.paths.ledger);
-		const verdict = evaluateQuota(cached.snapshot, ledger, record.policy, now);
-
 		const store = treeStore ?? getOrCreateSessionTreeStore(ctx.sessionManager);
-		const bypassActive = record.policy.bypassAllowed && readBypass(store);
-
-		const decision = decideBlock({ verdict, policy: record.policy, bypassActive });
+		const decision = evaluateProviderQuota(record, store);
 
 		refreshStatusline(record, ctx);
 
-		if (!decision.blocked) return;
+		if (!decision?.blocked) return;
 
-		if (ctx.hasUI) {
-			ctx.ui.notify(decision.message, "error");
-		} else {
-			console.error(decision.message);
-		}
+		// The headless child UI forwards notify() to the subagent manager, which
+		// settles a prompt rejected before agent_start. Keep console output only as
+		// the fallback for a truly UI-less host; never replace notify() with it.
+		notifyQuotaBlocked(ctx, decision.message);
+		if (!ctx.hasUI) console.error(decision.message);
 		return { action: "handled" };
 	});
 

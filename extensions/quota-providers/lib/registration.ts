@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 import type { ModelEntry } from "./types.js";
 
@@ -104,7 +105,8 @@ export function groupModels(
 
 /**
  * Build the exact object for `pi.registerProvider(group.providerId, …)`.
- * Pure — does not call registerProvider itself.
+ * Pure — does not call registerProvider itself. An optional streamSimple
+ * override is included when provided.
  */
 export function buildProviderConfig(
 	impl: {
@@ -116,6 +118,7 @@ export function buildProviderConfig(
 	},
 	group: ProviderGroup,
 	apiKeyCommand: string,
+	streamSimple?: ProviderConfig["streamSimple"],
 ): object {
 	return {
 		baseUrl: impl.baseUrl + (group.baseUrlPath ?? ""),
@@ -123,6 +126,7 @@ export function buildProviderConfig(
 		authHeader: group.authHeader,
 		...(impl.headers ? { headers: impl.headers } : {}),
 		api: group.api,
+		...(streamSimple ? { streamSimple } : {}),
 		models: group.models.map((entry) => {
 			const meta = resolveModelMeta(entry.catalogProvider, entry.modelName);
 			return {

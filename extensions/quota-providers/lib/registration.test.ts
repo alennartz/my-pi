@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ModelEntry } from "./types.js";
 import {
 	REFRESH_FLOOR_MS,
@@ -178,6 +178,21 @@ describe("buildProviderConfig", () => {
 		const [group] = groupModels("impl", models);
 		const cfg = buildProviderConfig(impl, group, apiKey) as Record<string, unknown>;
 		expect(cfg.api).toBe("anthropic-messages");
+	});
+
+	it("omits the stream override by default", () => {
+		const models: ModelEntry[] = [{ id: "m1", modelName: "x", api: "openai-responses" }];
+		const [group] = groupModels("impl", models);
+		const cfg = buildProviderConfig(impl, group, apiKey) as Record<string, unknown>;
+		expect(cfg.streamSimple).toBeUndefined();
+	});
+
+	it("includes an optional stream guard without changing the default config", () => {
+		const models: ModelEntry[] = [{ id: "m1", modelName: "x", api: "openai-responses" }];
+		const [group] = groupModels("impl", models);
+		const streamSimple = vi.fn() as any;
+		const cfg = buildProviderConfig(impl, group, apiKey, streamSimple) as Record<string, unknown>;
+		expect(cfg.streamSimple).toBe(streamSimple);
 	});
 
 	it("includes compat.forceAdaptiveThinking only for anthropic-messages models that have it", () => {
