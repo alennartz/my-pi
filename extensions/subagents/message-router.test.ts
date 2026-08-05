@@ -202,6 +202,29 @@ describe("MessageRouter cancellation and terminal lifecycle", () => {
 		expect(router.isQuiet()).toBe(true);
 	});
 
+	it("reports the senders blocked on a given target and prunes them as they resolve", async () => {
+		const router = makeRouter(["first", "second"]);
+		const parent = router.connect("parent");
+		const first = router.connect("first");
+		const second = router.connect("second");
+
+		expect(router.pendingSendersTo("parent")).toEqual([]);
+		await first.send({ to: "parent", message: "decide", expectResponse: true, correlationId: "corr-first" });
+		await second.send({ to: "parent", message: "also decide", expectResponse: true, correlationId: "corr-second" });
+		await second.send({ to: "first", message: "peer question", expectResponse: true, correlationId: "corr-peer" });
+
+		expect(router.pendingSendersTo("parent")).toEqual([
+			{ from: "first", correlationId: "corr-first" },
+			{ from: "second", correlationId: "corr-second" },
+		]);
+		expect(router.pendingSendersTo("first")).toEqual([{ from: "second", correlationId: "corr-peer" }]);
+
+		await parent.respond("corr-first", "answered");
+		expect(router.pendingSendersTo("parent")).toEqual([{ from: "second", correlationId: "corr-second" }]);
+		await parent.reject?.("corr-second", "declined");
+		expect(router.pendingSendersTo("parent")).toEqual([]);
+	});
+
 	it("detaches only the waiting edge, allowing reverse work and a late response", async () => {
 		const router = makeRouter();
 		const parent = router.connect("parent");
@@ -227,6 +250,36 @@ describe("MessageRouter cancellation and terminal lifecycle", () => {
 		await worker.respond("corr-detach", "late answer");
 		await expect(receipt.response).resolves.toEqual({ type: "response", message: "late answer" });
 		expect(router.isQuiet()).toBe(true);
+	});
+
+	it("keeps an errored endpoint connected and subscribed so a later send revives it", async () => {
+		const router = makeRouter();
+		const parent = router.connect("parent");
+		const worker = router.connect("worker");
+		const delivered: unknown[] = [];
+		worker.subscribe((message) => delivered.push(message));
+		const wait = await parent.send({
+			to: "worker",
+			message: "finish",
+			expectResponse: true,
+			correlationId: "corr-errored",
+		});
+
+		router.agentErrored("worker", "provider returned 401");
+
+		// The wait ends with the real failure, not a generic idle message.
+		await expect(wait.response).resolves.toEqual({ type: "error", error: "provider returned 401" });
+		// No tombstone: the same endpoint object stays live and subscribed, so a
+		// retry after the operator clears the source condition is delivered.
+		await expect(parent.send({ to: "worker", message: "retry", expectResponse: false })).resolves.toEqual({});
+		expect(delivered).toEqual([
+			{ from: "parent", message: "finish", correlationId: "corr-errored", responseExpected: true },
+			{ from: "parent", message: "retry", responseExpected: false },
+		]);
+		// A still-usable endpoint must still be able to answer a fresh blocking send.
+		const second = await parent.send({ to: "worker", message: "question", expectResponse: true });
+		await worker.respond(second.correlationId!, "answer");
+		await expect(second.response).resolves.toEqual({ type: "response", message: "answer" });
 	});
 
 	it("returns typed errors for idle, unavailable, and removed targets while preserving their distinct reuse rules", async () => {

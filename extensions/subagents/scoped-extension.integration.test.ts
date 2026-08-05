@@ -132,6 +132,10 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 		listChildren: vi.fn((parentPath: AgentPath) => [...nodes.values()]
 			.filter((node) => node.snapshot.parentPath !== null && key(node.snapshot.parentPath) === key(parentPath))
 			.map((node) => node.snapshot)),
+		listDescendants: vi.fn((parentPath: AgentPath) => [...nodes.values()]
+			.filter((node) => node.snapshot.path.length > parentPath.length
+				&& parentPath.every((segment: string, index: number) => segment === node.snapshot.path[index]))
+			.map((node) => node.snapshot)),
 		createChildren: vi.fn(async (parentPath: AgentPath, requests: any[]) => {
 			if (!livePaths.has(key(parentPath))) {
 				throw new Error(`Unknown parent path: ${key(parentPath)}`);
@@ -627,6 +631,41 @@ describe("root orchestration integration", () => {
 		expect(created.child.abort).toHaveBeenCalledTimes(1);
 	});
 
+	it("refuses to await an agent already blocked on the parent's response", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "inspect", channels: [] }],
+		}, ctx);
+		managed.created[0].hooks.onEvent({ type: "agent_start" });
+
+		// The blocking send lands before the wait starts, so its notification is
+		// already flushed out of the queue — the wait cannot rely on draining it.
+		const uplink: MessagePort = managed.created[0].config.scope.uplink;
+		await uplink.send({
+			to: "parent",
+			message: "which approach should I take?",
+			expectResponse: true,
+			correlationId: "corr-blocked",
+		});
+		expect(pi.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("corr-blocked") }),
+			expect.anything(),
+		);
+
+		const settled = await Promise.race([
+			execute(tools, "await_agents", {}, ctx).then((result: any) => result.content[0].text),
+			new Promise<string>((resolve) => setTimeout(() => resolve("WAIT DID NOT RETURN"), 100)),
+		]);
+		expect(settled).toContain("worker");
+		expect(settled).toContain("corr-blocked");
+		expect(settled).toMatch(/respond/i);
+	});
+
 	it("creates a separate registry for each root session", async () => {
 		const firstParentSessionFile = path.join(tmpRoot!, "first-parent.jsonl");
 		const secondParentSessionFile = path.join(tmpRoot!, "second-parent.jsonl");
@@ -702,10 +741,10 @@ describe("root orchestration integration", () => {
 		fs.writeFileSync(first.child.sessionFile, "");
 		first.hooks.onUiNotify("input blocked", "error");
 
-		const failedStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
-		expect(failedStatus.content[0].text).toMatch(/failed|input blocked/i);
+		const erroredStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
+		expect(erroredStatus.content[0].text).toMatch(/errored|input blocked/i);
 		expect(pi.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-			content: expect.stringContaining("status=\"failed\""),
+			content: expect.stringContaining("status=\"errored\""),
 		}));
 
 		await execute(tools, "teardown", { agent: "worker" }, ctx);
@@ -723,6 +762,47 @@ describe("root orchestration integration", () => {
 			path: ["worker-restored"],
 			target: { kind: "resume", sessionFile: first.child.sessionFile },
 		});
+	});
+
+	it("revives an errored child on a later send but keeps a dead runtime unreachable", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "inspect", channels: [] }, { id: "doomed", task: "inspect", channels: [] }],
+		}, ctx);
+		const worker = managed.created[0];
+		const doomed = managed.created[1];
+
+		// A run that errors leaves a live session: errored, not dead.
+		worker.hooks.onEvent({ type: "agent_start" });
+		worker.hooks.onEvent({
+			type: "agent_end",
+			willRetry: false,
+			messages: [{ role: "assistant", stopReason: "error", errorMessage: "provider returned 401" }],
+		});
+		worker.hooks.onEvent({ type: "agent_settled" });
+		const erroredStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
+		expect(erroredStatus.content[0].text).toMatch(/errored/i);
+
+		// The operator cleared the source condition — a retry must be delivered
+		// rather than replaying the cached failure.
+		const retry = await execute(tools, "send", { to: "worker", message: "try again", expectResponse: false }, ctx);
+		expect(retry.content[0].text).toContain("Message sent to worker.");
+		worker.hooks.onEvent({ type: "agent_start" });
+		const revivedStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
+		expect(revivedStatus.content[0].text).toMatch(/running/i);
+		expect(revivedStatus.content[0].text).not.toMatch(/401/);
+
+		// A runtime that shut itself down is genuinely gone and stays unreachable.
+		doomed.hooks.onShutdownRequested();
+		const deadStatus = await execute(tools, "check_status", { agent: "doomed" }, ctx);
+		expect(deadStatus.content[0].text).toMatch(/dead/i);
+		await expect(execute(tools, "send", { to: "doomed", message: "anyone home", expectResponse: false }, ctx))
+			.rejects.toThrow(/unavailable|dead/i);
 	});
 
 	it("passes a persona's resolved model tier to the native child", async () => {

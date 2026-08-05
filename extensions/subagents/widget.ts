@@ -16,9 +16,20 @@ import { formatTokenCount } from "./format.js";
 const STATUS_ICONS: Record<AgentState, string> = {
 	running: "⏳",
 	idle: "✓",
-	failed: "✗",
+	errored: "✗",
+	dead: "⊘",
 	waiting: "⏸",
 };
+
+/** States drawn with the heavy alarm border. */
+function isAlarmState(state: AgentState): boolean {
+	return state === "errored" || state === "dead";
+}
+
+/** States drawn dimmed because no work is in flight. */
+function isDimState(state: AgentState): boolean {
+	return state === "idle" || isAlarmState(state);
+}
 
 const SUBGROUP_ICON = "\uDB81\uDEA9"; // nf-md-file_tree
 
@@ -27,6 +38,24 @@ const SUBGROUP_ICON = "\uDB81\uDEA9"; // nf-md-file_tree
 function fmtPct(input: number, window: number): string {
 	if (window <= 0) return "0%";
 	return `${Math.round((input / window) * 100)}%`;
+}
+
+// ─── Qualified id fitting ───────────────────────────────────────────
+
+/**
+ * Fit a possibly path-qualified agent id (`worker/scout/probe`) into `max`
+ * columns, dropping leading ancestors before ever cutting the leaf — the leaf
+ * is the agent this card is about, the ancestors only hint at tree shape.
+ */
+export function fitAgentId(id: string, max: number): string {
+	if (max <= 0) return "";
+	if (visibleWidth(id) <= max) return id;
+	const segments = id.split("/");
+	for (let start = 1; start < segments.length; start++) {
+		const candidate = `…/${segments.slice(start).join("/")}`;
+		if (visibleWidth(candidate) <= max) return candidate;
+	}
+	return truncateToWidth(segments[segments.length - 1] ?? id, max);
 }
 
 // ─── Dashboard component ────────────────────────────────────────────
@@ -109,8 +138,8 @@ export class SubagentDashboard implements Component {
 	 */
 	private renderBox(s: AgentStatus, boxWidth: number): string[] {
 		const t = this.theme;
-		const failed = s.state === "failed";
-		const dimmed = s.state === "idle" || s.state === "failed";
+		const failed = isAlarmState(s.state);
+		const dimmed = isDimState(s.state);
 		const innerWidth = boxWidth - 2; // 2 border chars
 
 		// Border color
@@ -124,16 +153,19 @@ export class SubagentDashboard implements Component {
 
 		// ── Top border ──
 		const turns = `(${s.usage.turns})`;
-		let topLabel = ` ${s.id} ${turns}`;
 		let topExtra = "";
 		if (s.hasSubgroup) {
 			topExtra = " " + t.fg("accent", SUBGROUP_ICON);
 		}
 		const icon = " " + STATUS_ICONS[s.state];
-		// Budget: innerWidth must fit topLabel + topExtra(visible) + fill + icon
+		// Budget: innerWidth must fit topLabel + topExtra(visible) + fill + icon.
+		// Path-qualified ids of nested agents can outgrow the box, so fit the id
+		// itself: an overflowing top line breaks row alignment (stitchRow only pads).
 		const topExtraVis = s.hasSubgroup ? 1 + visibleWidth(SUBGROUP_ICON) : 0;
-		const topLabelVis = visibleWidth(topLabel);
 		const iconVis = visibleWidth(icon);
+		const idBudget = innerWidth - topExtraVis - iconVis - visibleWidth(` ${turns}`) - 2;
+		const topLabel = ` ${fitAgentId(s.id, Math.max(0, idBudget))} ${turns}`;
+		const topLabelVis = visibleWidth(topLabel);
 		// Account for trailing space before tr corner: topLabel + extra + fill + icon + " " = innerWidth
 		const fillCount = Math.max(0, innerWidth - topLabelVis - topExtraVis - iconVis - 1);
 		const topLine = bc(tl) + topLabel + topExtra + bc(hFill.repeat(fillCount)) + icon + " " + bc(tr);
@@ -173,7 +205,7 @@ export class SubagentDashboard implements Component {
 		const t = this.theme;
 		const [bl, br, hFill] = failed ? ["╚", "╝", "═"] : ["╰", "╯", "─"];
 		const innerWidth = boxWidth - 2;
-		const dimmed = s.state === "idle" || s.state === "failed";
+		const dimmed = isDimState(s.state);
 		const statColor = dimmed ? "dim" : "muted";
 
 		// Build stats segments
@@ -247,7 +279,7 @@ export class SubagentDashboard implements Component {
 	/** Aggregate footer bar. */
 	private renderFooter(width: number): string {
 		const t = this.theme;
-		const counts: Record<AgentState, number> = { running: 0, idle: 0, failed: 0, waiting: 0 };
+		const counts: Record<AgentState, number> = { running: 0, idle: 0, errored: 0, dead: 0, waiting: 0 };
 		let totalCost = 0;
 
 		// Context range
@@ -275,7 +307,8 @@ export class SubagentDashboard implements Component {
 		if (counts.running > 0) countParts.push(`${counts.running} running`);
 		if (counts.idle > 0) countParts.push(`${counts.idle} idle`);
 		if (counts.waiting > 0) countParts.push(`${counts.waiting} waiting`);
-		if (counts.failed > 0) countParts.push(`${counts.failed} failed`);
+		if (counts.errored > 0) countParts.push(`${counts.errored} errored`);
+		if (counts.dead > 0) countParts.push(`${counts.dead} dead`);
 		const agentCount = this.statuses.length;
 		parts.push(`${agentCount} agent${agentCount === 1 ? "" : "s"}: ${countParts.join(" · ")}`);
 
@@ -298,7 +331,8 @@ export class SubagentDashboard implements Component {
 			case "running": return "accent";
 			case "idle": return "success";
 			case "waiting": return "warning";
-			case "failed": return "error";
+			case "errored": return "error";
+			case "dead": return "error";
 		}
 	}
 
@@ -310,8 +344,10 @@ export class SubagentDashboard implements Component {
 				return "waiting for response";
 			case "idle":
 				return "idle";
-			case "failed":
-				return "failed";
+			case "errored":
+				return s.lastError ? `errored: ${s.lastError}` : "errored";
+			case "dead":
+				return "dead";
 		}
 	}
 
@@ -320,7 +356,8 @@ export class SubagentDashboard implements Component {
 			case "running": return "muted";
 			case "waiting": return "warning";
 			case "idle": return "success";
-			case "failed": return "error";
+			case "errored": return "error";
+			case "dead": return "error";
 		}
 	}
 

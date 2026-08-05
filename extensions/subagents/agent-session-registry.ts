@@ -15,7 +15,7 @@ import type { SessionTreeStore } from "../../lib/session-tree-store.js";
 export type NodeOwnership = "external" | "registry";
 export type AgentUsage = Readonly<{ input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number }>;
 export type AgentOperationalSnapshot = Readonly<{
-	state: "running" | "idle" | "waiting" | "failed";
+	state: "running" | "idle" | "waiting" | "errored" | "dead";
 	usage: AgentUsage;
 	model?: string;
 	lastActivity?: string;
@@ -148,6 +148,32 @@ export class AgentSessionRegistry {
 		for (const node of this.nodes.values()) {
 			if (node.snapshot.parentPath && samePath(node.snapshot.parentPath, parent)) result.push(node.snapshot);
 		}
+		return result;
+	}
+
+	/**
+	 * Every live node below `parent`, depth-first: each node is immediately
+	 * followed by its own descendants, and siblings keep registry insertion
+	 * order. Presentation surfaces render this as one flat list whose tree shape
+	 * is inferable from the paths; orchestration stays on `listChildren`.
+	 */
+	listDescendants(parent: AgentPath): AgentNodeSnapshot[] {
+		const byParent = new Map<string, AgentNodeSnapshot[]>();
+		for (const node of this.nodes.values()) {
+			const parentPath = node.snapshot.parentPath;
+			if (!parentPath) continue;
+			const bucket = byParent.get(key(parentPath));
+			if (bucket) bucket.push(node.snapshot);
+			else byParent.set(key(parentPath), [node.snapshot]);
+		}
+		const result: AgentNodeSnapshot[] = [];
+		const visit = (path: AgentPath): void => {
+			for (const child of byParent.get(key(path)) ?? []) {
+				result.push(child);
+				visit(child.path);
+			}
+		};
+		visit(parent);
 		return result;
 	}
 

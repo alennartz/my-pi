@@ -33,7 +33,7 @@ import {
 	resolveAgentCwds,
 	formatAgentList,
 } from "./agents.js";
-import { SubagentManager, type AgentStatus, type AgentState } from "./agent-set.js";
+import { SubagentManager, isSettledState, type AgentStatus, type AgentState } from "./agent-set.js";
 import {
 	AgentSessionRegistry,
 	type AgentOperationalSnapshot,
@@ -233,7 +233,13 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			activeRegistry?.updateOperational([], rootOperational);
 		}
 
-		function refreshDisplays(statuses: AgentStatus[]): void {
+		/**
+		 * Repaint both UI surfaces from the manager's whole live subtree, so
+		 * nested subagents appear in the same flat list under path-qualified ids.
+		 */
+		function refreshDisplays(mgr: SubagentManager | null): void {
+			if (!dashboard && !panelHandle) return;
+			const statuses = mgr ? mgr.getDisplayStatuses() : [];
 			if (dashboard && tuiRef) {
 				dashboard.update(statuses);
 				tuiRef.requestRender();
@@ -262,11 +268,28 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		async function awaitAgentCompletion(ids: string[], mgr: SubagentManager, signal?: AbortSignal | null): Promise<string> {
 			const isSatisfied = () => ids.every((id) => {
 				const status = mgr.getAgentStatus(id);
-				return !status || status.state === "idle" || status.state === "failed";
+				return !status || isSettledState(status.state);
 			});
 			if (isSatisfied()) {
 				const result = queue.drainAll();
 				return result || "All specified agents have already completed. No pending notifications.";
+			}
+			// A scoped agent blocked on this session can never settle: only a respond,
+			// a reject, or its own death clears the correlation, and none of those can
+			// happen from inside the wait. Refuse rather than install a wait that no
+			// event will ever satisfy. Do not rely on the notification still sitting in
+			// the queue — steer delivery may already have flushed it into the stream.
+			const blocked = mgr.getBlockedSenders().filter((pending) => ids.includes(pending.from));
+			if (blocked.length > 0) {
+				const listed = blocked
+					.map((pending) => `${pending.from} (correlation_id="${pending.correlationId}")`)
+					.join(", ");
+				const notice =
+					`Cannot wait: ${listed} ${blocked.length === 1 ? "is" : "are"} blocked on a response from you, ` +
+					`so ${blocked.length === 1 ? "it" : "they"} cannot settle until you answer. ` +
+					"Call respond for each pending correlation_id (the question arrived as an <agent_message>), " +
+					"then call await_agents again if you still need to wait.";
+				return [queue.drainAll(), notice].filter(Boolean).join("\n");
 			}
 			if (waitState) throw new Error("Another await_agents call is already active.");
 			queue.setWaiting(true);
@@ -352,20 +375,22 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 					);
 					return found?.contextWindow;
 				},
-				onUpdate: (current) => refreshDisplays(current.getAgentStatuses()),
+				onUpdate: (current) => refreshDisplays(current),
 				onAgentComplete: (current, agentId, allDone) => {
 					const status = current.getAgentStatus(agentId);
 					if (!status) return;
 					const data: AgentCompleteData = {
 						id: agentId,
-						status: status.state === "failed" ? "failed" : "idle",
+						status: status.state === "errored" ? "errored" : status.state === "dead" ? "dead" : "idle",
 						output: status.lastOutput,
-						error: status.state === "failed" ? (status.lastError || "Agent failed") : undefined,
+						error: status.state === "errored" || status.state === "dead"
+							? (status.lastError || "Agent run ended with an error")
+							: undefined,
 					};
 					let xml = serializeAgentComplete(data);
 					if (allDone) {
 						const total = current.getAgentStatuses().length;
-						xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} are now idle. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
+						xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have settled. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
 					}
 					queue.queue(xml, "local");
 					if (queue.isWaiting && waitState?.satisfied()) resolveWait();
@@ -382,10 +407,13 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			const subscribe = (activeRegistry as any).subscribe;
 			if (typeof subscribe === "function") {
 				registryUnsubscribe = subscribe.call(activeRegistry, (event: any) => {
+					// Any descendant, not just an immediate child: the dashboard shows
+					// the whole subtree, so nested lifecycle changes must repaint too.
 					const node = event.node;
-					if (!node?.parentPath || node.parentPath.length !== ownerPath.length) return;
-					if (!node.parentPath.every((segment: string, index: number) => segment === ownerPath[index])) return;
-					refreshDisplays(manager?.getAgentStatuses() ?? []);
+					const path: string[] | undefined = node?.path;
+					if (!path || path.length <= ownerPath.length) return;
+					if (!ownerPath.every((segment: string, index: number) => segment === path[index])) return;
+					refreshDisplays(manager);
 				});
 			}
 			return manager;
@@ -638,7 +666,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			const ack = await mgr.start(agentSpecs, allAgentConfigs);
 
 			// Push initial statuses so the widget renders immediately
-			refreshDisplays(mgr.getAgentStatuses());
+			refreshDisplays(mgr);
 
 			stopSequences?.addOnce("<agent_idle");
 
@@ -717,7 +745,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			const ack = await mgr.start([forkSpec], []);
 
 			// Push initial statuses
-			refreshDisplays(mgr.getAgentStatuses());
+			refreshDisplays(mgr);
 
 			stopSequences?.addOnce("<agent_idle");
 
@@ -748,6 +776,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			"Set expectResponse=true for blocking sends: the tool call stays open until the target calls respond. Use for synchronous coordination (e.g., asking a question and waiting for the answer).",
 			"For scatter-gather: call send(expectResponse=true) to multiple agents in the same turn. Each returns when its target responds.",
 			"Channel enforcement: you can only send to agents in your channel list. Parent is always allowed.",
+			"An agent reported as status=\"errored\" is still alive: sending to it starts a new run, so retry it directly once you have cleared whatever caused the error. Only status=\"dead\" is unreachable, and that needs teardown + resurrect.",
 		],
 		parameters: Type.Object({
 			to: Type.String({ description: "Target agent id or 'parent'" }),
@@ -938,7 +967,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		label: "Teardown",
 		description: "Remove an agent or tear down all agents. Returns a completion report.",
 		promptGuidelines: [
-			"Call when an agent or all agents are no longer needed. Idle agents remain fully functional — you can send new messages to restart work or use agents as persistent specialists.",
+			"Call when an agent or all agents are no longer needed. Idle and errored agents remain fully functional — you can send new messages to restart work or use agents as persistent specialists. Only a dead agent must be torn down.",
 			"With an agent id: removes that single agent and returns an <agent_torn_down> report. Without: tears down all active agents and returns a <group_torn_down> summary with aggregate usage. The teardown report is slim for agents that already idled (the model already received their full <agent_idle> notification) — it surfaces session_id and a resurrection hint, but not the output. Agents torn down while still running include their last output/error so it isn't lost.",
 			"When the last agent is removed (either explicitly or via full teardown), infrastructure is cleaned up automatically.",
 		],
@@ -963,7 +992,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				clearDisplays(ctx);
 				skillPathsMap.clear();
 			} else {
-				refreshDisplays(manager.getAgentStatuses());
+				refreshDisplays(manager);
 			}
 
 			const label = params.agent ? `Agent "${params.agent}" removed.` : "All agents terminated.";
@@ -1045,7 +1074,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			await ensureWidget(ctx);
 			const ack = await mgr.start(specs, discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined).agents);
 
-			refreshDisplays(mgr.getAgentStatuses());
+			refreshDisplays(mgr);
 
 			stopSequences?.addOnce("<agent_idle");
 
@@ -1064,6 +1093,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		promptGuidelines: [
 			"Use `await_agents` when you need results before your next step — it blocks until all specified agents complete (or all agents, if none specified).",
 			"Any agent message (including fire-and-forget) interrupts the wait. If an expect-response message interrupts, you must call `respond` before waiting again.",
+			"An agent blocked on a response from you cannot settle, so the wait is refused while one is pending: call `respond` first, then await again.",
 			"After handling an interruption, call `await_agents` again to resume waiting.",
 		],
 		parameters: Type.Object({
@@ -1193,7 +1223,9 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			queue.setParentBusy(false);
 			if (scope.kind === "root") {
 				updateRootOperational(ctx, {
-					state: rootRunError ? "failed" : "idle",
+					// A failed run leaves this session alive and promptable, so the
+					// parent-visible state is errored, never dead.
+					state: rootRunError ? "errored" : "idle",
 					lastActivity: undefined,
 				});
 			}
@@ -1244,7 +1276,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			await current.restoreFromPersistence(discovery.agents);
 			if (!current.hasAgents()) return;
 			await ensureWidget(ctx);
-			refreshDisplays(current.getAgentStatuses());
+			refreshDisplays(current);
 			stopSequences?.addOnce("<agent_idle");
 		});
 
@@ -1319,7 +1351,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatAgentStatusSummary(s: import("./agent-set.js").AgentStatus): string {
-	const icon = { running: "⏳", idle: "✓", failed: "✗", waiting: "⏸" }[s.state];
+	const icon = { running: "⏳", idle: "✓", errored: "✗", dead: "⊘", waiting: "⏸" }[s.state];
 	const usage = s.usage.cost > 0 ? ` ($${s.usage.cost.toFixed(4)})` : "";
 	return `${icon} ${s.id}: ${s.state}${s.lastActivity ? ` — ${s.lastActivity}` : ""}${usage}`;
 }
@@ -1330,14 +1362,16 @@ const STATE_COLORS: Record<AgentState, CardColor> = {
 	running: "accent",
 	idle: "success",
 	waiting: "warning",
-	failed: "error",
+	errored: "error",
+	dead: "error",
 };
 
 const STATE_LABELS: Record<AgentState, string> = {
 	running: "running",
 	idle: "idle",
 	waiting: "waiting",
-	failed: "failed",
+	errored: "errored",
+	dead: "dead",
 };
 
 function statusesToCards(statuses: AgentStatus[]): Card[] {

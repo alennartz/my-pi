@@ -13,3 +13,5 @@ The fix is fully decoupled from quota — `agent-set.ts` contains no quota-speci
 
 ## Consequences
 Any extension in a child that emits an error-level notify at startup before `agent_start` — including genuinely non-blocking ones — will settle the child as failed. This false-positive risk is accepted as rare in practice (dismissed in code review). A future fix could let `agent_start` recover an entry settled via this path, rather than treating it as permanently failed.
+
+That fix landed in DR-046: the settle target is now the revivable `errored` state rather than a terminal one, and `agent_start` clears it. The detection rule described above is unchanged; only the state it settles into differs.

@@ -56,6 +56,10 @@ function makeRegistry(initial: AgentNodeSnapshot[] = []): any {
 		listChildren: vi.fn((ownerPath: AgentPath) => snapshots.filter(
 			(entry) => JSON.stringify(entry.parentPath) === JSON.stringify(ownerPath),
 		)),
+		listDescendants: vi.fn((ownerPath: AgentPath) => snapshots.filter(
+			(entry) => entry.path.length > ownerPath.length
+				&& ownerPath.every((segment, index) => segment === entry.path[index]),
+		)),
 		get: vi.fn((path: AgentPath) => nodes.get(JSON.stringify(path))),
 		getSnapshot: vi.fn((path: AgentPath) => snapshots.find((entry) => JSON.stringify(entry.path) === JSON.stringify(path))),
 		updateOperational: vi.fn(),
@@ -144,6 +148,22 @@ describe("registry-backed manager status projection", () => {
 		expect(updated?.lastOutput).toBe("done");
 	});
 
+	it("projects the whole subtree with path-qualified ids for display", () => {
+		const worker = snapshot("worker");
+		const scout = snapshot("scout", ["researcher", "worker", "scout"]);
+		const probe = snapshot("probe", ["researcher", "worker", "scout", "probe"]);
+		const registry = makeRegistry([worker, scout, probe]);
+		const { manager } = createManager(registry, ["researcher"]);
+
+		expect(manager.getDisplayStatuses().map((status) => status.id)).toEqual([
+			"worker",
+			"worker/scout",
+			"worker/scout/probe",
+		]);
+		// Orchestration stays scoped to immediate children.
+		expect(manager.getAgentStatuses().map((status) => status.id)).toEqual(["worker"]);
+	});
+
 	it("reports no active children when the canonical registry has none", () => {
 		const registry = makeRegistry([]);
 		const { manager } = createManager(registry);
@@ -174,11 +194,23 @@ describe("registry-backed manager interruption", () => {
 		expect(registry.get).toHaveBeenCalledWith(["other", "worker"]);
 	});
 
-	it("keeps failed children as an interrupt no-op for observable parity", async () => {
-		const failed = snapshot("worker", ["researcher", "worker"], {
-			operational: operational({ state: "failed", lastError: "provider failure" }),
+	it("keeps errored children as an interrupt no-op for observable parity", async () => {
+		const errored = snapshot("worker", ["researcher", "worker"], {
+			operational: operational({ state: "errored", lastError: "provider failure" }),
 		});
-		const registry = makeRegistry([failed]);
+		const registry = makeRegistry([errored]);
+		const node = registry.get(["researcher", "worker"]);
+		const { manager } = createManager(registry);
+
+		await expect(manager.interrupt("worker")).resolves.toBeUndefined();
+		expect(node.session.abort).not.toHaveBeenCalled();
+	});
+
+	it("keeps dead children as an interrupt no-op", async () => {
+		const dead = snapshot("worker", ["researcher", "worker"], {
+			operational: operational({ state: "dead", lastError: "runtime gone" }),
+		});
+		const registry = makeRegistry([dead]);
 		const node = registry.get(["researcher", "worker"]);
 		const { manager } = createManager(registry);
 

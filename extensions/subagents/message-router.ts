@@ -149,6 +149,18 @@ export class MessageRouter {
 	}
 
 	/**
+	 * End waits involving an endpoint whose run ended in an error. The session
+	 * behind the endpoint is still alive, so — unlike agentUnavailable — no
+	 * tombstone is recorded and the endpoint stays connected and subscribed: a
+	 * later send must be deliverable once the source condition is cleared.
+	 */
+	agentErrored(agentId: string, error: string): void {
+		if (this.closed) return;
+		const failure = error || `Agent "${agentId}" ended its run with an error`;
+		this.failCorrelationsForAgent(agentId, failure);
+	}
+
+	/**
 	 * Mark an endpoint's runtime unavailable. Existing waits are completed with
 	 * the supplied error, the endpoint is disconnected, and a replacement must
 	 * reconnect before new sends are accepted.
@@ -178,6 +190,22 @@ export class MessageRouter {
 
 	isQuiet(): boolean {
 		return this.pendingCorrelations.size === 0;
+	}
+
+	/**
+	 * Endpoints currently blocked on a response from `targetId`. The router is the
+	 * only authority on this: a caller that waits on an endpoint blocked on it
+	 * would never be satisfied, because nothing but a response, a rejection, or
+	 * the sender's own death clears the correlation.
+	 */
+	pendingSendersTo(targetId: string): Array<{ from: string; correlationId: string }> {
+		const blocked: Array<{ from: string; correlationId: string }> = [];
+		for (const pending of this.pendingCorrelations.values()) {
+			if (pending.to === targetId) {
+				blocked.push({ from: pending.from, correlationId: pending.correlationId });
+			}
+		}
+		return blocked;
 	}
 
 	/**

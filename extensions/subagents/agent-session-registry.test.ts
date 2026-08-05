@@ -140,6 +140,27 @@ describe("AgentSessionRegistry root ownership and paths", () => {
 		await expect(registry.createChildren([], [request("parent")])).rejects.toThrow(/parent|reserved/i);
 	});
 
+	it("flattens a whole subtree depth-first so each node precedes its own descendants", async () => {
+		const { registry } = createRegistry();
+		await registry.createChildren([], [request("left"), request("right")]);
+		await registry.createChildren(["left"], [request("scout")]);
+		await registry.createChildren(["left", "scout"], [request("probe")]);
+		await registry.createChildren(["right"], [request("scout")]);
+
+		expect(registry.listDescendants([]).map((node) => node.path)).toEqual([
+			["left"],
+			["left", "scout"],
+			["left", "scout", "probe"],
+			["right"],
+			["right", "scout"],
+		]);
+		expect(registry.listDescendants(["left"]).map((node) => node.path)).toEqual([
+			["left", "scout"],
+			["left", "scout", "probe"],
+		]);
+		expect(registry.listDescendants(["right", "scout"])).toEqual([]);
+	});
+
 	it("allows the same local id under different live parents without path collision", async () => {
 		const { registry } = createRegistry();
 		await registry.createChildren([], [request("left"), request("right")]);
@@ -316,7 +337,7 @@ describe("AgentSessionRegistry removal, attachment, and lifecycle", () => {
 		const { registry } = createRegistry();
 		const [parent] = await registry.createChildren([], [request("worker")]);
 		const [grandchild] = await registry.createChildren(["worker"], [request("scout")]);
-		registry.updateOperational(["worker"], operational({ state: "failed", lastError: "final failure" }));
+		registry.updateOperational(["worker"], operational({ state: "errored", lastError: "final failure" }));
 		const removed: Array<{ path: string[]; lastError?: string }> = [];
 		registry.subscribe((event) => {
 			if (event.type === "node_removed") {
