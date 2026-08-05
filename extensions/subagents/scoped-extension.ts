@@ -543,7 +543,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			"When using `subagent` without awaiting resist the urge to also do the same work you just delegated it is NOT your responsibility.",
       "Prefer `subagent` over `fork` when the work needs multiple coordinated agents, specialized personas, or a clean slate. Prefer `fork` when you want a copy of yourself with your full context to explore something. as a tangent without bloating your primary context.",
 			"for `subagent` use guidance about task decomposition, pattern selection, and when-to-delegate, read the orchestrating-agents skill.",
-		],FYI
+		],
 		parameters: Type.Object({
 			agents: Type.Array(AgentItem, { description: "Agents to spawn under this parent session" }),
 			await: Type.Optional(Type.Boolean({ description: "Block until all spawned agents complete. Default: false.", default: false })),
@@ -764,13 +764,9 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		description: "Send a mid-task clarification or coordination message to another active agent; do not use for final task reporting.",
 
 		promptGuidelines: [
-			"Fire-and-forget by default: sends the message and returns immediately. The target agent will receive it as an <agent_message> block.",
-			"Use send only for mid-task clarification or coordination (including peer handoffs), not as a completion or reporting channel.",
-			"Never send a completed-task summary to the parent, with or without expectResponse; your final text is delivered automatically via <agent_idle>. Do not duplicate the final result in both send and your final output.",
-			"Set expectResponse=true for blocking sends: the tool call stays open until the target calls respond. Use for synchronous coordination (e.g., asking a question and waiting for the answer).",
+			"`send` is Fire-and-forget by default: sends the message and returns immediately. The target agent will receive it as an <agent_message> block. If you need a response use `expectResponse=true`",
+			"As a subagent with a parent. You do not need to use `send` a completed-task summary to the parent. Your final text is delivered automatically.",
 			"For scatter-gather: call send(expectResponse=true) to multiple agents in the same turn. Each returns when its target responds.",
-			"Channel enforcement: you can only send to agents in your channel list. Parent is always allowed.",
-			"An agent reported as status=\"errored\" is still alive: sending to it starts a new run, so retry it directly once you have cleared whatever caused the error. Only status=\"dead\" is unreachable, and that needs teardown + resurrect.",
 		],
 		parameters: Type.Object({
 			to: Type.String({ description: "Target agent id or 'parent'" }),
@@ -896,7 +892,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 	pi.registerTool({
 		name: "respond",
 		label: "Respond",
-		description: "Responds to an agent_message with response_expected=\"true\" from another agent.",
+		description: "Responds to an agent_message with response_expected=\"true\" from another agent. Responses are mandatory when expected!",
 		parameters: Type.Object({
 			correlationId: Type.String({ description: "The correlation_id from the incoming agent_message" }),
 			message: Type.String({ description: "Response content" }),
