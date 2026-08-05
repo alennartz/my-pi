@@ -436,9 +436,12 @@ describe("child-scoped extension routing", () => {
 
 		await handlers.get("session_shutdown")?.({}, ctx);
 		uplink.emit({ from: "parent", message: "after shutdown", responseExpected: false });
-		expect(pi.sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({
-			content: expect.stringContaining("after shutdown"),
-		}));
+		expect(pi.sendMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({
+				content: expect.stringContaining("after shutdown"),
+			}),
+			{ triggerTurn: true },
+		);
 	});
 
 	it("uses the supplied child registry and path when recursively spawning a grandchild", async () => {
@@ -552,8 +555,14 @@ describe("child-scoped extension routing", () => {
 
 		expect(firstUplink.send).toHaveBeenCalledTimes(1);
 		expect(secondUplink.send).toHaveBeenCalledTimes(1);
-		expect(first.pi.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining("only first") }));
-		expect(second.pi.sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining("only first") }));
+		expect(first.pi.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("only first") }),
+			{ triggerTurn: true },
+		);
+		expect(second.pi.sendMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("only first") }),
+			{ triggerTurn: true },
+		);
 	});
 });
 
@@ -599,18 +608,24 @@ describe("root orchestration integration", () => {
 			},
 		});
 		created.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
-		expect(pi.sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({
-			content: expect.stringContaining("<agent_idle"),
-		}));
+		expect(pi.sendMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({
+				content: expect.stringContaining("<agent_idle"),
+			}),
+			{ triggerTurn: true },
+		);
 		created.hooks.onEvent({ type: "agent_settled" });
 
 		const status = await execute(tools, "check_status", { agent: "worker" }, ctx);
 		expect(status.content[0].text).toContain("worker");
 		expect(status.content[0].text).toMatch(/idle/i);
 		expect(status.content[0].text).toContain("finished");
-		expect(pi.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-			content: expect.stringContaining("<agent_idle"),
-		}));
+		expect(pi.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				content: expect.stringContaining("<agent_idle"),
+			}),
+			{ triggerTurn: true },
+		);
 
 		created.hooks.onSessionChanged({
 			sessionId: "replacement-session",
@@ -743,9 +758,12 @@ describe("root orchestration integration", () => {
 
 		const erroredStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
 		expect(erroredStatus.content[0].text).toMatch(/errored|input blocked/i);
-		expect(pi.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-			content: expect.stringContaining("status=\"errored\""),
-		}));
+		expect(pi.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				content: expect.stringContaining("status=\"errored\""),
+			}),
+			{ triggerTurn: true },
+		);
 
 		await execute(tools, "teardown", { agent: "worker" }, ctx);
 		expect(first.child.dispose).toHaveBeenCalledTimes(1);

@@ -535,17 +535,14 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagents",
-		description: "Spawn specialized subagents with channel-based inter-agent communication.",
+		description: "Spawn subagents to delegate work to a seperate context window, optionally with a different model or cwd. Supports inter agent communications",
 		promptGuidelines: [
-			"Spawns agents that run in parallel with isolated contexts. Non-blocking — returns immediately with an acknowledgment. Live status shown in the widget.",
-			"Each agent gets its own isolated pi SDK session. Agents communicate via the send/respond tools using channels declared at spawn time.",
-			"Parent (you) is auto-injected into every agent's channel list. The channels field governs agent-to-agent peer communication only.",
+			"When using subagent a channel to \"parent\" (you) is auto-injected into every agent's channel list. The channels field governs agent-to-agent peer communication only.",
 			"Agents can be added incrementally — call subagent again to add more agents to the existing set. New agents join the running infrastructure.",
-			"Spawning is non-blocking — results arrive later as system notifications. Unless explicitly told to do other work after spawning, briefly describe what you launched and end your turn immediately with no further actions.",
-			"When system notifications arrive, respond with your analysis and next actions. The notification content is already visible to the user — summarize your takeaway, not the raw content.",
-			"Use subagent when the work needs multiple coordinated agents, specialized personas, or a clean slate. Use fork when you want a copy of yourself with your full context to explore something.",
-			"You may set `model` to override model selection, but if the selected specialist agent definition pins a model, that pinned model is used.",
-			"For task decomposition, pattern selection, and when-to-delegate guidance, read the orchestrating-agents skill.",
+			"`subagent` defaults to non-blocking, returning immediately. The results of subagents will arive later as notifications. If you want to block use `await=true`",
+			"When using `subagent` without awaiting resist the urge to also do the same work you just delegated it is NOT your responsibility.",
+      "Prefer `subagent` over `fork` when the work needs multiple coordinated agents, specialized personas, or a clean slate. Prefer `fork` when you want a copy of yourself with your full context to explore something. as a tangent without bloating your primary context.",
+			"for `subagent` use guidance about task decomposition, pattern selection, and when-to-delegate, read the orchestrating-agents skill.",
 		],
 		parameters: Type.Object({
 			agents: Type.Array(AgentItem, { description: "Agents to spawn under this parent session" }),
@@ -902,11 +899,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 	pi.registerTool({
 		name: "respond",
 		label: "Respond",
-		description: "Respond to a blocking message from another agent.",
-		promptGuidelines: [
-			'When you receive an <agent_message> with response_expected="true", you MUST call respond with the correlation_id from that message.',
-			"The response is delivered back to the sender, unblocking their send tool call.",
-		],
+		description: "Responds to an agent_message with response_expected=\"true\" from another agent.",
 		parameters: Type.Object({
 			correlationId: Type.String({ description: "The correlation_id from the incoming agent_message" }),
 			message: Type.String({ description: "Response content" }),
@@ -929,8 +922,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		label: "Check Status",
 		description: "Query agent status. Omit agent for summary of all agents.",
 		promptGuidelines: [
-			"Prefer waiting for automatic notifications (<agent_idle>) over calling this tool. Notifications arrive without polling.",
-			"Use only when you have a specific reason: diagnosing a suspected stall, answering a user question about progress, or checking usage mid-run.",
+			"Use check_status only when you have a specific reason: diagnosing a suspected stall, answering a user question about progress, or checking usage mid-run.",
 		],
 		parameters: Type.Object({
 			agent: Type.Optional(Type.String({ description: "Agent id to query. Omit for a summary of all active agents." })),
@@ -967,9 +959,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		label: "Teardown",
 		description: "Remove an agent or tear down all agents. Returns a completion report.",
 		promptGuidelines: [
-			"Call when an agent or all agents are no longer needed. Idle and errored agents remain fully functional — you can send new messages to restart work or use agents as persistent specialists. Only a dead agent must be torn down.",
-			"With an agent id: removes that single agent and returns an <agent_torn_down> report. Without: tears down all active agents and returns a <group_torn_down> summary with aggregate usage. The teardown report is slim for agents that already idled (the model already received their full <agent_idle> notification) — it surfaces session_id and a resurrection hint, but not the output. Agents torn down while still running include their last output/error so it isn't lost.",
-			"When the last agent is removed (either explicitly or via full teardown), infrastructure is cleaned up automatically.",
+			"Call teardown when an agent or all agents are no longer needed. Idle or errored (but not dead) agents remain usable — you can send new messages to restart or continue work or retry after errors.",
 		],
 		parameters: Type.Object({
 			agent: Type.Optional(Type.String({ description: "Agent id to remove. Omit to tear down all agents." })),
@@ -1007,13 +997,10 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 	pi.registerTool({
 		name: "resurrect",
 		label: "Resurrect",
-		description: "Bring a previously-torn-down subagent back online from its session file.",
+		description: "Bring a previously-torn-down subagent back online from its session file by using it's session_id.",
 		promptGuidelines: [
-			"Revives one or more agents that were previously torn down — pass the `session_id` surfaced in a prior `<agent_idle>`, `<agent_torn_down>`, or `<group_torn_down>` report for each.",
-			"Each resurrected agent inherits its persona, model, and tool set from the resumed session — none of those can be changed here. Only `id`, `channels`, and `task` are re-declared.",
-			"Channels must be re-declared fresh because siblings from the prior generation may no longer exist. Parent is always implicitly available.",
-			"To rebuild a mesh of agents that talked to each other, resurrect them in a single call: each agent may declare channels to its siblings in the same batch, since they all come online together.",
-			"Resurrection is non-blocking — each agent picks up its new task and any prior conversation history is visible to it. Results arrive later as notifications, same as `subagent`/`fork`.",
+			"Each resurrected agent inherits its persona, model, and tool set from the resumed session — none of those can be changed here. Only `id`, `channels`, and `task` must be re-declared.",
+			"To resurrect a mesh of agents that talked to each other, resurrect them in a single call: each agent may declare channels to its siblings in the same batch, since they all come online together.",
 		],
 		parameters: Type.Object({
 			agents: Type.Array(ResurrectItem, { description: "Agents to resurrect from their session files. Resurrect a whole mesh in one call so siblings can declare channels to each other." }),
@@ -1089,12 +1076,10 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 	pi.registerTool({
 		name: "await_agents",
 		label: "Await Agents",
-		description: "Block until an agent completes or sends a message. Returns accumulated notifications.",
+		description: "Block until an agent completes or sends you a message. Returns final agent output or sent message.",
 		promptGuidelines: [
 			"Use `await_agents` when you need results before your next step — it blocks until all specified agents complete (or all agents, if none specified).",
-			"Any agent message (including fire-and-forget) interrupts the wait. If an expect-response message interrupts, you must call `respond` before waiting again.",
-			"An agent blocked on a response from you cannot settle, so the wait is refused while one is pending: call `respond` first, then await again.",
-			"After handling an interruption, call `await_agents` again to resume waiting.",
+			"Any agent non terminal message sent to you while you are in an await_agents tool call interrupts the wait. If an expect-response message interrupts, you must call `respond` before waiting again.",
 		],
 		parameters: Type.Object({
 			agents: Type.Optional(
@@ -1137,9 +1122,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		label: "Interrupt",
 		description: "Halt a subagent immediately without tearing it down. Interrupts any in-flight tool call — useful when one is hung or stuck.",
 		promptGuidelines: [
-			"Forces the worker idle as fast as possible, short of teardown. Interrupts any running tool call — use when one is hung or stuck.",
-			"Prefer `send` unless you realize (usually because the user pointed it out) the subagent is going wrong and must be stopped now.",
-			"Also use it when the user reports a hung tool call and you want to unstick the subagent without tearing it down, so you can get it going again.",
+			"Prefer `send` to `interrpupt` unless you realize the subagent is going wrong and must be stopped now.",
 		],
 		parameters: Type.Object({
 			agents: Type.Optional(
