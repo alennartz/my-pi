@@ -58,6 +58,7 @@ import {
 import type { MessagePort, RoutedMessage, RoutedResponse } from "./message-router.js";
 
 const USE_STEER_DELIVERY = true;
+const FORCED_MODEL_KEY = "forced-model";
 
 /** Identity and communication scope injected into a child session. */
 export type SubagentScope =
@@ -1167,6 +1168,52 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		// remain usable before lifecycle wiring, while an explicit child uplink
 		// remains usable independently of host lifecycle hooks.
 		registerTools();
+
+		// ─── /fmodel command ─────────────────────────────────────────────────
+		// Cache available models for autocomplete (getArgumentCompletions has no ctx).
+		let cachedModels: { provider: string; id: string }[] = [];
+		if (typeof pi.registerCommand === "function") {
+			pi.registerCommand("fmodel", {
+			description: "Force all subagents to use a specific model (/fmodel to clear)",
+			getArgumentCompletions: (prefix) => {
+				if (cachedModels.length === 0) return null;
+				const items = cachedModels
+					.map((m) => `${m.provider}/${m.id}`)
+					.filter((ref) => !prefix || ref.startsWith(prefix) || cachedModels.find((m) => m.id === ref)?.id?.startsWith(prefix));
+				return items.length > 0 ? items.map((v) => ({ value: v, label: v })) : null;
+			},
+			handler: async (args, ctx) => {
+				const store = getOrCreateSessionTreeStore(ctx.sessionManager);
+				const input = args.trim();
+
+				if (!input) {
+					const current = store.get(FORCED_MODEL_KEY);
+					store.delete(FORCED_MODEL_KEY);
+					ctx.ui.notify(
+						current ? `Override cleared (was: ${current})` : "No override active",
+						current ? "info" : "warning",
+					);
+					return;
+				}
+
+				const { model: modelPart, thinking } = stripThinkingSuffix(input);
+				const resolved = ctx.modelRegistry.getAvailable().find(
+					(m: any) => m?.id === modelPart || `${m?.provider}/${m?.id}` === modelPart,
+				);
+				if (!resolved) {
+					ctx.ui.notify(`Unknown model "${modelPart}"`, "error");
+					return;
+				}
+
+				const ref = thinking
+					? `${resolved.provider}/${resolved.id}:${thinking}`
+					: `${resolved.provider}/${resolved.id}`;
+				store.set(FORCED_MODEL_KEY, ref);
+				ctx.ui.notify(`All subagents → ${ref} (clear with /fmodel)`, "info");
+			},
+		});
+		}
+
 		if (scope.kind === "child" && typeof scope.uplink.subscribe === "function") {
 			uplinkUnsubscribe = scope.uplink.subscribe((message) =>
 				receiveRoutedMessage(scope.uplink, message, "uplink"),
@@ -1244,6 +1291,10 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			} catch {
 				cachedPackageAgents = null;
 			}
+			cachedModels = ctx.modelRegistry
+				.getAvailable()
+				.filter((m: any) => m?.provider && m?.id)
+				.map((m: any) => ({ provider: m.provider, id: m.id }));
 			if (scope.kind === "child") return;
 			ensureRootRegistry(ctx);
 			if (event.reason === "new" || event.reason === "fork") return;

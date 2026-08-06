@@ -402,9 +402,12 @@ export async function createManagedChildSession(
 				},
 			});
 			reportRuntimeDiagnostics(services.diagnostics, hooks);
-			const modelResult = config.modelRef === undefined
+			const treeStore = config.scope.registry.getScopedStore?.();
+			const forced = treeStore?.get("forced-model");
+			const effectiveModelRef = forced ?? config.modelRef;
+			const modelResult = effectiveModelRef === undefined
 				? undefined
-				: resolveCliModel({ cliModel: config.modelRef, modelRuntime: services.modelRuntime });
+				: resolveCliModel({ cliModel: effectiveModelRef, modelRuntime: services.modelRuntime });
 			if (modelResult?.error) throw new Error(modelResult.error);
 			const sessionResult = await createAgentSessionFromServices({
 				services,
@@ -418,7 +421,6 @@ export async function createManagedChildSession(
 					: { excludeTools: config.toolPolicy.excludeTools }),
 				sessionStartEvent: options.sessionStartEvent,
 			});
-			const treeStore = config.scope.registry.getScopedStore?.();
 			if (treeStore) {
 				registerSessionTreeStore(options.sessionManager, treeStore);
 			}
