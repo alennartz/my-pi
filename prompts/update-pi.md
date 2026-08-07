@@ -16,3 +16,8 @@ Audit the upgrade path for pi and its related npm packages from the version curr
 8. once all subagents return if the breaks do not impact us just update the references in package.json to the latest, commit and end your turn.
 9. Otherwise, discuss with the user the impacts of the breaks and the proposed fixes.
 10. once the fixes have implemented and commited. think about if any of the changelog changes might result in improvement or simplifications to our extensions. if you think some might exist ask the user if they want you to look in to that in more detail.
+
+## Extra Info
+
+- The pi coding agent is part of the following mono repo https://github.com/earendil-works/pi.git
+- The full changelog for pi coding agent is in that repo and can be downloaded from a link you can render from the following template with the version you want: https://raw.githubusercontent.com/earendil-works/pi/refs/tags/v{version}/packages/coding-agent/CHANGELOG.md This file will have the ENtire change log from the start and be quite large you will need to find just eh parts you want. the file has headers in this format you can use to help you "## [{version}] - {date yyyy-mm-dd}"
