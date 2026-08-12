@@ -58,6 +58,8 @@ After architect completes, evaluate the scope of the change to decide which phas
 
 These are examples, not an exhaustive menu. A valid skip decision drops a **contiguous prefix** of the pre-implementation phases (test-write → test-review → impl-plan) and enters at a coherent point — every phase downstream of the entry point still runs, and no phase runs without the artifacts its predecessors produce. So "skip test-write but run test-review" is not a valid option (test-review has nothing to review), and neither is skipping impl-plan while keeping the test phases in a way that leaves implement without a plan. Within that constraint, use judgment: the four bullets are the points that come up most often, not the only points you may choose.
 
+**Skipping changes which phases run, not how they run.** Every phase after architect runs via a subagent — the skip decision only determines entry point, not execution mode. The primary agent scaffolds and delegates; it never does phase work itself regardless of which phase it skips to.
+
 **If uncertain whether to skip, ask the user.**
 
 When skipping, write scaffold sections to the plan file before spawning the target phase's subagent. Append the following to `docs/plans/<topic>.md`:
@@ -77,11 +79,10 @@ When also skipping impl-plan (skip to implement), additionally append:
 ```markdown
 ## Steps
 
-> **Skipped.** Work through the architecture methodically — identify affected files,
-> make changes in a logical order, and commit in coherent units.
+> **Skipped.** Work through the architecture methodically — identify affected files, make changes in a logical order, and commit in coherent units.
 ```
 
-Commit the scaffolded plan before spawning the target phase's subagent.
+Commit the scaffolded plan, then spawn the implement phase's subagent.
 
 When skipping test-review only (test-write still runs): after test-write completes and passes validation, append `**Review status:** skipped — test-review bypassed by skip decision` to the end of the `## Tests` section in the plan, commit, and proceed to impl-plan.
 
