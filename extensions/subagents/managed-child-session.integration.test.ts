@@ -7,7 +7,9 @@ import { childAgentPath, formatAgentPath, type AgentPath } from "./agent-path.js
 import { createManagedChildSession, type ChildSessionConfig } from "./managed-child-session.js";
 import type { MessagePort } from "./message-router.js";
 
-const registry = {} as ChildSessionConfig["scope"]["registry"];
+const registry = {
+	waitForLiveNode: async () => false,
+} as ChildSessionConfig["scope"]["registry"];
 
 let tmpRoot: string | undefined;
 

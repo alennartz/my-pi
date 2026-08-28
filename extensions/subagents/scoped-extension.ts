@@ -420,6 +420,25 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			return manager;
 		}
 
+		/** Restore the direct persisted children owned by this scoped session. */
+		async function restorePersistedChildren(ctx: ExtensionContext): Promise<SubagentManager> {
+			const current = ensureManager(ctx);
+			const discovery = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined);
+			await current.restoreFromPersistence(discovery.agents);
+			return current;
+		}
+
+		/**
+		 * A child runtime starts before its registry node is committed. Do not await
+		 * this work from its session_start handler: its parent is waiting for that
+		 * startup to finish before it can commit the node this restore requires.
+		 */
+		async function restoreChildDescendants(ctx: ExtensionContext): Promise<void> {
+			if (scope.kind !== "child") return;
+			if (!await scope.registry.waitForLiveNode(scope.path)) return;
+			await restorePersistedChildren(ctx);
+		}
+
 		async function ensureWidget(ctx: ExtensionContext): Promise<void> {
 			if (scope.kind === "child" || dashboard || panelHandle) return;
 			if (ctx.mode === "tui") {
@@ -1295,12 +1314,18 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				.getAvailable()
 				.filter((m: any) => m?.provider && m?.id)
 				.map((m: any) => ({ provider: m.provider, id: m.id }));
-			if (scope.kind === "child") return;
+			if (scope.kind === "child") {
+				if (event.reason === "resume") {
+					void restoreChildDescendants(ctx).catch((error) => {
+						const message = error instanceof Error ? error.message : String(error);
+						console.error(`[subagents] Failed to restore nested subagents: ${message}`);
+					});
+				}
+				return;
+			}
 			ensureRootRegistry(ctx);
 			if (event.reason === "new" || event.reason === "fork") return;
-			const current = ensureManager(ctx);
-			const discovery = discoverAgents(ctx.cwd, cachedPackageAgents ?? undefined);
-			await current.restoreFromPersistence(discovery.agents);
+			const current = await restorePersistedChildren(ctx);
 			if (!current.hasAgents()) return;
 			await ensureWidget(ctx);
 			refreshDisplays(current);

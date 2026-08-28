@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const managed = vi.hoisted(() => {
 	let sequence = 0;
 	const created: Array<{ config: any; dependencies: any; hooks: any; child: any }> = [];
+	let onCreate: ((entry: { config: any; dependencies: any; hooks: any; child: any }) => Promise<void>) | undefined;
 	const createManagedChildSession = vi.fn(async (config: any, dependencies: any, hooks: any) => {
 		const localId = config.path[config.path.length - 1];
 		const sessionId = `session-${localId}-${++sequence}`;
@@ -29,15 +30,21 @@ const managed = vi.hoisted(() => {
 			abort: vi.fn(async () => {}),
 			dispose: vi.fn(async () => {}),
 		};
-		created.push({ config, dependencies, hooks, child });
+		const entry = { config, dependencies, hooks, child };
+		created.push(entry);
+		await onCreate?.(entry);
 		return child;
 	});
 	return {
 		created,
 		createManagedChildSession,
+		setOnCreate(callback: (entry: { config: any; dependencies: any; hooks: any; child: any }) => Promise<void>) {
+			onCreate = callback;
+		},
 		reset() {
 			sequence = 0;
 			created.length = 0;
+			onCreate = undefined;
 			createManagedChildSession.mockClear();
 		},
 	};
@@ -65,6 +72,7 @@ vi.mock("./broker.js", () => ({
 
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import type { AgentPath } from "./agent-path.js";
+import { appendAgentAdded, ensurePersistence } from "./persistence.js";
 import type { AgentNodeSnapshot, AgentSessionRegistry, RegistryEvent } from "./agent-session-registry.js";
 import type { MessagePort, RoutedMessage, SendReceipt } from "./message-router.js";
 
@@ -644,6 +652,74 @@ describe("root orchestration integration", () => {
 
 		await execute(tools, "interrupt", { agent: "worker" }, ctx);
 		expect(created.child.abort).toHaveBeenCalledTimes(1);
+	});
+
+	it("recursively restores a persisted child subtree after the root session resumes", async () => {
+		const rootSessionFile = path.join(tmpRoot!, "root.jsonl");
+		const workerSessionFile = path.join(tmpRoot!, "root.subagents", "sessions", "worker.jsonl");
+		const scoutSessionFile = path.join(tmpRoot!, "root.subagents", "sessions", "worker.subagents", "sessions", "scout.jsonl");
+		const probeSessionFile = path.join(
+			tmpRoot!,
+			"root.subagents",
+			"sessions",
+			"worker.subagents",
+			"sessions",
+			"scout.subagents",
+			"sessions",
+			"probe.jsonl",
+		);
+		fs.mkdirSync(path.dirname(probeSessionFile), { recursive: true });
+		fs.writeFileSync(rootSessionFile, "");
+		fs.writeFileSync(workerSessionFile, "");
+		fs.writeFileSync(scoutSessionFile, "");
+		fs.writeFileSync(probeSessionFile, "");
+
+		appendAgentAdded(ensurePersistence(rootSessionFile), {
+			id: "worker",
+			kind: "agent",
+			task: "restore worker",
+			channels: [],
+			sessionFile: workerSessionFile,
+			sessionId: "worker-session",
+		});
+		appendAgentAdded(ensurePersistence(workerSessionFile), {
+			id: "scout",
+			kind: "agent",
+			task: "restore scout",
+			channels: [],
+			sessionFile: scoutSessionFile,
+			sessionId: "scout-session",
+		});
+		appendAgentAdded(ensurePersistence(scoutSessionFile), {
+			id: "probe",
+			kind: "agent",
+			task: "restore probe",
+			channels: [],
+			sessionFile: probeSessionFile,
+			sessionId: "probe-session",
+		});
+
+		managed.setOnCreate(async ({ config }) => {
+			if (config.target.kind !== "resume") return;
+			const child = makePi();
+			await createSubagentsExtension(config.scope)(child.pi as any);
+			await child.handlers.get("session_start")?.(
+				{ reason: "resume" },
+				makeContext(config.target.sessionFile),
+			);
+		});
+
+		const root = makePi();
+		await createSubagentsExtension({ kind: "root" })(root.pi as any);
+		await root.handlers.get("session_start")?.({ reason: "resume" }, makeContext(rootSessionFile));
+
+		await vi.waitFor(() => expect(managed.created).toHaveLength(3));
+		const workerScope = managed.created[0].config.scope as SubagentScope;
+		expect(workerScope.registry.listDescendants([]).map((node) => node.path)).toEqual([
+			["worker"],
+			["worker", "scout"],
+			["worker", "scout", "probe"],
+		]);
 	});
 
 	it("refuses to await an agent already blocked on the parent's response", async () => {

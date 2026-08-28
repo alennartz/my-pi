@@ -221,6 +221,28 @@ describe("AgentSessionRegistry atomic creation and snapshots", () => {
 		await expect(first).resolves.toHaveLength(1);
 	});
 
+	it("makes a constructing child path observable only after its node commits", async () => {
+		let registry: AgentSessionRegistry;
+		let becameLive: boolean | undefined;
+		let snapshotWhenLive: AgentNodeSnapshot | undefined;
+		const createSession = vi.fn(async (config: any) => {
+			void registry.waitForLiveNode(config.path).then((isLive) => {
+				becameLive = isLive;
+				snapshotWhenLive = registry.getSnapshot(config.path);
+			});
+			return fakeSession(config.path.join("/"));
+		});
+		registry = new AgentSessionRegistry({
+			root: rootSnapshot(),
+			dependencies: dependencies(),
+			createSession,
+		});
+
+		await registry.createChildren([], [request("worker")]);
+		await vi.waitFor(() => expect(becameLive).toBe(true));
+		expect(snapshotWhenLive).toMatchObject({ path: ["worker"] });
+	});
+
 	it("replaces immutable operational snapshots only when values change", async () => {
 		const { registry } = createRegistry();
 		await registry.createChildren([], [request("worker")]);

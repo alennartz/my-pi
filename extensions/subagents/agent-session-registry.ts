@@ -112,6 +112,7 @@ export class AgentSessionRegistry {
 	private readonly nodes = new Map<string, InternalNode>();
 	private readonly stagedSnapshots = new Map<string, AgentNodeSnapshot>();
 	private readonly reservations = new Map<string, Reservation>();
+	private readonly liveWaiters = new Map<string, Set<(isLive: boolean) => void>>();
 	private readonly removing = new Set<string>();
 	private readonly listeners = new Set<(event: RegistryEvent) => void>();
 	private readonly removals = new Map<string, Promise<void>>();
@@ -149,6 +150,26 @@ export class AgentSessionRegistry {
 			if (node.snapshot.parentPath && samePath(node.snapshot.parentPath, parent)) result.push(node.snapshot);
 		}
 		return result;
+	}
+
+	/**
+	 * Wait for a currently constructing descendant to become live. Child-session
+	 * startup uses this before replaying its own persisted children: the parent
+	 * session is constructed before its registry node is committed.
+	 *
+	 * Returns false when `path` is neither live nor reserved, or when its
+	 * construction fails. The registry owns that distinction so callers never
+	 * need to observe its mutable construction state.
+	 */
+	waitForLiveNode(path: AgentPath): Promise<boolean> {
+		const pathKey = key(path);
+		if (this.nodes.has(pathKey)) return Promise.resolve(true);
+		if (!this.reservations.has(pathKey)) return Promise.resolve(false);
+		return new Promise((resolve) => {
+			const waiters = this.liveWaiters.get(pathKey);
+			if (waiters) waiters.add(resolve);
+			else this.liveWaiters.set(pathKey, new Set([resolve]));
+		});
 	}
 
 	/**
@@ -290,7 +311,7 @@ export class AgentSessionRegistry {
 			for (const path of paths) {
 				const pathKey = key(path);
 				this.stagedSnapshots.delete(pathKey);
-				this.releaseReservation(pathKey);
+				this.releaseReservation(pathKey, true);
 			}
 			for (const path of paths) {
 				const node = this.nodes.get(key(path))!;
@@ -402,11 +423,15 @@ export class AgentSessionRegistry {
 		this.reservations.set(pathKey, { path: [...path], promise, resolve });
 	}
 
-	private releaseReservation(pathKey: string): void {
+	private releaseReservation(pathKey: string, isLive = false): void {
 		const reservation = this.reservations.get(pathKey);
 		if (!reservation) return;
 		this.reservations.delete(pathKey);
 		reservation.resolve();
+		const waiters = this.liveWaiters.get(pathKey);
+		if (!waiters) return;
+		this.liveWaiters.delete(pathKey);
+		for (const resolve of waiters) resolve(isLive);
 	}
 
 	private async waitForReservations(prefix: AgentPath): Promise<void> {
