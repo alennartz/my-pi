@@ -3,12 +3,14 @@ import { NotificationQueue, type NotificationQueueConfig } from "./notification-
 
 function createQueue(overrides?: Partial<NotificationQueueConfig>) {
 	const delivered: string[] = [];
+	const deferred: string[] = [];
 	const queue = new NotificationQueue({
 		deliver: (content) => delivered.push(content),
+		deliverDeferred: (content) => deferred.push(content),
 		steerDelivery: false,
 		...overrides,
 	});
-	return { queue, delivered };
+	return { queue, delivered, deferred };
 }
 
 // ─── Normal delivery ─────────────────────────────────────────────────────────
@@ -207,6 +209,48 @@ describe("NotificationQueue — drainLocal", () => {
 		queue.queue("<uplink>b</uplink>", "uplink");
 		queue.queue("<local>c</local>", "local");
 		queue.drainLocal();
+		expect(queue.length).toBe(1);
+	});
+});
+
+// ─── Deferred delivery (aborted run) ──────────────────────────────────────
+
+describe("NotificationQueue — deferred delivery", () => {
+	it("setParentBusy(false, { flush: false }) clears busy without delivering", () => {
+		const { queue, delivered, deferred } = createQueue();
+		queue.setParentBusy(true);
+		queue.queue("<event>a</event>", "local");
+		queue.setParentBusy(false, { flush: false });
+		expect(delivered).toEqual([]);
+		expect(deferred).toEqual([]);
+		expect(queue.length).toBe(1);
+	});
+
+	it("deferAll hands queued notifications to the deferred sink and empties the queue", () => {
+		const { queue, delivered, deferred } = createQueue();
+		queue.setParentBusy(true);
+		queue.queue("<event>a</event>", "local");
+		queue.queue("<event>b</event>", "uplink");
+		queue.setParentBusy(false, { flush: false });
+		queue.deferAll();
+		expect(deferred).toEqual(["<event>a</event>\n<event>b</event>"]);
+		expect(delivered).toEqual([]);
+		expect(queue.length).toBe(0);
+	});
+
+	it("deferAll is a no-op on an empty queue", () => {
+		const { queue, deferred } = createQueue();
+		queue.deferAll();
+		expect(deferred).toEqual([]);
+	});
+
+	it("deferAll respects the waiting flag", () => {
+		const { queue, deferred } = createQueue();
+		queue.setParentBusy(true);
+		queue.queue("<event>a</event>", "local");
+		queue.setWaiting(true);
+		queue.deferAll();
+		expect(deferred).toEqual([]);
 		expect(queue.length).toBe(1);
 	});
 });

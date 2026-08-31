@@ -14,6 +14,11 @@
  *
  * When waiting is set, all flush delivery is suppressed. External
  * callers drain the queue themselves via drainAll().
+ *
+ * An aborted run is the one case where a settled agent must not be woken:
+ * the operator asked it to stop. deferAll() hands the accumulated
+ * notifications over without starting a turn, so nothing is lost and
+ * nothing restarts.
  */
 
 export type NotificationSource = "local" | "uplink";
@@ -24,6 +29,13 @@ export interface NotificationQueueConfig {
 	 * Receives the combined XML content of all queued notifications.
 	 */
 	deliver: (content: string) => void;
+
+	/**
+	 * Called to hand notifications to the agent without starting a turn.
+	 * Used after an aborted run, where waking the agent would defeat the
+	 * interrupt. Delivery happens whenever the agent is next prompted.
+	 */
+	deliverDeferred: (content: string) => void;
 
 	/**
 	 * Use steer delivery mode: flush between tool call rounds instead of
@@ -89,11 +101,27 @@ export class NotificationQueue {
 		this.entries.length = 0;
 	}
 
-	setParentBusy(busy: boolean): void {
+	/**
+	 * @param options.flush Flush on the busy→idle edge. Default true. Pass
+	 * false when the caller settles the queue itself, as after an abort.
+	 */
+	setParentBusy(busy: boolean, options?: { flush?: boolean }): void {
 		this.parentBusy = busy;
-		if (!busy) {
+		if (!busy && options?.flush !== false) {
 			this.flush();
 		}
+	}
+
+	/**
+	 * Hand every queued notification to the agent without starting a turn.
+	 * Unlike flush(), this ignores busy state — the caller has already
+	 * established that no run should follow.
+	 */
+	deferAll(): void {
+		if (this._isWaiting) return;
+		if (this.entries.length === 0) return;
+		const combined = this.drainAll();
+		this.config.deliverDeferred(combined);
 	}
 
 	setWaiting(waiting: boolean): void {

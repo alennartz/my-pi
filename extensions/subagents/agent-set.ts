@@ -71,6 +71,49 @@ export function isSettledState(state: AgentState): boolean {
 	return state === "idle" || state === "errored" || state === "dead";
 }
 
+/**
+ * Result of an interrupt: whether the child reached idle before the caller
+ * stopped waiting. The abort is delivered either way.
+ */
+export type InterruptOutcome = "settled" | "pending";
+
+/** How long an interrupt waits for the child to reach idle. */
+export const INTERRUPT_SETTLE_TIMEOUT_MS = 10_000;
+
+/**
+ * Await a settle promise without adopting its liveness. Returns "pending" once
+ * the timeout elapses or the caller's own signal aborts; the underlying promise
+ * is left to finish on its own and its rejection is absorbed, since the abort
+ * has already been delivered and no caller remains to hear about it.
+ */
+async function boundedSettle(
+	settled: Promise<void>,
+	timeoutMs: number,
+	signal?: AbortSignal,
+): Promise<InterruptOutcome> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let onAbort: (() => void) | undefined;
+	try {
+		return await Promise.race<InterruptOutcome>([
+			settled.then(() => "settled" as const),
+			new Promise<InterruptOutcome>((resolve) => {
+				timer = setTimeout(() => resolve("pending"), timeoutMs);
+				if (!signal) return;
+				if (signal.aborted) {
+					resolve("pending");
+					return;
+				}
+				onAbort = () => resolve("pending");
+				signal.addEventListener("abort", onAbort, { once: true });
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+		if (onAbort) signal?.removeEventListener("abort", onAbort);
+		settled.catch(() => {});
+	}
+}
+
 export interface AgentStatus {
 	id: string;
 	state: AgentState;
@@ -198,16 +241,23 @@ export class SubagentManager {
 	/**
 	 * Abort the target agent's current operation (equivalent to pressing Escape
 	 * in the TUI). An already-settled child is deliberately a no-op for parity.
+	 *
+	 * The signal reaches the child immediately; settling is what may lag, since a
+	 * tool that ignores its abort signal keeps the run alive for as long as it
+	 * pleases. Waiting unbounded on that would hang the caller with no way out,
+	 * so the wait is bounded and the outcome reported: "settled" when the child
+	 * reached idle, "pending" when the abort was delivered but the run is still
+	 * unwinding.
 	 */
-	async interrupt(agentId: string): Promise<void> {
+	async interrupt(agentId: string, options?: { timeoutMs?: number; signal?: AbortSignal }): Promise<InterruptOutcome> {
 		const childPath = childAgentPath(this.opts.ownerPath, agentId);
 		const node = this.opts.registry.get(childPath);
 		if (!node || node.snapshot.ownership !== "registry") {
 			throw new Error(`Unknown agent: "${agentId}"`);
 		}
 		const state = node.snapshot.operational.state;
-		if (state === "errored" || state === "dead") return;
-		await node.session.abort();
+		if (state === "errored" || state === "dead") return "settled";
+		return boundedSettle(node.session.abort(), options?.timeoutMs ?? INTERRUPT_SETTLE_TIMEOUT_MS, options?.signal);
 	}
 
 	/**

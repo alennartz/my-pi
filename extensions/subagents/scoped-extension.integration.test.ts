@@ -540,6 +540,73 @@ describe("child-scoped extension routing", () => {
 		}
 	});
 
+	it("parks notifications on the next turn when the run was aborted, instead of restarting it", async () => {
+		const uplink = makePort("child");
+		const scope: SubagentScope = {
+			kind: "child",
+			registry,
+			path: ["child"],
+			identity: { id: "child", task: "work", channels: ["parent"] },
+			uplink,
+		};
+		const { pi, handlers } = makePi();
+		await createSubagentsExtension(scope)(pi as any);
+		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+		const aborting = { ...ctx, signal: { aborted: true } };
+
+		// Busy with a tool in flight, so the arriving message is held, not delivered.
+		await handlers.get("agent_start")?.({ type: "agent_start" }, ctx);
+		await handlers.get("tool_execution_start")?.({ toolCallId: "t1", toolName: "bash" }, ctx);
+		uplink.emit({ from: "parent", message: "stop that", responseExpected: false });
+		expect(pi.sendMessage).not.toHaveBeenCalled();
+
+		// The run unwinds under an aborted signal.
+		await handlers.get("tool_execution_end")?.({ toolCallId: "t1", toolName: "bash" }, aborting);
+		expect(pi.sendMessage).not.toHaveBeenCalled();
+
+		await handlers.get("agent_end")?.({
+			type: "agent_end",
+			willRetry: false,
+			messages: [{ role: "assistant", stopReason: "aborted", content: [] }],
+		}, aborting);
+		await handlers.get("agent_settled")?.({ type: "agent_settled" }, ctx);
+
+		expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+		expect(pi.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("stop that") }),
+			{ deliverAs: "nextTurn" },
+		);
+	});
+
+	it("still wakes the agent with queued notifications after a normal run ends", async () => {
+		const uplink = makePort("child");
+		const scope: SubagentScope = {
+			kind: "child",
+			registry,
+			path: ["child"],
+			identity: { id: "child", task: "work", channels: ["parent"] },
+			uplink,
+		};
+		const { pi, handlers } = makePi();
+		await createSubagentsExtension(scope)(pi as any);
+		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+
+		await handlers.get("agent_start")?.({ type: "agent_start" }, ctx);
+		await handlers.get("tool_execution_start")?.({ toolCallId: "t1", toolName: "bash" }, ctx);
+		uplink.emit({ from: "parent", message: "more work", responseExpected: false });
+		await handlers.get("agent_end")?.({
+			type: "agent_end",
+			willRetry: false,
+			messages: [{ role: "assistant", stopReason: "stop", content: [] }],
+		}, ctx);
+		await handlers.get("agent_settled")?.({ type: "agent_settled" }, ctx);
+
+		expect(pi.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("more work") }),
+			{ triggerTurn: true },
+		);
+	});
+
 	it("keeps uplink listeners and mutable child scope state isolated", async () => {
 		const firstUplink = makePort("first");
 		const secondUplink = makePort("second");

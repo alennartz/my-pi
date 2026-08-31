@@ -122,6 +122,9 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		let stopSequences: StopSequenceManager | null = null;
 		let rootOperational = emptyOperational("idle");
 		let rootRunError: string | undefined;
+		// Set at agent_end, consumed at agent_settled: the settle handler cannot
+		// otherwise tell an abort apart from a normal end.
+		let runAborted = false;
 		const skillPathsMap = new Map<string, string[]>();
 		const notifiedTierIssues = new Set<string>();
 		// A recursive scope has two routing ports: its local parent endpoint and
@@ -140,6 +143,15 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				pi.sendMessage(
 					{ customType: "subagents", content: combined, display: true },
 					{ triggerTurn: true },
+				);
+			},
+			deliverDeferred(combined: string) {
+				// After an abort, waking the agent would undo the interrupt. Park the
+				// notifications on the next turn instead: they ride along with
+				// whatever prompts this session next, and none are lost.
+				pi.sendMessage(
+					{ customType: "subagents", content: combined, display: true },
+					{ deliverAs: "nextTurn" },
 				);
 			},
 		});
@@ -476,6 +488,17 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				panelHandle.clear();
 				panelHandle = null;
 			}
+		}
+
+		function wasAborted(event: any): boolean {
+			if (event?.willRetry) return false;
+			const messages = Array.isArray(event?.messages) ? event.messages : [];
+			for (let index = messages.length - 1; index >= 0; index -= 1) {
+				const message = messages[index];
+				if (message?.role !== "assistant") continue;
+				return message.stopReason === "aborted";
+			}
+			return false;
 		}
 
 		function terminalError(event: any): string | undefined {
@@ -1146,7 +1169,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			),
 		}),
 
-		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 			if (!manager || !manager.hasAgents()) {
 				throw new Error("No agents running. Spawn agents first with the subagent or fork tool.");
 			}
@@ -1163,17 +1186,32 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			}
 
 			const scopedIds = params.agents ?? manager.getAgentStatuses().map((s) => s.id);
-			const results = await Promise.allSettled(scopedIds.map((id) => manager!.interrupt(id)));
+			const results = await Promise.allSettled(
+				scopedIds.map((id) => manager!.interrupt(id, { signal })),
+			);
 
 			const interrupted: string[] = [];
+			const pending: string[] = [];
 			const failed: string[] = [];
 			results.forEach((r, i) => {
-				if (r.status === "fulfilled") interrupted.push(scopedIds[i]);
-				else failed.push(`${scopedIds[i]}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+				if (r.status !== "fulfilled") {
+					failed.push(`${scopedIds[i]}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+				} else if (r.value === "pending") {
+					pending.push(scopedIds[i]);
+				} else {
+					interrupted.push(scopedIds[i]);
+				}
 			});
 
 			const lines: string[] = [];
 			if (interrupted.length > 0) lines.push(`Interrupted: ${interrupted.join(", ")}`);
+			if (pending.length > 0) {
+				lines.push(
+					`Abort delivered but not yet settled: ${pending.join(", ")}. ` +
+					"Likely stuck in a tool call that ignores cancellation. Check status before relying on it, " +
+					"and tear it down if it stays busy.",
+				);
+			}
 			if (failed.length > 0) lines.push(`Failed: ${failed.join("; ")}`);
 			return {
 				content: [{ type: "text", text: lines.join("\n") || "No agents interrupted." }],
@@ -1253,6 +1291,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 
 		pi.on("agent_end", async (event, ctx) => {
 			queue.clearPendingTools();
+			runAborted = wasAborted(event);
 			if (scope.kind === "root") {
 				const error = terminalError(event);
 				if (error) {
@@ -1263,7 +1302,14 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		});
 
 		pi.on("agent_settled", async (_event, ctx) => {
-			queue.setParentBusy(false);
+			// An aborted run must settle without triggering the next one. Flushing
+			// here would deliver with triggerTurn and immediately restart the agent,
+			// which both defeats the interrupt and strands the caller of abort() —
+			// waitForIdle() cannot resolve while a fresh run is active.
+			const aborted = runAborted;
+			runAborted = false;
+			queue.setParentBusy(false, { flush: !aborted });
+			if (aborted) queue.deferAll();
 			if (scope.kind === "root") {
 				updateRootOperational(ctx, {
 					// A failed run leaves this session alive and promptable, so the
@@ -1300,7 +1346,14 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 					});
 				}
 			});
-			pi.on("tool_execution_end", async (event) => {
+			pi.on("tool_execution_end", async (event, ctx) => {
+				// A tool ending under an aborted signal is the run unwinding, not a
+				// round boundary. Delivering here would steer notifications into a
+				// run that is about to discard its queues.
+				if (ctx.signal?.aborted) {
+					queue.clearPendingTools();
+					return;
+				}
 				queue.trackToolEnd(event.toolCallId);
 			});
 		}

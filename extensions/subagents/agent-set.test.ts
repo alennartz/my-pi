@@ -181,8 +181,44 @@ describe("registry-backed manager interruption", () => {
 		const node = registry.get(["researcher", "worker"]);
 		const { manager } = createManager(registry);
 
-		await manager.interrupt("worker");
+		await expect(manager.interrupt("worker")).resolves.toBe("settled");
 		expect(node.session.abort).toHaveBeenCalledTimes(1);
+	});
+
+	it("reports pending rather than hanging when the child never reaches idle", async () => {
+		const worker = snapshot("worker");
+		const registry = makeRegistry([worker]);
+		const node = registry.get(["researcher", "worker"]);
+		node.session.abort = vi.fn(() => new Promise<void>(() => {}));
+		const { manager } = createManager(registry);
+
+		await expect(manager.interrupt("worker", { timeoutMs: 5 })).resolves.toBe("pending");
+		expect(node.session.abort).toHaveBeenCalledTimes(1);
+	});
+
+	it("stops waiting when the caller's own signal aborts", async () => {
+		const worker = snapshot("worker");
+		const registry = makeRegistry([worker]);
+		const node = registry.get(["researcher", "worker"]);
+		node.session.abort = vi.fn(() => new Promise<void>(() => {}));
+		const { manager } = createManager(registry);
+		const controller = new AbortController();
+
+		const outcome = manager.interrupt("worker", { timeoutMs: 60_000, signal: controller.signal });
+		controller.abort();
+		await expect(outcome).resolves.toBe("pending");
+	});
+
+	it("propagates an abort failure to the caller", async () => {
+		const worker = snapshot("worker");
+		const registry = makeRegistry([worker]);
+		const node = registry.get(["researcher", "worker"]);
+		node.session.abort = vi.fn(async () => {
+			throw new Error("runtime gone");
+		});
+		const { manager } = createManager(registry);
+
+		await expect(manager.interrupt("worker")).rejects.toThrow(/runtime gone/);
 	});
 
 	it("uses the owner path when resolving a duplicate local id under another branch", async () => {
@@ -202,7 +238,7 @@ describe("registry-backed manager interruption", () => {
 		const node = registry.get(["researcher", "worker"]);
 		const { manager } = createManager(registry);
 
-		await expect(manager.interrupt("worker")).resolves.toBeUndefined();
+		await expect(manager.interrupt("worker")).resolves.toBe("settled");
 		expect(node.session.abort).not.toHaveBeenCalled();
 	});
 
@@ -214,7 +250,7 @@ describe("registry-backed manager interruption", () => {
 		const node = registry.get(["researcher", "worker"]);
 		const { manager } = createManager(registry);
 
-		await expect(manager.interrupt("worker")).resolves.toBeUndefined();
+		await expect(manager.interrupt("worker")).resolves.toBe("settled");
 		expect(node.session.abort).not.toHaveBeenCalled();
 	});
 
