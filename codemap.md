@@ -96,8 +96,6 @@ Long-lived in-process subagent orchestration extension — creates and manages S
 - `skills/orchestrating-agents/SKILL.md`
 - `skills/specialist-design/SKILL.md`
 - `agents/scout.md`
-- `agents/ux-designer.md`
-- `agents/ux-reviewer.md`
 
 ### Session Resume
 
