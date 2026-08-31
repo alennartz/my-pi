@@ -32,6 +32,7 @@ import {
 	resolveSkillPaths,
 	resolveAgentCwds,
 	formatAgentList,
+	renderAgentDefinitions,
 } from "./agents.js";
 import { SubagentManager, isSettledState, type AgentStatus, type AgentState } from "./agent-set.js";
 import {
@@ -1338,14 +1339,12 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			const lines = [""];
 			if (agents.length > 0) {
 				lines.push(
-					"## Available Agent Definitions",
-					"",
 					"The following agent definitions can be referenced in the subagent tool's `agent` field.",
 					"Each is self-contained — it carries its own system prompt, model, and tool restrictions. The description below is all you need to choose and deploy them; do not read their definition files before using them. Just pass the name in the `agent` field with a task string.",
 					"",
+					renderAgentDefinitions(agents),
+					"",
 				);
-				for (const agent of agents) lines.push(`- **${agent.name}** (${agent.source}): ${agent.description}`);
-				lines.push("");
 			}
 			const availableModels: any[] = ctx.modelRegistry.getAvailable();
 			const isAvailable = (ref: string) => availableModels.some((model: any) =>

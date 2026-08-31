@@ -284,6 +284,33 @@ export function formatAgentList(agents: AgentConfig[], maxItems: number): { text
 	};
 }
 
+function escapeXml(value: string): string {
+	return value
+		.replaceAll("&", "&amp;")
+		.replaceAll("<", "&lt;")
+		.replaceAll(">", "&gt;")
+		.replaceAll('"', "&quot;")
+		.replaceAll("'", "&apos;");
+}
+
+/**
+ * Render discovered agent definitions as a structured prompt block.
+ *
+ * Names and sources are attributes on a repeated `<agent>` element while the
+ * description is its body, so the model can distinguish the definition's
+ * identity from the text used to choose it.
+ */
+export function renderAgentDefinitions(agents: AgentConfig[]): string {
+	const lines = ["<available_agent_definitions>"];
+	for (const agent of agents) {
+		lines.push(
+			`  <agent name="${escapeXml(agent.name)}" source="${escapeXml(agent.source)}">${escapeXml(agent.description)}</agent>`,
+		);
+	}
+	lines.push("</available_agent_definitions>");
+	return lines.join("\n");
+}
+
 export interface CommandInfo {
 	name: string;
 	source: string;

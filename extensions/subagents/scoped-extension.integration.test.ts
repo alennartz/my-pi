@@ -575,6 +575,30 @@ describe("child-scoped extension routing", () => {
 });
 
 describe("root orchestration integration", () => {
+	it("injects discovered agent definitions as XML with descriptions in the agent body", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		fs.mkdirSync(path.join(tmpRoot!, ".pi", "agents"), { recursive: true });
+		fs.writeFileSync(
+			path.join(tmpRoot!, ".pi", "agents", "reviewer.md"),
+			`---\nname: reviewer\ndescription: Review <changes> & report findings\n---\nReview carefully.`,
+		);
+
+		const { pi, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const result = await handlers.get("before_agent_start")?.(
+			{ systemPrompt: "base prompt" },
+			makeContext(parentSessionFile),
+		);
+
+		expect(result.systemPrompt).toContain("<available_agent_definitions>");
+		expect(result.systemPrompt).toContain(
+			'  <agent name="reviewer" source="project">Review &lt;changes&gt; &amp; report findings</agent>',
+		);
+		expect(result.systemPrompt).toContain("</available_agent_definitions>");
+		expect(result.systemPrompt).not.toContain("## Available Agent Definitions");
+	});
+
 	it("owns SDK-native children, projects lifecycle/status updates, and records replacement metadata", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
