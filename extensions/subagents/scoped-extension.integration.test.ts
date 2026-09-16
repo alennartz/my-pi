@@ -990,6 +990,30 @@ describe("root orchestration integration", () => {
 			.rejects.toThrow(/unavailable|dead/i);
 	});
 
+	it("inherits the active parent model when model is omitted or empty", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile, {
+			model: { provider: "astra", id: "model" },
+			modelRegistry: {
+				getAvailable: () => [{ provider: "astra", id: "model" }],
+			},
+		});
+
+		await execute(tools, "subagent", {
+			agents: [
+				{ id: "omitted", task: "inherit", channels: [] },
+				{ id: "empty", agent: "", model: "", task: "inherit", channels: [] },
+			],
+		}, ctx);
+
+		expect(managed.created.map((entry) => entry.config.modelRef)).toEqual(["astra/model", "astra/model"]);
+		const lifecycleLog = fs.readFileSync(path.join(tmpRoot!, "parent.subagents", "agents.jsonl"), "utf8");
+		expect(lifecycleLog).not.toContain('"agent":""');
+	});
+
 	it("passes a persona's resolved model tier to the native child", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");

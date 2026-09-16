@@ -106,6 +106,15 @@ function summarizeArgs(args: Record<string, any>): string {
 	return keys.length === 0 ? "" : keys.slice(0, 2).join(", ");
 }
 
+/** Model reference for inheriting the active parent session model. */
+function modelRefOf(model: { provider?: unknown; id?: unknown } | undefined): string | undefined {
+	if (typeof model?.id !== "string" || model.id.length === 0) return undefined;
+	if (typeof model.provider === "string" && model.provider.length > 0) {
+		return `${model.provider}/${model.id}`;
+	}
+	return model.id;
+}
+
 /** Build an extension factory bound to one root or child session scope. */
 export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory {
 	return (pi: ExtensionAPI) => {
@@ -610,12 +619,13 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			// Validate agent definitions and model overrides
 			for (const a of params.agents) {
 				let foundConfig: AgentConfig | undefined;
-				if (a.agent) {
-					foundConfig = allAgentConfigs.find((c) => c.name === a.agent);
+				const agentName = a.agent || undefined;
+				if (agentName) {
+					foundConfig = allAgentConfigs.find((c) => c.name === agentName);
 					if (!foundConfig) {
 						const available = formatAgentList(allAgentConfigs, 10);
 						throw new Error(
-							`Unknown agent definition "${a.agent}". Available: ${available.text}`,
+							`Unknown agent definition "${agentName}". Available: ${available.text}`,
 						);
 					}
 				}
@@ -653,7 +663,8 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			// Resolve skill paths for agents that declare skills
 			const commands = pi.getCommands();
 			for (const a of params.agents) {
-				const agentConfig = a.agent ? allAgentConfigs.find((c) => c.name === a.agent) : undefined;
+				const agentName = a.agent || undefined;
+				const agentConfig = agentName ? allAgentConfigs.find((c) => c.name === agentName) : undefined;
 				if (agentConfig?.skills) {
 					try {
 						const paths = resolveSkillPaths(agentConfig.skills, commands);
@@ -671,11 +682,15 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 			// getAvailable() (auth-filtered), we always pick the provider that's
 			// actually configured, regardless of ordering in getAll().
 			const tiers = loadTiers(ctx.cwd, ctx.isProjectTrusted());
+			const inheritedModelRef = modelRefOf(ctx.model);
 			const agentSpecs: RegularAgentSpec[] = params.agents.map(a => {
-				const agentConfig = a.agent ? allAgentConfigs.find((c) => c.name === a.agent) : undefined;
-				// Agent-pinned model wins over tool override — resolve whichever applies.
-				const rawModel = agentConfig?.model ?? a.model;
-				let model: string | undefined = rawModel;
+				const agentName = a.agent || undefined;
+				const agentConfig = agentName ? allAgentConfigs.find((c) => c.name === agentName) : undefined;
+				// Agent-pinned model wins over tool override. Empty optional fields are
+				// equivalent to omission, so an unpinned agent inherits the parent's
+				// active model instead of re-resolving the settings default in the child.
+				const rawModel = agentConfig?.model || a.model;
+				let model: string | undefined = rawModel || inheritedModelRef;
 				if (model) {
 					// Tier names resolve to configured model ids; unconfigured or
 					// unavailable tiers fall back to the session default (no --model).
@@ -700,7 +715,13 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 							: `${resolved.provider}/${resolved.id}`;
 					}
 				}
-				return { kind: "agent" as const, ...a, model, cwd: resolvedCwds.get(a.id) };
+				return {
+					kind: "agent" as const,
+					...a,
+					agent: agentName,
+					model,
+					cwd: resolvedCwds.get(a.id),
+				};
 			});
 
 			await ensureWidget(ctx);
