@@ -143,11 +143,11 @@ function buildFooterLine(
  * Pass the resolved record for the current provider, or null/undefined to clear
  * (e.g. the active model is on a provider with no quota tracking).
  */
-function refreshStatusline(
+export function refreshStatusline(
 	record: ProviderRecord | null | undefined,
 	ctx: ExtensionContext,
 ): void {
-	if (!ctx.hasUI) return;
+	if (!ctx.hasUI || typeof ctx.ui?.setStatus !== "function") return;
 	const store = getOrCreateSessionTreeStore(ctx.sessionManager);
 	const line = record ? buildFooterLine(record, Date.now(), store) : undefined;
 	ctx.ui.setStatus("quota-providers", line);
