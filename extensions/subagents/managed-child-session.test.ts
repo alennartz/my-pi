@@ -289,6 +289,7 @@ function makeHooks(): ChildSessionHooks {
 	return {
 		onEvent: vi.fn(),
 		onUiNotify: vi.fn(),
+		onDiagnostic: vi.fn(),
 		onSessionChanged: vi.fn(),
 		onShutdownRequested: vi.fn(),
 	};
@@ -555,6 +556,21 @@ describe("ManagedChildSession prompt, event, and shutdown behavior", () => {
 		expect(hooks.onUiNotify).toHaveBeenCalledWith("blocked before agent_start", "error");
 		await bindings.shutdownHandler();
 		expect(hooks.onShutdownRequested).toHaveBeenCalledTimes(1);
+	});
+
+	it("routes caught extension exceptions to diagnostics instead of lifecycle failure", async () => {
+		const hooks = makeHooks();
+		await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" }, {}, hooks);
+
+		const bindings = sdk.state.bindings[0].bindings;
+		bindings.onError?.({
+			extensionPath: "quota-providers",
+			event: "before_agent_start",
+			error: "ctx.ui.setStatus is not a function",
+		});
+
+		expect(hooks.onDiagnostic).toHaveBeenCalledWith("ctx.ui.setStatus is not a function", "error");
+		expect(hooks.onUiNotify).not.toHaveBeenCalledWith("ctx.ui.setStatus is not a function", "error");
 	});
 
 	it("rebinds the same wrapper and presentation delegate after session replacement", async () => {

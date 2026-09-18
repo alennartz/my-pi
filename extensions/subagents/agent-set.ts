@@ -708,13 +708,16 @@ export class SubagentManager {
 	private submitInitialTask(entry: AgentEntry): void {
 		const node = this.opts.registry.get(entry.path);
 		if (!node || node.snapshot.ownership !== "registry") return;
-		entry.agentStartedSinceLastPrompt = false;
-		entry.pendingTerminalError = undefined;
 		// A forked session may have a pending source turn when its isolated
 		// session_start hooks bind (for example, session-resume's automatic
 		// continuation). Queue the fork directive behind that turn instead of
-		// treating the expected busy preflight as a runtime failure.
+		// treating the expected busy preflight as a runtime failure. Do not reset
+		// the started marker for that follow-up: the source turn may already be
+		// active, and a later error notification must not misclassify it as a
+		// pre-agent-start block.
 		const streamingBehavior = entry.kind === "fork" ? "followUp" : undefined;
+		if (streamingBehavior === undefined) entry.agentStartedSinceLastPrompt = false;
+		entry.pendingTerminalError = undefined;
 		const submission = streamingBehavior === undefined
 			? node.session.submit(`Task: ${entry.task}`)
 			: node.session.submit(`Task: ${entry.task}`, streamingBehavior);
@@ -731,7 +734,11 @@ export class SubagentManager {
 
 		if (event.type === "tool_execution_start") {
 			const current = this.operationalFor(entry);
+			const lifecycle = current.state === "dead"
+				? {}
+				: { state: "running" as const, lastError: undefined };
 			const next = operationalWith(current, {
+				...lifecycle,
 				lastActivity: `${event.toolName}(${summarizeArgs(event.args)})`.replace(/[\r\n]+/g, " "),
 				hasSubgroup: event.toolName === "subagent" || event.toolName === "fork"
 					? true
@@ -740,6 +747,10 @@ export class SubagentManager {
 						: current.hasSubgroup,
 			});
 			this.replaceOperational(entry, next);
+			if (current.state !== "dead") {
+				entry.agentStartedSinceLastPrompt = true;
+				entry.pendingTerminalError = undefined;
+			}
 			return;
 		}
 
@@ -790,7 +801,11 @@ export class SubagentManager {
 		const input = usage?.input || 0;
 		const cacheRead = usage?.cacheRead || 0;
 		const cacheWrite = usage?.cacheWrite || 0;
+		const lifecycle = current.state === "dead"
+			? {}
+			: { state: "running" as const, lastError: undefined };
 		this.replaceOperational(entry, operationalWith(current, {
+			...lifecycle,
 			usage: {
 				input: current.usage.input + input,
 				output: current.usage.output + (usage?.output || 0),
@@ -806,6 +821,14 @@ export class SubagentManager {
 				? this.opts.resolveContextWindow(messageModel)
 				: undefined),
 		}));
+		// An assistant message is authoritative evidence that a live run made it
+		// past preflight. It repairs a stale pre-start error classification even
+		// when the corresponding agent_start was delivered out of order or was
+		// consumed by a queued follow-up run. A dead runtime remains terminal.
+		if (current.state !== "dead") {
+			entry.agentStartedSinceLastPrompt = true;
+			entry.pendingTerminalError = undefined;
+		}
 	}
 
 	private applyChildDiagnostic(

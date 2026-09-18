@@ -226,7 +226,10 @@ export class ManagedChildSession {
 				void session.abort().catch(() => {});
 				this.hooks.onShutdownRequested();
 			},
-			onError: (error: ExtensionError) => this.hooks.onUiNotify(error.error, "error"),
+			// ExtensionRunner catches handler exceptions and continues the SDK
+			// lifecycle. They are diagnostics, not proof that the child prompt was
+			// rejected, so do not route them through the lifecycle error-notify path.
+			onError: (error: ExtensionError) => notifyDiagnostic(this.hooks, error.error, "error"),
 		};
 	}
 

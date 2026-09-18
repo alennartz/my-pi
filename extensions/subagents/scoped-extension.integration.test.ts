@@ -745,6 +745,70 @@ describe("root orchestration integration", () => {
 		expect(created.child.abort).toHaveBeenCalledTimes(1);
 	});
 
+	it("repairs a stale errored state when assistant usage proves the run continued", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "inspect", channels: [] }],
+		}, ctx);
+		const worker = managed.created[0];
+
+		// A pre-start error can be recorded before the SDK exposes the run boundary.
+		worker.hooks.onUiNotify("stale setup error", "error");
+		expect(worker.config.scope.registry.getSnapshot(["worker"]).operational.state).toBe("errored");
+
+		// A tool event is already authoritative evidence that the child is active,
+		// even before the next assistant usage update arrives.
+		worker.hooks.onEvent({
+			type: "tool_execution_start",
+			toolName: "read",
+			args: { path: "src/index.ts" },
+		});
+		expect(worker.config.scope.registry.getSnapshot(["worker"]).operational.state).toBe("running");
+
+		// The provider nevertheless produced an assistant message. Usage is live
+		// evidence that this child is running, so the widget must not stay red.
+		worker.hooks.onEvent({
+			type: "message_end",
+			message: {
+				role: "assistant",
+				model: "provider/model",
+				usage: { input: 20, output: 6, cacheRead: 4, cacheWrite: 0, cost: { total: 0.02 } },
+				content: [{ type: "text", text: "still working" }],
+			},
+		});
+		const running = await execute(tools, "check_status", { agent: "worker" }, ctx);
+		expect(running.content[0].text).toMatch(/State: running/i);
+		expect(worker.config.scope.registry.getSnapshot(["worker"]).operational.usage.input).toBe(20);
+
+		worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
+		worker.hooks.onEvent({ type: "agent_settled" });
+		const idle = await execute(tools, "check_status", { agent: "worker" }, ctx);
+		expect(idle.content[0].text).toMatch(/State: idle/i);
+	});
+
+	it("preserves the active marker when a fork directive follows a resumed run", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools } = makePi();
+		managed.setOnCreate(async ({ config, hooks }) => {
+			if (config.target.kind === "fork") hooks.onEvent({ type: "agent_start" });
+		});
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+
+		await execute(tools, "fork", { id: "clone", task: "continue the source work" }, ctx);
+		const fork = managed.created[0];
+		fork.hooks.onUiNotify("nonfatal extension error", "error");
+
+		const status = await execute(tools, "check_status", { agent: "clone" }, ctx);
+		expect(status.content[0].text).toMatch(/State: running/i);
+	});
+
 	it("recursively restores a persisted child subtree after the root session resumes", async () => {
 		const rootSessionFile = path.join(tmpRoot!, "root.jsonl");
 		const workerSessionFile = path.join(tmpRoot!, "root.subagents", "sessions", "worker.jsonl");
