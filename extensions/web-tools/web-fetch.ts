@@ -36,7 +36,7 @@ export const webFetchParameters = Type.Object({
 	findText: Type.Optional(
 		Type.Union([Type.String(), Type.Array(Type.String())], {
 			description:
-				'Return only passages matching these terms (case-insensitive), e.g. "installation" or ["retry", "timeout"]',
+				'Preferred first pass on a fetched page: return only passages matching these terms (case-insensitive), e.g. "installation" or ["retry", "timeout"]. Pick terms from your research goal; fall back to reading from the start only if nothing matches.',
 		}),
 	),
 	fresh: Type.Optional(

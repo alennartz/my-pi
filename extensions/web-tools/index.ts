@@ -41,12 +41,12 @@ export default function (pi: ExtensionAPI) {
 		name: "web_fetch",
 		label: "Web Fetch",
 		description:
-			"Fetch one or more URLs (max 8) as markdown via Readability. Long pages are stored and can be continued with offset or searched with findText.",
+			"Fetch one or more URLs (max 8) as markdown via Readability. Full content is stored on disk — explore with findText first to pull the passages relevant to your goal, then use offset to read around or past a hit.",
 		parameters: webFetchParameters,
 		promptGuidelines: [
 			"Use web_fetch on URLs you already know (from web_search or the user).",
+			"Explore a fetched page with findText first: pass terms from your goal and read only the matching passages. Read from the start only when findText returns nothing useful.",
 			"Long output is truncated — continue with the reported offset instead of refetching.",
-			"Use findText to jump to the passages mentioning specific terms instead of paging through.",
 		],
 		async execute(_toolCallId, params: WebFetchParams, signal) {
 			const outcome = await runWebFetch(params, { store: fetchStore, signal });
