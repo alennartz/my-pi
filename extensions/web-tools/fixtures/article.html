@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head><title>Understanding Node Streams</title></head>
+<body>
+<nav><a href="/">Home</a> <a href="/blog">Blog</a></nav>
+<article>
+<h1>Understanding Node Streams</h1>
+<p>Node streams are one of the most misunderstood parts of the platform. They provide a way to process data incrementally instead of loading everything into memory at once.</p>
+<p>A readable stream produces data, a writable stream consumes it, and transforms sit in the middle. Piping them together is the idiomatic way to build processing pipelines that stay fast under load.</p>
+<h2>Backpressure</h2>
+<p>Backpressure is the mechanism by which a slow consumer tells a fast producer to slow down. When <code>write()</code> returns false, the producer should wait for the drain event before writing more data.</p>
+<pre><code>import { createReadStream } from "node:fs";
+const rs = createReadStream("big.txt");
+rs.on("data", (chunk) => { if (!ws.write(chunk)) rs.pause(); });</code></pre>
+<p>See the <a href="https://nodejs.org/api/stream.html">official documentation</a> for the full API.</p>
+</article>
+<footer><small>© 2026 Example Corp</small></footer>
+</body>
+</html>

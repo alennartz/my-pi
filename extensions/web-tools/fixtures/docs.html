@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head><title>API Reference — Streaming</title></head>
+<body>
+<article>
+<h1>API Reference</h1>
+<p>The streaming module provides primitives for handling flowing data.</p>
+<h2>Class: Readable</h2>
+<table>
+<thead><tr><th>Event</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>data</td><td>Emitted for each chunk</td></tr>
+<tr><td>end</td><td>No more data</td></tr>
+</tbody>
+</table>
+<h2>Example</h2>
+<pre><code class="language-ts">const r = new Readable({ read() {} });</code></pre>
+<p>Related: <a href="/api/writable">Writable</a> and <a href="/api/transform">Transform</a>.</p>
+</article>
+</body>
+</html>

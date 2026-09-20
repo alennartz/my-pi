@@ -1,0 +1,10 @@
+<!doctype html>
+<html>
+<head><title>Fallback Page</title></head>
+<body>
+<main style="display:none">
+<h1>A Page Hidden From Readability</h1>
+<p>This page keeps its entire content inside a container that Readability refuses, so the extraction must fall back to the DOM path. The fallback strips noise tags, selects the main region, and converts what remains into markdown. It contains enough words to pass the very-short threshold comfortably, because we need more than fifty words in the extracted output for the quality gate to avoid penalizing it as suspiciously thin content for the purposes of this particular fixture test.</p>
+</main>
+</body>
+</html>

@@ -82,6 +82,18 @@ Standalone utility skills not tied to the workflow pipeline.
 - `skills/improve-code/SKILL.md`
 - `docs/decisions/**`
 
+### Web Tools
+
+Typed `web_search` and `web_fetch` tools replacing the former brave-search shell-script skill. Search: Brave adapter with result normalization (canonical URL dedupe, domain filters) and compact card output, backed by a TTL/LRU memory cache. Fetch: URL/redirect SSRF policy gate, bounded HTTP fetch with retries and `Retry-After` handling, Readability→Turndown extraction with a quality gate (cookie-wall/shell/title-only signals), disk-backed page cache under the pi agent dir (atomic writes, lazy TTL, mtime pruning), offset pagination, case-insensitive `findText` passage retrieval, and bounded-concurrency batch fetch (max 8 URLs). Fetched pages are stored in full on disk so continuation and passage search are cache hits across restarts. Research grounding in `docs/research/web-search-landscape.md`.
+
+**Responsibilities:** web discovery (Brave), known-URL retrieval, main-content extraction, page caching, bounded context delivery (slice/offset/findText), URL/redirect policy enforcement
+
+**Dependencies:** Brave Search API (`BRAVE_API_KEY`), `@mozilla/readability`, `jsdom`, `turndown`, `turndown-plugin-gfm` (from the package root)
+
+**Files:**
+- `extensions/web-tools/**` — `index.ts` (tool registration), `web-search.ts`/`search/brave.ts`/`search/normalize.ts` (discovery), `web-fetch.ts`/`http.ts`/`extract.ts` (retrieval/extraction), `url-policy.ts` (SSRF/redirect policy), `fetch-store.ts` (disk page cache), `cache.ts` (search memory cache), `find-text.ts` (passage search), `types.ts` (canonical types), with colocated tests and HTML fixtures
+- `docs/research/web-search-landscape.md`
+
 ### Subagents
 
 Long-lived in-process subagent orchestration extension — creates and manages SDK child sessions with channel-based messaging and incremental membership. Each child owns an SDK-created `ModelRuntime`, backed by the common persisted Pi configuration rather than a parent in-memory auth or model registry. Includes agent definitions and skills for using/creating agents.

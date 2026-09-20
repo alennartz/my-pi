@@ -1,0 +1,8 @@
+{
+  "name": "web-tools",
+  "version": "0.1.0",
+  "description": "web_search and web_fetch tools — Brave search, bounded fetch with Readability extraction, disk page cache, offset and findText retrieval",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
