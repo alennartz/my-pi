@@ -61,6 +61,68 @@ const REQUEST_HEADERS: Record<string, string> = {
 	"Accept-Language": "en-US,en;q=0.9",
 };
 
+type StoredCookie = { value: string; path: string };
+type CookieJar = Map<string, Map<string, StoredCookie>>;
+
+function originKey(url: string): string {
+	const parsed = new URL(url);
+	return parsed.origin;
+}
+
+function defaultCookiePath(url: string): string {
+	const pathname = new URL(url).pathname;
+	if (!pathname || pathname === "/") return "/";
+	const slash = pathname.lastIndexOf("/");
+	return slash <= 0 ? "/" : pathname.slice(0, slash);
+}
+
+/** Split combined Set-Cookie values without splitting commas in Expires dates. */
+function splitSetCookie(value: string): string[] {
+	return value.split(/,(?=\s*[^;,=\s]+=)/);
+}
+
+function setCookiesFromResponse(url: string, headers: Headers, jar: CookieJar): void {
+	const getSetCookie = (headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+	const values = getSetCookie
+		? getSetCookie.call(headers)
+		: headers.get("set-cookie")
+			? splitSetCookie(headers.get("set-cookie") as string)
+			: [];
+	if (values.length === 0) return;
+
+	const key = originKey(url);
+	const cookies = jar.get(key) ?? new Map<string, StoredCookie>();
+	for (const header of values) {
+		const match = /^\s*([^=;\s]+)=([^;]*)/.exec(header);
+		if (!match) continue;
+		const name = match[1];
+		const value = match[2];
+		const maxAge = /(?:^|;)\s*max-age\s*=\s*(-?\d+)/i.exec(header);
+		if (value === "" || (maxAge && Number(maxAge[1]) <= 0)) {
+			cookies.delete(name);
+			continue;
+		}
+		const path =
+			/(?:^|;)\s*path\s*=\s*([^;]+)/i.exec(header)?.[1]?.trim() || defaultCookiePath(url);
+		cookies.set(name, { value, path: path.startsWith("/") ? path : "/" });
+	}
+	if (cookies.size > 0) jar.set(key, cookies);
+	else jar.delete(key);
+}
+
+function cookieHeaderFor(url: string, jar: CookieJar): string | undefined {
+	const cookies = jar.get(originKey(url));
+	if (!cookies) return undefined;
+	const pathname = new URL(url).pathname || "/";
+	const matching = [...cookies.entries()]
+		.filter(
+			([, cookie]) =>
+				pathname === cookie.path || pathname.startsWith(`${cookie.path.replace(/\/$/, "")}/`),
+		)
+		.map(([name, cookie]) => `${name}=${cookie.value}`);
+	return matching.length > 0 ? matching.join("; ") : undefined;
+}
+
 /** Parse a Retry-After header (delay-seconds or HTTP-date) into a delay in ms. */
 export function parseRetryAfterMs(
 	value: string | null,
@@ -127,6 +189,7 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 
 	let currentUrl = url;
 	let attempts = 0;
+	const cookieJar: CookieJar = new Map();
 	let lastRetryable: { code: "timeout" | "network" | "retry-exhausted"; message: string } | null =
 		null;
 
@@ -155,9 +218,12 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 
 			let response: Response;
 			try {
+				const headers: Record<string, string> = { ...REQUEST_HEADERS };
+				const cookie = cookieHeaderFor(currentUrl, cookieJar);
+				if (cookie) headers.Cookie = cookie;
 				response = await doFetch(currentUrl, {
 					redirect: "manual",
-					headers: REQUEST_HEADERS,
+					headers,
 					signal,
 				});
 			} catch (err) {
@@ -173,6 +239,7 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 				throw new HttpFetchError(code, message, undefined, attempts);
 			}
 			clearTimeout(timer);
+			setCookiesFromResponse(currentUrl, response.headers, cookieJar);
 
 			if (response.status >= 200 && response.status < 300) {
 				const declaredLength = Number(response.headers?.get?.("content-length") ?? "0");

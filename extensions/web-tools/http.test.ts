@@ -68,6 +68,26 @@ describe("httpFetch", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
+	it("persists same-origin cookies across a redirect", async () => {
+		fetchMock
+			.mockResolvedValueOnce(
+				new Response(null, {
+					status: 302,
+					headers: {
+						location: "/a",
+						"set-cookie": "challenge=token; Path=/; Max-Age=3600",
+					},
+				}),
+			)
+			.mockImplementationOnce(async (_url: string, init: RequestInit) => {
+				expect(new Headers(init.headers).get("cookie")).toBe("challenge=token");
+				return textResponse("ok", { status: 200 });
+			});
+
+		const res = await httpFetch("https://example.com/a", makeOpts(fetchMock));
+		expect(res.body).toBe("ok");
+	});
+
 	it("blocks a TLS-downgrade redirect", async () => {
 		fetchMock.mockResolvedValueOnce(
 			new Response(null, { status: 302, headers: { location: "http://example.com/b" } }),
