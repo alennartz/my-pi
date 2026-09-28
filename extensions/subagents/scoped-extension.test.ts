@@ -38,6 +38,31 @@ function childScope(path: AgentPath = ["worker"]): SubagentScope {
 }
 
 describe("createSubagentsExtension root scope", () => {
+	it("treats empty optional parameters as omission via prepareArguments", async () => {
+		const pi = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+
+		const tools = pi.registerTool.mock.calls.map(([tool]) => tool);
+		const teardown = tools.find((tool) => tool.name === "teardown");
+		expect(teardown).toBeDefined();
+		// The empty-string failure mode: committed-but-empty equals omitted.
+		expect(teardown!.prepareArguments({ agent: "" })).toEqual({});
+		expect(teardown!.prepareArguments({ agent: "worker" })).toEqual({ agent: "worker" });
+		expect(teardown!.prepareArguments({})).toEqual({});
+
+		// Optional arrays: empty array equals omission too.
+		const awaitAgents = tools.find((tool) => tool.name === "await_agents");
+		expect(awaitAgents).toBeDefined();
+		expect(awaitAgents!.prepareArguments({ agents: [] })).toEqual({});
+
+		// Nested optional item fields are cleaned as well.
+		const subagent = tools.find((tool) => tool.name === "subagent");
+		expect(subagent).toBeDefined();
+		expect(
+			subagent!.prepareArguments({ agents: [{ id: "a", task: "t", agent: "", model: "" }] }),
+		).toEqual({ agents: [{ id: "a", task: "t" }] });
+	});
+
 	it("registers the complete subagents tool surface for a root session", async () => {
 		const pi = makePi();
 		const factory = createSubagentsExtension({ kind: "root" });

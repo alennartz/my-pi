@@ -1,9 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { registerLooseTool } from "../../lib/tool-args.ts";
 import { showNumberedSelect } from "../../lib/components/numbered-select.ts";
 
 export default function (pi: ExtensionAPI) {
-	pi.registerTool({
+	registerLooseTool(pi, {
 		name: "ask_user",
 		label: "Ask User",
 		description:

@@ -143,6 +143,7 @@ Generic quota-aware provider extension. Out-of-repo provider implementations plu
 **Files:**
 - `extensions/quota-providers/**`
 - `lib/session-tree-store.ts` — shared interface for tree-scoped extension state
+- `lib/tool-args.ts` — shared schema-driven normalizer (`dropEmptyOptionals`, `registerLooseTool`): treats empty optional tool parameters (`""`, `[]`, `false` for booleans) as omission via the `prepareArguments` hook
 
 ### Azure Foundry
 

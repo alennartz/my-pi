@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerLooseTool } from "../../lib/tool-args.ts";
 import { TtlLruCache } from "./cache.js";
 import { openFetchStore } from "./fetch-store.js";
 import type { SearchResponse } from "./types.js";
@@ -18,7 +19,7 @@ export default function (pi: ExtensionAPI) {
 	// Fetched pages are durable → disk store under the pi agent dir.
 	const fetchStore = openFetchStore();
 
-	pi.registerTool({
+	registerLooseTool(pi, {
 		name: "web_search",
 		label: "Web Search",
 		description:
@@ -37,7 +38,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerTool({
+	registerLooseTool(pi, {
 		name: "web_fetch",
 		label: "Web Fetch",
 		description:

@@ -15,6 +15,7 @@ import {
 	type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { registerLooseTool } from "../../lib/tool-args.ts";
 import { detect } from "@pimote/panels";
 import type { PanelHandle, Card, CardColor } from "@pimote/panels";
 import {
@@ -585,7 +586,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 		},
 	});
 
-	pi.registerTool({
+	registerLooseTool(pi, {
 		name: "subagent",
 		label: "Subagents",
 		description: "Spawn subagents to delegate work to a seperate context window, optionally with a different model or cwd. Supports inter agent communications",
@@ -749,7 +750,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 	// ─── Tool: fork ──────────────────────────────────────────────────────
 
 
-	pi.registerTool({
+	registerLooseTool(pi, {
 		name: "fork",
 		label: "Fork",
 		description: "Clone yourself into a sub-agent with your full conversation history. Useful for existing context dependent side quests where data explored is much larger that required retained output.",
@@ -823,7 +824,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 
 	// ─── Tool: send ──────────────────────────────────────────────────────
 
-	pi.registerTool({
+	registerLooseTool(pi, {
 		name: "send",
 		label: "Send Message",
 		description: "Send a mid-task clarification or coordination message to another active agent; do not use for final task reporting.",
@@ -975,7 +976,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 
 	// ─── Tool: check_status ──────────────────────────────────────────────
 
-	pi.registerTool({
+	registerLooseTool(pi, {
 		name: "check_status",
 		label: "Check Status",
 		description: "Query agent status. Omit agent for summary of all agents.",
@@ -1012,7 +1013,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 
 	// ─── Tool: teardown ──────────────────────────────────────────────────
 
-	pi.registerTool({
+	registerLooseTool(pi, {
 		name: "teardown",
 		label: "Teardown",
 		description: "Remove an agent or tear down all agents. Returns a completion report.",
@@ -1028,7 +1029,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				throw new Error("No agents to teardown.");
 			}
 
-			const { report, empty } = await manager.teardown(params.agent);
+			const { report, empty } = await manager.teardown(params.agent || undefined);
 
 			if (empty) {
 				// The manager has removed only its immediate children. Runtime ownership
@@ -1131,7 +1132,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 
 	// ─── Tool: await_agents ──────────────────────────────────────────────
 
-	pi.registerTool({
+	registerLooseTool(pi, {
 		name: "await_agents",
 		label: "Await Agents",
 		description: "Block until an agent completes or sends you a message. Returns final agent output or sent message.",
@@ -1153,19 +1154,15 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				throw new Error("No agents running. Spawn agents first with the subagent or fork tool.");
 			}
 
-			// Validate agent IDs if scoped
-			if (params.agents) {
-				if (params.agents.length === 0) {
-					throw new Error("Empty agents array. Omit the parameter to wait on all agents.");
-				}
-				for (const id of params.agents) {
-					if (!manager.getAgentStatus(id)) {
-						throw new Error(`Unknown agent: "${id}"`);
-					}
+			// An empty array is the array-typed equivalent of omission: wait on all.
+			const requested = params.agents?.length ? params.agents : undefined;
+			for (const id of requested ?? []) {
+				if (!manager.getAgentStatus(id)) {
+					throw new Error(`Unknown agent: "${id}"`);
 				}
 			}
 
-			const scopedIds = params.agents ?? manager.getAgentStatuses().map((s) => s.id);
+			const scopedIds = requested ?? manager.getAgentStatuses().map((s) => s.id);
 			const waitResult = await awaitAgentCompletion(scopedIds, manager, signal);
 			return {
 				content: [{ type: "text", text: waitResult }],
@@ -1175,7 +1172,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 
 	// ─── Tool: interrupt ─────────────────────────────────────────────────
 
-	pi.registerTool({
+	registerLooseTool(pi, {
 		name: "interrupt",
 		label: "Interrupt",
 		description: "Halt a subagent immediately without tearing it down. Interrupts any in-flight tool call — useful when one is hung or stuck.",
@@ -1195,18 +1192,15 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 				throw new Error("No agents running. Spawn agents first with the subagent or fork tool.");
 			}
 
-			if (params.agents) {
-				if (params.agents.length === 0) {
-					throw new Error("Empty agents array. Omit the parameter to interrupt all agents.");
-				}
-				for (const id of params.agents) {
-					if (!manager.getAgentStatus(id)) {
-						throw new Error(`Unknown agent: "${id}"`);
-					}
+			// An empty array is the array-typed equivalent of omission: interrupt all.
+			const requested = params.agents?.length ? params.agents : undefined;
+			for (const id of requested ?? []) {
+				if (!manager.getAgentStatus(id)) {
+					throw new Error(`Unknown agent: "${id}"`);
 				}
 			}
 
-			const scopedIds = params.agents ?? manager.getAgentStatuses().map((s) => s.id);
+			const scopedIds = requested ?? manager.getAgentStatuses().map((s) => s.id);
 			const results = await Promise.allSettled(
 				scopedIds.map((id) => manager!.interrupt(id, { signal })),
 			);
