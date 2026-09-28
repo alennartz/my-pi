@@ -86,24 +86,34 @@ describe("runWebFetch", () => {
 		expect(outcome.text).toContain("continue with offset: 500");
 	});
 
-	it("serves findText from the store", async () => {
+	it("serves findText from the store (multi-term, case-insensitive)", async () => {
 		const fetchImpl = vi.fn(async () => htmlResponse(articleHtml));
 		const d = deps(fetchImpl);
 		await runWebFetch({ url: "https://example.com/streams" }, d);
 		const outcome = await runWebFetch(
-			{ url: "https://example.com/streams", findText: "backpressure" },
+			{ url: "https://example.com/streams", findText: ["BACKPRESSURE", "drain"] },
 			d,
 		);
 		expect(fetchImpl).toHaveBeenCalledTimes(1);
 		const r = outcome.details[0];
 		expect(r.fromCache).toBe(true);
-		expect(outcome.text).toContain('"backpressure" ×');
+		expect(outcome.text).toContain('"BACKPRESSURE" ×');
+		expect(outcome.text).toContain('"drain" ×');
+	});
+
+	it("reports a no-match message for terms absent from the page", async () => {
+		const fetchImpl = vi.fn(async () => htmlResponse(articleHtml));
+		const outcome = await runWebFetch(
+			{ url: "https://example.com/streams", findText: ["nonexistent-term"] },
+			deps(fetchImpl),
+		);
+		expect(outcome.text).toContain('No matches for: "nonexistent-term"');
 	});
 
 	it("fetches a cold URL then matches when findText is set", async () => {
 		const fetchImpl = vi.fn(async () => htmlResponse(articleHtml));
 		const outcome = await runWebFetch(
-			{ url: "https://example.com/streams", findText: "backpressure" },
+			{ url: "https://example.com/streams", findText: ["backpressure"] },
 			deps(fetchImpl),
 		);
 		expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -113,7 +123,7 @@ describe("runWebFetch", () => {
 	it("rejects findText combined with offset", async () => {
 		await expect(
 			runWebFetch(
-				{ url: "https://example.com/x", findText: "a", offset: 100 },
+				{ url: "https://example.com/x", findText: ["a"], offset: 100 },
 				deps(vi.fn()),
 			),
 		).rejects.toThrow(/mutually exclusive/);

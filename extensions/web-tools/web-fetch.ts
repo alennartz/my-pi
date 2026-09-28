@@ -34,9 +34,9 @@ export const webFetchParameters = Type.Object({
 		Type.Number({ minimum: 0, description: "Character offset into the stored content (default 0)" }),
 	),
 	findText: Type.Optional(
-		Type.Union([Type.String(), Type.Array(Type.String())], {
+		Type.Array(Type.String(), {
 			description:
-				'Preferred first pass on a fetched page: return only passages matching these terms (case-insensitive), e.g. "installation" or ["retry", "timeout"]. Pick terms from your research goal; fall back to reading from the start only if nothing matches.',
+				'Preferred first pass on a fetched page: return only passages matching these terms (case-insensitive), e.g. ["retry", "timeout"]. Pick terms from your research goal; fall back to reading from the start only if nothing matches.',
 		}),
 	),
 	fresh: Type.Optional(
@@ -96,7 +96,7 @@ export async function mapWithConcurrency<T, R>(
 
 function normalizeFindText(findText: WebFetchParams["findText"]): string[] {
 	if (findText === undefined) return [];
-	return (Array.isArray(findText) ? findText : [findText]).map((q) => q.trim()).filter(Boolean);
+	return findText.map((q) => q.trim()).filter(Boolean);
 }
 
 /** Core fetch pipeline for one URL. */
