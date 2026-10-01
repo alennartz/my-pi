@@ -8,6 +8,9 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "user_edit",
 		label: "User Edit",
+		// Interactive tool — declared to the model but unreachable from nested
+		// contexts (codemode scripts, ctx.executeTool), per the model-only contract.
+		exposure: "model-only",
 		description:
 			"Open a file in the built-in editor for the user to edit manually. The user can modify the content and save, or cancel. Returns whether the file was saved or the edit was cancelled.",
 		parameters: Type.Object({

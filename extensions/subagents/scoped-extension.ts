@@ -560,6 +560,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 	pi.registerTool({
 		name: "list_models",
 		label: "List Models",
+		annotations: { readOnlyHint: true },
 		description: "List all available models with context window and pricing. Complements the model-tier table for cases where a concrete model is explicitly required.",
 		promptSnippet: "Call `list_models` to see the full model catalog when a concrete model id (rather than a tier) is explicitly required.",
 		parameters: Type.Object({}),
@@ -979,6 +980,7 @@ export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory
 	registerLooseTool(pi, {
 		name: "check_status",
 		label: "Check Status",
+		annotations: { readOnlyHint: true },
 		description: "Query agent status. Omit agent for summary of all agents.",
 		promptGuidelines: [
 			"Use check_status only when you have a specific reason: diagnosing a suspected stall, answering a user question about progress, or checking usage mid-run.",

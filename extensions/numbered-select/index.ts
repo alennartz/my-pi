@@ -7,6 +7,9 @@ export default function (pi: ExtensionAPI) {
 	registerLooseTool(pi, {
 		name: "ask_user",
 		label: "Ask User",
+		// Interactive tool — declared to the model but unreachable from nested
+		// contexts (codemode scripts, ctx.executeTool), per the model-only contract.
+		exposure: "model-only",
 		description:
 			"Ask the user to pick exactly one option from a set (up to 9). Single-select only — the user chooses one option and may attach an optional free-text annotation. Returns the single selected option and optional annotation, or indicates cancellation. Do NOT use this to collect multiple selections; for multi-select, ask in a regular message instead.",
 		promptSnippet: "Present the user with a structured single-choice prompt of up to 9 options. Use when there are discrete alternatives to choose between — disambiguation, confirming a direction, or selecting from a generated list. The user picks exactly one option (single-select only) and may add an optional free-text annotation. This tool does NOT support multi-selection — if you need multiple picks, ask in a regular message.",
