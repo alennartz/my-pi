@@ -59,6 +59,19 @@ function az(args: string[], timeoutMs: number): string {
 }
 
 /**
+ * Honor caller cancellation before issuing blocking I/O. `az` runs
+ * synchronously (execFileSync) and can't take an AbortSignal, so the signal
+ * is checked at each seam boundary — the call is skipped when already
+ * aborted, and a fresh abort can't interrupt an in-flight `az` (bounded by
+ * its own timeout).
+ */
+function ensureNotAborted(ctx: ImplContext): void {
+	if (ctx.signal?.aborted) {
+		throw new DOMException("foundry impl: operation aborted", "AbortError");
+	}
+}
+
+/**
  * Foundry deployment format/capabilities → pi api + pi-ai catalog provider +
  * base path + authHeader. Ported from foundry-helper.mjs `resolveBackend` and
  * index.ts BACKENDS / PI_AI_PROVIDER.
@@ -111,6 +124,7 @@ const impl: ProviderImplementation = {
 	baseUrl: (process.env.AZURE_FOUNDRY_ENDPOINT ?? "").replace(/\/+$/, ""),
 
 	async discoverModels(ctx: ImplContext): Promise<ModelEntry[]> {
+		ensureNotAborted(ctx);
 		const { account, resourceGroup, subscription } = readSettings(ctx);
 		const args = [
 			"cognitiveservices",
@@ -142,6 +156,7 @@ const impl: ProviderImplementation = {
 	},
 
 	async getToken(ctx: ImplContext): Promise<TokenResult> {
+		ensureNotAborted(ctx);
 		const { tokenResource } = readSettings(ctx);
 		const resource = tokenResource ?? DEFAULT_TOKEN_RESOURCE;
 		const raw = az(

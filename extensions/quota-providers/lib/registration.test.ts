@@ -140,6 +140,55 @@ describe("resolveModelMeta", () => {
 		expect(typeof meta.contextWindow).toBe("number");
 		expect(typeof meta.reasoning).toBe("boolean");
 	});
+
+	it("returns resolved values unchanged when no overrides are given", () => {
+		const withOverrides = resolveModelMeta(undefined, "x", {});
+		const without = resolveModelMeta(undefined, "x");
+		expect(withOverrides).toEqual(without);
+	});
+
+	it("merges scalar overrides field-wise over the resolved value", () => {
+		const meta = resolveModelMeta(undefined, "x", { contextWindow: 200_000, reasoning: true });
+		expect(meta.contextWindow).toBe(200_000);
+		expect(meta.reasoning).toBe(true);
+		// Untouched fields keep their resolved (default) values.
+		expect(meta.maxTokens).toBe(16384);
+		expect(meta.input).toEqual(["text"]);
+	});
+
+	it("merges cost per sub-field over the resolved value", () => {
+		const meta = resolveModelMeta(undefined, "x", { cost: { input: 3 } });
+		expect(meta.cost).toEqual({ input: 3, output: 0, cacheRead: 0, cacheWrite: 0 });
+	});
+
+	it("falsy overrides win over resolved values (?? semantics)", () => {
+		const meta = resolveModelMeta(undefined, "x", { reasoning: false, maxTokens: 0 });
+		expect(meta.reasoning).toBe(false);
+		expect(meta.maxTokens).toBe(0);
+	});
+
+	it("carries passthrough-only fields without catalog resolution", () => {
+		const inputLimits = { images: { resize: { maxWidth: 1024 } } } as any;
+		const promptCache = { short: 300 } as any;
+		const meta = resolveModelMeta(undefined, "x", {
+			headers: { "x-gateway": "1" },
+			samplingParams: { temperature: 0 },
+			inputLimits,
+			promptCache,
+		});
+		expect(meta.headers).toEqual({ "x-gateway": "1" });
+		expect(meta.samplingParams).toEqual({ temperature: 0 });
+		expect(meta.inputLimits).toBe(inputLimits);
+		expect(meta.promptCache).toBe(promptCache);
+	});
+
+	it("catalog-resolved values still feed the merge for known models", () => {
+		// gpt-5.6-sol has thinkingLevelMap { max: "max" } in the catalog; a
+		// partial override must not drop it.
+		const meta = resolveModelMeta("openai", "gpt-5.6-sol", { contextWindow: 400_000 });
+		expect(meta.contextWindow).toBe(400_000);
+		expect(meta.thinkingLevelMap).toMatchObject({ max: "max" });
+	});
 });
 
 // =============================================================================
@@ -249,6 +298,98 @@ describe("buildProviderConfig", () => {
 		const [model] = cfg.models as Array<Record<string, unknown>>;
 
 		expect(model.thinkingLevelMap).toMatchObject({ max: "max" });
+	});
+
+	it("applies entry metadata overrides to the registered model", () => {
+		const models: ModelEntry[] = [
+			{
+				id: "my-deployment",
+				modelName: "x",
+				api: "openai-responses",
+				contextWindow: 256_000,
+				maxTokens: 32_768,
+				reasoning: true,
+				cost: { input: 5 },
+			},
+		];
+		const [group] = groupModels("impl", models);
+		const cfg = buildProviderConfig(impl, group, apiKey) as Record<string, unknown>;
+		const [m] = cfg.models as Array<Record<string, unknown>>;
+		expect(m.contextWindow).toBe(256_000);
+		expect(m.maxTokens).toBe(32_768);
+		expect(m.reasoning).toBe(true);
+		expect(m.cost).toEqual({ input: 5, output: 0, cacheRead: 0, cacheWrite: 0 });
+	});
+
+	it("passes through entry headers, samplingParams, inputLimits, and promptCache", () => {
+		const inputLimits = { images: { resize: { maxWidth: 1024 } } } as any;
+		const models: ModelEntry[] = [
+			{
+				id: "m1",
+				modelName: "x",
+				api: "openai-responses",
+				headers: { "x-gateway": "1" },
+				samplingParams: { temperature: 0 },
+				inputLimits,
+				promptCache: { short: 300 } as any,
+			},
+		];
+		const [group] = groupModels("impl", models);
+		const cfg = buildProviderConfig(impl, group, apiKey) as Record<string, unknown>;
+		const [m] = cfg.models as Array<Record<string, unknown>>;
+		expect(m.headers).toEqual({ "x-gateway": "1" });
+		expect(m.samplingParams).toEqual({ temperature: 0 });
+		expect(m.inputLimits).toBe(inputLimits);
+		expect(m.promptCache).toEqual({ short: 300 });
+	});
+
+	it("honors entry forceAdaptiveThinking override for anthropic-messages", () => {
+		const models: ModelEntry[] = [
+			{
+				id: "m1",
+				modelName: "nonexistent-xyz",
+				api: "anthropic-messages",
+				catalogProvider: "anthropic",
+				forceAdaptiveThinking: true,
+			},
+		];
+		const [group] = groupModels("impl", models);
+		const cfg = buildProviderConfig(impl, group, apiKey) as Record<string, unknown>;
+		const [m] = cfg.models as Array<Record<string, unknown>>;
+		expect(m.compat).toEqual({ forceAdaptiveThinking: true });
+	});
+
+	it("merges entry compat with the anthropic forceAdaptiveThinking rule", () => {
+		const models: ModelEntry[] = [
+			{
+				id: "m1",
+				modelName: "nonexistent-xyz",
+				api: "anthropic-messages",
+				catalogProvider: "anthropic",
+				compat: { customFlag: 1 } as any,
+				forceAdaptiveThinking: true,
+			},
+		];
+		const [group] = groupModels("impl", models);
+		const cfg = buildProviderConfig(impl, group, apiKey) as Record<string, unknown>;
+		const [m] = cfg.models as Array<Record<string, unknown>>;
+		expect(m.compat).toEqual({ customFlag: 1, forceAdaptiveThinking: true });
+	});
+
+	it("passes entry compat through for non-anthropic apis without the force rule", () => {
+		const models: ModelEntry[] = [
+			{
+				id: "m1",
+				modelName: "x",
+				api: "openai-responses",
+				compat: { customFlag: 1 } as any,
+				forceAdaptiveThinking: true,
+			},
+		];
+		const [group] = groupModels("impl", models);
+		const cfg = buildProviderConfig(impl, group, apiKey) as Record<string, unknown>;
+		const [m] = cfg.models as Array<Record<string, unknown>>;
+		expect(m.compat).toEqual({ customFlag: 1 });
 	});
 });
 

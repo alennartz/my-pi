@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
-import type { ModelEntry } from "./types.js";
+import type { ModelEntry, ModelMetadataOverrides } from "./types.js";
 
 // =============================================================================
 // Model metadata
@@ -19,6 +19,11 @@ interface ModelMeta {
 	cost: ModelCost;
 	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 	forceAdaptiveThinking?: boolean;
+	compat?: Model<Api>["compat"];
+	inputLimits?: Model<Api>["inputLimits"];
+	promptCache?: Model<Api>["promptCache"];
+	headers?: Record<string, string>;
+	samplingParams?: Record<string, unknown>;
 }
 
 const ZERO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -31,26 +36,67 @@ const DEFAULTS: ModelMeta = {
 	cost: ZERO_COST,
 };
 
+/** Drop undefined-valued keys so a partial spread can't clobber resolved values. */
+function defined<T extends object>(partial: T): Partial<T> {
+	const out: Partial<T> = {};
+	for (const [key, value] of Object.entries(partial)) {
+		if (value !== undefined) out[key as keyof T] = value as T[keyof T];
+	}
+	return out;
+}
+
+/**
+ * Merge partial entry-provided metadata over the resolved value, field-wise
+ * (`??`) — an entry only has to specify what the deployment gets wrong or the
+ * catalog can't know. `cost` merges per sub-field; `thinkingLevelMap` and
+ * `compat` replace the resolved value wholesale.
+ */
+function mergeModelMeta(meta: ModelMeta, overrides?: ModelMetadataOverrides): ModelMeta {
+	if (!overrides) return meta;
+	return {
+		reasoning: overrides.reasoning ?? meta.reasoning,
+		input: overrides.input ?? meta.input,
+		contextWindow: overrides.contextWindow ?? meta.contextWindow,
+		maxTokens: overrides.maxTokens ?? meta.maxTokens,
+		cost: overrides.cost ? { ...meta.cost, ...defined(overrides.cost) } : meta.cost,
+		thinkingLevelMap: overrides.thinkingLevelMap ?? meta.thinkingLevelMap,
+		forceAdaptiveThinking: overrides.forceAdaptiveThinking ?? meta.forceAdaptiveThinking,
+		compat: overrides.compat ?? meta.compat,
+		inputLimits: overrides.inputLimits ?? meta.inputLimits,
+		promptCache: overrides.promptCache ?? meta.promptCache,
+		headers: overrides.headers ?? meta.headers,
+		samplingParams: overrides.samplingParams ?? meta.samplingParams,
+	};
+}
+
 /**
  * Resolve model metadata from pi-ai's built-in catalog. Unknown models or absent
- * catalogProvider fall back to conservative defaults.
+ * catalogProvider fall back to conservative defaults. `overrides` (the entry's
+ * own metadata fields) merge field-wise over the resolved value afterwards.
  */
 export function resolveModelMeta(
 	catalogProvider: string | undefined,
 	modelName: string,
+	overrides?: ModelMetadataOverrides,
 ): ModelMeta {
-	if (!catalogProvider) return { ...DEFAULTS };
-	const model = getBuiltinModel(catalogProvider as never, modelName as never);
-	if (!model) return { ...DEFAULTS };
-	return {
-		reasoning: model.reasoning ?? false,
-		input: model.input as ("text" | "image")[],
-		contextWindow: model.contextWindow,
-		maxTokens: model.maxTokens,
-		cost: model.cost,
-		thinkingLevelMap: model.thinkingLevelMap,
-		forceAdaptiveThinking: model.compat?.forceAdaptiveThinking,
-	};
+	let resolved: ModelMeta;
+	if (!catalogProvider) {
+		resolved = { ...DEFAULTS };
+	} else {
+		const model = getBuiltinModel(catalogProvider as never, modelName as never);
+		resolved = model
+			? {
+					reasoning: model.reasoning ?? false,
+					input: model.input as ("text" | "image")[],
+					contextWindow: model.contextWindow,
+					maxTokens: model.maxTokens,
+					cost: model.cost,
+					thinkingLevelMap: model.thinkingLevelMap,
+					forceAdaptiveThinking: model.compat?.forceAdaptiveThinking,
+				}
+			: { ...DEFAULTS };
+	}
+	return mergeModelMeta(resolved, overrides);
 }
 
 // =============================================================================
@@ -128,7 +174,14 @@ export function buildProviderConfig(
 		api: group.api,
 		...(streamSimple ? { streamSimple } : {}),
 		models: group.models.map((entry) => {
-			const meta = resolveModelMeta(entry.catalogProvider, entry.modelName);
+			const meta = resolveModelMeta(entry.catalogProvider, entry.modelName, entry);
+			// Entry-provided compat passes through for any api; the anthropic
+			// forceAdaptiveThinking rule (catalog-derived or entry-overridden)
+			// still applies on top of it.
+			let compat = meta.compat as Record<string, unknown> | undefined;
+			if (group.api === "anthropic-messages" && meta.forceAdaptiveThinking) {
+				compat = { ...(compat ?? {}), forceAdaptiveThinking: true };
+			}
 			return {
 				id: entry.id,
 				name: entry.id,
@@ -138,9 +191,11 @@ export function buildProviderConfig(
 				contextWindow: meta.contextWindow,
 				maxTokens: meta.maxTokens,
 				...(meta.thinkingLevelMap ? { thinkingLevelMap: meta.thinkingLevelMap } : {}),
-				...(group.api === "anthropic-messages" && meta.forceAdaptiveThinking
-					? { compat: { forceAdaptiveThinking: true } }
-					: {}),
+				...(meta.inputLimits ? { inputLimits: meta.inputLimits } : {}),
+				...(meta.promptCache ? { promptCache: meta.promptCache } : {}),
+				...(meta.headers ? { headers: meta.headers } : {}),
+				...(meta.samplingParams ? { samplingParams: meta.samplingParams } : {}),
+				...(compat ? { compat } : {}),
 			};
 		}),
 	};
