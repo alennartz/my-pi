@@ -8,6 +8,8 @@ function sessionEndsWithIdleMarker(ctx: any): boolean {
 	for (let i = branch.length - 1; i >= 0; i--) {
 		const entry = branch[i] as any;
 		if (entry.type === "custom" && entry.customType === IDLE_MARKER) return true;
+		// User-initiated !/!! bash results are transcript messages, not agent activity.
+		if (entry.type === "message" && entry.message?.role === "bashExecution") continue;
 		if (entry.type === "message" || entry.type === "custom_message") {
 			return false;
 		}
