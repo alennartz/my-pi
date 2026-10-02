@@ -263,13 +263,16 @@ export async function showNumberedSelect(
 	// - undefined: the environment can't render custom components (RPC,
 	//   pimote, etc.) — fall back to ctx.ui.select
 	//
-	// Render as a centered overlay: since pi 1.0.0 the TUI defaults to
-	// fullscreen, where the non-overlay path mounts into the fixed editor dock
-	// and a tall dialog gets clipped against its allocated rows with no
-	// scrollback to reach the cut-off part. The overlay floats above the
-	// transcript instead. Content taller than maxHeight is still clipped
-	// (top-anchored inside the centered box), but only beyond 80% of the
-	// terminal — the dialog is bounded to ≤9 options and a ≤160-char title.
+	// Render as an overlay anchored to the bottom, full width: since pi 1.0.0
+	// the TUI defaults to fullscreen, where the non-overlay path mounts into
+	// the fixed editor dock and a tall dialog gets clipped against its
+	// allocated rows with no scrollback to reach the cut-off part. The overlay
+	// floats above the transcript instead, but keeps the dock's placement —
+	// spanning the full terminal width, sitting at the bottom above the
+	// footer row (bottom margin 1). Content taller than maxHeight is still
+	// clipped (from the bottom — the title and options survive), but only
+	// beyond 80% of the terminal — the dialog is bounded to ≤9 options and a
+	// ≤160-char title.
 	const customResult = await ctx.ui.custom<NumberedSelectResult | null | undefined>(
 		(tui, theme, _kb, done) => {
 			const component = new NumberedSelectComponent(tui, theme, title, options, done);
@@ -277,7 +280,12 @@ export async function showNumberedSelect(
 		},
 		{
 			overlay: true,
-			overlayOptions: { width: "80%", maxHeight: "80%", anchor: "center", margin: 1 },
+			overlayOptions: {
+				width: "100%",
+				maxHeight: "80%",
+				anchor: "bottom-center",
+				margin: { bottom: 1 },
+			},
 		},
 	);
 

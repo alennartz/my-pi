@@ -14,7 +14,7 @@ function makeCtx(overrides: Partial<{ custom: ReturnType<typeof vi.fn>; select: 
 const options = [{ label: "alpha" }, { label: "beta", description: "second" }];
 
 describe("showNumberedSelect", () => {
-	it("shows the dialog as a centered overlay", async () => {
+	it("shows the dialog as a full-width bottom-anchored overlay", async () => {
 		const custom = vi.fn().mockResolvedValue({ index: 0, label: "alpha" });
 		const ctx = makeCtx({ custom });
 
@@ -25,7 +25,12 @@ describe("showNumberedSelect", () => {
 		expect(typeof factory).toBe("function");
 		expect(opts).toEqual({
 			overlay: true,
-			overlayOptions: { width: "80%", maxHeight: "80%", anchor: "center", margin: 1 },
+			overlayOptions: {
+				width: "100%",
+				maxHeight: "80%",
+				anchor: "bottom-center",
+				margin: { bottom: 1 },
+			},
 		});
 	});
 
