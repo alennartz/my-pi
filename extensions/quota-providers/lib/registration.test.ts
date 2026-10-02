@@ -284,6 +284,17 @@ describe("buildProviderConfig", () => {
 		expect(m).toHaveProperty("maxTokens");
 	});
 
+	it("uses ModelEntry.name as the display name while preserving the wire id", () => {
+		const models: ModelEntry[] = [
+			{ id: "canonical-id", name: "Friendly Name", modelName: "x", api: "openai-responses" },
+		];
+		const [group] = groupModels("impl", models);
+		const cfg = buildProviderConfig(impl, group, apiKey) as Record<string, unknown>;
+		const [m] = cfg.models as Array<Record<string, unknown>>;
+		expect(m.id).toBe("canonical-id");
+		expect(m.name).toBe("Friendly Name");
+	});
+
 	it("preserves GPT-5.6's max thinking capability from the catalog", () => {
 		const models: ModelEntry[] = [
 			{

@@ -9,8 +9,11 @@ function clamp(value: number, min: number, max: number): number {
 /** Effective spend = snapshot.spend + Σ ledger entries with timestamp > snapshot.asOf. */
 export function effectiveSpend(snapshot: UsageSnapshot, ledger: LedgerEntry[]): number {
   const extra = ledger
-    .filter((e) => e.timestamp > snapshot.asOf)
-    .reduce((sum, e) => sum + e.cost, 0);
+    .filter((entry) =>
+      entry.timestamp > snapshot.asOf &&
+      (snapshot.limitId === undefined || entry.quotaLimitIds?.includes(snapshot.limitId) === true),
+    )
+    .reduce((sum, entry) => sum + entry.cost, 0);
   return snapshot.spend + extra;
 }
 

@@ -184,7 +184,7 @@ export function buildProviderConfig(
 			}
 			return {
 				id: entry.id,
-				name: entry.id,
+				name: entry.name ?? entry.id,
 				reasoning: meta.reasoning,
 				input: meta.input,
 				cost: meta.cost,

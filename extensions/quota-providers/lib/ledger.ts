@@ -81,7 +81,14 @@ export function parseLedger(raw: string): LedgerEntry[] {
         typeof parsed.timestamp === "number" &&
         typeof parsed.cost === "number"
       ) {
-        entries.push({ timestamp: parsed.timestamp, cost: parsed.cost });
+        const quotaLimitIds = Array.isArray(parsed.quotaLimitIds)
+          ? parsed.quotaLimitIds.filter((id: unknown): id is string => typeof id === "string")
+          : undefined;
+        entries.push({
+          timestamp: parsed.timestamp,
+          cost: parsed.cost,
+          ...(quotaLimitIds && quotaLimitIds.length > 0 ? { quotaLimitIds } : {}),
+        });
       }
     } catch {
       // torn or garbage line — skip

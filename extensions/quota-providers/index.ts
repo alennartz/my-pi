@@ -44,32 +44,50 @@ export interface ProviderRecord {
 	policy: QuotaPolicy;
 	hasUsageSeam: boolean;
 	providerIds: string[];
+	modelLimitIds: ReadonlyMap<string, string[]>;
 }
 
-type QuotaRecordFacts = Pick<ProviderRecord, "paths" | "policy" | "hasUsageSeam">;
+type QuotaRecordFacts = Pick<ProviderRecord, "paths" | "policy" | "hasUsageSeam" | "modelLimitIds">;
 
 /**
- * Evaluate the current quota at the provider boundary. Returning undefined
- * means there is no usable snapshot yet or the cached window has reset, so the
- * request is allowed while a background refresh catches up.
+ * Evaluate every active limit that applies to the selected model. Returning
+ * undefined means no applicable, usable window is cached yet.
  */
 function evaluateProviderQuota(
 	record: QuotaRecordFacts,
 	store: SessionTreeStore | undefined,
 	now = Date.now(),
+	modelId?: string,
 ): ReturnType<typeof decideBlock> | undefined {
 	if (!record.hasUsageSeam) return undefined;
 	const cached = readUsageSnapshot(record.paths.usage);
-	if (!cached || now >= cached.snapshot.windowEnd) return undefined;
+	if (!cached) return undefined;
 
-	const verdict = evaluateQuota(
-		cached.snapshot,
-		readLedger(record.paths.ledger),
-		record.policy,
-		now,
-	);
+	const limitIds = modelId ? record.modelLimitIds.get(modelId) ?? [] : [];
+	const snapshots = cached.snapshots
+		.filter(
+			(snapshot) =>
+				(snapshot.limitId === undefined || limitIds.includes(snapshot.limitId)) &&
+				now < snapshot.windowEnd,
+		)
+		.sort((a, b) => a.windowEnd - b.windowEnd);
+	if (snapshots.length === 0) return undefined;
+
+	const ledger = readLedger(record.paths.ledger);
 	const bypassActive = record.policy.bypassAllowed && store ? readBypass(store) : false;
-	return decideBlock({ verdict, policy: record.policy, bypassActive });
+	const decisions = snapshots.map((snapshot) => {
+		const decision = decideBlock({
+			verdict: evaluateQuota(snapshot, ledger, record.policy, now),
+			policy: record.policy,
+			bypassActive,
+		});
+		return decision.blocked && snapshot.label
+			? { ...decision, message: `${snapshot.label}: ${decision.message}` }
+			: decision;
+	});
+	return decisions.find((decision) => decision.blocked && decision.kind === "hard") ??
+		decisions.find((decision) => decision.blocked) ??
+		{ blocked: false };
 }
 
 /** Keep quota rejection observable in both TUI and headless child sessions. */
@@ -94,16 +112,8 @@ function formatShortDate(ms: number): string {
 
 /**
  * Build the compact one-line footer for a single provider, or undefined when
- * there is nothing worth showing:
- *   - no usage seam (provider isn't quota-tracked),
- *   - no snapshot cached yet, or
- *   - the cached snapshot's window has already reset (now >= windowEnd).
- *
- * The last guard matters: the budget date reduces to
- * `windowStart + (spend/quota)·windowLength`, always inside *that snapshot's*
- * window. A snapshot left over from a prior window would therefore render a
- * budget date inside that stale (e.g. last month's) window — so we refuse to
- * show an expired snapshot at all and let a background poll replace it.
+ * there is nothing worth showing. Each active limit gets its own usage and reset
+ * date; expired windows are omitted until a background poll replaces them.
  */
 function buildFooterLine(
 	record: ProviderRecord,
@@ -113,29 +123,30 @@ function buildFooterLine(
 	if (!record.hasUsageSeam) return undefined;
 	const cached = readUsageSnapshot(record.paths.usage);
 	if (!cached) return undefined;
-	const snap = cached.snapshot;
-	if (now >= snap.windowEnd) return undefined;
-
 	const ledger = readLedger(record.paths.ledger);
-	const verdict = evaluateQuota(snap, ledger, record.policy, now);
-	const spend = effectiveSpend(snap, ledger);
-
 	const bypassActive = record.policy.bypassAllowed && readBypass(store);
+	const lines = cached.snapshots
+		.filter((snapshot) => now < snapshot.windowEnd)
+		.sort((a, b) => a.windowEnd - b.windowEnd)
+		.map((snapshot) => {
+			const verdict = evaluateQuota(snapshot, ledger, record.policy, now);
+			const spend = effectiveSpend(snapshot, ledger);
+			const budgetDate = formatShortDate(now + verdict.daysAhead * 86_400_000);
+			const delta = verdict.daysAhead >= 0
+				? `+${verdict.daysAhead.toFixed(1)}`
+				: verdict.daysAhead.toFixed(1);
+			const resetDate = formatShortDate(verdict.resetAt);
+			const label = snapshot.label ? `${snapshot.label} ` : "";
 
-	// Budget date: the point in the window whose prorated budget equals current
-	// spend. daysAhead is the signed delta in days between that date and now.
-	const budgetDate = formatShortDate(now + verdict.daysAhead * 86_400_000);
-	const delta =
-		verdict.daysAhead >= 0 ? `+${verdict.daysAhead.toFixed(1)}` : verdict.daysAhead.toFixed(1);
-	const resetDate = formatShortDate(verdict.resetAt);
+			// Hard cap takes precedence over bypass display — hard cap is never bypassable.
+			let suffix = "";
+			if (verdict.state === "hard-exceeded") suffix = " · HARD CAP";
+			else if (bypassActive) suffix = " · bypassed";
+			else if (verdict.state === "soft-exceeded") suffix = " · soft cap";
 
-	// Hard cap takes precedence over bypass display — hard cap is never bypassable.
-	let suffix = "";
-	if (verdict.state === "hard-exceeded") suffix = " · HARD CAP";
-	else if (bypassActive) suffix = " · bypassed";
-	else if (verdict.state === "soft-exceeded") suffix = " · soft cap";
-
-	return `quota: ${formatDollars(spend)}/${formatDollars(snap.quota)} · ${budgetDate}'s budget (${delta}d) · resets ${resetDate}${suffix}`;
+			return `${label}${formatDollars(spend)}/${formatDollars(snapshot.quota)} · ${budgetDate}'s budget (${delta}d) · resets ${resetDate}${suffix}`;
+		});
+	return lines.length > 0 ? `quota: ${lines.join(" | ")}` : undefined;
 }
 
 /**
@@ -278,6 +289,10 @@ export default async function (pi: ExtensionAPI) {
 		}
 
 		const groups = groupModels(id, cache.models, impl.authHeader);
+		const modelLimitIds = new Map<string, string[]>();
+		for (const model of cache.models) {
+			if (model.quotaLimitIds?.length) modelLimitIds.set(model.id, model.quotaLimitIds);
+		}
 		const hasUsageSeam = typeof impl.getUsage === "function";
 		let providerRecord: ProviderRecord | undefined;
 
@@ -311,9 +326,14 @@ export default async function (pi: ExtensionAPI) {
 						}
 						return apiProvider.streamSimple(model, context, options);
 					},
-					() => {
+					(model) => {
 						if (providerRecord) maybeRefreshUsage(providerRecord);
-						return evaluateProviderQuota({ paths, policy, hasUsageSeam }, treeStore);
+						return evaluateProviderQuota(
+							{ paths, policy, hasUsageSeam, modelLimitIds },
+							treeStore,
+							Date.now(),
+							model.id,
+						);
 					},
 				)
 				: undefined;
@@ -332,6 +352,7 @@ export default async function (pi: ExtensionAPI) {
 			policy,
 			hasUsageSeam,
 			providerIds,
+			modelLimitIds,
 		});
 		records.push(providerRecord);
 	}
@@ -351,9 +372,11 @@ export default async function (pi: ExtensionAPI) {
 		if (!record.hasUsageSeam) return;
 		const cached = readUsageSnapshot(record.paths.usage);
 		const now = Date.now();
-		// Force a refresh when the cached window has already reset, regardless of
-		// snapshot age — a stale window can otherwise linger below the poll floor.
-		const windowEnded = cached ? now >= cached.snapshot.windowEnd : false;
+		// Force a refresh when any cached limit window has already reset, regardless
+		// of snapshot age — stale windows must not linger below the poll floor.
+		const windowEnded = cached
+			? cached.snapshots.some((snapshot) => now >= snapshot.windowEnd)
+			: false;
 		const age = cached ? (now - cached.writtenAt) / 1000 : Infinity;
 		if (!windowEnded && age < record.policy.maxPollSeconds) return;
 		try {
@@ -402,9 +425,14 @@ export default async function (pi: ExtensionAPI) {
 		if (event.message.role !== "assistant") return;
 		const record = providerIdToRecord.get(event.message.provider ?? "");
 		if (!record) return;
+		const quotaLimitIds = record.modelLimitIds.get(event.message.model);
 		appendLedgerEntry(
 			record.paths.ledger,
-			{ timestamp: event.message.timestamp, cost: event.message.usage?.cost?.total ?? 0 },
+			{
+				timestamp: event.message.timestamp,
+				cost: event.message.usage?.cost?.total ?? 0,
+				...(quotaLimitIds ? { quotaLimitIds } : {}),
+			},
 			`${record.paths.ledger}.lock`, // hold the ledger lock so cmdUsage prune can't clobber us
 		);
 		maybeRefreshUsage(record);
@@ -424,7 +452,7 @@ export default async function (pi: ExtensionAPI) {
 		maybeRefreshUsage(record);
 
 		const store = treeStore ?? getOrCreateSessionTreeStore(ctx.sessionManager);
-		const decision = evaluateProviderQuota(record, store);
+		const decision = evaluateProviderQuota(record, store, Date.now(), ctx.model?.id);
 
 		refreshStatusline(record, ctx);
 

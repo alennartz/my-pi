@@ -16,10 +16,10 @@ export type ProviderStreamSimple = NonNullable<ProviderConfig["streamSimple"]>;
  */
 export function guardStreamSimple(
 	fallback: ProviderStreamSimple,
-	evaluate: () => QuotaGateResult,
+	evaluate: (model: Parameters<ProviderStreamSimple>[0]) => QuotaGateResult,
 ): ProviderStreamSimple {
 	return (model, context, options) => {
-		const decision = evaluate();
+		const decision = evaluate(model);
 		if (decision?.blocked) throw new Error(decision.message);
 		return fallback(model, context, options);
 	};

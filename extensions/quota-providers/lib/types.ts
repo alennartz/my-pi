@@ -25,8 +25,8 @@ export interface ProviderImplementation {
   discoverModels(ctx: ImplContext): Promise<ModelEntry[]>;
   /** Seam 2: fetch a fresh token. Runs out-of-band in the runner; core owns caching/margins. */
   getToken(ctx: ImplContext): Promise<TokenResult>;
-  /** Seam 3 (optional): report provider usage facts. Absent → no quota enforcement for this provider. */
-  getUsage?(ctx: ImplContext): Promise<UsageSnapshot>;
+  /** Seam 3 (optional): report one or more quota limits. Absent → no quota enforcement. */
+  getUsage?(ctx: ImplContext): Promise<UsageSnapshot | UsageSnapshot[]>;
 }
 
 /**
@@ -66,6 +66,8 @@ export interface ModelMetadataOverrides {
 export interface ModelEntry extends ModelMetadataOverrides {
   /** Model/deployment id sent to the API. */
   id: string;
+  /** Optional display name; defaults to id. */
+  name?: string;
   /** Catalog key for pi-ai metadata lookup (context window, cost, compat).
    *  The resolved values are overridden field-wise by any metadata fields on
    *  this entry. */
@@ -79,6 +81,8 @@ export interface ModelEntry extends ModelMetadataOverrides {
   baseUrlPath?: string;
   /** Per-model authHeader override. */
   authHeader?: boolean;
+  /** Opaque quota limit IDs assigned to this model by its provider implementation. */
+  quotaLimitIds?: string[];
 }
 
 export interface TokenResult {
@@ -88,6 +92,10 @@ export interface TokenResult {
 }
 
 export interface UsageSnapshot {
+  /** Optional limit ID. Omitted applies to every model on the provider. */
+  limitId?: string;
+  /** Short label for the quota window shown in status output. */
+  label?: string;
   /** Window-to-date spend, dollars. */
   spend: number;
   /** Window hard limit, dollars. */
@@ -125,6 +133,8 @@ export interface ImplContext {
 export interface LedgerEntry {
   timestamp: number;
   cost: number;
+  /** Opaque limit IDs assigned to the model that produced this cost. */
+  quotaLimitIds?: string[];
 }
 
 export interface QuotaVerdict {

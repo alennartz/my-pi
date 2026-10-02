@@ -382,38 +382,50 @@ async function cmdUsage(flags, impl, ctx) {
 			}
 		}
 
-		// Fetch usage.
-		let snapshot;
+		// Fetch one or more nested usage limits.
+		let usageResult;
 		try {
-			snapshot = await impl.getUsage(ctx);
+			usageResult = await impl.getUsage(ctx);
 		} catch (err) {
 			releaseLock();
 			fail(`usage: impl.getUsage failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
+		const snapshots = Array.isArray(usageResult) ? usageResult : [usageResult];
 
-		// Validate snapshot shape — a malformed result would produce a
-		// "fresh" cache that index.ts rejects (returning null), causing
-		// enforcement to be silently off and the stampede guard to fire
-		// on every subsequent poll.
-		const { spend, quota, windowStart, windowEnd, asOf } = snapshot ?? {};
-		if (
-			typeof spend !== "number" ||
-			typeof quota !== "number" ||
-			typeof windowStart !== "number" ||
-			typeof windowEnd !== "number" ||
-			typeof asOf !== "number"
-		) {
+		// A malformed result would produce a "fresh" cache that index.ts rejects,
+		// silently disabling enforcement until the next poll.
+		const valid = snapshots.every((snapshot) =>
+			snapshot !== null &&
+			typeof snapshot === "object" &&
+			typeof snapshot.spend === "number" &&
+			typeof snapshot.quota === "number" &&
+			typeof snapshot.windowStart === "number" &&
+			typeof snapshot.windowEnd === "number" &&
+			typeof snapshot.asOf === "number" &&
+			(snapshot.limitId === undefined || typeof snapshot.limitId === "string") &&
+			(snapshot.label === undefined || typeof snapshot.label === "string")
+		);
+		if (!Array.isArray(snapshots) || !valid) {
 			releaseLock();
-			fail("usage: impl.getUsage returned invalid snapshot — expected numeric spend, quota, windowStart, windowEnd, asOf");
+			fail("usage: impl.getUsage returned invalid limits — expected numeric spend, quota, windowStart, windowEnd, asOf");
 		}
 
-		// Write usage cache atomically.
-		writeAtomic(cache, JSON.stringify({ writtenAt: Date.now(), snapshot }));
+		const cacheFile = {
+			writtenAt: Date.now(),
+			snapshots,
+			...(snapshots.length === 1 ? { snapshot: snapshots[0] } : {}),
+		};
+		writeAtomic(cache, JSON.stringify(cacheFile));
 
 		// Prune ledger under a short-lived ledger lock so appendLedgerEntry
 		// (in index.ts, on pi's main thread) cannot race the read→filter→rename.
 		// The ledger lock is held only here — NOT around the getUsage call above.
-		// asOf was already destructured and validated above.
+		// Prune only entries authoritative in every returned limit. An empty result
+		// has no authoritative timestamp, so leave the ledger untouched.
+		const asOf = snapshots.length > 0
+			? Math.min(...snapshots.map((snapshot) => snapshot.asOf))
+			: undefined;
+		if (asOf === undefined) return;
 		const ledgerLock = acquireLockSync(`${ledger}.lock`);
 		try {
 			if (existsSync(ledger)) {
