@@ -4,6 +4,9 @@ import {
   proratedLine,
   daysAhead,
   evaluateQuota,
+  applicableSnapshots,
+  remainingHeadroom,
+  firstHitSnapshot,
 } from "./quota.js";
 import type { UsageSnapshot, LedgerEntry, QuotaPolicy } from "./types.js";
 
@@ -227,5 +230,90 @@ describe("evaluateQuota", () => {
     const verdict = evaluateQuota(s, [], DEFAULT_POLICY, DAY_MS);
     expect(verdict.state).toBe("ok");
     expect(verdict.daysAhead).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applicableSnapshots / remainingHeadroom / firstHitSnapshot
+// ---------------------------------------------------------------------------
+
+describe("applicableSnapshots", () => {
+  const monthly = makeSnapshot({}); // no limitId → applies to every model
+  const premium = makeSnapshot({ limitId: "premium-weekly", windowEnd: 7 * DAY_MS });
+
+  it("keeps unscoped snapshots for models with no scopes", () => {
+    expect(applicableSnapshots([monthly, premium], [], 0)).toEqual([monthly]);
+  });
+
+  it("keeps a scoped snapshot only when the model lists its key", () => {
+    expect(applicableSnapshots([monthly, premium], ["premium-weekly"], 0)).toEqual([
+      monthly,
+      premium,
+    ]);
+  });
+
+  it("drops expired windows", () => {
+    expect(applicableSnapshots([monthly, premium], [], 31 * DAY_MS)).toEqual([]);
+  });
+});
+
+describe("remainingHeadroom", () => {
+  it("is quota minus snapshot spend", () => {
+    expect(remainingHeadroom(makeSnapshot({ spend: 40, quota: 100 }), [])).toBe(60);
+  });
+
+  it("subtracts ledger spend beyond asOf", () => {
+    const s = makeSnapshot({ spend: 40, quota: 100, asOf: 100 });
+    const ledger: LedgerEntry[] = [{ timestamp: 101, cost: 15 }];
+    expect(remainingHeadroom(s, ledger)).toBe(45);
+  });
+});
+
+describe("firstHitSnapshot", () => {
+  const now = 5 * DAY_MS;
+  const monthly = makeSnapshot({ spend: 90, quota: 100 }); // $10 headroom
+  const premium = makeSnapshot({
+    limitId: "premium-weekly",
+    spend: 10,
+    quota: 100,
+    windowEnd: 7 * DAY_MS,
+  }); // $90 headroom
+
+  it("returns the scope with the least remaining headroom", () => {
+    expect(firstHitSnapshot([premium, monthly], ["premium-weekly"], [], now)).toBe(monthly);
+  });
+
+  it("ignores scopes the model does not carry", () => {
+    expect(firstHitSnapshot([premium, monthly], [], [], now)).toBe(monthly);
+    expect(firstHitSnapshot([premium], [], [], now)).toBeUndefined();
+  });
+
+  it("accounts for scope-tagged ledger spend when comparing headroom", () => {
+    // A second, scoped tier at $10 headroom loses to premium ($90) until the
+    // tagged entry lands: 100−(10+85)=5 < 10.
+    const taggedMonthly = makeSnapshot({
+      limitId: "monthly",
+      spend: 90,
+      quota: 100,
+      windowEnd: 20 * DAY_MS,
+    });
+    const ledger: LedgerEntry[] = [
+      { timestamp: now - 1, cost: 85, quotaLimitIds: ["premium-weekly"] },
+    ];
+    expect(
+      firstHitSnapshot([taggedMonthly, premium], ["monthly", "premium-weekly"], ledger, now),
+    ).toBe(premium);
+  });
+
+  it("breaks headroom ties by the latest reset", () => {
+    const early = makeSnapshot({ spend: 50, quota: 100, windowEnd: 10 * DAY_MS });
+    const late = makeSnapshot({ spend: 50, quota: 100, windowEnd: 20 * DAY_MS });
+    expect(firstHitSnapshot([early, late], [], [], now)).toBe(late);
+  });
+
+  it("drops expired windows before comparing", () => {
+    const expired = makeSnapshot({ spend: 100, quota: 100, windowEnd: now - 1 });
+    expect(firstHitSnapshot([expired, monthly], [], [], now)).toBe(monthly);
+    expect(firstHitSnapshot([expired], [], [], now)).toBeUndefined();
   });
 });

@@ -17,6 +17,50 @@ export function effectiveSpend(snapshot: UsageSnapshot, ledger: LedgerEntry[]): 
   return snapshot.spend + extra;
 }
 
+/**
+ * Scopes that apply to a model and still have time left: unscoped snapshots
+ * apply to every model, scoped ones only when the model lists their key.
+ */
+export function applicableSnapshots(
+  snapshots: UsageSnapshot[],
+  limitIds: string[],
+  now: number
+): UsageSnapshot[] {
+  return snapshots.filter(
+    (s) => (s.limitId === undefined || limitIds.includes(s.limitId)) && now < s.windowEnd
+  );
+}
+
+/** Dollars remaining before the snapshot's hard cap is hit. */
+export function remainingHeadroom(snapshot: UsageSnapshot, ledger: LedgerEntry[]): number {
+  return snapshot.quota - effectiveSpend(snapshot, ledger);
+}
+
+/**
+ * The scope that will be hit first: least remaining headroom in dollars,
+ * ties broken by the latest reset (windowEnd). Undefined when none apply.
+ */
+export function firstHitSnapshot(
+  snapshots: UsageSnapshot[],
+  limitIds: string[],
+  ledger: LedgerEntry[],
+  now: number
+): UsageSnapshot | undefined {
+  let best: UsageSnapshot | undefined;
+  for (const snapshot of applicableSnapshots(snapshots, limitIds, now)) {
+    if (!best) {
+      best = snapshot;
+      continue;
+    }
+    const headroom = remainingHeadroom(snapshot, ledger);
+    const bestHeadroom = remainingHeadroom(best, ledger);
+    if (headroom < bestHeadroom || (headroom === bestHeadroom && snapshot.windowEnd > best.windowEnd)) {
+      best = snapshot;
+    }
+  }
+  return best;
+}
+
 /** Pro-rated line: quota × clamp((t − windowStart) / (windowEnd − windowStart), 0, 1). */
 export function proratedLine(snapshot: UsageSnapshot, t: number): number {
   const windowLength = snapshot.windowEnd - snapshot.windowStart;

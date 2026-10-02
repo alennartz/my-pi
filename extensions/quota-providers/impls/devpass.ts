@@ -266,7 +266,7 @@ function buildUsageSnapshots(
 			: now + PREMIUM_WINDOW_MS;
 		snapshots.push({
 			limitId: "premium-weekly",
-			label: "Premium weekly",
+			label: "Premium",
 			spend: usageAmount(data, "devPlanPremiumCreditsUsed"),
 			quota: premiumQuota,
 			windowStart: resetAt - PREMIUM_WINDOW_MS,

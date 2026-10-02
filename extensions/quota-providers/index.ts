@@ -26,7 +26,7 @@ import type { ProviderImplementation, QuotaPolicy } from "./lib/types.js";
 import { appendLedgerEntry, readLedger } from "./lib/ledger.js";
 import { readUsageSnapshot } from "./lib/snapshot.js";
 import { readBypass, writeBypass } from "./lib/bypass.js";
-import { evaluateQuota, effectiveSpend } from "./lib/quota.js";
+import { evaluateQuota, effectiveSpend, applicableSnapshots, firstHitSnapshot } from "./lib/quota.js";
 import { getOrCreateSessionTreeStore } from "../subagents/scoped-store.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
 import { decideBlock } from "./lib/enforce.js";
@@ -64,12 +64,7 @@ function evaluateProviderQuota(
 	if (!cached) return undefined;
 
 	const limitIds = modelId ? record.modelLimitIds.get(modelId) ?? [] : [];
-	const snapshots = cached.snapshots
-		.filter(
-			(snapshot) =>
-				(snapshot.limitId === undefined || limitIds.includes(snapshot.limitId)) &&
-				now < snapshot.windowEnd,
-		)
+	const snapshots = applicableSnapshots(cached.snapshots, limitIds, now)
 		.sort((a, b) => a.windowEnd - b.windowEnd);
 	if (snapshots.length === 0) return undefined;
 
@@ -103,50 +98,58 @@ export function notifyQuotaBlocked(
 // =============================================================================
 
 function formatDollars(amount: number): string {
-	return `$${amount.toFixed(2)}`;
+	// Whole dollars drop the cents — every character counts on mobile layouts.
+	return `$${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)}`;
 }
 
 function formatShortDate(ms: number): string {
 	return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/** Days ahead of/behind budget: one decimal below 10d (near-cap precision), whole beyond. */
+function formatDaysAhead(days: number): string {
+	const magnitude = Math.abs(days);
+	const text = magnitude < 10
+		? magnitude.toFixed(1).replace(/\.0$/, "")
+		: String(Math.round(magnitude));
+	return `${days < 0 ? "-" : "+"}${text}d`;
+}
+
 /**
  * Build the compact one-line footer for a single provider, or undefined when
- * there is nothing worth showing. Each active limit gets its own usage and reset
- * date; expired windows are omitted until a background poll replaces them.
+ * there is nothing worth showing. Scoped to the active model's keys and
+ * rendered for the single scope it will hit first — least remaining headroom,
+ * ties to the latest reset. The tier name is omitted to keep the line short on
+ * mobile layouts; expired windows are omitted until a background poll replaces
+ * them.
  */
 function buildFooterLine(
 	record: ProviderRecord,
 	now: number,
 	store: SessionTreeStore,
+	modelId?: string,
 ): string | undefined {
 	if (!record.hasUsageSeam) return undefined;
 	const cached = readUsageSnapshot(record.paths.usage);
 	if (!cached) return undefined;
 	const ledger = readLedger(record.paths.ledger);
 	const bypassActive = record.policy.bypassAllowed && readBypass(store);
-	const lines = cached.snapshots
-		.filter((snapshot) => now < snapshot.windowEnd)
-		.sort((a, b) => a.windowEnd - b.windowEnd)
-		.map((snapshot) => {
-			const verdict = evaluateQuota(snapshot, ledger, record.policy, now);
-			const spend = effectiveSpend(snapshot, ledger);
-			const budgetDate = formatShortDate(now + verdict.daysAhead * 86_400_000);
-			const delta = verdict.daysAhead >= 0
-				? `+${verdict.daysAhead.toFixed(1)}`
-				: verdict.daysAhead.toFixed(1);
-			const resetDate = formatShortDate(verdict.resetAt);
-			const label = snapshot.label ? `${snapshot.label} ` : "";
+	const limitIds = modelId ? record.modelLimitIds.get(modelId) ?? [] : [];
+	const snapshot = firstHitSnapshot(cached.snapshots, limitIds, ledger, now);
+	if (!snapshot) return undefined;
 
-			// Hard cap takes precedence over bypass display — hard cap is never bypassable.
-			let suffix = "";
-			if (verdict.state === "hard-exceeded") suffix = " · HARD CAP";
-			else if (bypassActive) suffix = " · bypassed";
-			else if (verdict.state === "soft-exceeded") suffix = " · soft cap";
+	const verdict = evaluateQuota(snapshot, ledger, record.policy, now);
+	const spend = effectiveSpend(snapshot, ledger);
+	const delta = formatDaysAhead(verdict.daysAhead);
+	const resetDate = formatShortDate(verdict.resetAt);
 
-			return `${label}${formatDollars(spend)}/${formatDollars(snapshot.quota)} · ${budgetDate}'s budget (${delta}d) · resets ${resetDate}${suffix}`;
-		});
-	return lines.length > 0 ? `quota: ${lines.join(" | ")}` : undefined;
+	// Hard cap takes precedence over bypass display — hard cap is never bypassable.
+	let suffix = "";
+	if (verdict.state === "hard-exceeded") suffix = " · HARD CAP";
+	else if (bypassActive) suffix = " · bypassed";
+	else if (verdict.state === "soft-exceeded") suffix = " · soft cap";
+
+	return `quota: ${formatDollars(spend)}/${formatDollars(snapshot.quota)} ${delta}→${resetDate}${suffix}`;
 }
 
 /**
@@ -160,7 +163,7 @@ export function refreshStatusline(
 ): void {
 	if (!ctx.hasUI || typeof ctx.ui?.setStatus !== "function") return;
 	const store = getOrCreateSessionTreeStore(ctx.sessionManager);
-	const line = record ? buildFooterLine(record, Date.now(), store) : undefined;
+	const line = record ? buildFooterLine(record, Date.now(), store, ctx.model?.id) : undefined;
 	ctx.ui.setStatus("quota-providers", line);
 }
 
@@ -526,7 +529,7 @@ export default async function (pi: ExtensionAPI) {
 
 			maybeRefreshUsage(record);
 			const store = treeStore ?? getOrCreateSessionTreeStore(ctx.sessionManager);
-			const line = buildFooterLine(record, Date.now(), store);
+			const line = buildFooterLine(record, Date.now(), store, ctx.model?.id);
 			if (!line) {
 				ctx.ui.notify(`${record.id}: no quota data yet.`);
 				return;
