@@ -71,6 +71,11 @@ describe("buildModelEntries", () => {
 			authHeader: true,
 			reasoning: true,
 			input: ["text", "image"],
+			inputLimits: {
+				images: {
+					resize: { maxWidth: 2_000, maxHeight: 2_000, maxBytes: 4_718_592, jpegQuality: 80 },
+				},
+			},
 			contextWindow: 131_072,
 			maxTokens: 8_192,
 			cost: {
@@ -107,6 +112,68 @@ describe("buildModelEntries", () => {
 			cacheRead: 2,
 			cacheWrite: 4,
 		});
+	});
+
+	it("uses the smallest declared output cap across the model and eligible providers", () => {
+		const entries = buildModelEntries([{
+			id: "routed-model",
+			max_output: 64_000,
+			providers: [
+				{
+					streaming: true,
+					tools: true,
+					max_output: 8_192,
+					pricing: { prompt: "1e-6", completion: "2e-6" },
+				},
+				{
+					streaming: true,
+					tools: true,
+					max_output: 32_000,
+					pricing: { prompt: "1e-6", completion: "2e-6" },
+				},
+				{
+					streaming: true,
+					tools: false,
+					max_output: 1_024,
+					pricing: { prompt: "1e-6", completion: "2e-6" },
+				},
+			],
+		}]);
+
+		expect(entries[0].maxTokens).toBe(8_192);
+	});
+
+	it("derives the output cap from providers and leaves it unset when unknown", () => {
+		const entries = buildModelEntries([
+			{
+				id: "provider-capped",
+				providers: [
+					{
+						streaming: true,
+						tools: true,
+						max_output: 12_000,
+						pricing: { prompt: "1e-6", completion: "2e-6" },
+					},
+					{
+						streaming: true,
+						tools: true,
+						max_output: 8_000,
+						pricing: { prompt: "1e-6", completion: "2e-6" },
+					},
+				],
+			},
+			{
+				id: "unknown-cap",
+				providers: [{
+					streaming: true,
+					tools: true,
+					pricing: { prompt: "1e-6", completion: "2e-6" },
+				}],
+			},
+		]);
+
+		expect(entries[0].maxTokens).toBe(8_000);
+		expect(entries[1]).not.toHaveProperty("maxTokens");
 	});
 
 	describe("thinkingLevelMap", () => {

@@ -13,6 +13,13 @@
  * Thinking levels are derived from each eligible provider's declared
  * `reasoning_efforts` (see `buildThinkingLevelMap`), so pi only ever offers
  * effort values the gateway accepts.
+ *
+ * Size limits follow the same "any eligible provider may serve" rule: the
+ * model's output ceiling is the smallest `max_output` declared across the
+ * model record and its eligible providers, because the gateway and upstreams
+ * reject (or drop all providers for) requests above a provider's cap. The
+ * catalog lists no request-body or image limits. For vision models we use
+ * pi-ai's standard image-resize profile; no request-byte cap is guessed.
  */
 
 import type {
@@ -38,6 +45,7 @@ interface GatewayProvider {
 	reasoning?: unknown;
 	reasoning_efforts?: unknown;
 	pricing?: unknown;
+	max_output?: unknown;
 }
 
 interface GatewayModel {
@@ -297,6 +305,19 @@ function positiveNumber(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+/** Smallest declared value, ignoring undefined — undefined when none is declared. */
+function minDeclared(values: (number | undefined)[]): number | undefined {
+	const declared = values.filter((value): value is number => value !== undefined);
+	return declared.length > 0 ? Math.min(...declared) : undefined;
+}
+
+/**
+ * pi-ai's standard cache-safe image profile (its own generated catalogs use
+ * exactly this for openai-completions vision models); pi resizes tool-result
+ * images with it before they enter conversation history.
+ */
+const IMAGE_RESIZE = { maxWidth: 2000, maxHeight: 2000, maxBytes: 4_718_592, jpegQuality: 80 };
+
 function modelSupportsReasoning(
 	model: GatewayModel,
 	eligibleProviders: GatewayProvider[],
@@ -463,7 +484,18 @@ export function buildModelEntries(records: unknown[]): ModelEntry[] {
 			medianRate(prices, "input_cache_write") ?? medianRate(prices, "input_cache_write_1h"),
 		);
 		const contextWindow = positiveNumber(model.context_length);
-		const maxTokens = positiveNumber(model.max_output);
+		// DevPass cannot pin providers: a request may land on any eligible one,
+		// and max_tokens above a provider's cap is rejected (or makes the model
+		// unroutable). The ceiling is therefore the smallest declared value
+		// across the model record and every eligible provider; when nothing is
+		// declared, pi's configured fallback applies.
+		const maxTokens = minDeclared([
+			positiveNumber(model.max_output),
+			...eligibleProviders.map((provider) => positiveNumber(provider.max_output)),
+		]);
+		const inputModalities = modelInput(model);
+		const inputLimits: NonNullable<ModelEntry["inputLimits"]> | undefined =
+			inputModalities.includes("image") ? { images: { resize: IMAGE_RESIZE } } : undefined;
 		const reasoning = modelSupportsReasoning(model, eligibleProviders);
 		const thinkingLevelMap = reasoning ? buildThinkingLevelMap(eligibleProviders) : undefined;
 		const quotaLimitIds = isPremiumModel(model.pricing, prices) ? ["premium-weekly"] : undefined;
@@ -484,7 +516,8 @@ export function buildModelEntries(records: unknown[]): ModelEntry[] {
 			authHeader: true,
 			reasoning,
 			...(thinkingLevelMap ? { thinkingLevelMap } : {}),
-			input: modelInput(model),
+			input: inputModalities,
+			...(inputLimits ? { inputLimits } : {}),
 			...(contextWindow !== undefined ? { contextWindow } : {}),
 			...(maxTokens !== undefined ? { maxTokens } : {}),
 			...(quotaLimitIds ? { quotaLimitIds } : {}),
