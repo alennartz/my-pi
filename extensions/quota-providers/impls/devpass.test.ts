@@ -109,6 +109,72 @@ describe("buildModelEntries", () => {
 		});
 	});
 
+	describe("thinkingLevelMap", () => {
+		const provider = (efforts?: string[]) => ({
+			streaming: true,
+			tools: true,
+			reasoning: true,
+			...(efforts ? { reasoning_efforts: efforts } : {}),
+			pricing: { prompt: "1e-6", completion: "2e-6" },
+		});
+		const mapFor = (providers: unknown[]) => {
+			const entries = buildModelEntries([{
+				id: "m",
+				supported_parameters: ["stream", "tools", "reasoning"],
+				providers,
+			}]);
+			return entries[0]?.thinkingLevelMap;
+		};
+
+		it("leaves pi's default levels when no provider declares reasoning_efforts", () => {
+			expect(mapFor([provider(), provider()])).toBeUndefined();
+		});
+
+		it("keeps default levels when the intersection collapses to disable-only values", () => {
+			expect(mapFor([
+				provider(["none"]),
+				provider(["none", "low"]),
+			])).toBeUndefined();
+		});
+
+		it("maps every level from the efforts all declaring providers agree on", () => {
+			// xiaomi-style: one provider narrower than the other; a third declares nothing.
+			expect(mapFor([
+				provider(["none", "low", "medium", "high"]),
+				provider(["none", "minimal", "low", "medium", "high", "xhigh", "max"]),
+				provider(),
+			])).toEqual({
+				off: "none",
+				minimal: "low",
+				low: "low",
+				medium: "medium",
+				high: "high",
+				xhigh: "high",
+				max: "high",
+			});
+		});
+
+		it("slots values around gaps by ladder order and omits off when no disable value is agreed", () => {
+			expect(mapFor([provider(["none", "low", "high", "max"])])).toEqual({
+				off: "none",
+				minimal: "low",
+				low: "low",
+				medium: "high",
+				high: "high",
+				xhigh: "max",
+				max: "max",
+			});
+			expect(mapFor([provider(["low", "medium", "high"])])).toEqual({
+				minimal: "low",
+				low: "low",
+				medium: "medium",
+				high: "high",
+				xhigh: "high",
+				max: "high",
+			});
+		});
+	});
+
 	it("does not register a model when all eligible providers have malformed prices", () => {
 		const entries = buildModelEntries([
 			{

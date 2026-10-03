@@ -9,6 +9,10 @@
  * Authentication reuses LLMGATEWAY_API_KEY from the environment. GET /v1/key
  * reports monthly usage and a separate premium-weekly window. The monthly cycle
  * anchor is configurable because the endpoint does not report its renewal date.
+ *
+ * Thinking levels are derived from each eligible provider's declared
+ * `reasoning_efforts` (see `buildThinkingLevelMap`), so pi only ever offers
+ * effort values the gateway accepts.
  */
 
 import type {
@@ -32,6 +36,7 @@ interface GatewayProvider {
 	streaming?: unknown;
 	tools?: unknown;
 	reasoning?: unknown;
+	reasoning_efforts?: unknown;
 	pricing?: unknown;
 }
 
@@ -302,6 +307,124 @@ function modelSupportsReasoning(
 	return eligibleProviders.every((provider) => provider.reasoning === true);
 }
 
+/** pi thinking levels ordered weakest → strongest, mirroring pi-ai's ladder. */
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+type ThinkingLevelMap = Partial<Record<ThinkingLevel, string>>;
+
+/** Provider effort values that mean "thinking disabled" — pi's "off" slot. */
+const DISABLE_VALUES = new Set(["off", "none", "disable", "disabled"]);
+
+function normalizeEffort(value: string): string {
+	return value.trim().toLowerCase();
+}
+
+/** The provider's declared effort list, or undefined when it declares none. */
+function declaredEfforts(provider: GatewayProvider): string[] | undefined {
+	if (!Array.isArray(provider.reasoning_efforts)) return undefined;
+	const values = provider.reasoning_efforts
+		.filter((value): value is string =>
+			typeof value === "string" && normalizeEffort(value).length > 0)
+		.map((value) => value.trim());
+	return values.length > 0 ? values : undefined;
+}
+
+/**
+ * Efforts every declaring eligible provider agrees on, preserving the first
+ * declarer's order. Providers that declare nothing don't constrain it;
+ * undefined means no provider declared anything.
+ */
+function agreedEfforts(eligibleProviders: GatewayProvider[]): string[] | undefined {
+	let agreed: string[] | undefined;
+	for (const provider of eligibleProviders) {
+		const declared = declaredEfforts(provider);
+		if (!declared) continue;
+		agreed = agreed === undefined
+			? declared
+			: declared.filter((value) =>
+				agreed!.some((kept) => normalizeEffort(kept) === normalizeEffort(value)));
+	}
+	return agreed;
+}
+
+/** Ladder rung of an effort value, or -1 when the name is not a pi level. */
+function effortRank(value: string): number {
+	const normalized = normalizeEffort(value);
+	if (DISABLE_VALUES.has(normalized)) return 0;
+	return THINKING_LEVELS.indexOf(normalized as ThinkingLevel);
+}
+
+/**
+ * Build a pi `thinkingLevelMap` from the efforts the gateway catalog declares.
+ *
+ * Devpass cannot pin providers, so any eligible provider may serve a request;
+ * only efforts every declaring provider agrees on are safe to send, and the
+ * intersection is what gets mapped. Providers that declare nothing don't
+ * constrain the result. When nothing is declared — or the agreement collapses
+ * to disable-only values, where mapping every level would silently turn
+ * thinking off — undefined is returned and pi keeps its default levels.
+ *
+ * Values are slotted onto pi's ordered ladder weakest → strongest: a value
+ * named after a pi level claims that rung, unrecognized names take their
+ * position from the catalog's own ordering, and rungs shift only as far as
+ * needed to keep every catalog value in order. Each pi level then maps to the
+ * weakest slot at or above its own (or the strongest value when none is), so
+ * every level stays selectable and every sent value is declared-accepted.
+ * "off" maps to a declared disable value; otherwise it stays unmapped, which
+ * makes pi omit `reasoning_effort` entirely — accepted by every backend.
+ */
+export function buildThinkingLevelMap(eligibleProviders: GatewayProvider[]): ThinkingLevelMap | undefined {
+	const agreed = agreedEfforts(eligibleProviders);
+	if (!agreed) return undefined;
+
+	// Canonical ladder order when every name is known; otherwise trust the
+	// catalog's own ordering (it lists efforts weakest → strongest).
+	const allKnown = agreed.every((value) => effortRank(value) >= 0);
+	const values = allKnown ? [...agreed].sort((a, b) => effortRank(a) - effortRank(b)) : agreed;
+	if (values.length > THINKING_LEVELS.length) return undefined;
+	if (values.every((value) => DISABLE_VALUES.has(normalizeEffort(value)))) return undefined;
+
+	// Preferred rung per value: name match, else position along the ladder.
+	const preferred = values.map((value, index) => {
+		const rank = effortRank(value);
+		if (rank >= 0) return rank;
+		return values.length === 1
+			? Math.floor((THINKING_LEVELS.length - 1) / 2)
+			: Math.round((index * (THINKING_LEVELS.length - 1)) / (values.length - 1));
+	});
+	// Duplicate rungs (e.g. both "off" and "none") keep only the first claim.
+	const slots: number[] = [];
+	const slotValues: string[] = [];
+	preferred.forEach((rank, index) => {
+		if (allKnown && slots.includes(rank)) return;
+		slots.push(rank);
+		slotValues.push(values[index]);
+	});
+
+	// Fit every value into distinct, ascending rungs, disaligning name matches
+	// only as far as needed to keep them in order.
+	for (let index = 0; index < slots.length; index++) {
+		slots[index] = Math.max(slots[index], index, (slots[index - 1] ?? -1) + 1);
+	}
+	for (let index = slots.length - 1; index >= 0; index--) {
+		const ceiling = index === slots.length - 1 ? THINKING_LEVELS.length - 1 : slots[index + 1] - 1;
+		slots[index] = Math.max(index, Math.min(slots[index], ceiling));
+	}
+
+	const map: ThinkingLevelMap = {};
+	const disableIndex = slotValues.findIndex((value, index) =>
+		slots[index] === 0 && DISABLE_VALUES.has(normalizeEffort(value)));
+	if (disableIndex >= 0) {
+		map.off = slotValues[disableIndex];
+	}
+	for (let levelIndex = 1; levelIndex < THINKING_LEVELS.length; levelIndex++) {
+		const slot = slots.findIndex((rung) => rung >= levelIndex);
+		map[THINKING_LEVELS[levelIndex]] =
+			slot >= 0 ? slotValues[slot] : slotValues[slotValues.length - 1];
+	}
+	return map;
+}
+
 /**
  * Convert raw `/v1/models` records into Pi model entries. Invalid records and
  * models with no streaming+tools provider are skipped. Per-token gateway prices
@@ -341,6 +464,8 @@ export function buildModelEntries(records: unknown[]): ModelEntry[] {
 		);
 		const contextWindow = positiveNumber(model.context_length);
 		const maxTokens = positiveNumber(model.max_output);
+		const reasoning = modelSupportsReasoning(model, eligibleProviders);
+		const thinkingLevelMap = reasoning ? buildThinkingLevelMap(eligibleProviders) : undefined;
 		const quotaLimitIds = isPremiumModel(model.pricing, prices) ? ["premium-weekly"] : undefined;
 		const cost: NonNullable<ModelEntry["cost"]> = {
 			...(input !== undefined ? { input } : {}),
@@ -357,7 +482,8 @@ export function buildModelEntries(records: unknown[]): ModelEntry[] {
 			modelName: model.id,
 			api: "openai-completions",
 			authHeader: true,
-			reasoning: modelSupportsReasoning(model, eligibleProviders),
+			reasoning,
+			...(thinkingLevelMap ? { thinkingLevelMap } : {}),
 			input: modelInput(model),
 			...(contextWindow !== undefined ? { contextWindow } : {}),
 			...(maxTokens !== undefined ? { maxTokens } : {}),
