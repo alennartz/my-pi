@@ -134,9 +134,9 @@ Extension that manages git worktree–based branch sessions — create a worktre
 
 ### Quota Providers
 
-Generic quota-aware provider extension. Out-of-repo provider implementations plug in through typed seams (model discovery, auth, usage). Core adds pro-rated spend backpressure so a provider's billing window isn't burned early. Implementations are loaded via jiti from a config file at `~/.pi/agent/quota-providers.json`.
+Generic quota-aware provider extension. Out-of-repo provider implementations plug in through typed seams (model discovery, auth, usage, retryable-error classification). Core adds pro-rated spend backpressure so a provider's billing window isn't burned early. Implementations are loaded via jiti from a config file at `~/.pi/agent/quota-providers.json`.
 
-**Responsibilities:** implementation discovery and registration via config file, provider model discovery (block-once cold start, background refresh), token management via out-of-band runner, usage polling via out-of-band runner, ledger-based spend tracking (local accumulation between snapshots), provider-call-boundary soft-cap enforcement that covers user prompts, tool loops, retries, compaction, and extension-triggered turns, opt-in hard-cap enforcement, in-memory agent-tree-scoped bypass propagated to in-process subagents, `/quota` command (status + bypass toggle), footer/statusline indicator
+**Responsibilities:** implementation discovery and registration via config file, provider model discovery (block-once cold start, background refresh), token management via out-of-band runner, usage polling via out-of-band runner, ledger-based spend tracking (local accumulation between snapshots), provider-call-boundary soft-cap enforcement that covers user prompts, tool loops, retries, compaction, and extension-triggered turns, opt-in hard-cap enforcement, in-memory agent-tree-scoped bypass propagated to in-process subagents, opt-in retryable-error classification (`isRetryableError`) rewritten into pi's retryable error vocabulary so transient gateway failures get pi's agent-level retry, `/quota` command (status + bypass toggle), footer/statusline indicator
 
 **Dependencies:** Subagents' tree-scoped key/value store; uses `@earendil-works/pi-ai` for catalog metadata and the underlying API stream fallback
 

@@ -27,6 +27,18 @@ export interface ProviderImplementation {
   getToken(ctx: ImplContext): Promise<TokenResult>;
   /** Seam 3 (optional): report one or more quota limits. Absent → no quota enforcement. */
   getUsage?(ctx: ImplContext): Promise<UsageSnapshot | UsageSnapshot[]>;
+
+  /**
+   * Seam 4 (optional): classify a terminal provider error message as transient
+   * and worth retrying. Runs in-process on the request hot path — keep it cheap
+   * and never throw (a throw is treated as "not retryable").
+   *
+   * When it returns true, the core rewrites the message so pi's agent-level
+   * retry treats the failure as retryable and applies `settings.retry`
+   * budget/backoff. When absent, pi's own error-text classification applies
+   * unchanged.
+   */
+  isRetryableError?: (message: string) => boolean;
 }
 
 /**

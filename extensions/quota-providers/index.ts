@@ -21,7 +21,8 @@ import {
 	buildProviderConfig,
 	discoveryRefreshDue,
 } from "./lib/registration.js";
-import { guardStreamSimple } from "./lib/stream-guard.js";
+import { guardStreamSimple, type ProviderStreamSimple } from "./lib/stream-guard.js";
+import { mapRetryableErrors } from "./lib/retryable-errors.js";
 import type { ProviderImplementation, QuotaPolicy } from "./lib/types.js";
 import { appendLedgerEntry, readLedger } from "./lib/ledger.js";
 import { readUsageSnapshot } from "./lib/snapshot.js";
@@ -320,26 +321,32 @@ export default async function (pi: ExtensionAPI) {
 			// orchestration has selected a provider but before that provider can issue
 			// an HTTP request, including for triggerTurn/custom-message paths.
 
-			const streamSimple = hasUsageSeam
-				? guardStreamSimple(
-					(model, context, options) => {
-						const apiProvider = getApiProvider(group.api);
-						if (!apiProvider) {
-							throw new Error(`No API provider registered for api: ${group.api}`);
-						}
-						return apiProvider.streamSimple(model, context, options);
-					},
-					(model) => {
-						if (providerRecord) maybeRefreshUsage(providerRecord);
-						return evaluateProviderQuota(
-							{ paths, policy, hasUsageSeam, modelLimitIds },
-							treeStore,
-							Date.now(),
-							model.id,
-						);
-					},
-				)
-				: undefined;
+			// The retryable-error mapper sits outside the gate: only errors the impl
+			// classifies as transient are rewritten into pi's retryable vocabulary.
+			let streamSimple: ProviderStreamSimple | undefined;
+			if (hasUsageSeam || impl.isRetryableError) {
+				const apiStreamSimple: ProviderStreamSimple = (model, context, options) => {
+					const apiProvider = getApiProvider(group.api);
+					if (!apiProvider) {
+						throw new Error(`No API provider registered for api: ${group.api}`);
+					}
+					return apiProvider.streamSimple(model, context, options);
+				};
+				const gated = hasUsageSeam
+					? guardStreamSimple(apiStreamSimple, (model) => {
+							if (providerRecord) maybeRefreshUsage(providerRecord);
+							return evaluateProviderQuota(
+								{ paths, policy, hasUsageSeam, modelLimitIds },
+								treeStore,
+								Date.now(),
+								model.id,
+							);
+						})
+					: apiStreamSimple;
+				streamSimple = impl.isRetryableError
+					? mapRetryableErrors(gated, impl.isRetryableError)
+					: gated;
+			}
 			pi.registerProvider(
 				group.providerId,
 				buildProviderConfig(implMeta, group, apiKeyCmd, streamSimple),
