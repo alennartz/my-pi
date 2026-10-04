@@ -10,8 +10,10 @@ graph LR
   Workflow --> Subagents
   Subagents --> Subagents
   SessionResume
+  SessionName
   Worktree
   ModelPromptOverlays
+  AgentsPhilosophy
   ToolscriptExtension
   UserEdit
 ```
@@ -33,7 +35,7 @@ sequenceDiagram
 
 ### Workflow
 
-The ten workflow skills and the autoflow orchestration skill that drives them. Autoflow is invoked via the `/autoflow` command (a prompt template); the skills define each phase's behavior and autonomous pipeline execution. A bundled transition-check script (`skills/autoflow/check-transition.ts`) validates phase artifacts between subagent handoffs.
+The ten workflow skills and the autoflow orchestration skill that drives them. Autoflow is invoked via the `/skill:autoflow` skill command (or automatically on a new session's first message via the Autoflow Autostart extension); the skills define each phase's behavior and autonomous pipeline execution. A bundled transition-check script (`skills/autoflow/check-transition.ts`) validates phase artifacts between subagent handoffs.
 
 **Responsibilities:** pipeline phase routing, artifact-driven handoffs, context boundary management, autonomous pipeline orchestration, autonomous phase transition validation, brainstorming facilitation, architectural decision-making, test writing, test review, implementation planning, dual-mode implementation execution, plan-based code review, review finding resolution, human-style manual testing with a persistent smoke suite, post-workflow cleanup with DR extraction
 
@@ -103,7 +105,7 @@ Long-lived in-process subagent orchestration extension — creates and manages S
 **Dependencies:** none (standalone extension loaded by pi)
 
 **Files:**
-- `extensions/subagents/**` — includes `agent-session-registry.ts` (per-root canonical tree, immutable snapshots, atomic lifecycle, presentation attachment), `managed-child-session.ts` (isolated SDK child runtime and cooperative lifecycle), `delegating-extension-ui.ts` (stable headless/attached UI seam), `child-tool-policy.ts` and `agent-path.ts` (pure policy/path helpers), `project-trust.ts` (non-interactive trust precedence), `message-router.ts` (parent-local in-memory routing), `agent-set.ts` (manager orchestration and failure detection), `notification-queue.ts` (waiting-mode notification drain), `session-snapshot.ts` (forward-pass restore parser), and `model-tiers.ts` (tier resolution/rendering), with corresponding tests
+- `extensions/subagents/**` — includes `agent-session-registry.ts` (per-root canonical tree, immutable snapshots, atomic lifecycle, presentation attachment), `managed-child-session.ts` (isolated SDK child runtime and cooperative lifecycle), `delegating-extension-ui.ts` (stable headless/attached UI seam), `child-tool-policy.ts` and `agent-path.ts` (pure policy/path helpers), `child-session-marker.ts` (process-global marker identifying subagent child session managers so other extensions can stay silent in children), `project-trust.ts` (non-interactive trust precedence), `message-router.ts` (parent-local in-memory routing), `agent-set.ts` (manager orchestration and failure detection), `notification-queue.ts` (waiting-mode notification drain), `session-snapshot.ts` (forward-pass restore parser), and `model-tiers.ts` (tier resolution/rendering), with corresponding tests
 - `vitest.config.ts` (repo root — test runner config)
 - `skills/orchestrating-agents/SKILL.md`
 - `skills/specialist-design/SKILL.md`
@@ -120,6 +122,28 @@ Extension that detects interrupted sessions and injects resume markers so the ag
 **Files:**
 - `extensions/session-resume/**`
 - `scripts/pi-resume-debug.ts`
+
+### Session Name
+
+Extension that provides a `set_session_name` LLM tool — lets the model name (or clear) the current session's display name, the same `session_info` mechanism behind `/name` and the session-selector rename. The name shows in session lists and resume pickers. Each session names itself: a subagent's call names its own child session (overriding its agent-path-derived name), never the parent's.
+
+**Responsibilities:** set_session_name tool registration, name normalization (line breaks to spaces, trim, empty clears), length validation (200 chars after normalization), unchanged-name no-op to keep session files free of redundant `session_info` entries
+
+**Dependencies:** none (standalone extension loaded by pi)
+
+**Files:**
+- `extensions/session-name/**`
+
+### Autoflow Autostart
+
+Extension that opt-in triggers the autoflow pipeline at the start of a new session: the session's first user message is rewritten to an autoflow invocation with that message appended (`/skill:autoflow <message>` by default), so it enters the pipeline exactly as if the user had invoked it in one send.
+
+**Responsibilities:** opt-in config loading (`~/.pi/agent/autoflow.json` — `autoStart` flag plus a configurable invocation `command`; a missing or malformed file degrades to opt-out with a one-time warning), new-session trigger arming (fresh root sessions only — resumes, forks, and subagent child sessions never autostart), first-message rewrite via the `input` event (other slash commands and `!`/`!!` bash pass through and stay armed; a manual autoflow invocation or input queued during streaming consumes the trigger)
+
+**Dependencies:** Subagents (queries `child-session-marker.ts` to stay silent inside subagent child sessions, which load this extension too)
+
+**Files:**
+- `extensions/autoflow-autostart/**` — `index.ts` (pi wiring), `config.ts` (pure config parsing + agent-dir loading), `trigger.ts` (pure arming and rewrite decisions), with colocated tests
 
 ### Worktree
 
@@ -202,6 +226,17 @@ Extension that discovers AGENTS.*.md overlay files, matches them against the act
 
 **Files:**
 - `extensions/model-prompt-overlays/**`
+
+### Agents Philosophy
+
+Extension that injects the AGENTS.md authoring philosophy into the system prompt: an AGENTS.md file is a map, not a container — a vision statement for its folder plus a lookup table to the files that carry the detail (codemap, glossary, decision records, plans), with everything else living in referenced files rather than inline.
+
+**Responsibilities:** AGENTS.md philosophy system prompt section (pure content renderer, fixed `agents-md` section tag via `systemPromptOptions.sections`, never clobbering a pre-populated section, no full-prompt forcing so it composes with other prompt handlers)
+
+**Dependencies:** none (standalone extension; hooks `before_agent_start`)
+
+**Files:**
+- `extensions/agents-philosophy/**`
 
 ### Prompts
 

@@ -1,0 +1,8 @@
+{
+  "name": "autoflow-autostart",
+  "version": "1.0.0",
+  "description": "Opt-in autoflow invocation on the first message of a new session",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

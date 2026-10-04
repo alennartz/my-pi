@@ -62,6 +62,14 @@ A ten-phase development pipeline driven by the `/autoflow` command and a set of 
 
 Brainstorm and architect are interactive; the remaining phases run autonomously via subagents, with the primary agent orchestrating transitions and validating artifacts between phases.
 
+Invoke with `/skill:autoflow <description of what you want to build or change>`. To have every new session start in autoflow, opt in via `~/.pi/agent/autoflow.json`:
+
+```json
+{ "autoStart": true }
+```
+
+The first message of a new session is then sent as an autoflow invocation with that message appended — exactly as if you had invoked it yourself in one send. Set `"command"` in the same file to use a different invocation (default `"/skill:autoflow"`).
+
 ### Subagents
 
 Long-lived in-process subagent orchestration — run child pi SDK sessions (optionally pinned to per-agent working directories), communicate over parent-local channels, fork sessions, await with interrupts. Each child owns a fresh Pi model runtime backed by the standard persisted Pi configuration, keeping live child state isolated. Ships with `orchestrating-agents` and `specialist-design` skills and a starter `scout` agent definition.
@@ -80,6 +88,8 @@ Long-lived in-process subagent orchestration — run child pi SDK sessions (opti
 - **quota-providers** — generic provider framework with pro-rated soft-cap enforcement, in-memory agent-tree-scoped bypass, `/quota` command, and footer indicator. Config at `~/.pi/agent/quota-providers.json`.
 - **worktree** — `/worktree` command for git worktree-based branch sessions
 - **session-resume** — detects interrupted sessions and injects resume markers
+- **autoflow-autostart** — opt-in autoflow invocation on the first message of a new session. Config at `~/.pi/agent/autoflow.json`.
+- **session-name** — `set_session_name` tool so the model can name the current session (shown in session lists and resume pickers)
 - **model-prompt-overlays** — appends `AGENTS.<model>.md` overlays to the system prompt based on the active model
 - **toolscript** — runs [toolscript](https://github.com/badlogic/toolscript) as an MCP child and exposes its tools
 - **user-edit** — `user_edit` tool that opens a file in pi's built-in editor

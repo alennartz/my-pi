@@ -22,6 +22,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { formatAgentPath, type AgentPath } from "./agent-path.js";
 import type { ChildToolPolicy } from "./child-tool-policy.js";
+import { markSubagentChildSession } from "./child-session-marker.js";
 import { DelegatingExtensionUI } from "./delegating-extension-ui.js";
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import { resolveChildProjectTrust } from "./project-trust.js";
@@ -362,6 +363,7 @@ export async function createManagedChildSession(
 	const appendSystemPrompt = [...config.appendSystemPrompt];
 	const trustStore = new ProjectTrustStore(dependencies.agentDir);
 	const initial = initialTarget(config.target);
+	markSubagentChildSession(initial.sessionManager);
 	const pathName = formatAgentPath(config.path);
 	const headless = createHeadlessUi(hooks.onUiNotify);
 	const presentation = new DelegatingExtensionUI({ headless });
