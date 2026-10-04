@@ -26,9 +26,13 @@ import { mapRetryableErrors } from "./lib/retryable-errors.js";
 import type { ProviderImplementation, QuotaPolicy } from "./lib/types.js";
 import { appendLedgerEntry, readLedger } from "./lib/ledger.js";
 import { readUsageSnapshot } from "./lib/snapshot.js";
-import { readBypass, writeBypass } from "./lib/bypass.js";
+import { readBypass, writeBypass, resolveRequestStore } from "./lib/bypass.js";
 import { evaluateQuota, effectiveSpend, applicableSnapshots, firstHitSnapshot } from "./lib/quota.js";
-import { getOrCreateSessionTreeStore } from "../subagents/scoped-store.js";
+import {
+	getOrCreateSessionTreeStore,
+	registerSessionIdTreeStore,
+	unregisterSessionIdTreeStore,
+} from "../subagents/scoped-store.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
 import { decideBlock } from "./lib/enforce.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -211,9 +215,11 @@ export default async function (pi: ExtensionAPI) {
 	const runnerPath = fileURLToPath(new URL("./runner.mjs", import.meta.url));
 	const now = Date.now();
 
-	// Set during session_start and captured by provider stream guards. The
-	// provider boundary can be reached by extension-triggered turns that never
-	// emit the input event, so it must read the live tree-scoped bypass state.
+	// The provider stream guard resolves the bypass store per request from
+	// `options.sessionId` (the only identity at the provider boundary — closures
+	// here can serve other sessions because the model runtime is shared within a
+	// host process). This captured store is the fallback for requests that carry
+	// no session id; it is set during session_start/agent_start.
 	let treeStore: SessionTreeStore | undefined;
 	const records: ProviderRecord[] = [];
 
@@ -333,11 +339,11 @@ export default async function (pi: ExtensionAPI) {
 					return apiProvider.streamSimple(model, context, options);
 				};
 				const gated = hasUsageSeam
-					? guardStreamSimple(apiStreamSimple, (model) => {
+					? guardStreamSimple(apiStreamSimple, (model, options) => {
 							if (providerRecord) maybeRefreshUsage(providerRecord);
 							return evaluateProviderQuota(
 								{ paths, policy, hasUsageSeam, modelLimitIds },
-								treeStore,
+								resolveRequestStore(options?.sessionId, treeStore),
 								Date.now(),
 								model.id,
 							);
@@ -407,8 +413,20 @@ export default async function (pi: ExtensionAPI) {
 	// subagents extension associates child session managers with that same store
 	// before their session_start hooks run. Independent roots get independent
 	// stores even when they live in one Node process.
-	pi.on("session_start", (_event, ctx) => {
+	//
+	// The session id index is what the provider boundary resolves against, so
+	// every session (roots and managed children) must register one.
+	const sessionIdOf = (manager: object): string | undefined =>
+		(manager as { getSessionId?: () => string }).getSessionId?.call(manager);
+
+	function bindTreeStore(ctx: { sessionManager: object }): void {
 		treeStore = getOrCreateSessionTreeStore(ctx.sessionManager);
+		const sessionId = sessionIdOf(ctx.sessionManager);
+		if (sessionId) registerSessionIdTreeStore(sessionId, treeStore);
+	}
+
+	pi.on("session_start", (_event, ctx) => {
+		bindTreeStore(ctx);
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
 		if (record) maybeRefreshUsage(record);
 		refreshStatusline(record, ctx);
@@ -420,6 +438,15 @@ export default async function (pi: ExtensionAPI) {
 	// first provider request too.
 	pi.on("agent_start", (_event, ctx) => {
 		if (!treeStore) treeStore = getOrCreateSessionTreeStore(ctx.sessionManager);
+		const sessionId = sessionIdOf(ctx.sessionManager);
+		if (sessionId) registerSessionIdTreeStore(sessionId, treeStore);
+	});
+
+	// Drop the session-id index entry when this session goes away; the tree
+	// store itself is owned and disposed by the subagents extension.
+	pi.on("session_shutdown", (_event, ctx) => {
+		const sessionId = sessionIdOf(ctx.sessionManager);
+		if (sessionId) unregisterSessionIdTreeStore(sessionId, treeStore);
 	});
 
 	// Retarget the footer to the newly-selected model's provider (or clear it when
