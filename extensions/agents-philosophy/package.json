@@ -1,0 +1,8 @@
+{
+  "name": "agents-philosophy",
+  "version": "0.1.0",
+  "description": "AGENTS.md philosophy prompt section for pi",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
