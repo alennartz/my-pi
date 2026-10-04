@@ -1,14 +1,19 @@
 # Agents
 
-## Codebase Overview
+## Vision
 
-See [codemap.md](./codemap.md) for a full map of modules, responsibilities, dependencies, and file ownership.
+`my-pi` is my personal pi package: the workflow pipeline (brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle-review → manual-test → cleanup), the standalone skills and specialist agents I reach for daily, and the extensions that make pi behave the way I want. It is authored for one user and must stay legible to a future me: new capability lands as a skill, agent, or extension with a codemap entry — never as instruction text piled into this file.
 
-## Conventions
+## Lookup
 
-- Skills are Markdown files following the pi skill format (YAML frontmatter + structured sections).
-- The extension uses TypeScript and imports from `@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent`.
-
-- **Never try to build, compile, or type-check this project.** Extensions are raw TypeScript loaded by pi at runtime — there is no build step, no `tsc`, no bundler. Editing the `.ts` files is the final step.
-- Agent definitions are Markdown files in `agents/` with YAML frontmatter (name, description, tools, model) and a system prompt body.
-- **Subagents are a local extension** (`extensions/subagents/`), not a built-in pi feature — look there for how they work, not in pi's upstream docs.
+| File | What you'll find there |
+|---|---|
+| [codemap.md](./codemap.md) | Every module: responsibilities, dependencies, owned files. Start here before touching code. |
+| [docs/conventions.md](./docs/conventions.md) | Repo working rules — never build/type-check this project, skill and agent-definition formats, subagents-are-local. |
+| `~/.pi/agent/AGENTS.md` | Global working rules that hold in every repo — dependency changes via package managers only, never bypass git hooks, don't fabricate, tone and style. |
+| `skills/*/SKILL.md` | Per-skill doctrine (skill-writing, codebase-design, debugging, codemap, …). |
+| `agents/*.md` | Specialist agent definitions (name, model, tools, system prompt). |
+| [docs/decisions/](./docs/decisions/) | Decision records for significant choices. |
+| [docs/plans/](./docs/plans/) | Implementation plans produced by the workflow pipeline. |
+| [docs/pi-internals/](./docs/pi-internals/) | Notes on pi's own extension/session internals. |
+| [docs/research/](./docs/research/) | Research grounding for design decisions. |
