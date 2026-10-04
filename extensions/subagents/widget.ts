@@ -12,6 +12,13 @@ import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { AgentStatus, AgentState } from "./agent-set.js";
 import { formatTokenCount } from "./format.js";
+import {
+	AGENT_STATES,
+	STATE_COLORS,
+	STATE_DETAIL_COLORS,
+	STATE_LABELS,
+	stateDetail,
+} from "./status-display.js";
 
 const STATUS_ICONS: Record<AgentState, string> = {
 	running: "⏳",
@@ -143,7 +150,7 @@ export class SubagentDashboard implements Component {
 		const innerWidth = boxWidth - 2; // 2 border chars
 
 		// Border color
-		const borderColor = this.borderColor(s.state);
+		const borderColor = STATE_COLORS[s.state];
 		const bc = (text: string) => t.fg(borderColor, text);
 
 		// Corner/edge chars (bottom corners are re-derived in renderBottomBorder)
@@ -178,8 +185,8 @@ export class SubagentDashboard implements Component {
 		const line1 = this.interiorLine(t.fg(identityColor, truncateToWidth(identityRaw, innerWidth)), innerWidth, bc, failed);
 
 		// ── Line 2: activity ──
-		const activityText = this.activityText(s);
-		const activityColor = this.activityColor(s);
+		const activityText = stateDetail(s);
+		const activityColor = STATE_DETAIL_COLORS[s.state];
 		const actColor = dimmed ? "dim" : activityColor;
 		const line2 = this.interiorLine(t.fg(actColor, truncateToWidth(activityText, innerWidth)), innerWidth, bc, failed);
 
@@ -304,11 +311,9 @@ export class SubagentDashboard implements Component {
 
 		// Agent counts
 		const countParts: string[] = [];
-		if (counts.running > 0) countParts.push(`${counts.running} running`);
-		if (counts.idle > 0) countParts.push(`${counts.idle} idle`);
-		if (counts.waiting > 0) countParts.push(`${counts.waiting} waiting`);
-		if (counts.errored > 0) countParts.push(`${counts.errored} errored`);
-		if (counts.dead > 0) countParts.push(`${counts.dead} dead`);
+		for (const state of AGENT_STATES) {
+			if (counts[state] > 0) countParts.push(`${counts[state]} ${STATE_LABELS[state]}`);
+		}
 		const agentCount = this.statuses.length;
 		parts.push(`${agentCount} agent${agentCount === 1 ? "" : "s"}: ${countParts.join(" · ")}`);
 
@@ -325,41 +330,6 @@ export class SubagentDashboard implements Component {
 	}
 
 	// ─── Helpers ────────────────────────────────────────────────────
-
-	private borderColor(state: AgentState): "accent" | "success" | "warning" | "error" {
-		switch (state) {
-			case "running": return "accent";
-			case "idle": return "success";
-			case "waiting": return "warning";
-			case "errored": return "error";
-			case "dead": return "error";
-		}
-	}
-
-	private activityText(s: AgentStatus): string {
-		switch (s.state) {
-			case "running":
-				return s.lastActivity || "running";
-			case "waiting":
-				return "waiting for response";
-			case "idle":
-				return "idle";
-			case "errored":
-				return s.lastError ? `errored: ${s.lastError}` : "errored";
-			case "dead":
-				return "dead";
-		}
-	}
-
-	private activityColor(s: AgentStatus): "muted" | "warning" | "success" | "error" {
-		switch (s.state) {
-			case "running": return "muted";
-			case "waiting": return "warning";
-			case "idle": return "success";
-			case "errored": return "error";
-			case "dead": return "error";
-		}
-	}
 
 	/** Format channel list with waiting-for highlighting. */
 	private formatChannels(s: AgentStatus, dimmed: boolean): string {

@@ -16,8 +16,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { registerLooseTool } from "../../lib/tool-args.ts";
-import { detect } from "@pimote/panels";
-import type { PanelHandle, Card, CardColor } from "@pimote/panels";
+import { detect } from "@pimote/sdk/panels";
+import type { PanelHandle } from "@pimote/sdk/panels";
 import {
 	getOrCreateSessionTreeStore,
 	registerSessionTreeStore,
@@ -35,7 +35,7 @@ import {
 	formatAgentList,
 	renderAgentDefinitions,
 } from "./agents.js";
-import { SubagentManager, isSettledState, type AgentStatus, type AgentState } from "./agent-set.js";
+import { SubagentManager, isSettledState, type AgentStatus } from "./agent-set.js";
 import {
 	AgentSessionRegistry,
 	type AgentOperationalSnapshot,
@@ -45,7 +45,7 @@ import { getPersistencePaths } from "./persistence.js";
 import { serializeAgentComplete, serializeAgentMessage, type AgentCompleteData } from "./messages.js";
 import { createStopSequenceManager, type StopSequenceManager } from "./stop-sequences.js";
 import { NotificationQueue } from "./notification-queue.js";
-import { formatTokenCount } from "./format.js";
+import { statusesToCards } from "./panel-cards.js";
 import { formatSpawnToolResult } from "./tool-result.js";
 import {
 	SESSION_DEFAULT_LABEL,
@@ -1475,73 +1475,6 @@ function formatAgentStatusSummary(s: import("./agent-set.js").AgentStatus): stri
 	const icon = { running: "⏳", idle: "✓", errored: "✗", dead: "⊘", waiting: "⏸" }[s.state];
 	const usage = s.usage.cost > 0 ? ` ($${s.usage.cost.toFixed(4)})` : "";
 	return `${icon} ${s.id}: ${s.state}${s.lastActivity ? ` — ${s.lastActivity}` : ""}${usage}`;
-}
-
-// ─── Panel card mapping ──────────────────────────────────────────────────────
-
-const STATE_COLORS: Record<AgentState, CardColor> = {
-	running: "accent",
-	idle: "success",
-	waiting: "warning",
-	errored: "error",
-	dead: "error",
-};
-
-const STATE_LABELS: Record<AgentState, string> = {
-	running: "running",
-	idle: "idle",
-	waiting: "waiting",
-	errored: "errored",
-	dead: "dead",
-};
-
-function statusesToCards(statuses: AgentStatus[]): Card[] {
-	return statuses.map((s) => {
-		const body: Card["body"] = [];
-
-		// Agent def + model
-		const defName = s.agentDef || "default";
-		const modelName = s.model || "—";
-		body.push({ content: `${defName} · ${modelName}`, style: "secondary" });
-
-		// Activity
-		if (s.state === "running" && s.lastActivity) {
-			body.push({ content: s.lastActivity, style: "text" });
-		} else if (s.state === "waiting") {
-			body.push({ content: `waiting → ${s.waitingFor.join(", ") || "?"}`, style: "text" });
-		}
-
-		// Channels
-		if (s.channels.length > 0) {
-			body.push({ content: s.channels.join(" · "), style: "secondary" });
-		}
-
-		// Footer stats
-		const footer: string[] = [];
-		const totalInput = s.usage.input + s.usage.cacheRead + s.usage.cacheWrite;
-		if (totalInput > 0) footer.push(`↑${formatTokenCount(totalInput)}`);
-		if (s.usage.output > 0) footer.push(`↓${formatTokenCount(s.usage.output)}`);
-		if (s.contextWindow && s.contextWindow > 0 && s.lastTurnInput > 0) {
-			footer.push(`ctx:${Math.round((s.lastTurnInput / s.contextWindow) * 100)}%`);
-		}
-		if (s.usage.cost > 0) footer.push(`$${s.usage.cost.toFixed(2)}`);
-
-		// Build tag: "running (3)" or "running (3) 󰚩"
-		let tag = STATE_LABELS[s.state];
-		if (s.usage.turns > 0) tag += ` (${s.usage.turns})`;
-		if (s.hasSubgroup) tag += " \uDB81\uDEA9";
-
-		return {
-			id: s.id,
-			color: STATE_COLORS[s.state],
-			header: {
-				title: s.id,
-				tag,
-			},
-			body,
-			footer,
-		};
-	});
 }
 
 function formatAgentStatusDetail(s: import("./agent-set.js").AgentStatus): string {
