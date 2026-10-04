@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildModelEntries } from "./devpass.js";
+import impl, { buildModelEntries } from "./devpass.js";
 
 describe("buildModelEntries", () => {
 	it("keeps canonical model ids with streaming+tools support and per-field median prices", () => {
@@ -250,5 +250,22 @@ describe("buildModelEntries", () => {
 			},
 		]);
 		expect(entries).toHaveLength(0);
+	});
+});
+
+describe("impl.isRetryableError", () => {
+	const isRetryableError = impl.isRetryableError!.bind(impl);
+
+	it("flags the gateway's encrypted-content key-rotation error as retryable", () => {
+		expect(isRetryableError(
+			"The encrypted content for item rs_0b31ee8690deca7f016ac0f77053bc81 could not be verified. " +
+			"Reason: Encrypted content could not be decrypted or parsed.",
+		)).toBe(true);
+	});
+
+	it("leaves unrelated errors alone", () => {
+		expect(isRetryableError("quota exceeded")).toBe(false);
+		expect(isRetryableError("Provider stopped with: error")).toBe(false);
+		expect(isRetryableError("")).toBe(false);
 	});
 });

@@ -562,6 +562,16 @@ const impl: ProviderImplementation = {
 		}
 		return buildUsageSnapshots(data, ctx.settings, Date.now());
 	},
+
+	/**
+	 * The gateway rotates between upstream providers per model and can serve a
+	 * stale rotated key, failing with an encrypted-content error. The rotation
+	 * self-heals on the next request, so classify it as transient and let pi's
+	 * agent-level retry re-issue the request.
+	 */
+	isRetryableError(message: string): boolean {
+		return /encrypted content/i.test(message);
+	},
 };
 
 export default impl;
