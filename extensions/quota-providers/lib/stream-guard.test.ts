@@ -21,6 +21,16 @@ describe("guardStreamSimple", () => {
 		expect(fallback).not.toHaveBeenCalled();
 	});
 
+	it("passes the request options to the gate so it can resolve the requesting tree", () => {
+		const fallback = vi.fn(() => "stream" as any);
+		const evaluate = vi.fn(() => undefined);
+		const guarded = guardStreamSimple(fallback, evaluate);
+
+		guarded(model, context, { sessionId: "session-1" } as any);
+
+		expect(evaluate).toHaveBeenCalledWith(model, { sessionId: "session-1" });
+	});
+
 	it("evaluates the gate on every request so bypass takes effect immediately", () => {
 		const fallback = vi.fn(() => "stream" as any);
 		let blocked = true;

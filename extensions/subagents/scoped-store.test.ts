@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	createSessionTreeStore,
 	getOrCreateSessionTreeStore,
+	getSessionIdTreeStore,
 	getSessionTreeStore,
+	registerSessionIdTreeStore,
 	registerSessionTreeStore,
+	unregisterSessionIdTreeStore,
 	unregisterSessionTreeStore,
 } from "./scoped-store.js";
 
@@ -43,5 +46,37 @@ describe("scoped session-tree store", () => {
 		registerSessionTreeStore(manager, second);
 		unregisterSessionTreeStore(manager, first);
 		expect(getSessionTreeStore(manager)).toBe(second);
+	});
+
+	it("resolves a tree store by session id", () => {
+		const store = createSessionTreeStore();
+		registerSessionIdTreeStore("session-1", store);
+		expect(getSessionIdTreeStore("session-1")).toBe(store);
+	});
+
+	it("keeps session ids isolated from each other", () => {
+		const first = createSessionTreeStore();
+		const second = createSessionTreeStore();
+		registerSessionIdTreeStore("session-1", first);
+		registerSessionIdTreeStore("session-2", second);
+
+		expect(getSessionIdTreeStore("session-1")).toBe(first);
+		expect(getSessionIdTreeStore("session-2")).toBe(second);
+	});
+
+	it("removes a session id mapping on unregister", () => {
+		const store = createSessionTreeStore();
+		registerSessionIdTreeStore("session-1", store);
+		unregisterSessionIdTreeStore("session-1", store);
+		expect(getSessionIdTreeStore("session-1")).toBeUndefined();
+	});
+
+	it("does not unregister a replacement session id mapping", () => {
+		const first = createSessionTreeStore();
+		const second = createSessionTreeStore();
+		registerSessionIdTreeStore("session-1", first);
+		registerSessionIdTreeStore("session-1", second);
+		unregisterSessionIdTreeStore("session-1", first);
+		expect(getSessionIdTreeStore("session-1")).toBe(second);
 	});
 });

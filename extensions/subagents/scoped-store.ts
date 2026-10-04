@@ -66,6 +66,41 @@ export function registerSessionTreeStore(sessionManager: object, store: SessionT
 	getRegistry().set(sessionManager, store);
 }
 
+/**
+ * Session-id index for callers that see only a request's session id (e.g. the
+ * provider boundary, where `options.sessionId` is the only identity). Same
+ * values as the manager registry, second key space. Strongly held; entries are
+ * removed via unregisterSessionIdTreeStore when the session shuts down.
+ */
+type IdRegistry = Map<string, SessionTreeStore>;
+const ID_REGISTRY_KEY = Symbol.for("my-pi/subagents/session-id-tree-stores");
+
+function getIdRegistry(): IdRegistry {
+	const globals = globalThis as Record<symbol, unknown>;
+	const existing = globals[ID_REGISTRY_KEY];
+	if (existing instanceof Map) return existing as IdRegistry;
+	const created: IdRegistry = new Map();
+	globals[ID_REGISTRY_KEY] = created;
+	return created;
+}
+
+/** Retrieve the store registered for a session id, if any. */
+export function getSessionIdTreeStore(sessionId: string): SessionTreeStore | undefined {
+	return getIdRegistry().get(sessionId);
+}
+
+/** Index a tree store under a session id so request-level callers can resolve it. */
+export function registerSessionIdTreeStore(sessionId: string, store: SessionTreeStore): void {
+	getIdRegistry().set(sessionId, store);
+}
+
+/** Remove one session-id association without destroying the shared store. */
+export function unregisterSessionIdTreeStore(sessionId: string, store?: SessionTreeStore): void {
+	const registry = getIdRegistry();
+	if (store !== undefined && registry.get(sessionId) !== store) return;
+	registry.delete(sessionId);
+}
+
 /** Remove one session-manager association without destroying the shared store. */
 export function unregisterSessionTreeStore(sessionManager: object, store?: SessionTreeStore): void {
 	const registry = getRegistry();
