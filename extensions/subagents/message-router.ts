@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { canSend, type Topology } from "./channels.js";
+import {
+	addToTopology,
+	buildTopology,
+	canSend,
+	removeFromTopology,
+	type AgentChannelSpec,
+	type Topology,
+} from "./channels.js";
 import { DeadlockGraph } from "./deadlock.js";
 
 /**
@@ -47,7 +54,6 @@ export interface MessagePort {
 }
 
 export interface MessageRouterOptions {
-	topology: Topology;
 	/** Injectable for deterministic tests; production IDs use a per-router UUID namespace. */
 	correlationIdFactory?: () => string;
 	onBlockingSendStart?: (from: string, to: string, correlationId: string) => void;
@@ -91,8 +97,8 @@ export class MessageRouter {
 	private nextCorrelationSequence = 0;
 	private closed = false;
 
-	constructor(options: MessageRouterOptions) {
-		this.topology = options.topology;
+	constructor(options: MessageRouterOptions = {}) {
+		this.topology = buildTopology([]);
 		this.onBlockingSendStart = options.onBlockingSendStart;
 		this.onBlockingSendEnd = options.onBlockingSendEnd;
 		const namespace = randomUUID();
@@ -100,6 +106,20 @@ export class MessageRouter {
 			this.nextCorrelationSequence += 1;
 			return `corr-${namespace}-${this.nextCorrelationSequence}`;
 		});
+	}
+
+	/** Add routes for a batch while preserving the router's private topology. */
+	addAgents(agents: AgentChannelSpec[], forkIds: ReadonlySet<string> = new Set()): void {
+		this.assertRouterOpen();
+		const existingIds = new Set(Array.from(this.topology.keys()).filter((id) => id !== "parent"));
+		addToTopology(this.topology, agents, existingIds, new Set(forkIds));
+	}
+
+	/** Remove an agent's endpoint and every route that references it. */
+	removeAgent(agentId: string): void {
+		if (this.closed) return;
+		this.agentRemoved(agentId);
+		removeFromTopology(this.topology, agentId);
 	}
 
 	/**

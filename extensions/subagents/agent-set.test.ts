@@ -79,7 +79,6 @@ function createManager(registry: AgentSessionRegistry, ownerPath: AgentPath = ["
 		cwd: "/tmp",
 		registry,
 		ownerPath,
-		skillPaths: new Map(),
 		resolveContextWindow: () => undefined,
 		onUpdate,
 		onAgentComplete,

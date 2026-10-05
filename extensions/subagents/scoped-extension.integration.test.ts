@@ -71,9 +71,11 @@ vi.mock("./broker.js", () => ({
 }));
 
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
+import { SubagentPresentation } from "./session-owner.js";
 import type { AgentPath } from "./agent-path.js";
 import { appendAgentAdded, ensurePersistence } from "./persistence.js";
-import type { AgentNodeSnapshot, AgentSessionRegistry, RegistryEvent } from "./agent-session-registry.js";
+import { AgentSessionRegistry } from "./agent-session-registry.js";
+import type { AgentNodeSnapshot, RegistryEvent } from "./agent-session-registry.js";
 import type { MessagePort, RoutedMessage, SendReceipt } from "./message-router.js";
 
 /** Minimal live-registry fixture for recursive manager integration. */
@@ -255,7 +257,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 	return registry;
 }
 
-const registry = {} as AgentSessionRegistry;
+const registry = makeRegistryFake();
 
 type RegisteredTool = {
 	name: string;
@@ -285,8 +287,10 @@ function makePort(id: string): MessagePort & { emit(message: RoutedMessage): voi
 function makePi() {
 	const tools = new Map<string, RegisteredTool>();
 	const handlers = new Map<string, (...args: any[]) => any>();
+	const commands = new Map<string, any>();
 	const pi = {
 		registerTool: vi.fn((tool: RegisteredTool) => tools.set(tool.name, tool)),
+		registerCommand: vi.fn((name: string, command: any) => commands.set(name, command)),
 		on: vi.fn((event: string, handler: (...args: any[]) => any) => handlers.set(event, handler)),
 		getCommands: vi.fn(() => []),
 		getActiveTools: vi.fn(() => [
@@ -296,7 +300,7 @@ function makePi() {
 		getThinkingLevel: vi.fn(() => "medium"),
 		sendMessage: vi.fn(),
 	};
-	return { pi, tools, handlers };
+	return { pi, tools, handlers, commands };
 }
 
 function makeContext(parentSessionFile: string, overrides: Record<string, unknown> = {}) {
@@ -345,6 +349,10 @@ async function execute(tools: Map<string, RegisteredTool>, name: string, params:
 	return tool.execute("call-1", params, undefined, undefined, ctx);
 }
 
+async function startSession(handlers: Map<string, (...args: any[]) => any>, ctx: unknown): Promise<void> {
+	await handlers.get("session_start")?.({ reason: "new" }, ctx);
+}
+
 let tmpRoot: string | undefined;
 
 beforeEach(() => {
@@ -353,6 +361,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	if (tmpRoot) fs.rmSync(tmpRoot, { recursive: true, force: true });
 	tmpRoot = undefined;
 });
@@ -371,9 +380,10 @@ describe("child-scoped extension routing", () => {
 			},
 			uplink,
 		};
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension(scope)(pi as any);
 		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+		await startSession(handlers, ctx);
 
 		await execute(tools, "send", { to: "parent", message: "hello", expectResponse: false }, ctx);
 		expect(uplink.send).toHaveBeenCalledWith({
@@ -390,6 +400,9 @@ describe("child-scoped extension routing", () => {
 		});
 		await execute(tools, "respond", { correlationId: "corr-parent", message: "answer" }, ctx);
 		expect(uplink.respond).toHaveBeenCalledWith("corr-parent", "answer");
+		await expect(execute(tools, "respond", { correlationId: "corr-missing", message: "answer" }, ctx))
+			.rejects.toThrow(/origin|route|recorded/i);
+		expect(uplink.respond).not.toHaveBeenCalledWith("corr-missing", "answer");
 		expect(pi.sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				content: expect.stringContaining("<agent_message"),
@@ -400,7 +413,7 @@ describe("child-scoped extension routing", () => {
 
 	it("starts a turn when an idle child receives a routed message", async () => {
 		const uplink = makePort("child");
-		const { pi } = makePi();
+		const { pi, handlers } = makePi();
 		await createSubagentsExtension({
 			kind: "child",
 			registry,
@@ -408,6 +421,8 @@ describe("child-scoped extension routing", () => {
 			identity: { id: "child", task: "work", channels: ["parent"] },
 			uplink,
 		})(pi as any);
+		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+		await startSession(handlers, ctx);
 
 		uplink.emit({ from: "parent", message: "continue", responseExpected: false });
 
@@ -436,6 +451,7 @@ describe("child-scoped extension routing", () => {
 			uplink,
 		})(pi as any);
 		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+		await startSession(handlers, ctx);
 
 		const models = await execute(tools, "list_models", {}, ctx);
 		expect(models.content[0].text).toContain("provider/model");
@@ -443,6 +459,8 @@ describe("child-scoped extension routing", () => {
 		expect(models.content[0].text).toContain("1.00");
 
 		await handlers.get("session_shutdown")?.({}, ctx);
+		await expect(execute(tools, "send", { to: "parent", message: "too late", expectResponse: false }, ctx))
+			.rejects.toThrow(/shutting down/i);
 		uplink.emit({ from: "parent", message: "after shutdown", responseExpected: false });
 		expect(pi.sendMessage).not.toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -457,7 +475,7 @@ describe("child-scoped extension routing", () => {
 		const parentUplink = makePort("worker-uplink");
 		const parentSessionFile = path.join(tmpRoot!, "worker.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({
 			kind: "child",
 			registry: childRegistry,
@@ -465,10 +483,12 @@ describe("child-scoped extension routing", () => {
 			identity: { id: "worker", task: "delegate", channels: ["parent"] },
 			uplink: parentUplink,
 		})(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
 
 		await execute(tools, "subagent", {
 			agents: [{ id: "scout", task: "inspect", channels: [] }],
-		}, makeContext(parentSessionFile));
+		}, ctx);
 
 		const grandchildPath = ["researcher", "worker", "scout"];
 		expect((childRegistry.createChildren as any)).toHaveBeenCalledWith(
@@ -514,12 +534,51 @@ describe("child-scoped extension routing", () => {
 		expect(managed.created[0].config.scope.uplink).not.toBe(parentUplink);
 	});
 
+	it("responds through the exact local origin when a correlation collides with the uplink", async () => {
+		const childRegistry = makeRegistryFake(["researcher", "worker"]);
+		const parentUplink = makePort("worker-uplink");
+		const parentSessionFile = path.join(tmpRoot!, "worker.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({
+			kind: "child",
+			registry: childRegistry,
+			path: ["researcher", "worker"],
+			identity: { id: "worker", task: "delegate", channels: ["parent"] },
+			uplink: parentUplink,
+		})(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+		await execute(tools, "subagent", { agents: [{ id: "scout", task: "ask", channels: [] }] }, ctx);
+
+		const localPort: MessagePort = managed.created[0].config.scope.uplink;
+		const pending = await localPort.send({
+			to: "parent",
+			message: "local question",
+			expectResponse: true,
+			correlationId: "corr-collision",
+		});
+		parentUplink.emit({
+			from: "parent",
+			message: "uplink collision",
+			responseExpected: true,
+			correlationId: "corr-collision",
+		});
+		await execute(tools, "respond", { correlationId: "corr-collision", message: "local answer" }, ctx);
+
+		await expect(pending.response).resolves.toEqual({ type: "response", message: "local answer" });
+		expect(parentUplink.respond).toHaveBeenCalledWith(
+			"corr-collision",
+			expect.stringContaining("already pending on another recursive route"),
+		);
+	});
+
 	it("uses explicit child scope rather than a conflicting process-wide parent link", async () => {
 		const previous = process.env.PI_PARENT_LINK;
 		process.env.PI_PARENT_LINK = JSON.stringify({ id: "wrong-child", brokerSocket: "/tmp/stale.sock" });
 		try {
 			const uplink = makePort("explicit-child");
-			const { pi, tools } = makePi();
+			const { pi, tools, handlers } = makePi();
 			await createSubagentsExtension({
 				kind: "child",
 				registry,
@@ -527,8 +586,10 @@ describe("child-scoped extension routing", () => {
 				identity: { id: "explicit-child", task: "work", channels: ["parent"] },
 				uplink,
 			})(pi as any);
+			const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+			await startSession(handlers, ctx);
 
-			await execute(tools, "send", { to: "parent", message: "scope wins", expectResponse: false }, makeContext(path.join(tmpRoot!, "parent.jsonl")));
+			await execute(tools, "send", { to: "parent", message: "scope wins", expectResponse: false }, ctx);
 			expect(uplink.send).toHaveBeenCalledWith({
 				to: "parent",
 				message: "scope wins",
@@ -552,6 +613,7 @@ describe("child-scoped extension routing", () => {
 		const { pi, handlers } = makePi();
 		await createSubagentsExtension(scope)(pi as any);
 		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+		await startSession(handlers, ctx);
 		const aborting = { ...ctx, signal: { aborted: true } };
 
 		// Busy with a tool in flight, so the arriving message is held, not delivered.
@@ -590,6 +652,7 @@ describe("child-scoped extension routing", () => {
 		const { pi, handlers } = makePi();
 		await createSubagentsExtension(scope)(pi as any);
 		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+		await startSession(handlers, ctx);
 
 		await handlers.get("agent_start")?.({ type: "agent_start" }, ctx);
 		await handlers.get("tool_execution_start")?.({ toolCallId: "t1", toolName: "bash" }, ctx);
@@ -623,6 +686,8 @@ describe("child-scoped extension routing", () => {
 		await createSubagentsExtension(firstScope)(first.pi as any);
 		await createSubagentsExtension(secondScope)(second.pi as any);
 		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+		await startSession(first.handlers, ctx);
+		await startSession(second.handlers, ctx);
 
 		await execute(first.tools, "send", { to: "parent", message: "from first", expectResponse: false }, ctx);
 		await execute(second.tools, "send", { to: "parent", message: "from second", expectResponse: false }, ctx);
@@ -642,6 +707,239 @@ describe("child-scoped extension routing", () => {
 });
 
 describe("root orchestration integration", () => {
+	it("does not mount a late TUI widget after presentation shutdown", async () => {
+		let resolveWidget!: (module: { SubagentDashboard: new (theme: unknown) => any }) => void;
+		const widgetImport = new Promise<{ SubagentDashboard: new (theme: unknown) => any }>((resolve) => {
+			resolveWidget = resolve;
+		});
+		const loadWidget = vi.fn(() => widgetImport);
+		const { pi } = makePi();
+		const presentation = new SubagentPresentation(pi as any, { kind: "root" }, loadWidget);
+		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+
+		const mounting = presentation.ensureWidget(ctx as any);
+		expect(loadWidget).toHaveBeenCalledTimes(1);
+		presentation.preventLateMounts();
+		presentation.shutdown(ctx as any);
+		resolveWidget({
+			SubagentDashboard: class {
+				update(_statuses: any[]): void {}
+				setSessionName(_name: string | undefined): void {}
+			},
+		});
+		await mounting;
+
+		expect(ctx.ui.setWidget).toHaveBeenCalledExactlyOnceWith("subagents", undefined);
+	});
+
+	it("keeps the session manager and router alive across empty teardown and respawn", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const firstContext = makeContext(parentSessionFile, {
+			model: { provider: "astra", id: "first" },
+			modelRegistry: { getAvailable: () => [{ provider: "astra", id: "first" }] },
+		});
+		await startSession(handlers, firstContext);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "first run", channels: [] }],
+		}, firstContext);
+		await execute(tools, "teardown", { agent: "worker" }, firstContext);
+
+		const secondContext = makeContext(parentSessionFile, {
+			model: { provider: "astra", id: "second" },
+			modelRegistry: { getAvailable: () => [{ provider: "astra", id: "second" }] },
+		});
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "second run", channels: [] }],
+		}, secondContext);
+
+		expect(managed.created.map((entry) => entry.config.modelRef)).toEqual([
+			"astra/first",
+			"astra/second",
+		]);
+		await expect(execute(tools, "send", {
+			to: "worker",
+			message: "route after empty teardown",
+			expectResponse: false,
+		}, secondContext)).resolves.toMatchObject({
+			content: [{ text: "Message sent to worker." }],
+		});
+		await expect(execute(tools, "check_status", { agent: "worker" }, secondContext))
+			.resolves.toMatchObject({ content: [{ text: expect.stringContaining("State: running") }] });
+	});
+
+	it("keeps the router open and parent-only after a failed staged spawn", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		let failFirst = true;
+		managed.setOnCreate(async ({ config }) => {
+			if (failFirst && config.path[config.path.length - 1] === "failed") throw new Error("construction failed");
+		});
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+
+		await expect(execute(tools, "subagent", {
+			agents: [{ id: "failed", task: "fail", channels: [] }],
+		}, ctx)).rejects.toThrow("construction failed");
+		failFirst = false;
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "succeed", channels: [] }],
+		}, ctx);
+
+		await expect(execute(tools, "send", {
+			to: "worker",
+			message: "route after rollback",
+			expectResponse: false,
+		}, ctx)).resolves.toMatchObject({ content: [{ text: "Message sent to worker." }] });
+	});
+
+	it("uses one session-start model catalog for fmodel completions", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		let available = [{ provider: "first", id: "model", contextWindow: 10_000 }];
+		const { pi, handlers, commands } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile, { modelRegistry: { getAvailable: () => available } });
+		await startSession(handlers, ctx);
+
+		available = [{ provider: "second", id: "model", contextWindow: 20_000 }];
+		const completions = commands.get("fmodel").getArgumentCompletions;
+		expect(completions("first/")).toEqual([{ value: "first/model", label: "first/model" }]);
+		expect(completions("second/")).toBeNull();
+	});
+
+	it("keeps root status and run errors in the registry snapshot", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+		await execute(tools, "subagent", { agents: [{ id: "worker", task: "inspect", channels: [] }] }, ctx);
+		const registry = managed.created[0].config.scope.registry as AgentSessionRegistry;
+
+		await handlers.get("agent_start")?.({ type: "agent_start" }, ctx);
+		expect(registry.getSnapshot([])?.operational.state).toBe("running");
+		await handlers.get("agent_end")?.({
+			type: "agent_end",
+			willRetry: false,
+			messages: [{ role: "assistant", stopReason: "error", errorMessage: "root failed" }],
+		}, ctx);
+		await handlers.get("agent_settled")?.({ type: "agent_settled" }, ctx);
+
+		expect(registry.getSnapshot([])?.operational).toMatchObject({ state: "errored", lastError: "root failed" });
+		await handlers.get("agent_start")?.({ type: "agent_start" }, ctx);
+		expect(registry.getSnapshot([])?.operational).toMatchObject({ state: "running", lastError: undefined });
+	});
+
+	it("deduplicates tier warnings in the session turn owner", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		fs.mkdirSync(path.join(tmpRoot!, ".pi"), { recursive: true });
+		fs.writeFileSync(path.join(tmpRoot!, ".pi", "model-tiers.json"), JSON.stringify({ cheap: "missing/model" }));
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+
+		await execute(tools, "subagent", {
+			agents: [
+				{ id: "first", task: "one", model: "cheap", channels: [] },
+				{ id: "second", task: "two", model: "cheap", channels: [] },
+			],
+		}, ctx);
+
+		const warnings = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls
+			.filter(([, type]) => type === "warning");
+		expect(warnings).toHaveLength(1);
+	});
+
+	it("keeps a concurrent spawn routable when the last-child teardown finishes first", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "old", task: "remove me", channels: [] }],
+		}, ctx);
+
+		// The TUI widget import suspends this command after it has obtained the
+		// per-session manager. Teardown wins that gap, which used to clear the
+		// extension's manager slot before this spawn committed to the registry.
+		const racingSpawn = execute(tools, "subagent", {
+			agents: [{ id: "new", task: "survive the race", channels: [] }],
+		}, ctx);
+		await execute(tools, "teardown", { agent: "old" }, ctx);
+		await racingSpawn;
+
+		await expect(execute(tools, "send", {
+			to: "new",
+			message: "still reachable",
+			expectResponse: false,
+		}, ctx)).resolves.toMatchObject({
+			content: [{ text: "Message sent to new." }],
+		});
+		await expect(execute(tools, "check_status", { agent: "new" }, ctx))
+			.resolves.toMatchObject({ content: [{ text: expect.stringContaining("State: running") }] });
+	});
+
+	it("keeps the registry presentation subscription until session shutdown, not empty teardown", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const unsubscribe = vi.fn();
+		vi.spyOn(AgentSessionRegistry.prototype, "subscribe").mockReturnValue(unsubscribe);
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "temporary", channels: [] }],
+		}, ctx);
+		await execute(tools, "teardown", { agent: "worker" }, ctx);
+		expect(unsubscribe).not.toHaveBeenCalled();
+
+		await handlers.get("session_shutdown")?.({}, ctx);
+		expect(unsubscribe).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not reuse skill paths from a removed id when the session still has other children", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		fs.mkdirSync(path.join(tmpRoot!, ".pi", "agents"), { recursive: true });
+		fs.writeFileSync(
+			path.join(tmpRoot!, ".pi", "agents", "skilled.md"),
+			`---\nname: skilled\ndescription: Has skills\nskills: debugging\n---\nWork.`,
+		);
+		const { pi, tools, handlers } = makePi();
+		pi.getCommands.mockReturnValue([{ name: "skill:debugging", source: "skill", path: "/skills/debugging/SKILL.md" }]);
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+
+		await execute(tools, "subagent", {
+			agents: [
+				{ id: "worker", agent: "skilled", task: "use skills", channels: [] },
+				{ id: "peer", task: "stay alive", channels: [] },
+			],
+		}, ctx);
+		await execute(tools, "teardown", { agent: "worker" }, ctx);
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "no skills", channels: [] }],
+		}, ctx);
+
+		expect(managed.created[0].config.skillPaths).toEqual(["/skills/debugging/SKILL.md"]);
+		expect(managed.created[2].config.skillPaths).toEqual([]);
+	});
+
 	it("injects discovered agent definitions as XML with descriptions in the agent body", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
@@ -653,9 +951,11 @@ describe("root orchestration integration", () => {
 
 		const { pi, handlers } = makePi();
 		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
 		const result = await handlers.get("before_agent_start")?.(
 			{ systemPrompt: "base prompt" },
-			makeContext(parentSessionFile),
+			ctx,
 		);
 
 		expect(result.systemPrompt).toContain("<available_agent_definitions>");
@@ -669,9 +969,10 @@ describe("root orchestration integration", () => {
 	it("owns SDK-native children, projects lifecycle/status updates, and records replacement metadata", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
 
 		await execute(tools, "subagent", {
 			agents: [{ id: "worker", task: "inspect", channels: [] }],
@@ -748,9 +1049,10 @@ describe("root orchestration integration", () => {
 	it("repairs a stale errored state when assistant usage proves the run continued", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
 
 		await execute(tools, "subagent", {
 			agents: [{ id: "worker", task: "inspect", channels: [] }],
@@ -794,12 +1096,13 @@ describe("root orchestration integration", () => {
 	it("preserves the active marker when a fork directive follows a resumed run", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		managed.setOnCreate(async ({ config, hooks }) => {
 			if (config.target.kind === "fork") hooks.onEvent({ type: "agent_start" });
 		});
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
 
 		await execute(tools, "fork", { id: "clone", task: "continue the source work" }, ctx);
 		const fork = managed.created[0];
@@ -880,9 +1183,10 @@ describe("root orchestration integration", () => {
 	it("refuses to await an agent already blocked on the parent's response", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
 
 		await execute(tools, "subagent", {
 			agents: [{ id: "worker", task: "inspect", channels: [] }],
@@ -921,6 +1225,8 @@ describe("root orchestration integration", () => {
 		const second = makePi();
 		await createSubagentsExtension({ kind: "root" })(first.pi as any);
 		await createSubagentsExtension({ kind: "root" })(second.pi as any);
+		await startSession(first.handlers, makeContext(firstParentSessionFile));
+		await startSession(second.handlers, makeContext(secondParentSessionFile));
 
 		await execute(first.tools, "subagent", {
 			agents: [{ id: "worker", task: "work in the first root", channels: [] }],
@@ -938,7 +1244,7 @@ describe("root orchestration integration", () => {
 	it("forks from the parent session with its complete active tool set and thinking level", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		pi.getActiveTools.mockReturnValue(["read", "toolscript_custom", "ask_user"]);
 		pi.getCommands.mockReturnValue([
 			{ name: "skill:debugging", source: "skill", path: "/skills/debugging/SKILL.md" },
@@ -946,6 +1252,7 @@ describe("root orchestration integration", () => {
 		pi.getThinkingLevel.mockReturnValue("xhigh");
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
 
 		await execute(tools, "fork", { id: "clone", task: "explore another path" }, ctx);
 
@@ -975,9 +1282,10 @@ describe("root orchestration integration", () => {
 	it("settles pre-agent-start headless errors and restores a torn-down session without RPC", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
 
 		await execute(tools, "subagent", {
 			agents: [{ id: "worker", task: "inspect", channels: [] }],
@@ -1016,9 +1324,10 @@ describe("root orchestration integration", () => {
 	it("revives an errored child on a later send but keeps a dead runtime unreachable", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
 
 		await execute(tools, "subagent", {
 			agents: [{ id: "worker", task: "inspect", channels: [] }, { id: "doomed", task: "inspect", channels: [] }],
@@ -1057,7 +1366,7 @@ describe("root orchestration integration", () => {
 	it("inherits the active parent model when model is omitted or empty", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile, {
 			model: { provider: "astra", id: "model" },
@@ -1065,6 +1374,7 @@ describe("root orchestration integration", () => {
 				getAvailable: () => [{ provider: "astra", id: "model" }],
 			},
 		});
+		await startSession(handlers, ctx);
 
 		await execute(tools, "subagent", {
 			agents: [
@@ -1091,9 +1401,10 @@ describe("root orchestration integration", () => {
 			`---\nname: scout\ndescription: Locate code\nmodel: cheap\n---\nSearch only.`,
 		);
 
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
 
 		await execute(tools, "subagent", {
 			agents: [{ id: "scout", agent: "scout", task: "locate code" }],
@@ -1110,7 +1421,7 @@ describe("root orchestration integration", () => {
 		fs.mkdirSync(childCwd);
 		fs.writeFileSync(path.join(tmpRoot!, ".pi", "agents", "reviewer.md"), `---\nname: reviewer\ndescription: Review changes\ntools: send\nskills: debugging\nmodel: pinned/model\n---\nReview carefully.`);
 
-		const { pi, tools } = makePi();
+		const { pi, tools, handlers } = makePi();
 		pi.getCommands.mockReturnValue([{ name: "skill:debugging", source: "skill", path: "/skills/debugging/SKILL.md" }]);
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile, {
@@ -1118,6 +1429,7 @@ describe("root orchestration integration", () => {
 				getAvailable: () => [{ provider: "pinned", id: "model" }],
 			},
 		});
+		await startSession(handlers, ctx);
 
 		await execute(tools, "subagent", {
 			agents: [{

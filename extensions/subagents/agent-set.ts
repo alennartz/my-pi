@@ -35,13 +35,7 @@ import {
 	type PersistedAgentRecord,
 	type PersistencePaths,
 } from "./persistence.js";
-import {
-	addToTopology,
-	buildTopology,
-	removeFromTopology,
-	validateTopology,
-	type Topology,
-} from "./channels.js";
+import { type AgentChannelSpec } from "./channels.js";
 import {
 	MessageRouter,
 	type MessagePort,
@@ -166,29 +160,33 @@ export interface SubagentManagerOptions {
 	/** Canonical path of the manager's owning node in the shared registry. */
 	ownerPath: AgentPath;
 	parentSessionFile?: string;
-	skillPaths: Map<string, string[]>;
 	resolveContextWindow: (modelId: string) => number | undefined;
 	onUpdate: (mgr: SubagentManager) => void;
 	onAgentComplete: (mgr: SubagentManager, agentId: string, allDone: boolean) => void;
-	onParentMessage: (xml: string, meta: { correlationId?: string; responseExpected: boolean }) => void;
+	onParentMessage: (port: MessagePort, xml: string, meta: { correlationId?: string; responseExpected: boolean }) => void;
 }
 
 export class SubagentManager {
 	private entries: AgentEntry[] = [];
 	private readonly pendingEntries = new Set<AgentEntry>();
-	private router: MessageRouter | null = null;
-	private topology: Topology | null = null;
-	private parentPort: MessagePort | null = null;
-	private unsubscribeParentPort: (() => void) | null = null;
+	private readonly router: MessageRouter;
+	private readonly parentPort: MessagePort;
 	private readonly opts: SubagentManagerOptions;
 	private readonly correlationToTarget = new Map<string, string>();
 	private sessionDir: string | null = null;
 	private persistence: PersistencePaths | null = null;
 	private restoring = false;
+	private restoreAttempted = false;
 	private mutationTail: Promise<void> = Promise.resolve();
 
 	constructor(opts: SubagentManagerOptions) {
 		this.opts = opts;
+		this.router = new MessageRouter({
+			onBlockingSendStart: (from, to, correlationId) => this.markAgentWaiting(from, correlationId, to),
+			onBlockingSendEnd: (from, correlationId) => this.clearAgentWaiting(from, correlationId),
+		});
+		this.parentPort = this.router.connect("parent");
+		this.parentPort.subscribe((message) => this.deliverParentMessage(message));
 	}
 
 	getAgentStatuses(): AgentStatus[] {
@@ -224,8 +222,8 @@ export class SubagentManager {
 	}
 
 	/** Parent endpoint for this manager's local routing namespace. */
-	getParentPort(): MessagePort | undefined {
-		return this.parentPort ?? undefined;
+	getParentPort(): MessagePort {
+		return this.parentPort;
 	}
 
 	/**
@@ -235,7 +233,7 @@ export class SubagentManager {
 	 * swallowed, and a later child event can overwrite the `waiting` state.
 	 */
 	getBlockedSenders(): Array<{ from: string; correlationId: string }> {
-		return this.router?.pendingSendersTo("parent") ?? [];
+		return this.router.pendingSendersTo("parent");
 	}
 
 	/**
@@ -279,22 +277,19 @@ export class SubagentManager {
 		}
 		this.assertSpawnableIds(agents);
 
-		const firstStart = this.router === null;
-		let topologyBefore: Topology | undefined;
+		const firstStart = !this.hasAgents();
 		let createdEntries: AgentEntry[] = [];
 
 		try {
-			if (firstStart) {
-				this.initializeRouting(agents);
-			} else {
-				topologyBefore = cloneTopology(this.topology!);
-				this.extendTopology(agents);
-			}
+			this.ensureSessionDirectory();
+			this.router.addAgents(
+				agents.map(channelSpec),
+				new Set(agents.filter((agent) => agent.kind === "fork").map((agent) => agent.id)),
+			);
 
-			const router = this.router!;
 			const ports = new Map<string, MessagePort>();
 			for (const spec of agents) {
-				ports.set(spec.id, router.connect(spec.id));
+				ports.set(spec.id, this.router.connect(spec.id));
 			}
 
 			const requests: CreateAgentNodeRequest[] = [];
@@ -352,7 +347,7 @@ export class SubagentManager {
 			for (const entry of createdEntries) {
 				this.pendingEntries.delete(entry);
 			}
-			this.rollbackRouting(agents, firstStart, topologyBefore);
+			for (const spec of agents) this.router.removeAgent(spec.id);
 			throw error;
 		}
 	}
@@ -362,7 +357,8 @@ export class SubagentManager {
 	}
 
 	private async restoreFromPersistenceUnlocked(agentConfigs: AgentConfig[]): Promise<void> {
-		if (this.router || this.hasAgents()) return;
+		if (this.restoreAttempted || this.hasAgents()) return;
+		this.restoreAttempted = true;
 		const parentSessionFile = this.opts.parentSessionFile;
 		if (!parentSessionFile) return;
 
@@ -376,7 +372,7 @@ export class SubagentManager {
 		this.sessionDir = persisted.paths.childSessionsDir;
 		this.restoring = true;
 		try {
-			await this.startUnlocked(survivors.map((agent) => this.toRestoreSpec(agent)), agentConfigs);
+			await this.startUnlocked(survivors.map((agent) => this.toRestoreSpec(agent, agentConfigs)), agentConfigs);
 		} finally {
 			this.restoring = false;
 		}
@@ -398,12 +394,10 @@ export class SubagentManager {
 		const entries = this.entries;
 		this.entries = [];
 
-		for (const entry of entries) {
-			this.router?.agentRemoved(entry.id);
-			if (this.topology) removeFromTopology(this.topology, entry.id);
-		}
+		for (const entry of entries) this.router.removeAgent(entry.id);
 		await Promise.all(entries.map((entry) => this.opts.registry.remove(entry.path)));
-		this.resetRouting();
+		this.correlationToTarget.clear();
+		this.router.close();
 	}
 
 	/** Returns the live immediate child holding this session UUID, if any. */
@@ -444,66 +438,13 @@ export class SubagentManager {
 		return run;
 	}
 
-	private initializeRouting(agents: AgentSpec[]): void {
+	private ensureSessionDirectory(): void {
+		if (this.sessionDir) return;
 		const parentSessionFile = this.opts.parentSessionFile;
-		if (!parentSessionFile) {
-			throw new Error("Subagents require a persisted parent session file");
-		}
-
-		const specs = channelSpecs(agents);
-		const topologyError = validateTopology(specs);
-		if (topologyError) throw new Error(topologyError);
-
+		if (!parentSessionFile) throw new Error("Subagents require a persisted parent session file");
 		const paths = this.persistence ?? getPersistencePaths(parentSessionFile);
 		fs.mkdirSync(paths.childSessionsDir, { recursive: true });
 		this.sessionDir = paths.childSessionsDir;
-		this.topology = buildTopology([]);
-		addToTopology(
-			this.topology,
-			specs,
-			new Set<string>(),
-			new Set(agents.filter((agent) => agent.kind === "fork").map((agent) => agent.id)),
-		);
-		this.router = new MessageRouter({
-			topology: this.topology,
-			onBlockingSendStart: (from, to, correlationId) => this.markAgentWaiting(from, correlationId, to),
-			onBlockingSendEnd: (from, correlationId) => this.clearAgentWaiting(from, correlationId),
-		});
-		this.parentPort = this.router.connect("parent");
-		this.unsubscribeParentPort = this.parentPort.subscribe((message) => this.deliverParentMessage(message));
-	}
-
-	private extendTopology(agents: AgentSpec[]): void {
-		const existingIds = new Set(this.getAgentStatuses().map((status) => status.id));
-		const forkIds = new Set(agents.filter((agent) => agent.kind === "fork").map((agent) => agent.id));
-		addToTopology(this.topology!, channelSpecs(agents), existingIds, forkIds);
-	}
-
-	private rollbackRouting(
-		agents: AgentSpec[],
-		firstStart: boolean,
-		topologyBefore: Topology | undefined,
-	): void {
-		for (const spec of agents) {
-			this.router?.agentRemoved(spec.id);
-		}
-		if (firstStart) {
-			this.resetRouting();
-			return;
-		}
-		if (topologyBefore && this.topology) restoreTopology(this.topology, topologyBefore);
-	}
-
-	private resetRouting(): void {
-		this.unsubscribeParentPort?.();
-		this.unsubscribeParentPort = null;
-		this.router?.close();
-		this.router = null;
-		this.parentPort = null;
-		this.topology = null;
-		this.correlationToTarget.clear();
-		this.sessionDir = null;
-		this.persistence = null;
 	}
 
 	private assertSpawnableIds(agents: AgentSpec[]): void {
@@ -558,7 +499,7 @@ export class SubagentManager {
 		const sessionDir = this.sessionDir!;
 		const target = this.sessionTarget(spec, sessionDir);
 		const identityXml = this.identityPrompt(spec, agentConfigs, entry.channels, batch);
-		const skillPaths = this.skillPathsFor(spec, agentConfig);
+		const skillPaths = this.skillPathsFor(spec);
 		const appendSystemPrompt = [
 			...(spec.kind === "agent" && agentConfig && !spec.resumeSessionFile ? [agentConfig.systemPrompt] : []),
 			identityXml,
@@ -614,23 +555,8 @@ export class SubagentManager {
 		return { kind: "new", cwd: spec.cwd ?? this.opts.cwd, sessionDir };
 	}
 
-	private skillPathsFor(spec: AgentSpec, agentConfig: AgentConfig | undefined): string[] {
-		if (spec.kind === "fork") {
-			const forkSpec = spec as ForkAgentSpec & { skillPaths?: string[] };
-			return [...(forkSpec.skillPaths ?? [])];
-		}
-
-		let paths = this.opts.skillPaths.get(spec.id) ?? [];
-		if (paths.length === 0 && agentConfig?.skills) {
-			try {
-				paths = resolveSkillPaths(agentConfig.skills, this.opts.pi.getCommands());
-			} catch (error) {
-				console.error(
-					`[subagents] Failed to resolve skills for "${spec.id}": ${error instanceof Error ? error.message : String(error)}`,
-				);
-			}
-		}
-		return [...paths];
+	private skillPathsFor(spec: AgentSpec): string[] {
+		return [...(spec.skillPaths ?? [])];
 	}
 
 	private channelsFor(spec: AgentSpec, batch: AgentSpec[]): string[] {
@@ -839,6 +765,7 @@ export class SubagentManager {
 		if (!this.isActiveEntry(entry)) return;
 		const label = type === "error" ? "Child resource error" : "Child resource diagnostic";
 		this.opts.onParentMessage(
+			this.parentPort,
 			serializeAgentMessage({ from: entry.id, content: `${label}: ${message}`, responseExpected: false }),
 			{ responseExpected: false },
 		);
@@ -855,7 +782,7 @@ export class SubagentManager {
 			this.settleErrored(entry, message || "Child input was rejected");
 			return;
 		}
-		if (current.state !== "running") this.router?.agentIdle(entry.id);
+		if (current.state !== "running") this.router.agentIdle(entry.id);
 	}
 
 	private settleAtBoundary(entry: AgentEntry): void {
@@ -871,7 +798,7 @@ export class SubagentManager {
 			lastActivity: undefined,
 			lastError: undefined,
 		}));
-		this.router?.agentIdle(entry.id);
+		this.router.agentIdle(entry.id);
 		this.notifyCompletion(entry);
 	}
 
@@ -890,7 +817,7 @@ export class SubagentManager {
 			lastActivity: undefined,
 			lastError: error,
 		}));
-		this.router?.agentErrored(entry.id, error);
+		this.router.agentErrored(entry.id, error);
 		this.notifyCompletion(entry);
 	}
 
@@ -911,7 +838,7 @@ export class SubagentManager {
 			lastActivity: undefined,
 			lastError: failure,
 		}));
-		this.router?.agentUnavailable(entry.id, failure);
+		this.router.agentUnavailable(entry.id, failure);
 		this.notifyCompletion(entry);
 	}
 
@@ -985,7 +912,7 @@ export class SubagentManager {
 			correlationId: message.correlationId,
 			responseExpected: message.responseExpected,
 		});
-		this.opts.onParentMessage(xml, {
+		this.opts.onParentMessage(this.parentPort, xml, {
 			correlationId: message.correlationId,
 			responseExpected: message.responseExpected,
 		});
@@ -1050,7 +977,7 @@ export class SubagentManager {
 		const allSettled = this.opts.registry
 			.listChildren(this.opts.ownerPath)
 			.every((snapshot) => isSettledState(snapshot.operational.state));
-		return allSettled && (this.router?.isQuiet() ?? true);
+		return allSettled && this.router.isQuiet();
 	}
 
 	private getCompletionReport(): ActiveAgentsCompleteData {
@@ -1100,11 +1027,9 @@ export class SubagentManager {
 
 		for (const entry of entries) {
 			this.appendRemovalRecord(entry);
-			this.router?.agentRemoved(entry.id);
-			if (this.topology) removeFromTopology(this.topology, entry.id);
+			this.router.removeAgent(entry.id);
 		}
 		await Promise.all(entries.map((entry) => this.opts.registry.remove(entry.path)));
-		this.resetRouting();
 		return { report, empty: true };
 	}
 
@@ -1127,14 +1052,11 @@ export class SubagentManager {
 
 		this.entries.splice(index, 1);
 		this.appendRemovalRecord(entry);
-		this.router?.agentRemoved(entry.id);
-		if (this.topology) removeFromTopology(this.topology, entry.id);
+		this.router.removeAgent(entry.id);
 		this.dropTargetCorrelations(entry.id);
 		await this.opts.registry.remove(entry.path);
 
-		if (this.hasAgents()) return { report, empty: false };
-		this.resetRouting();
-		return { report, empty: true };
+		return { report, empty: !this.hasAgents() };
 	}
 
 	private appendRemovalRecord(entry: AgentEntry): void {
@@ -1153,7 +1075,7 @@ export class SubagentManager {
 		}
 	}
 
-	private toRestoreSpec(agent: PersistedAgentRecord): AgentSpec {
+	private toRestoreSpec(agent: PersistedAgentRecord, agentConfigs: AgentConfig[]): AgentSpec {
 		if (agent.kind === "fork") {
 			return {
 				kind: "fork",
@@ -1168,6 +1090,19 @@ export class SubagentManager {
 				thinkingLevel: this.opts.pi.getThinkingLevel() as string,
 			} as AgentSpec;
 		}
+		const agentConfig = agent.agent
+			? agentConfigs.find((candidate) => candidate.name === agent.agent)
+			: undefined;
+		let skillPaths: string[] = [];
+		if (agentConfig?.skills) {
+			try {
+				skillPaths = resolveSkillPaths(agentConfig.skills, this.opts.pi.getCommands());
+			} catch (error) {
+				console.error(
+					`[subagents] Failed to resolve skills for "${agent.id}": ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
 		return {
 			kind: "agent",
 			id: agent.id,
@@ -1176,6 +1111,7 @@ export class SubagentManager {
 			channels: agent.channels,
 			resumeSessionFile: agent.sessionFile,
 			cwd: agent.cwd,
+			skillPaths,
 		};
 	}
 }
@@ -1235,20 +1171,11 @@ function operationalEqual(a: AgentOperationalSnapshot, b: AgentOperationalSnapsh
 	return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function channelSpecs(agents: AgentSpec[]): Array<{ id: string; channels?: string[] }> {
-	return agents.map((agent) => ({
+function channelSpec(agent: AgentSpec): AgentChannelSpec {
+	return {
 		id: agent.id,
-		channels: agent.kind === "agent" ? agent.channels : undefined,
-	}));
-}
-
-function cloneTopology(topology: Topology): Topology {
-	return new Map(Array.from(topology, ([id, targets]) => [id, new Set(targets)]));
-}
-
-function restoreTopology(target: Topology, source: Topology): void {
-	target.clear();
-	for (const [id, targets] of source) target.set(id, new Set(targets));
+		channels: agent.kind === "agent" && agent.channels ? [...agent.channels] : undefined,
+	};
 }
 
 function removeOne(values: readonly string[], value: string | undefined): string[] {

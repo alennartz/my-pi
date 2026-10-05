@@ -16,8 +16,10 @@ export interface RegularAgentSpec {
 	agent?: string;
 	model?: string;
 	task: string;
-	channels?: string[];
+	channels?: readonly string[];
 	resumeSessionFile?: string;
+	/** Immutable skill paths resolved as part of this spawn request. */
+	skillPaths?: readonly string[];
 	/**
 	 * Working directory for this agent. Always an absolute path once the spec
 	 * reaches `SubagentManager.start` — the tool handler resolves and validates

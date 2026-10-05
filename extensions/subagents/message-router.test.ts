@@ -1,23 +1,53 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildTopology } from "./channels.js";
 import { MessageRouter } from "./message-router.js";
 
 function makeRouter(
 	agentIds = ["worker"],
 	overrides: Partial<ConstructorParameters<typeof MessageRouter>[0]> = {},
 ): MessageRouter {
-	return new MessageRouter({
-		topology: buildTopology(
-			agentIds.map((id) => ({
-				id,
-				channels: agentIds.filter((peer) => peer !== id),
-			})),
-		),
-		...overrides,
-	});
+	const router = new MessageRouter(overrides);
+	router.addAgents(agentIds.map((id) => ({
+		id,
+		channels: agentIds.filter((peer) => peer !== id),
+	})));
+	return router;
 }
 
 describe("MessageRouter endpoint delivery", () => {
+	it("stays open across an empty-to-add-to-remove-to-add route lifecycle", async () => {
+		const router = new MessageRouter({});
+		const parent = router.connect("parent");
+
+		await expect(parent.send({ to: "worker", message: "too early", expectResponse: false }))
+			.rejects.toThrow(/route|channel|unknown/i);
+
+		router.addAgents([{ id: "worker", channels: [] }]);
+		const firstWorker = router.connect("worker");
+		const firstDelivery = vi.fn();
+		firstWorker.subscribe(firstDelivery);
+		await parent.send({ to: "worker", message: "first", expectResponse: false });
+		expect(firstDelivery).toHaveBeenCalledExactlyOnceWith({
+			from: "parent",
+			message: "first",
+			responseExpected: false,
+		});
+
+		router.removeAgent("worker");
+		await expect(parent.send({ to: "worker", message: "removed", expectResponse: false }))
+			.rejects.toThrow(/route|channel|removed|unknown/i);
+
+		router.addAgents([{ id: "worker", channels: [] }]);
+		const replacementWorker = router.connect("worker");
+		const replacementDelivery = vi.fn();
+		replacementWorker.subscribe(replacementDelivery);
+		await parent.send({ to: "worker", message: "second", expectResponse: false });
+		expect(replacementDelivery).toHaveBeenCalledExactlyOnceWith({
+			from: "parent",
+			message: "second",
+			responseExpected: false,
+		});
+	});
+
 	it("delivers fire-and-forget messages in both directions and honors unsubscribe", async () => {
 		const router = makeRouter();
 		const parent = router.connect("parent");

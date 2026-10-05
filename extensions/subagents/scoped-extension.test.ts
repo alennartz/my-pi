@@ -73,6 +73,17 @@ describe("createSubagentsExtension root scope", () => {
 		expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
 	});
 
+	it("fails clearly instead of lazily constructing session state before session_start", async () => {
+		const pi = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const subagent = pi.registerTool.mock.calls
+			.map(([tool]) => tool)
+			.find((tool) => tool.name === "subagent");
+
+		await expect(subagent!.execute("call", { agents: [{ id: "worker", task: "work" }] }, undefined, undefined, {}))
+			.rejects.toThrow(/session_start|not started/i);
+	});
+
 	it("keeps root scope independent from process-wide parent-link state", async () => {
 		const previous = process.env.PI_PARENT_LINK;
 		process.env.PI_PARENT_LINK = JSON.stringify({ id: "stale-child", tools: ["send"] });
