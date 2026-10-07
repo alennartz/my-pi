@@ -10,13 +10,15 @@ Verified grounding (pi `dist/core/system-prompt.js`, `dist/core/extensions/runne
 
 ### Impacted Modules
 
-**Subagents** — the spawn path stops stacking specialist bodies under the generic persona. Today `agent-set.ts` flattens `agentConfig.systemPrompt` into `ChildSessionConfig.appendSystemPrompt` (rendered as the `addendum` section); instead it passes the resolved definition as a first-class persona payload and registers it in the child-session registry at construction. Everything else on the spawn path (tool policy, model/tier resolution, skill paths, identity XML in the addendum) is unchanged. Restore/re-resurrect re-derives the payload the same way `spec.agent` is re-derived today (per DR-033), so tool gating and persona stay in step.
+**Subagents** — the spawn path stops stacking specialist bodies under the generic persona. Today `agent-set.ts` flattens `agentConfig.systemPrompt` into `ChildSessionConfig.appendSystemPrompt` (rendered as the `addendum` section); instead it passes the resolved definition as a first-class persona payload and registers it in the child-session registry at construction. The spawn path also resolves which persona file is *active* for the child (Interface 4 — a workspace declaration at the child's cwd wins wholesale) and feeds that file's `model`/`tools`/`skills` fields into the existing construction bindings (tool policy, model/tier resolution, skill paths); a discarded definition's fields never reach construction. The identity XML in the addendum is unchanged. The `subagent` tool's `agent` parameter is renamed `persona` (Terminology above). Restore/re-resurrect re-derives the payload the same way `spec.agent` is re-derived today (per DR-033), so tool gating and persona stay in step.
 
 ### New Modules
 
 **Persona Workspaces** (`extensions/persona-workspaces/`) — owns persona resolution, prompt binding, front-matter binding, and takeover notices. One `before_agent_start` handler and one `session_start` handler; pure declaration parsing in a colocated module. Depends on Subagents' child-session registry (`extensions/subagents/child-session-marker.ts`) to read spawn-declared payloads — same cross-module consumption pattern as Autoflow Autostart's use of the marker.
 
 ### Interfaces
+
+**Terminology.** A *persona file* is one of the distinctive-front-matter definition files the Subagents extension already discovers (`name`/`description`/`tools`/`skills`/`model` + body). After this change the same file shape can also be a working directory's `AGENTS.md` (via `kind: persona`). Persona presence is orthogonal to root-vs-subagent — all four combinations are valid (root+persona, root+plain, subagent+persona, subagent+plain). Persona sources are exclusive, in precedence order: (1) the cwd's `AGENTS.md` with `kind: persona`; (2) the spawned persona (the `subagent` tool's parameter, resolved from discovered files as today) — applies only when (1) is absent; otherwise the session has no persona. For terminology consistency the `subagent` tool's `agent` parameter is renamed `persona` (scope: tool schema plus all skill/agent-definition text that references the parameter).
 
 **1. Workspace persona declaration** (pure, `extensions/persona-workspaces/declaration.ts`):
 
@@ -68,22 +70,26 @@ if (workspace) {
 
 - **Correction to note for implementers:** do NOT set `options.sections.preamble` — pi throws on custom sections named `preamble`. `customPrompt` is the preamble knob (pi feeds it from the loader's system-prompt override).
 - **Explicit `--system-prompt` outranks the ambient persona** (brainstorm key decision: your own argument outranks the directory). A launch `--system-prompt` reaches the callback as a pre-populated `options.customPrompt`, so the guard is simply: when `customPrompt` is already set, the persona module does nothing and the session runs with the user's explicit prompt.
-- When both a workspace declaration and a spawned payload exist, the workspace wins and the override notice (below) names both. The spawned agent's addendum-side identity XML is unaffected.
+- When both a workspace declaration and a spawned payload exist, the workspace declaration wins *wholesale* — one active agent file per session, all or nothing; the spawned definition is discarded entire, never field-merged into the winner. The override notice (below) names both. The spawned agent's addendum-side identity XML is unaffected.
 - When neither exists, the handler mutates nothing — generic sessions see zero change.
 - Fresh options copy per run ⇒ the handler is naturally idempotent. Mid-session edits to the workspace AGENTS.md take effect at the next run (the fog question from the brainstorm: acceptable, and the behavior is "next run", not "next session").
 
-**4. Front-matter binding** — precedence per field: workspace declaration > spawn-time binding (named agent) > pi default.
+**4. Front-matter binding** — one active agent file per session, all or nothing. The workspace declaration wins wholesale at its cwd; with no workspace declaration the spawned definition is the active file; with neither, nothing binds. A losing definition is discarded entire — fields are never merged between the two — and fields absent from the active file fall through to pi defaults, never to the discarded file's values.
 
-- `model` — resolved through the existing tier resolution (`resolveModelRef` / `stripThinkingSuffix`, DR-038 vocabulary) and applied via `pi.setModel(...)` once at `session_start`. Bind/announce set: `startup`, `new`, `fork` (a `/new` session in the workspace must not take over silently); `resume` and `reload` do **not** rebind — the user's mid-session choice stands ("a `/model` override is never slapped back").
-- `tools` — applied at `session_start` the same way (normalization shared with the child-side `resolveChildToolPolicy` semantics), same "bind once, then yield to the user" rule. In a subagent child with a workspace override, the workspace `tools` replaces the named agent's spawn-time tool policy.
-- `skills` — applied per run as a filter on `options.skills`: only listed skills are declared to the model. Documented limitation (root sessions only): unlisted skills' slash commands remain loaded — extensions can add skills at discovery but not subtract them, and the ResourceLoader's skills override is unreachable from an extension (DR-029's known consequence). Child sessions keep true construction-time filtering via `skillPaths`.
-- Fields absent from the front matter simply don't bind; the next level of precedence stands.
+- Binding mechanics: the active file's fields bind once at session bind time (bind/announce set below). One field is construction-locked: a subagent child's skills are fixed when the SDK child session is created (`noSkills` + `skillPaths`), so the spawn path resolves the active file and feeds **its** `model`/`tools`/`skills` into the existing construction bindings for children; the discarded definition's fields must not reach construction. Root sessions have no construction machinery and bind via `pi.setModel(...)` / `pi.setActiveTools(...)`.
+- **Explicit caller arguments outrank the ambient persona** (same principle as `--system-prompt` outranking the directory): an explicit `model` passed in the `subagent` tool call is caller intent for this task, not a persona field, and always applies — over the winning persona's `model` too. The discarded persona's pin, by contrast, never applies.
+- **An absent field is indistinguishable from no persona** for that dimension: it leaves the session's baseline untouched (root: pi's default model/tools/skills; subagent: the normal spawn baseline, e.g. the parent-inherited default model). A persona never strips baseline behavior with a field it doesn't declare.
+- **Restore/resume of subagent children:** capability gates are re-derived at every construction, including restore — tools/skills gating comes from the *active* persona file resolved at restore time (workspace declaration first, else the persona name from the persistence log per DR-033). The model is not re-derived: it stays as persisted (DR-038). The "no slap-back" rule governs user-facing session state (model/thinking), never the security-relevant construction gates.
+- `model` — resolved through the existing tier resolution (`resolveModelRef` / `stripThinkingSuffix`, DR-038 vocabulary). Bind/announce set: `startup`, `new`, `fork` (a `/new` session in the workspace must not take over silently); `resume` and `reload` do **not** rebind — the user's mid-session choice stands ("a `/model` override is never slapped back").
+- `tools` — same "bind once, then yield to the user" rule; normalization shared with the child-side `resolveChildToolPolicy` semantics.
+- `skills` — the active file's list is what the model sees (per-run filter on `options.skills`); in children it is additionally construction-locked as above. Documented limitation (root sessions only): unlisted skills' slash commands remain loaded — extensions can add skills at discovery but not subtract them, and the ResourceLoader's skills override is unreachable from an extension (DR-029's known consequence).
+- A field absent from the active file binds nothing and pi's default stands.
 
 **5. Takeover notices** — transcript-visible custom messages, returned as `before_agent_start`'s `message` result (pi ingests them as `role: "custom"` messages; they render in every UI and the model sees its own mandate):
 
 - **Boot notice** — emitted once when a persona binds a session that didn't have one (fresh `startup`/`fork`): names the persona (`name`), its source file (`sourcePath`), and — in a subagent child — the spawned agent whose definition was replaced.
 - **Override notice** — emitted when a workspace declaration overrides a spawned payload: names both the spawned agent and the winning persona, so the orchestrator's belief about what it deployed is visibly corrected.
-- Each notice has `customType: "persona-notice"` with a registered message renderer for clean TUI display; text content carries the same information for unrendering UIs. Notices are emitted at most once per condition per session instance; on resume the persisted transcript already contains them, so nothing re-fires.
+- Each notice has `customType: "persona-notice"` with a registered message renderer for clean TUI display; text content carries the same information for unrendering UIs. Notices are emitted at most once per condition per session instance. Both boot and override notices are gated to `startup`, `new`, and `fork`; `resume` and `reload` never announce, even when a legacy transcript has no notice. The extension may retain only the latest `session_start` reason, keyed/reset for the active SessionManager, as in-memory lifecycle state; notice deduplication is reconstructed from the transcript, not a separate notice registry.
 
 **Default children and forks are covered by the same rules:** any session whose cwd is a persona workspace wears the persona (root sessions, default children, named children, forks that inherit the cwd per DR-034); a session whose cwd leaves the workspace leaves the persona behind.
 
@@ -165,5 +171,96 @@ These tests encode judgment calls where the plan left room; flag any that misrea
 5. Tier-config plumbing assumptions: `model: <tier>` resolves via `loadTierConfig` (global `<agentDir>/model-tiers.json` + trusted `<cwd>/.pi/model-tiers.json`, the session-owner pattern); the resolved ref matches `ctx.modelRegistry.getAvailable()` on `id` or `provider/id` (the `/fmodel` pattern).
 6. In the spawned-plus-workspace case the single `before_agent_start` `message` slot cannot carry both a boot and an override notice; tests assert only that the visible notice names both the winning persona and the replaced spawned agent.
 7. No boot-notice assertion for spawned-only children: `PersonaPayload` carries no `sourcePath`, so the boot-notice text spec is workspace-shaped.
+8. **Adjudicated after test-write (user ruling):** one active agent file per session, all or nothing — no per-field merging between a workspace declaration and a spawned definition. Tests that encode per-field fallback to the losing definition (e.g. "workspace lacks `model`, spawned agent's pin survives") are invalid against this ruling and must be adjusted to wholesale-winner semantics during implementation: absent fields fall to pi defaults.
 
 **Review status:** skipped — test-review bypassed by skip decision
+
+## Steps
+
+The architecture above includes post-test-write rulings: exclusive persona sources, caller-model precedence, and the public `persona` parameter. Those rulings govern implementation; do not preserve obsolete expectations by blending files. Tests are otherwise immutable; Interpretation note 8 identifies the narrow exception for expectations invalidated by the ruling. Do not add test-writing work to these steps.
+
+### Step 1: Parse cwd persona declarations
+
+Implement `parsePersonaDeclaration(content, sourcePath)` and `loadWorkspacePersona(cwd)` in `extensions/persona-workspaces/declaration.ts`, preserving the existing two-argument interface used by tests. Reuse pi's `parseFrontmatter` as in `extensions/subagents/agents.ts` and `extensions/model-prompt-overlays/parsing.ts`; validate the exact `kind: persona` marker and non-empty string name before returning a declaration. Preserve the markdown body, raw model reference, and supplied source path. Parse comma-separated tools/skills with whitespace trimming and empty-item removal; omit optional fields that were not supplied. Do not require a description for a workspace declaration.
+
+The loader resolves exactly `<cwd>/AGENTS.md` to an absolute path, performs only that file read, and returns `undefined` for missing/unreadable/non-persona content. Unknown kind values remain silent. Keep parsing pure and file access in the loader.
+
+**Verify:** `npx vitest run extensions/persona-workspaces/declaration.test.ts` passes, including strict cwd-only detection and absent-field assertions.
+**Status:** not started
+
+### Step 2: Carry spawned persona payloads
+
+Replace the symbol-keyed process-global WeakSet in `extensions/subagents/child-session-marker.ts` with `WeakMap<object, PersonaPayload | undefined>`. Implement marking with an optional payload, payload lookup, and child detection via key presence so a child without a persona remains distinguishable from a root. Preserve the existing exported functions and process-global sharing behavior.
+
+Add optional `persona?: PersonaPayload` to `ChildSessionConfig` in `extensions/subagents/managed-child-session.ts`. In `SubagentManager.createNodeRequest` in `extensions/subagents/agent-set.ts`, pass the discovered spawned persona's `{ name, body: systemPrompt }` separately from `appendSystemPrompt`, including restored children; leave only identity XML in the append list. Retain the spawned payload even when the workspace wins so the notice can identify what the caller requested; it is not a source of winning capability fields.
+
+Mark every SessionManager inside the managed child's `createRuntime` path before extension session-start dispatch, not only `initial.sessionManager`. This covers SDK replacement sessions as well as fresh/resumed/forked children. `CreateAgentNodeRequest.session` in `extensions/subagents/agent-session-registry.ts` already derives from `ChildSessionConfig` and its spread forwards the payload; preserve that forwarding without a second payload store. Do not persist bodies.
+
+**Verify:** `npx vitest run extensions/subagents/child-session-marker.test.ts extensions/subagents/managed-child-session.test.ts extensions/subagents/agent-set.test.ts extensions/subagents/agent-session-registry.test.ts` passes; inspection confirms no specialist body is appended as addendum and replacement managers are marked before handlers run.
+**Status:** not started
+
+### Step 3: Select the child’s active persona before binding
+
+Update `extensions/subagents/session-owner.ts` (`spawnAgents`, `forkAgent`, `resurrectAgents`) and `extensions/subagents/agent-set.ts` (`createNodeRequest`, `toRestoreSpec`) so construction inputs derive from one active file: `loadWorkspacePersona(effectiveChildCwd)` first, otherwise the discovered spawned persona. Fresh cwd resolution continues through `resolveAgentCwds` with batch-atomic validation. Forks use the parent cwd; restores/resurrections use the opened session's persisted cwd, not the current parent's directory.
+
+Remove the independent named-persona skill resolution in `spawnAgents`/`resurrectAgents`/`toRestoreSpec` when a workspace is active. Feed only the active file's declared skills through the existing `resolveSkillPaths` contract to the child's immutable `skillPaths`. An absent skills field leaves ordinary discovery intact; it must not retain the discarded file's list. For workspace forks, declared skills replace the fork snapshot list; absence preserves ordinary fork behavior. Preserve existing error reporting and immutable request data. Resolve workspace tools with `resolveChildToolPolicy({ kind: "persona", tools })`; absence selects the ordinary child/fork baseline rather than the discarded definition's allowlist.
+
+For fresh children, model precedence is explicit tool `model` > active file `model` > existing parent-inherited baseline. Validate the reference that actually wins, not a discarded pin, and retain `resolveModelRef`/`stripThinkingSuffix`, concrete provider/id canonicalization, and tier fallback diagnostics. Load trusted tier overlays for the effective child cwd; do not apply the parent's project overlay to a different workspace. Do not let the later persona handler reapply a workspace pin over an explicit caller model. Workspace forks bind declared model/thinking at their fresh bind; ordinary forks retain their existing inheritance.
+
+On restore/resurrection, re-resolve active-file tools/skills and spawned payload through the current discovery/persistence-name contract (DR-033), but omit persona-derived model/thinking overrides so the persisted model survives (DR-038). Keep the lifecycle log's existing persona-name storage readable. Do not copy active-file fields into the log or invent a second durable configuration source.
+
+**Verify:** Existing subagent spawn, cwd, fork, restore, resurrection, tool-policy, skill-path, and model-tier tests pass with `npx vitest run extensions/subagents`. Inspect requests for a workspace with absent fields: discarded tools/skills/model never survive, explicit caller model still wins, and resume requests contain no re-derived model override.
+**Status:** not started
+
+### Step 4: Bind persona prompts and skill declarations
+
+Implement the single `before_agent_start` handler in `extensions/persona-workspaces/index.ts`. Resolve the workspace afresh from `ctx.cwd` on every run and obtain the spawned payload from `getSubagentPersona(ctx.sessionManager)`. Select `workspace ?? spawned` without field merging. Return immediately for no persona or pre-populated `systemPromptOptions.customPrompt`, before changing context, skills, or notices.
+
+Set only `options.customPrompt = persona.body` for preamble replacement; never use `sections.preamble` or force the entire prompt. For a workspace, remove only its exact absolute `sourcePath` from `options.contextFiles`. For declared workspace skills, filter `options.skills` by skill name, preserving order and full resource objects; absent skills leave the list unchanged. Spawned-only skills remain the construction-filtered list from Step 3. Never reattach the losing body or treat another directory's AGENTS.md as a persona.
+
+Keep all per-run decisions local and argument-driven. Do not cache declaration content between runs. The extension manifest already exposes `./index.ts`, and the root manifest already discovers `./extensions`; no new dependency or manifest change is required.
+
+**Verify:** Prompt-binding and skills-filter cases in `extensions/persona-workspaces/index.test.ts` pass; successive runs observe edits, explicit custom prompts are untouched, and plain sessions produce no mutations.
+**Status:** not started
+
+### Step 5: Bind root front matter at fresh session start
+
+Implement the single `session_start` handler in `extensions/persona-workspaces/index.ts`. Bind root workspace model/tools only for `startup`, `new`, and `fork`; `resume` and `reload` do not reset user choices. Child construction owns its initial model/tools/skills from Step 3, so do not double-bind children and overwrite explicit caller-model precedence.
+
+For root model binding, use `getAgentDir()`, `<agentDir>/model-tiers.json`, `<cwd>/.pi/model-tiers.json`, `ctx.isProjectTrusted()`, and `loadTierConfig`. Resolve through `resolveModelRef`, split a valid thinking suffix with `stripThinkingSuffix`, and match `ctx.modelRegistry.getAvailable()` on id or provider/id as `/fmodel` does. Apply the available model with awaited `pi.setModel`, and its explicit suffix with `pi.setThinkingLevel`; unavailable/unconfigured references leave the baseline in place and use existing tier diagnostic vocabulary. Declared tools bind using exactly `resolveChildToolPolicy({ kind: "persona", tools }).allowedTools` through `pi.setActiveTools`. Absent fields cause no setter calls.
+
+Retain only the latest session-start reason keyed/reset for the active SessionManager as extension-instance lifecycle state, as approved in Interface 5. This state communicates bind eligibility to the prompt handler; it contains neither parsed declarations nor emitted-notice flags and is never persisted.
+
+**Verify:** Front-matter cases in `extensions/persona-workspaces/index.test.ts` pass, including tier and thinking binding, exact tool normalization, absent fields, and no resume setter calls. Inspect reload handling and child guards for the same no-slap-back/caller-precedence rules.
+**Status:** not started
+
+### Step 6: Render and deduplicate takeover notices
+
+Complete notice generation in `extensions/persona-workspaces/index.ts` as the `before_agent_start` message result, after successful ambient prompt binding. Return one visible `customType: PERSONA_NOTICE_TYPE` message with plain text content. A workspace boot names its persona and absolute source file; a workspace overriding a spawned persona names both and the winning source. The override message occupies the single result slot rather than emitting a second boot message. Do not fabricate a sourcePath for a spawned-only payload.
+
+Gate both boot and override announcements to fresh bind reasons (`startup`, `new`, `fork`); resumed/reloaded children still bind prompts but announce nothing. Derive once-per-condition suppression from persisted persona-notice transcript entries, including legacy entries without new details, rather than a separate mutable notice registry. Use the current branch when available for actual pi sessions and the harness's `getEntries()` interface when it is the available transcript surface. Preserve enough plain message information to identify the condition and prevent re-emission after ingestion.
+
+Implement the registered `persona-notice` renderer using pi-tui's `Text`/`Box` pattern from `examples/extensions/message-renderer.ts`, the supplied theme/output padding, and the same informational text. Keep non-TUI behavior independent from rendering.
+
+**Verify:** `npx vitest run extensions/persona-workspaces/index.test.ts` passes notice shape, winning/replaced names, once-per-session ingestion, fresh reasons, and resumed transcript cases. Inspect narrow-width rendering through the standard components and ensure explicit customPrompt returns before notices.
+**Status:** not started
+
+### Step 7: Rename the public persona parameter and guidance
+
+In `extensions/subagents/session-owner.ts`, rename the `subagent` tool's item schema field `agent` to `persona`, its parameter reads, validation messages, generated available-persona guidance, and descriptions. Update model-field guidance: an explicit tool model always outranks a persona pin. Keep `agents` as the collection of child execution requests, and do not rename execution-agent IDs, lifecycle event names, or discovery directories. Map the new public field to existing internal `RegularAgentSpec.agent`/persisted `agent` storage if retaining those implementation names; historical JSONL must remain readable without migration. Remove accidental forwarding of the public `persona` field as an unrelated internal spec property.
+
+Update `skills/orchestrating-agents/SKILL.md` and `skills/specialist-design/SKILL.md` references to the public field. In specialist-design, replace the obsolete append-system-prompt body explanation with persona preamble replacement, document cwd `kind: persona` declarations, exclusive source precedence, the four root/child × persona/plain combinations, explicit caller-model precedence, and the root skill-slash-command limitation. Search `skills/**` (including autoflow templates), `agents/**`, and generated subagent prompts for parameter references and update any matches; do not mechanically rename ordinary uses of the word agent or historical decision records.
+
+Update `codemap.md` with the Persona Workspaces module, its owned `extensions/persona-workspaces/**` files and registry dependency, and Subagents' payload/construction responsibility. Preserve unrelated codemap entries.
+
+**Verify:** `rg -n 'agents\[\]\.agent|agent field|agent parameter|`agent` field' skills agents extensions/subagents/session-owner.ts` reports no obsolete public-parameter guidance. Existing discovery/persistence tests remain green, and inspection confirms the tool advertises `persona` while old persistence records still restore.
+**Status:** not started
+
+### Step 8: Verify the integrated behavior
+
+Run `npx vitest run extensions/persona-workspaces extensions/subagents` and then the repository test suite with `npx vitest run`. Do not build, compile, or type-check this repository. Resolve implementation failures against the architecture, keeping the new test files unchanged except for the explicitly adjudicated obsolete semantics in Interpretation note 8; record any such exception precisely rather than silently weakening assertions. Run `git diff --check` and review the diff for unrelated changes.
+
+Confirm the complete data flow by inspection: the active workspace alone supplies capability declarations; the spawned payload supplies prompt fallback/override identity only; explicit model arguments beat pins; normal baseline survives undeclared fields; every replacement child manager is marked before handler dispatch; restored capabilities re-resolve without resetting model/thinking; fresh sessions announce once and resume/reload remain silent. Root skill filtering must not claim to unload slash commands.
+
+**Verify:** Both targeted and full test runs pass, `git diff --check` is clean, and every implementation step above has a recorded verification result before being marked done.
+**Status:** not started
