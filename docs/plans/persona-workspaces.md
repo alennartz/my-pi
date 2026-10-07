@@ -74,7 +74,7 @@ if (workspace) {
 
 **4. Front-matter binding** — precedence per field: workspace declaration > spawn-time binding (named agent) > pi default.
 
-- `model` — resolved through the existing tier resolution (`resolveModelRef` / `stripThinkingSuffix`, DR-038 vocabulary) and applied via `pi.setModel(...)` once at `session_start` when `reason !== "resume"` (`startup` and `fork` bind; a resume keeps whatever the user switched to mid-session). After boot the persona stays out of the way — a user `/model` override is never slapped back.
+- `model` — resolved through the existing tier resolution (`resolveModelRef` / `stripThinkingSuffix`, DR-038 vocabulary) and applied via `pi.setModel(...)` once at `session_start`. Bind/announce set: `startup`, `new`, `fork` (a `/new` session in the workspace must not take over silently); `resume` and `reload` do **not** rebind — the user's mid-session choice stands ("a `/model` override is never slapped back").
 - `tools` — applied at `session_start` the same way (normalization shared with the child-side `resolveChildToolPolicy` semantics), same "bind once, then yield to the user" rule. In a subagent child with a workspace override, the workspace `tools` replaces the named agent's spawn-time tool policy.
 - `skills` — applied per run as a filter on `options.skills`: only listed skills are declared to the model. Documented limitation (root sessions only): unlisted skills' slash commands remain loaded — extensions can add skills at discovery but not subtract them, and the ResourceLoader's skills override is unreachable from an extension (DR-029's known consequence). Child sessions keep true construction-time filtering via `skillPaths`.
 - Fields absent from the front matter simply don't bind; the next level of precedence stands.
@@ -160,8 +160,10 @@ These tests encode judgment calls where the plan left room; flag any that misrea
 
 1. `parsePersonaDeclaration` takes a second `sourcePath` parameter — the listed one-argument signature cannot produce the required `sourcePath` field of `PersonaDeclaration`.
 2. `kind: persona` without a non-empty `name` is not a persona (`undefined`, file left alone) — `name` is required by the declared type and fabricating one invents requirements.
-3. Bind/announce set: `startup`, `new`, `fork` bind and boot-announce (a `/new` session in the workspace must not take over silently). `reload` is deliberately **untested**: the plan's literal `reason !== "resume"` rule would rebind and slap back a user's `/model` override, conflicting with "a user `/model` override is never slapped back". Needs adjudication before implementation.
+3. Bind/announce set: `startup`, `new`, `fork` bind and boot-announce (a `/new` session in the workspace must not take over silently). **Adjudicated:** `reload` does not rebind or announce — it behaves like `resume`. The plan's literal `reason !== "resume"` rule would have rebound and slapped back a user's `/model` override, conflicting with "a user `/model` override is never slapped back"; the anti-slap-back rule is the governing intent (confirmed by the user at architect time).
 4. Tools binding reuses `resolveChildToolPolicy({ kind: "persona", tools })` exactly (drops `ask_user`, dedupes, appends `respond`) — "normalization shared with the child-side resolveChildToolPolicy semantics" read as exact reuse, root sessions included.
 5. Tier-config plumbing assumptions: `model: <tier>` resolves via `loadTierConfig` (global `<agentDir>/model-tiers.json` + trusted `<cwd>/.pi/model-tiers.json`, the session-owner pattern); the resolved ref matches `ctx.modelRegistry.getAvailable()` on `id` or `provider/id` (the `/fmodel` pattern).
 6. In the spawned-plus-workspace case the single `before_agent_start` `message` slot cannot carry both a boot and an override notice; tests assert only that the visible notice names both the winning persona and the replaced spawned agent.
 7. No boot-notice assertion for spawned-only children: `PersonaPayload` carries no `sourcePath`, so the boot-notice text spec is workspace-shaped.
+
+**Review status:** skipped — test-review bypassed by skip decision
