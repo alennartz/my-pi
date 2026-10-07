@@ -23,9 +23,29 @@ function getRegistry(): WeakSet<object> {
 	return created;
 }
 
-/** Mark a session manager as hosting a subagent child session. */
-export function markSubagentChildSession(sessionManager: object): void {
+/**
+ * Persona payload from a named agent definition, recorded on the child's
+ * session manager at spawn time so extensions can see which specialist body
+ * the orchestrator deployed (deliberately not persisted — a restored or
+ * re-resurrected child is re-marked with a re-resolved payload).
+ */
+export type PersonaPayload = { name: string; body: string };
+
+/**
+ * Mark a session manager as hosting a subagent child session, optionally
+ * recording the spawn-declared persona payload.
+ */
+export function markSubagentChildSession(sessionManager: object, payload?: PersonaPayload): void {
 	getRegistry().add(sessionManager);
+}
+
+/**
+ * Return the persona payload the spawn path recorded for this child session,
+ * if any. Undefined outside subagent children and for children spawned
+ * without a named agent definition.
+ */
+export function getSubagentPersona(sessionManager: object): PersonaPayload | undefined {
+	throw new Error("not implemented");
 }
 
 /** Whether this session manager hosts a subagent child session. */

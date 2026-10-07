@@ -1,0 +1,8 @@
+{
+  "name": "persona-workspaces",
+  "version": "1.0.0",
+  "description": "Interactive specialist workspaces — AGENTS.md kind: persona initializes the root session and replaces pi's persona",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

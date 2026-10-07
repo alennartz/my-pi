@@ -86,3 +86,82 @@ if (workspace) {
 - Each notice has `customType: "persona-notice"` with a registered message renderer for clean TUI display; text content carries the same information for unrendering UIs. Notices are emitted at most once per condition per session instance; on resume the persisted transcript already contains them, so nothing re-fires.
 
 **Default children and forks are covered by the same rules:** any session whose cwd is a persona workspace wears the persona (root sessions, default children, named children, forks that inherit the cwd per DR-034); a session whose cwd leaves the workspace leaves the persona behind.
+
+## Tests
+
+**Pre-test-write commit:** `7304437c39a31c371c041d23d093f8a1fbdf6d0f`
+
+### Interface Files
+
+- `extensions/persona-workspaces/declaration.ts` — `PersonaDeclaration` data shape plus `parsePersonaDeclaration` / `loadWorkspacePersona` signatures (bodies throw `"not implemented"`).
+- `extensions/persona-workspaces/index.ts` — extension factory registering one `session_start` handler (front-matter binding), one `before_agent_start` handler (prompt binding + notices), and the `persona-notice` message renderer registration (renderer body is a stub). Handler bodies throw `"not implemented"`.
+- `extensions/persona-workspaces/package.json` — pi extension manifest.
+- `extensions/subagents/child-session-marker.ts` — extended: `PersonaPayload` type, optional payload parameter on `markSubagentChildSession` (existing marker semantics unchanged), `getSubagentPersona` stub that throws `"not implemented"`.
+
+### Test Files
+
+- `extensions/persona-workspaces/declaration.test.ts` — persona declaration parsing and strict cwd-only loading.
+- `extensions/persona-workspaces/index.test.ts` — handler-level behavior via a fake pi/ctx: prompt binding, precedence, takeover notices, skills filter, session-start front-matter binding.
+- `extensions/subagents/child-session-marker.test.ts` — extended with the spawn-declared persona payload surface (4 new tests).
+
+### Behaviors Covered
+
+#### Workspace persona declaration (`declaration.ts`)
+
+- Parses a full `kind: persona` declaration: name, description, comma-separated `tools`, raw `model` ref (including a `:<level>` suffix), comma-separated `skills`, markdown body, and the declaring file's absolute `sourcePath`.
+- The markdown below the front matter is the persona body (preamble), preserved whole.
+- Optional front-matter fields stay absent when omitted.
+- Content without front matter, a plain project AGENTS.md, and agent-shaped front matter without `kind: persona` are all not personas — returned as `undefined` and left entirely alone.
+- Unknown `kind` values are silently ignored (never an error, never a persona); the marker match is exact (`kind: Persona` is not a persona).
+- A `kind: persona` marker without a non-empty `name` yields `undefined` (see interpretation notes).
+- `loadWorkspacePersona` reads only `<cwd>/AGENTS.md`: returns the declaration with `sourcePath` set; missing file → `undefined`; no ancestor walk; no subdirectory recursion; a non-persona cwd file is left alone.
+
+#### Prompt binding (persona-workspaces `before_agent_start`)
+
+- A workspace persona's body replaces the preamble via `systemPromptOptions.customPrompt`, every run.
+- The workspace's own AGENTS.md is removed from `contextFiles` so pi cannot append it twice; other context files are kept.
+- Mid-session edits to the workspace AGENTS.md take effect at the next run.
+- An explicit `--system-prompt` (pre-populated `customPrompt`) outranks the directory: the persona module mutates nothing and emits nothing.
+- A plain session (no workspace declaration, no spawned payload) is untouched: no prompt change, no context-file change, no skills change, no notice.
+- A spawned agent's definition binds as the preamble in a subagent child without a workspace declaration.
+- When both exist, the workspace declaration wins over the spawned payload; the returned notice names both the winning persona and the replaced spawned agent.
+
+#### Takeover notices
+
+- The boot notice is a `customType: "persona-notice"` message with `display: true`, naming the persona and its source file.
+- Notices are emitted at most once per condition per session instance (the harness simulates pi ingesting the returned message into the transcript between runs).
+- Fresh session instances (`startup`, `new`, `fork`) bind and announce the takeover.
+- A resumed session whose transcript already contains a persona notice re-fires nothing, while prompt binding still applies on each run.
+
+#### Skills filter (persona-workspaces `before_agent_start`)
+
+- When the declaration lists `skills`, only the listed skills remain in `systemPromptOptions.skills`.
+- When the declaration lists none, the skill list is untouched.
+
+#### Front-matter binding (persona-workspaces `session_start`)
+
+- The declared `model` binds once at session bind time (`startup`, `new`, `fork`) via `pi.setModel` against an available model matching the ref.
+- A `:<level>` suffix on the model ref also binds the thinking level.
+- A tier name resolves through the model-tiers config to the configured concrete model.
+- The declared `tools` bind via `pi.setActiveTools` with exactly the normalization of `resolveChildToolPolicy({ kind: "persona", tools })` (the shared child-side semantics).
+- On `resume`, neither model nor tools are rebound — the user's mid-session choice stands.
+- Front matter without `model`/`tools` binds nothing.
+
+#### Child-session persona registry (subagents)
+
+- `getSubagentPersona` returns the payload recorded at mark time.
+- Children marked without a payload and unmarked session managers yield `undefined`.
+- Payloads do not leak between session managers.
+- Existing marker semantics (`markSubagentChildSession` / `isSubagentChildSession`) are unchanged (pre-existing tests stay green).
+
+### Interpretation notes (for test-review)
+
+These tests encode judgment calls where the plan left room; flag any that misread the architecture:
+
+1. `parsePersonaDeclaration` takes a second `sourcePath` parameter — the listed one-argument signature cannot produce the required `sourcePath` field of `PersonaDeclaration`.
+2. `kind: persona` without a non-empty `name` is not a persona (`undefined`, file left alone) — `name` is required by the declared type and fabricating one invents requirements.
+3. Bind/announce set: `startup`, `new`, `fork` bind and boot-announce (a `/new` session in the workspace must not take over silently). `reload` is deliberately **untested**: the plan's literal `reason !== "resume"` rule would rebind and slap back a user's `/model` override, conflicting with "a user `/model` override is never slapped back". Needs adjudication before implementation.
+4. Tools binding reuses `resolveChildToolPolicy({ kind: "persona", tools })` exactly (drops `ask_user`, dedupes, appends `respond`) — "normalization shared with the child-side resolveChildToolPolicy semantics" read as exact reuse, root sessions included.
+5. Tier-config plumbing assumptions: `model: <tier>` resolves via `loadTierConfig` (global `<agentDir>/model-tiers.json` + trusted `<cwd>/.pi/model-tiers.json`, the session-owner pattern); the resolved ref matches `ctx.modelRegistry.getAvailable()` on `id` or `provider/id` (the `/fmodel` pattern).
+6. In the spawned-plus-workspace case the single `before_agent_start` `message` slot cannot carry both a boot and an override notice; tests assert only that the visible notice names both the winning persona and the replaced spawned agent.
+7. No boot-notice assertion for spawned-only children: `PersonaPayload` carries no `sourcePath`, so the boot-notice text spec is workspace-shaped.
