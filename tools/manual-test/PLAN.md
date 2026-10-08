@@ -137,8 +137,10 @@ the front matter binds `model` (with `:<level>` thinking suffix), `tools`
 (exact `resolveChildToolPolicy` normalization), and `skills` (per-run list
 filter). Precedence and resilience paths: an explicit `--system-prompt`
 outranks the directory; plain/unknown-`kind` AGENTS.md files are left alone;
-mid-session edits apply next run; a resume never rebinds user choices and
-never re-announces.
+mid-session edits apply next run; the persona is authoritative at session
+boundaries — reopening a session re-applies the declaration's model/thinking/
+tools over the user's mid-session choices, `reload` never rebinds, and
+resume/reload never re-announce (announcements are fresh-instance-gated).
 
 **Why:** This is the topic journey of persona workspaces — "cd into a
 directory, launch pi, and the session IS the specialist from the first

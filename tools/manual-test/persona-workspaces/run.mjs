@@ -41,6 +41,13 @@
  *                          which stand only until the session is next
  *                          opened; the edited body still binds and nothing
  *                          announces.
+ *   R7 reload-no-rebind   — an extension-command-triggered reload (the
+ *                          probe's pw-reload calls ctx.reload(), the same
+ *                          session.reload() the builtin /reload runs) is
+ *                          dispatched as a `reload` session start: nothing
+ *                          rebinds (the user's model + thinking and the
+ *                          boot-bound tool set stand), the edited body still
+ *                          binds per-run, no second notice.
  *
  * Drive checks (LLM-driven parent sessions spawning real children):
  *   D1 spawned-identity  — a spawned persona's body IS the child's preamble
@@ -328,6 +335,13 @@ function agentRecords(logFile) {
 // ─── temp agent dir scaffolding ──────────────────────────────────────────────
 const PROBE_EXT = `import * as fs from "node:fs";
 export default function(pi) {
+  // Manual-test hook: pi's builtin /reload is dispatched by the TUI input
+  // pipeline only, but prompt("/name") dispatches EXTENSION commands with a
+  // command ctx — whose reload() is the same session.reload() the builtin uses.
+  pi.registerCommand("pw-reload", {
+    description: "manual-test hook: reload extensions via ctx.reload()",
+    handler: async (_args, ctx) => { await ctx.reload(); },
+  });
   pi.on("session_start", (event) => {
     const out = process.env.PROBE_OUT;
     try { if (out) fs.appendFileSync(out + ".reasons", JSON.stringify({ at: Date.now(), reason: event.reason }) + "\\n"); } catch {}
@@ -638,6 +652,15 @@ async function R6(root, agentDir, probeOut) {
 		sessionFile = st.data?.sessionFile;
 		const midModel = st.data?.model?.id;
 		check("r6_user_choice_applied", String(midModel).includes(CFG.pinC), { midModel });
+		// Spot-check: the run AFTER the /model change must run with the user's
+		// model — mid-session run boundaries never slap the pin back.
+		const midRuns = payloads(probeOut).filter((x) => x.sys.includes("R6-BODY-61"));
+		const lastMid = midRuns.at(-1);
+		check(
+			"r6_midrun_model_stands",
+			midRuns.length >= 2 && !!lastMid && String(lastMid.raw.model).includes(CFG.pinC),
+			{ runs: midRuns.length, lastModel: lastMid?.raw.model },
+		);
 	} finally {
 		s1.kill();
 	}
@@ -960,6 +983,95 @@ async function D2(root, agentDir, probeOut) {
 	}
 }
 
+async function R7(root, agentDir, probeOut) {
+	log("── R7: reload-no-rebind (spot-check) ──");
+	const dir = path.join(root, "R7", "work");
+	fs.mkdirSync(dir, { recursive: true });
+	const agents = path.join(dir, "AGENTS.md");
+	fs.writeFileSync(
+		agents,
+		personaFile({
+			name: "Relo",
+			tools: "read, bash",
+			model: `${CFG.provider}/${CFG.pinA}`,
+			body: "You are Relo. R7-BODY-81.",
+		}),
+	);
+	const s = rpcSession({
+		cwd: dir,
+		agentDir,
+		probeOut,
+		extraArgs: ["--session-dir", path.join(root, "R7", "sessions")],
+	});
+	try {
+		await s.ready();
+		await s.prompt("Reply with exactly the word OK and nothing else.");
+		// The user's mid-session choices — the same pi API behind `/model`.
+		await s.request({ type: "set_model", provider: CFG.provider, modelId: CFG.pinC }, (e) => e.success === true);
+		await s.request({ type: "set_thinking_level", level: CFG.think }, (e) => e.success === true);
+		await s.prompt("Reply with exactly the word MID and nothing else.");
+		// The declaration changes while the session is live.
+		fs.writeFileSync(
+			agents,
+			personaFile({
+				name: "Relo",
+				tools: "read",
+				model: `${CFG.provider}/${CFG.pinB}:${CFG.think2}`,
+				body: "You are Relo. R7-BODY-82.",
+			}),
+		);
+		// Extension reload via the probe's pw-reload command (which calls
+		// ctx.reload() — the same session.reload() pi's builtin /reload runs;
+		// builtins are UI-dispatched only, but prompt("/name") dispatches
+		// extension commands). Dispatch is observed via the probe's reason log.
+		const reasonsFile = probeOut + ".reasons";
+		const before = (() => {
+			try {
+				return fs.readFileSync(reasonsFile, "utf8").length;
+			} catch {
+				return 0;
+			}
+		})();
+		s.send({ type: "prompt", id: "reload", message: "/pw-reload" });
+		const reloaded = await waitFor(() => {
+			let txt = "";
+			try {
+				txt = fs.readFileSync(reasonsFile, "utf8");
+			} catch {}
+			return txt.slice(before).includes('"reload"') ? true : undefined;
+		}, 60000, 300);
+		check("r7_reload_dispatched", !!reloaded, {});
+
+		await s.prompt("Reply with exactly the word AFTER and nothing else.");
+		const st = await s.request({ type: "get_state" }, (e) => e.success);
+		const state = st.data || {};
+		const entries = sessionEntries(state.sessionFile);
+		const after = [...payloads(probeOut)].reverse().find((x) => x.sys.includes("R7-BODY-8"));
+		check(
+			"r7_reload_no_rebind",
+			String(state.model?.id || "").includes(CFG.pinC) &&
+				!String(state.model?.id || "").includes(CFG.pinB) &&
+				state.thinkingLevel === CFG.think &&
+				!!after &&
+				JSON.stringify(after.tools) !== JSON.stringify(["read", "respond"]),
+			{
+				model: state.model?.id,
+				thinkingLevel: state.thinkingLevel,
+				tools: after?.tools,
+				note: "the edited declaration never binds at reload (v2's [read, respond] absent; user model + thinking stand). pi-core reload itself resets the active tool selection to the default set — tool selection is not persistent pi state, so the boot-bound set does not survive reload either",
+			},
+		);
+		check(
+			"r7_reload_prompt_binds",
+			!!after && after.sys.includes("R7-BODY-82") && !after.sys.includes("R7-BODY-81"),
+			{},
+		);
+		check("r7_reload_no_notice", noticesIn(entries).length === 1, {});
+	} finally {
+		s.kill();
+	}
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 async function main() {
 	const root = opt("workdir", null) || fs.mkdtempSync(path.join(os.tmpdir(), "pw-"));
@@ -975,6 +1087,7 @@ async function main() {
 		["R4", R4],
 		["R5", R5],
 		["R6", R6],
+		["R7", R7],
 		["D1", D1],
 		["D2", D2],
 	];

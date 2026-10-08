@@ -42,6 +42,12 @@ Root checks (fresh `pi --mode rpc` sessions; R5/R6 use two):
   session boundary: the edited declaration's model (with its `:<level>`
   thinking suffix) and tools rebind over the user's choices, the edited body
   still binds (prompt binding is per-run), and nothing announces.
+- **R7 reload-no-rebind** — an extension-command-triggered reload (the
+  probe's `pw-reload` calls `ctx.reload()`, the same `session.reload()` the
+  builtin `/reload` runs) is dispatched as a `reload` session start: the
+  edited declaration never binds (user model + thinking stand), the edited
+  body still binds per-run, no second notice. pi-core reload itself resets
+  the active tool selection to the default set.
 
 Drive checks (LLM-driven parent sessions spawning real children):
 
@@ -105,4 +111,6 @@ resources). Limitations: drives are headless (`--mode rpc`) so the
 `persona-notice` TUI renderer chrome is not exercised (the notice message
 itself is); the D-drives ask a real LLM for a precise tool-call sequence, so
 all oracles are structural (probe payloads, session JSONL, persistence
-files), never narration.
+files), never narration. Reload is driven through the probe's `pw-reload`
+extension command (pi's builtin `/reload` is UI-pipeline-dispatched only;
+`prompt("/name")` dispatches extension commands).

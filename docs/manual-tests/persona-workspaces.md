@@ -64,13 +64,23 @@ driven parent sessions that spawn real children.
 - **T9 Mid-session edits take effect next run** (R5, RPC, one session
   instance): editing the workspace AGENTS.md body changes the next run's
   preamble; the takeover notice is not re-emitted.
-- **T10 Resume never slaps back** (R6, RPC + resume): a tier-name `model`
-  pin binds through model-tiers.json; after a user model + thinking change
-  mid-session, a resume in the workspace (whose `model`/`tools` front matter
-  was edited in between) keeps the user's model and thinking, never applies
-  the edited declaration's tool set (pi itself does not persist active-tool
-  selection across process restarts — see *Open Issues*), still binds the
-  *edited* body (prompt binding is per-run), and emits no second notice.
+- **T10 Resume rebinds — persona-authoritative at session boundaries**
+  (R6, RPC + resume; re-verified live after the ruling in `916add2`): a
+  tier-name `model` pin binds through model-tiers.json; a user model +
+  thinking change mid-session stands through run boundaries (spot-check: the
+  run after `/model` executes with the user's model — no slap-back at run
+  boundaries), but a resume in the workspace (whose `model`/`tools` front
+  matter was edited in between) re-applies the edited declaration — model
+  (with its `:<level>` thinking suffix) and tool whitelist (exact
+  `resolveChildToolPolicy` normalization) — over the user's choices; the
+  *edited* body binds per-run and the resume announces nothing.
+- **T13 Reload never rebinds** (R7, RPC + probe `pw-reload` command): an
+  extension reload (`ctx.reload()` = `session.reload()`, the same path the
+  builtin `/reload` runs) dispatched mid-session after an AGENTS.md edit
+  applies no declaration fields — the user's model + thinking stand — while
+  the edited body still binds per-run and no second notice fires. pi-core
+  reload resets the active tool selection to pi's default set (see *Open
+  Issues*).
 - **T11 Resurrect re-resolves capability gates** (D2): after teardown, the
   workspace file's `model`/`tools` are edited; the resurrected child's tool
   policy comes from the edited file (gates re-resolved) while its persisted
@@ -117,17 +127,20 @@ for the `persona` parameter and body-as-preamble semantics.
   precise sequence of tool calls; instruction drift is possible. All oracles
   are structural (probe payloads, session JSONL, persistence files), never
   narration, so drift shows up as a retry, not a false pass.
-- **`reload` (extension reload) is not driven** — only `startup`/`new`/`fork`
-  vs `resume`. The reload no-slap-back path is covered by unit tests only.
+- **Reload is driven via a probe hook, not the builtin `/reload`** — pi's
+  builtin commands are dispatched by the TUI input pipeline only; R7 triggers
+  the same `session.reload()` through the probe's `pw-reload` extension
+  command (`prompt("/name")` dispatches extension commands).
 - **Premium-tier persona models are structurally unexercisable today.** The
   gateway's weekly premium allowance is spent (402 on any premium model), so
   all fixture pins use standard-tier models. A persona pinning a premium
   model (e.g. `claude-opus-5-5`) and its failure surfacing cannot be covered
   by this run's harness.
-- **Pi does not persist active-tool selection across process restarts**
-  (model/thinking are persisted; the tool allowlist is not). The "tools the
-  user kept" dimension of no-slap-back is therefore weakened to "the
-  declaration never rebinds" — see *Open Issues*.
+- **Pi does not persist active-tool selection** — not across process restarts
+  and not across reloads (model/thinking are persisted). The declared
+  whitelist is observable at binding and at the session-start rebind that
+  restores it (post-ruling); after a reload, pi's default set runs until the
+  session is next opened — see *Open Issues*.
 - **Single-user, sequential sessions** — no concurrency, compaction, or
   cross-session interaction is exercised.
 - R6's "user's mid-session choice" is applied through RPC `set_model` /
@@ -140,10 +153,13 @@ files), so no escalation was needed before executing.
 
 ## Results
 
-Record run: `node tools/manual-test/persona-workspaces/run.mjs --keep
---workdir /tmp/pw-record` → **42/42 checks PASS** (verdict JSON kept). Smoke
-tools run separately below. Full unit suite after the inline fix:
-`npx vitest run` → 816/816 green.
+Record run (live re-verification after the persona-authoritative ruling,
+`916add2`): `node tools/manual-test/persona-workspaces/run.mjs --keep
+--workdir /tmp/pw-record2` → **47/47 checks PASS** (verdict JSON kept; the
+prior 42-check run is superseded). Full unit suite at this commit:
+`npx vitest run` → 818/818 green. The record run re-exercised J1–J3 live
+(D1/D2 green); J6/J7 drivers and their code paths are untouched by the
+ruling and remain at the green runs recorded below.
 
 ### Smoke Suite
 
@@ -218,18 +234,28 @@ tools run separately below. Full unit suite after the inline fix:
   rides as context, no notice).
 - **T9 Mid-session edits apply next run** (R5) — pass: v1 body bound on run 1,
   v2 on run 2 of the same session instance, exactly one notice.
-- **T10 Resume never slaps back** (R6) — **fixed-inline** then pass. First run
-  reproduced a real bug: `pi --session <existing>` re-applied the edited
-  declaration's model and tools over the user's in-session choices. Fix
-  note (for cleanup's DR consideration): pi dispatches `session_start` reason
-  `startup` for every initial runtime — including CLI-opened existing
-  sessions (`resume` is only dispatched for in-process switches) — so
-  `extensions/persona-workspaces/index.ts` now derives freshness per session
-  instance (`new`/`fork` always bind; `startup` binds only for an empty
-  transcript or a CLI fork, which records `parentSession` in its header;
-  `resume`/`reload` never bind or announce). After the fix: user's model +
-  thinking survive, the edited tools never apply, the edited body still binds
-  per-run, no second notice. The 36 immutable unit tests stayed green.
+- **T10 Resume rebinds** (R6) — **pass (re-verified)** after the ruling in
+  `916add2`. History for the record: the first run exposed that pi dispatches
+  `session_start` reason `startup` for every initial runtime — including
+  `pi --session <existing>` — which rebound at resume against the then-
+  governing anti-slap-back intent (fixed inline in `7415760` with
+  fresh-session-instance detection); the follow-up user ruling then made the
+  persona authoritative at session boundaries, implemented in `916add2`,
+  re-scoping binding to "every session start but `reload`" and keeping the
+  fresh-instance derivation as the announcement gate only. Live at the record
+  run: the edited declaration's model (`gpt-6.1-sol`) and `:high` thinking
+  rebind over the user's `claude-haiku-5-5`/`medium`, the edited whitelist
+  (`[read, respond]`) rebinds, the edited body binds per-run, zero second
+  notices; the mid-session spot-check confirms the run after `/model`
+  executed with the user's model. Coherence: the boundary semantics read as
+  the ruling intends — **looks coherent**. (38 unit tests green.)
+- **T13 Reload never rebinds** (R7) — pass: reload dispatched live (probe
+  reason log records `reload`), no declaration field applied (user model +
+  thinking stand, the edited `[read, respond]` whitelist absent), edited body
+  binds per-run, no second notice. Coherence: **looks coherent**. New
+  observation (→ *Open Issues*): pi-core reload resets active tools to pi's
+  default set — the boot-bound whitelist survives neither restart nor
+  reload; only the session-start rebind restores it.
 - **T11 Resurrect re-resolves capability gates** (D2) — pass: with the
   workspace file edited while torn down, the resurrected child's tool policy
   came from the edited file (`[bash, read, respond]`) while its persisted
@@ -244,7 +270,11 @@ tools run separately below. Full unit suite after the inline fix:
 
 - **Added J8** (persona workspace takeover — the directory IS the
   specialist): the topic's root journey, driver `persona-workspaces/run.mjs`
-  R1–R6.
+  R1–R7.
+- **Modified J8** (post-ruling wording): resume is persona-authoritative —
+  reopening a session re-applies the declaration's model/thinking/tools over
+  mid-session choices, `reload` never rebinds, and announcements stay
+  fresh-instance-gated (resume/reload silent).
 - **Added J9** (spawned persona identity — body as preamble, workspace
   override): the topic's spawn journey, driver `persona-workspaces/run.mjs`
   D1–D2.
@@ -258,15 +288,15 @@ tools run separately below. Full unit suite after the inline fix:
 
 ## Open Issues
 
-- **Persona tool allowlist evaporates across process restarts.** pi persists
-  model/thinking in the session but not the active-tool selection, so a
-  resumed session runs pi's default tool set — the persona's declared `tools`
-  is neither kept nor re-applied (re-applying would conflict with the
-  anti-slap-back rule as written). User decision: accept default-set-on-
-  resume (current), or extend the contract so a persona's tool allowlist is
-  construction-like session state that survives restarts.
-- **`reload` (extension reload) no-slap-back is unit-tested only** — no
-  harness drives pi's extension-reload dispatch.
+- **pi drops the active-tool selection at reload** (restored at the next
+  open by the session-start rebind, per the persona-authoritative ruling):
+  after an extension reload the session runs pi's default tool set until the
+  session is reopened. If the declared whitelist should survive reloads too,
+  that needs pi-level tool-state persistence or a ruled reload-rebind — user
+  decision.
+- **`reload` no-rebind is now live-verified** (T13/R7) — closed this
+  re-verification; retained here only as history: it was previously
+  unit-tested only.
 - **TUI chrome untested**: the `persona-notice` renderer (Box/Text layout,
   theme colors, narrow widths) and its pimote panel counterpart are
   structurally invisible to headless drivers; the notice message content is
@@ -274,8 +304,9 @@ tools run separately below. Full unit suite after the inline fix:
 - **pi dispatch quirk worth a DR at cleanup**: `session_start` reason
   `startup` covers CLI-opened *existing* sessions (`resume` is only for
   in-process switches). Any extension distinguishing fresh-vs-resumed by the
-  reason set alone has the same trap; this run's fix (fresh-session-instance
-  detection via transcript/`parentSession`) is the local remedy.
+  reason set alone has the same trap; the fresh-session-instance detection
+  (transcript/`parentSession`, introduced in `7415760` and retained as the
+  announcement gate under `916add2`) is the local remedy.
 - **Premium-tier pins unexercised** (harness limitation above): with the
   weekly premium allowance restored, add a premium-pinned persona case to
   `persona-workspaces/run.mjs`.
