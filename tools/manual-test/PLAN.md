@@ -20,10 +20,11 @@ and IS the test harness.
 
 ### J1: Subagent lifecycle — spawn, message, teardown
 
-**What:** Spawn one or more child agents via the `subagent` tool, exchange
-messages (fire-and-forget and expect-response), tear them down individually
-or in bulk via `teardown`. Verify XML completion reports surface in the
-parent's transcript with the documented shape.
+**What:** Spawn one or more child agents via the `subagent` tool (optionally
+selecting a `persona` — a discovered agent definition whose body becomes the
+child's preamble), exchange messages (fire-and-forget and expect-response),
+tear them down individually or in bulk via `teardown`. Verify XML completion
+reports surface in the parent's transcript with the documented shape.
 
 **Why:** Subagents are the foundation of every workflow phase that delegates
 work (architecting, impl-planning, implementing, code-review, autoflow).
@@ -36,9 +37,9 @@ parent pi agent. (See `tools/manual-test/README.md` → "direct tool driver".)
 
 **What:** After teardown, pass the `session_id` surfaced in the teardown
 report to the `resurrect` tool. Verify the resurrected agent has access to
-its prior conversation, has the same tool restrictions as its original
-persona, and that the four documented error paths return the expected
-messages.
+its prior conversation, has its capability gates re-resolved from the active
+persona file (tools/skills) while its persisted model survives, and that the
+four documented error paths return the expected messages.
 
 **Why:** Recovery from premature teardown is the motivating feature of
 DR-aligned subagent persistence. If resurrection silently widens tool
@@ -126,3 +127,40 @@ with no visible error — a silent, expensive regression.
 `pi --mode rpc` under a controlled `PI_CODING_AGENT_DIR`, capturing the
 assembled provider payload via a probe extension and driving live tier/raw
 spawns and `list_models`. (See `tools/manual-test/README.md`.)
+
+### J8: Persona workspace takeover — the directory IS the specialist
+
+**What:** Boot pi in a directory whose `AGENTS.md` has `kind: persona` front
+matter. The persona body replaces the system-prompt preamble wholesale, one
+transcript-visible takeover notice names the persona and its source file, and
+the front matter binds `model` (with `:<level>` thinking suffix), `tools`
+(exact `resolveChildToolPolicy` normalization), and `skills` (per-run list
+filter). Precedence and resilience paths: an explicit `--system-prompt`
+outranks the directory; plain/unknown-`kind` AGENTS.md files are left alone;
+mid-session edits apply next run; a resume never rebinds user choices and
+never re-announces.
+
+**Why:** This is the topic journey of persona workspaces — "cd into a
+directory, launch pi, and the session IS the specialist from the first
+message." Silent mis-takeover or a slapped-back model/tools choice would
+either hijack a general session or defeat a specialist workspace.
+
+**Driver:** `tools/manual-test/persona-workspaces/run.mjs` (checks R1–R6).
+
+### J9: Spawned persona identity — body as preamble, workspace override
+
+**What:** Spawn subagents via `persona:` — the definition body becomes the
+child's preamble (never stacked under the generic persona), with a name-only
+boot notice. A named persona spawned into a persona workspace loses
+wholesale to the workspace (body + capability fields + model pin) with an
+override notice naming both. A persona's `model` pin beats an explicit
+spawn `model` (gap-fill only); children load project resources from their
+arbitrary cwd; forks of a persona-workspace parent wear the workspace
+persona.
+
+**Why:** The spawn path is how specialists are deployed across every
+workflow phase; the old addendum-stacking caused identity confusion this
+journey eliminates. A silent workspace/persona merge would leave the
+orchestrator believing it deployed one identity when another is active.
+
+**Driver:** `tools/manual-test/persona-workspaces/run.mjs` (checks D1–D2).

@@ -54,6 +54,10 @@ Flags:
 
 - `pi` on PATH with this repo loaded as a package (automatic when `alenna-pi` is
   the active pi package).
+- `PI_CODING_AGENT_DIR` may be passed to point the run at a controlled agent
+  dir (the harness forwards it) — this makes the **working tree** under test
+  instead of the ambient installed package (used this way in the
+  persona-workspaces manual-test run).
 - **Scrubs inherited coding-agent markers** from the spawned parent environment
   so the harness always exercises a top-level resume flow when invoked from
   another pi session. Child role is supplied by the in-process extension scope,
