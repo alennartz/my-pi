@@ -41,13 +41,16 @@
  *                          which stand only until the session is next
  *                          opened; the edited body still binds and nothing
  *                          announces.
- *   R7 reload-no-rebind   — an extension-command-triggered reload (the
+ *   R7 reload-rebinds     — an extension-command-triggered reload (the
  *                          probe's pw-reload calls ctx.reload(), the same
  *                          session.reload() the builtin /reload runs) is
- *                          dispatched as a `reload` session start: nothing
- *                          rebinds (the user's model + thinking and the
- *                          boot-bound tool set stand), the edited body still
- *                          binds per-run, no second notice.
+ *                          dispatched as a `reload` session start — a
+ *                          continuation boundary, the same thing as a
+ *                          resume: the edited declaration re-applies in
+ *                          full (model with `:<level>` thinking + tools
+ *                          whitelist) over the user's mid-session choices,
+ *                          the edited body still binds per-run, no second
+ *                          notice.
  *
  * Drive checks (LLM-driven parent sessions spawning real children):
  *   D1 spawned-identity  — a spawned persona's body IS the child's preamble
@@ -948,7 +951,10 @@ async function D2(root, agentDir, probeOut) {
 		// Fork children wear the inherited workspace persona wholesale: the
 		// construction path binds the workspace declaration's model pin + tools,
 		// and the per-run prompt binding supplies its body. (Fork children carry
-		// no <subagent_identity> addendum — that is spawn-path-only.)
+		// no <subagent_identity> addendum — that is spawn-path-only.) Fork is a
+		// silent continuation: the child's copied transcript already carries the
+		// parent's takeover notice, so exactly one notice (the inherited one) may
+		// be visible — a re-announcing fork would show two.
 		const forkPayload = payloads(probeOut).find(
 			(x) =>
 				x.sys.includes("WS-BODY-44") &&
@@ -967,7 +973,8 @@ async function D2(root, agentDir, probeOut) {
 				forkNotices[0].details?.condition === "boot" &&
 				forkNotices[0].details?.persona === "wslead" &&
 				!!forkNotices[0].details?.sourcePath,
-			{ tools: forkPayload?.tools, model: forkPayload?.raw.model, notices: forkNotices.map((n) => n.details) },
+			{ tools: forkPayload?.tools, model: forkPayload?.raw.model, notices: forkNotices.map((n) => n.details),
+				note: "silent continuation: the single notice is the parent's inherited takeover notice (fork copies the branch); the fork child announces nothing new" },
 		);
 
 		const resurrects = s.toolResults("resurrect");
@@ -984,7 +991,7 @@ async function D2(root, agentDir, probeOut) {
 }
 
 async function R7(root, agentDir, probeOut) {
-	log("── R7: reload-no-rebind (spot-check) ──");
+	log("── R7: reload-rebinds (continuation boundary) ──");
 	const dir = path.join(root, "R7", "work");
 	fs.mkdirSync(dir, { recursive: true });
 	const agents = path.join(dir, "AGENTS.md");
@@ -1048,17 +1055,17 @@ async function R7(root, agentDir, probeOut) {
 		const entries = sessionEntries(state.sessionFile);
 		const after = [...payloads(probeOut)].reverse().find((x) => x.sys.includes("R7-BODY-8"));
 		check(
-			"r7_reload_no_rebind",
-			String(state.model?.id || "").includes(CFG.pinC) &&
-				!String(state.model?.id || "").includes(CFG.pinB) &&
-				state.thinkingLevel === CFG.think &&
+			"r7_reload_rebinds",
+			String(state.model?.id || "").includes(CFG.pinB) &&
+				!String(state.model?.id || "").includes(CFG.pinC) &&
+				state.thinkingLevel === CFG.think2 &&
 				!!after &&
-				JSON.stringify(after.tools) !== JSON.stringify(["read", "respond"]),
+				JSON.stringify(after.tools) === JSON.stringify(["read", "respond"]),
 			{
 				model: state.model?.id,
 				thinkingLevel: state.thinkingLevel,
 				tools: after?.tools,
-				note: "the edited declaration never binds at reload (v2's [read, respond] absent; user model + thinking stand). pi-core reload itself resets the active tool selection to the default set — tool selection is not persistent pi state, so the boot-bound set does not survive reload either",
+				note: "reload is a continuation boundary: the edited declaration re-applies in full (model + :<level> thinking + tool whitelist) over the user's mid-session choices; pi-core reload resets active tool selection to defaults, and the rebind restores the declared set",
 			},
 		);
 		check(

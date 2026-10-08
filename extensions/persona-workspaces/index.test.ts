@@ -248,8 +248,8 @@ describe("takeover notices", () => {
 		expect(second?.message).toBeUndefined();
 	});
 
-	it("binds and announces on fresh session instances (startup, new, fork)", async () => {
-		for (const reason of ["startup", "new", "fork"]) {
+	it("binds and announces on genuine fresh starts (startup, new)", async () => {
+		for (const reason of ["startup", "new"]) {
 			const s = setup();
 			const cwd = personaWorkspace();
 			const transcript = transcriptSessionManager();
@@ -374,32 +374,44 @@ describe("front-matter binding at session start", () => {
 		);
 	});
 
-	it("rebinds model and tools on resume — persona-authoritative at session boundaries", async () => {
-		const s = setup();
-		const cwd = workspaceWith(
-			["kind: persona", "name: workspace-lead", "model: work-model", "tools: read, bash"],
-			WORKSPACE_BODY,
-		);
+	it("rebinds model, thinking, and tools at every continuation and stays silent (resume, reload, CLI resume)", async () => {
+		for (const [label, reason] of [
+			["in-process resume", "resume"],
+			["reload", "reload"],
+			["CLI resume (startup over a lived-in transcript)", "startup"],
+		] as const) {
+			const s = setup();
+			const cwd = workspaceWith(
+				["kind: persona", "name: workspace-lead", "model: work-model:high", "tools: read, bash"],
+				WORKSPACE_BODY,
+			);
+			const transcript = transcriptSessionManager();
+			transcript.entries.push({ type: "message", message: { role: "user", content: "earlier turn" } });
+			const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager, models: AVAILABLE_MODELS });
 
-		await s.sessionStart({ type: "session_start", reason: "resume" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+			await s.sessionStart({ type: "session_start", reason }, ctx);
+			const result = await s.beforeAgentStart(agentStartEvent(), ctx);
 
-		expect(s.setModel).toHaveBeenCalledWith(expect.objectContaining({ id: "work-model" }));
-		expect(s.setActiveTools).toHaveBeenCalledWith(
-			resolveChildToolPolicy({ kind: "persona", tools: ["read", "bash"] }).allowedTools,
-		);
+			expect(s.setModel, label).toHaveBeenCalledWith(expect.objectContaining({ id: "work-model" }));
+			expect(s.setThinkingLevel, label).toHaveBeenCalledWith("high");
+			expect(s.setActiveTools, label).toHaveBeenCalledWith(
+				resolveChildToolPolicy({ kind: "persona", tools: ["read", "bash"] }).allowedTools,
+			);
+			expect(result, label).toBeUndefined();
+		}
 	});
 
-	it("rebinds on a CLI-opened resume (startup over a lived-in transcript) but stays silent", async () => {
+	it("carries the persona over silently at fork when the parent's transcript carries the notice", async () => {
 		const s = setup();
 		const cwd = workspaceWith(
 			["kind: persona", "name: workspace-lead", "model: work-model", "tools: read, bash"],
 			WORKSPACE_BODY,
 		);
 		const transcript = transcriptSessionManager();
-		transcript.entries.push({ type: "message", message: { role: "user", content: "earlier turn" } });
+		transcript.ingest({ customType: "persona-notice", content: "Persona takeover: earlier boot notice" });
 		const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager, models: AVAILABLE_MODELS });
 
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctx);
+		await s.sessionStart({ type: "session_start", reason: "fork" }, ctx);
 		const result = await s.beforeAgentStart(agentStartEvent(), ctx);
 
 		expect(s.setModel).toHaveBeenCalledWith(expect.objectContaining({ id: "work-model" }));
@@ -409,17 +421,19 @@ describe("front-matter binding at session start", () => {
 		expect(result).toBeUndefined();
 	});
 
-	it("keeps no-rebind on reload", async () => {
+	it("announces at fork when the persona is new to the lineage", async () => {
 		const s = setup();
-		const cwd = workspaceWith(
-			["kind: persona", "name: workspace-lead", "model: work-model", "tools: read, bash"],
-			WORKSPACE_BODY,
-		);
+		const cwd = personaWorkspace();
+		const transcript = transcriptSessionManager();
+		transcript.entries.push({ type: "message", message: { role: "user", content: "earlier turn" } });
+		const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager });
 
-		await s.sessionStart({ type: "session_start", reason: "reload" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+		await s.sessionStart({ type: "session_start", reason: "fork" }, ctx);
+		const result = (await s.beforeAgentStart(agentStartEvent(), ctx)) as
+			| { message?: { customType?: string } }
+			| undefined;
 
-		expect(s.setModel).not.toHaveBeenCalled();
-		expect(s.setActiveTools).not.toHaveBeenCalled();
+		expect(result?.message?.customType).toBe("persona-notice");
 	});
 
 	it("binds nothing when the front matter declares neither model nor tools", async () => {

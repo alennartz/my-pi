@@ -42,12 +42,15 @@ Root checks (fresh `pi --mode rpc` sessions; R5/R6 use two):
   session boundary: the edited declaration's model (with its `:<level>`
   thinking suffix) and tools rebind over the user's choices, the edited body
   still binds (prompt binding is per-run), and nothing announces.
-- **R7 reload-no-rebind** — an extension-command-triggered reload (the
+- **R7 reload-rebinds** — an extension-command-triggered reload (the
   probe's `pw-reload` calls `ctx.reload()`, the same `session.reload()` the
-  builtin `/reload` runs) is dispatched as a `reload` session start: the
-  edited declaration never binds (user model + thinking stand), the edited
-  body still binds per-run, no second notice. pi-core reload itself resets
-  the active tool selection to the default set.
+  builtin `/reload` runs) is dispatched as a `reload` session start: reload
+  is a continuation boundary (the same thing as a resume), so the edited
+  declaration re-applies in full — model (with its `:<level>` thinking
+  suffix) and tools whitelist — over the user's mid-session choices; the
+  edited body still binds per-run and no second notice fires. pi-core reload
+  resets the active tool selection to the default set; the rebind restores
+  the declared set.
 
 Drive checks (LLM-driven parent sessions spawning real children):
 

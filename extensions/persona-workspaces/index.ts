@@ -9,11 +9,10 @@
  * - `before_agent_start` — prompt binding (persona body replaces the preamble
  *   via `systemPromptOptions.customPrompt`), skills filter, takeover notices.
  * - `session_start` — front-matter binding (model/tools) at every session
- *   start but `reload`: the persona is authoritative at session boundaries,
- *   so CLI resumes (`pi --session <existing>`, dispatched as `startup` over a
- *   lived-in transcript) and in-process resumes alike re-apply the
- *   declaration over any mid-session choices. Mid-session run boundaries
- *   never rebind.
+ *   start: the persona is persistent session config and authoritative at
+ *   every session boundary, so fresh starts and continuations (`resume` and
+ *   `reload` — the same thing — plus `fork`) alike re-apply the declaration
+ *   over any mid-session choices. Mid-session run boundaries never rebind.
  *
  * Persona resolution comes from `declaration.ts`; spawn-declared payloads come
  * from Subagents' child-session registry (`../subagents/child-session-marker.ts`)
@@ -57,11 +56,12 @@ import {
 export const PERSONA_NOTICE_TYPE = "persona-notice";
 
 /**
- * The `session_start` reasons that can mark a fresh session instance — the
- * announcement gate. Binding does not use it: front matter is
- * persona-authoritative at every session start but `reload`.
+ * The `session_start` reasons that re-open an existing conversation and can
+ * never announce (the transcript carries the takeover notice). Binding does
+ * not use this gate: front matter is persona-authoritative at every session
+ * start.
  */
-const FRESH_INSTANCE_REASONS: ReadonlySet<string> = new Set(["startup", "new", "fork"]);
+const CONTINUATION_REASONS: ReadonlySet<string> = new Set(["resume", "reload"]);
 
 type SessionReason = SessionStartEvent["reason"];
 
@@ -96,7 +96,7 @@ type RunPlan = {
 
 /**
  * The only lifecycle state this extension keeps: the latest `session_start`
- * reason and whether it started a fresh session instance, keyed by the
+ * reason and whether it continued an existing conversation, keyed by the
  * SessionManager it was recorded for. Never persisted and never holding
  * declarations or notice flags — it just tells the prompt handler whether
  * this run may announce.
@@ -104,7 +104,7 @@ type RunPlan = {
 type SessionStartState = {
 	manager: object | undefined;
 	reason: SessionReason | undefined;
-	fresh: boolean;
+	continuation: boolean;
 };
 
 export default function personaWorkspaces(pi: ExtensionAPI) {
@@ -117,21 +117,20 @@ export default function personaWorkspaces(pi: ExtensionAPI) {
 		return box;
 	});
 
-	const sessionStart: SessionStartState = { manager: undefined, reason: undefined, fresh: true };
+	const sessionStart: SessionStartState = { manager: undefined, reason: undefined, continuation: false };
 
 	pi.on("session_start", (event, ctx) => {
 		recordSessionStart(
 			sessionStart,
 			ctx.sessionManager,
 			event.reason,
-			isFreshSessionInstance(event.reason, ctx.sessionManager),
+			isContinuation(event.reason, ctx.sessionManager),
 		);
-		// Persona-authoritative at session boundaries: every session start but
-		// `reload` re-applies the declaration's front matter — that covers CLI
-		// resumes (`pi --session <existing>`) and in-process resumes alike, and
-		// a user's mid-session `/model` choice stands only until the session is
-		// next opened. `reload` keeps no-rebind.
-		if (event.reason === "reload") return;
+		// Persona-authoritative at session boundaries: every session start —
+		// fresh or continued — re-applies the declaration's front matter, so a
+		// user's mid-session `/model` choice stands only until the session is
+		// next opened (a continuation's fresh runtime would otherwise reset the
+		// tool whitelist to pi's defaults).
 		// A subagent child's model/tools/skills are construction-set by the
 		// spawn path; binding here would slap that state back.
 		if (getSubagentPersona(ctx.sessionManager) || isSubagentChildSession(ctx.sessionManager)) return;
@@ -145,7 +144,7 @@ export default function personaWorkspaces(pi: ExtensionAPI) {
 			workspace: loadWorkspacePersona(ctx.cwd),
 			spawned: getSubagentPersona(ctx.sessionManager),
 			explicitCustomPrompt: event.systemPromptOptions.customPrompt,
-			freshInstance: recordedFreshInstance(sessionStart, ctx.sessionManager),
+			continuation: recordedContinuation(sessionStart, ctx.sessionManager),
 			transcript: transcriptEntries(ctx.sessionManager),
 		});
 		if (!plan) return undefined;
@@ -165,7 +164,7 @@ function planRunBinding(input: {
 	workspace: PersonaDeclaration | undefined;
 	spawned: PersonaPayload | undefined;
 	explicitCustomPrompt: string | undefined;
-	freshInstance: boolean;
+	continuation: boolean;
 	transcript: readonly unknown[];
 }): RunPlan | undefined {
 	// One active persona per session, all or nothing: the workspace declaration
@@ -183,17 +182,21 @@ function planRunBinding(input: {
 
 /**
  * Compose the takeover notice for this run, or undefined when the run must
- * stay silent: only fresh session instances announce, and each condition
- * announces at most once per session instance — reconstructed from the
- * transcript.
+ * stay silent. Continuations (`resume`, `reload`, CLI resumes) never announce
+ * — the transcript carries the takeover notice. A `fork` continues the
+ * parent's lineage, so it is silent while the inherited transcript carries a
+ * notice and announces only when the persona is genuinely new to the lineage
+ * (a fork acquiring a persona the parent never had is a real takeover) — the
+ * once-per-condition transcript dedup decides. Each condition announces at
+ * most once per session instance.
  */
 function planNotice(input: {
 	workspace: PersonaDeclaration | undefined;
 	spawned: PersonaPayload | undefined;
-	freshInstance: boolean;
+	continuation: boolean;
 	transcript: readonly unknown[];
 }): PersonaNotice | undefined {
-	if (!input.freshInstance) return undefined;
+	if (input.continuation) return undefined;
 	const notice = composeNotice(input.workspace, input.spawned);
 	if (!notice || noticeAlreadyAnnounced(input.transcript, notice.condition)) return undefined;
 	return notice;
@@ -267,24 +270,23 @@ function noticeMessage(notice: PersonaNotice): BeforeAgentStartEventResult["mess
 }
 
 /**
- * Whether a `session_start` started a fresh session instance — one that
- * announces the takeover (binding is persona-authoritative at every session
- * start but `reload` and does not use this gate). `new` and `fork` always
- * announce; `resume` and `reload` never do (the transcript carries the
- * earlier notices). `startup` is ambiguous: pi reports it both for a
- * brand-new session file and for a CLI-opened existing one (`--session`/
- * `--resume`/`--fork` boots all create the initial runtime as `startup`;
- * `resume` is only dispatched for in-process switches). A `startup`
- * announces only when the session has no prior conversation — or is a CLI
- * fork, which records its source as the header's `parentSession` and
- * announces like any other fork.
+ * Whether a `session_start` continues an existing conversation instead of
+ * starting a fresh one. `resume` and `reload` always do — the same thing from
+ * the user's point of view. A `startup` is ambiguous: pi reports it both for
+ * a brand-new session file and for a CLI-opened existing one (`pi --session
+ * <existing>` boots as `startup` over a lived-in transcript; `resume` is only
+ * dispatched for in-process switches) — a lived-in `startup` is a
+ * continuation, while a CLI fork (header `parentSession`) starts a fresh
+ * lineage and lets the inherited transcript decide. Continuations re-apply
+ * the persona in full but never announce; a `fork` announces only when the
+ * persona is new to its lineage (see `planNotice`).
  */
-function isFreshSessionInstance(reason: SessionReason, manager: object): boolean {
-	if (!FRESH_INSTANCE_REASONS.has(reason)) return false;
-	if (reason !== "startup") return true;
+function isContinuation(reason: SessionReason, manager: object): boolean {
+	if (CONTINUATION_REASONS.has(reason)) return true;
+	if (reason !== "startup") return false; // `new`/`fork`: the transcript decides
 	const header = sessionHeader(manager);
-	if (header?.parentSession !== undefined) return true;
-	return !hasConversation(transcriptEntries(manager));
+	if (header?.parentSession !== undefined) return false;
+	return hasConversation(transcriptEntries(manager));
 }
 
 /** Whether a transcript carries prior user/assistant turns (a lived-in session). */
@@ -310,21 +312,21 @@ function recordSessionStart(
 	state: SessionStartState,
 	manager: object,
 	reason: SessionReason,
-	fresh: boolean,
+	continuation: boolean,
 ): void {
 	state.manager = manager;
 	state.reason = reason;
-	state.fresh = fresh;
+	state.continuation = continuation;
 }
 
 /**
- * Whether the session instance recorded for this manager is a fresh
- * (announce-eligible) one, defaulting to fresh when nothing was recorded (real
+ * Whether the session instance recorded for this manager continues an
+ * existing conversation, defaulting to "no" when nothing was recorded (real
  * pi always dispatches `session_start` before the first run, so an unrecorded
- * reason means a fresh session instance, not a resumed one).
+ * reason means a fresh session instance, not a continuation).
  */
-function recordedFreshInstance(state: SessionStartState, manager: object): boolean {
-	return state.manager === manager ? state.fresh : true;
+function recordedContinuation(state: SessionStartState, manager: object): boolean {
+	return state.manager === manager ? state.continuation : false;
 }
 
 /**
@@ -382,7 +384,7 @@ function transcriptEntries(sessionManager: object): readonly unknown[] {
 
 /**
  * Bind the workspace declaration's `model`/`tools` at session bind time —
- * every session start but `reload` (persona-authoritative at session
+ * every session start, fresh or continued (persona-authoritative at session
  * boundaries). Absent fields bind nothing and pi's baseline stands.
  */
 async function bindDeclaredFrontMatter(
