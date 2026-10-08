@@ -374,7 +374,7 @@ describe("front-matter binding at session start", () => {
 		);
 	});
 
-	it("keeps the user's mid-session model choice on resume", async () => {
+	it("rebinds model and tools on resume — persona-authoritative at session boundaries", async () => {
 		const s = setup();
 		const cwd = workspaceWith(
 			["kind: persona", "name: workspace-lead", "model: work-model", "tools: read, bash"],
@@ -382,6 +382,41 @@ describe("front-matter binding at session start", () => {
 		);
 
 		await s.sessionStart({ type: "session_start", reason: "resume" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+
+		expect(s.setModel).toHaveBeenCalledWith(expect.objectContaining({ id: "work-model" }));
+		expect(s.setActiveTools).toHaveBeenCalledWith(
+			resolveChildToolPolicy({ kind: "persona", tools: ["read", "bash"] }).allowedTools,
+		);
+	});
+
+	it("rebinds on a CLI-opened resume (startup over a lived-in transcript) but stays silent", async () => {
+		const s = setup();
+		const cwd = workspaceWith(
+			["kind: persona", "name: workspace-lead", "model: work-model", "tools: read, bash"],
+			WORKSPACE_BODY,
+		);
+		const transcript = transcriptSessionManager();
+		transcript.entries.push({ type: "message", message: { role: "user", content: "earlier turn" } });
+		const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager, models: AVAILABLE_MODELS });
+
+		await s.sessionStart({ type: "session_start", reason: "startup" }, ctx);
+		const result = await s.beforeAgentStart(agentStartEvent(), ctx);
+
+		expect(s.setModel).toHaveBeenCalledWith(expect.objectContaining({ id: "work-model" }));
+		expect(s.setActiveTools).toHaveBeenCalledWith(
+			resolveChildToolPolicy({ kind: "persona", tools: ["read", "bash"] }).allowedTools,
+		);
+		expect(result).toBeUndefined();
+	});
+
+	it("keeps no-rebind on reload", async () => {
+		const s = setup();
+		const cwd = workspaceWith(
+			["kind: persona", "name: workspace-lead", "model: work-model", "tools: read, bash"],
+			WORKSPACE_BODY,
+		);
+
+		await s.sessionStart({ type: "session_start", reason: "reload" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
 
 		expect(s.setModel).not.toHaveBeenCalled();
 		expect(s.setActiveTools).not.toHaveBeenCalled();

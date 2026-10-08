@@ -35,12 +35,13 @@ Root checks (fresh `pi --mode rpc` sessions; R5/R6 use two):
 - **R4 unknown-kind** — `kind:` other than `persona` is silently ignored.
 - **R5 mid-session-edit** — editing the workspace body takes effect on the
   next run of the same session; the notice is not re-emitted.
-- **R6 resume-no-slap-back** — a tier-name `model` pin binds through
+- **R6 resume-rebinds** — a tier-name `model` pin binds through
   model-tiers.json; after an in-session `set_model` + `set_thinking_level`
-  (the `/model` API), a resume whose AGENTS.md model/tools were edited
-  meanwhile keeps the user's model + thinking and never applies the edited
-  declaration, still binds the edited body (prompt binding is per-run), and
-  announces nothing.
+  (the `/model` API) the choice stands mid-session, but a resume whose
+  AGENTS.md model/tools were edited meanwhile is persona-authoritative at the
+  session boundary: the edited declaration's model (with its `:<level>`
+  thinking suffix) and tools rebind over the user's choices, the edited body
+  still binds (prompt binding is per-run), and nothing announces.
 
 Drive checks (LLM-driven parent sessions spawning real children):
 

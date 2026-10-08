@@ -32,12 +32,15 @@
  *   R5 mid-session-edit  — editing the workspace body takes effect on the
  *                          next run of the same session; the notice is not
  *                          re-emitted.
- *   R6 resume-no-slap-back — after an in-session `set_model` +
- *                          `set_thinking_level` (the `/model` API), a resume
- *                          whose AGENTS.md model/tools were edited meanwhile
- *                          keeps the user's model + thinking and the
- *                          original tool set, still binds the edited body,
- *                          and announces nothing.
+ *   R6 resume-rebinds     — persona-authoritative at session boundaries: a
+ *                          resume whose AGENTS.md model/tools were edited
+ *                          meanwhile re-applies the edited declaration —
+ *                          model (with `:<level>` thinking) and tools — over
+ *                          the user's in-session `set_model` +
+ *                          `set_thinking_level` (the `/model` API) choices,
+ *                          which stand only until the session is next
+ *                          opened; the edited body still binds and nothing
+ *                          announces.
  *
  * Drive checks (LLM-driven parent sessions spawning real children):
  *   D1 spawned-identity  — a spawned persona's body IS the child's preamble
@@ -67,7 +70,7 @@
  * Env overrides: PW_PROVIDER, PW_MODEL (session default), PW_PIN_A +
  * PW_PIN_A_LEVEL (R1/R6 pin), PW_PIN_B (workspace W2 pin), PW_PIN_C (spawned
  * persona pin + R6 user choice), PW_RAW (explicit spawn model), PW_THINK
- * (R6 user thinking level).
+ * (R6 user thinking level), PW_THINK2 (R6 rebound thinking level).
  * Output: human phase log on stderr; JSON verdict on stdout
  *   { verdict, checks, observed }. Exit 0 = PASS, 1 = FAIL.
  *
@@ -112,6 +115,7 @@ const CFG = {
 	pinC: process.env.PW_PIN_C || "claude-haiku-5-5",
 	raw: process.env.PW_RAW || "gpt-6-luna",
 	think: process.env.PW_THINK || "medium",
+	think2: process.env.PW_THINK2 || "high",
 };
 
 const GENERIC_PREAMBLE = "You are an expert coding assistant operating inside pi";
@@ -604,7 +608,7 @@ async function R5(root, agentDir, probeOut) {
 }
 
 async function R6(root, agentDir, probeOut) {
-	log("── R6: resume-no-slap-back ──");
+	log("── R6: resume-rebinds (persona-authoritative at session boundaries) ──");
 	const dir = path.join(root, "R6", "work");
 	fs.mkdirSync(dir, { recursive: true });
 	const agents = path.join(dir, "AGENTS.md");
@@ -637,14 +641,16 @@ async function R6(root, agentDir, probeOut) {
 	} finally {
 		s1.kill();
 	}
-	// The workspace changes while the session is down — a rebind would surface
-	// the edited pin/tools instead of the user's choices.
+	// The workspace changes while the session is down. The persona is
+	// authoritative at session boundaries: the next open re-applies the edited
+	// declaration — model (with its `:<level>` suffix) and tools — over the
+	// user's mid-session choices.
 	fs.writeFileSync(
 		agents,
 		personaFile({
 			name: "Resu",
 			tools: "read",
-			model: `${CFG.provider}/${CFG.pinB}`,
+			model: `${CFG.provider}/${CFG.pinB}:${CFG.think2}`,
 			body: "You are Resu. R6-BODY-62.",
 		}),
 	);
@@ -658,24 +664,23 @@ async function R6(root, agentDir, probeOut) {
 		const resumed = [...all].reverse().find((x) => x.sys.includes("R6-BODY-6") || x.sys.includes(GENERIC_PREAMBLE));
 		const model = state.model?.id || "";
 		check(
-			"r6_model_survives",
-			String(model).includes(CFG.pinC) && !String(model).includes(CFG.pinB),
+			"r6_model_rebinds",
+			String(model).includes(CFG.pinB) && !String(model).includes(CFG.pinC),
 			{ model, thinkingLevel: state.thinkingLevel },
 		);
-		check("r6_thinking_survives", state.thinkingLevel === CFG.think, { thinkingLevel: state.thinkingLevel });
+		check("r6_thinking_rebinds", state.thinkingLevel === CFG.think2, {
+			thinkingLevel: state.thinkingLevel,
+			userChoice: CFG.think,
+		});
 		check(
 			"r6_prompt_still_binds",
 			!!resumed && resumed.sys.includes("R6-BODY-62") && !resumed.sys.includes("R6-BODY-61"),
 			{},
 		);
-		check(
-			"r6_tools_no_rebind",
-			!!resumed && JSON.stringify(resumed.tools) !== JSON.stringify(["read", "respond"]),
-			{
-				tools: resumed?.tools,
-				note: "pi does not persist active tool selection across process restarts, so the resumed run starts from pi's default tool set; the topic claim tested here is that the edited declaration never rebinds (v2's [read, respond] never applies)",
-			},
-		);
+		check("r6_tools_rebind", !!resumed && JSON.stringify(resumed.tools) === JSON.stringify(["read", "respond"]), {
+			tools: resumed?.tools,
+			note: "the edited declaration's whitelist rebinds at the next open (exactly resolveChildToolPolicy normalization: ask_user dropped, respond appended); pi does not persist active tool selection across process restarts, so the rebind is also what restores the declared set",
+		});
 		check("r6_no_reannounce", noticesIn(entries).length === 1, {
 			notices: noticesIn(entries).map((n) => n.details),
 		});
