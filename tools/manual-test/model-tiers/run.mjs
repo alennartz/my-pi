@@ -17,8 +17,10 @@
  *   B. injection-overlay — global {cheap,medium} + project {cheap}: the tier
  *      table shows project's cheap (override wins), global's medium (survives),
  *      and default rows for smart/frontier.
- *   C. untrusted-project — project config present but project untrusted: the
- *      project cheap override is ignored; cheap falls back to the global value.
+ *   C. trust-independent-overlay — project config present with the project
+ *      untrusted: the project override is STILL honored (user ruling at review
+ *      time: tier remapping is user configuration, not a trust boundary —
+ *      both overlays are read unconditionally).
  *   D. spawn-configured — tier `cheap` mapped to a real non-default model:
  *      spawning a subagent with model:"cheap" runs that model (read from the
  *      child's persisted session file), no unconfigured notice fires, and a
@@ -59,8 +61,16 @@ const opt = (n, d) => {
 };
 const KEEP = flag("keep");
 const TIMEOUT = Number(opt("timeout", "180")) * 1000;
-const DEFAULT_MODEL = "claude-opus-4-8";
-const PROVIDER = "azure-foundry-anthropic-messages";
+// Provider landscape is parameterized (env) — the azure-foundry defaults match
+// the original harness environment; MT_* lets any working provider drive the
+// same checks. All three model knobs must be real, available, mutually
+// distinct models: the tier table renders configured values only when the
+// model exists in the registry (otherwise the row falls back to the default).
+const DEFAULT_MODEL = process.env.MT_MODEL || "claude-opus-4-8";
+const PROVIDER = process.env.MT_PROVIDER || "azure-foundry-anthropic-messages";
+const TIER_MODEL = process.env.MT_TIER_MODEL || "gpt-5.4-nano";
+const RAW_MODEL = process.env.MT_RAW_MODEL || "gpt-5.4-mini";
+const PROJECT_MODEL = process.env.MT_PROJECT_MODEL || "gpt-5.4-haiku";
 
 function log(...a) {
 	process.stderr.write("[model-tiers] " + a.join(" ") + "\n");
@@ -144,6 +154,27 @@ function makeAgentDir(root, name, { global, project, trust = "always" }) {
 		),
 	);
 	if (global) fs.writeFileSync(path.join(agentDir, "model-tiers.json"), JSON.stringify(global));
+	if (process.env.LLMGATEWAY_API_KEY) {
+		// devpass provider support (used when MT_PROVIDER selects it): register
+		// the quota-providers implementation from this repo with the spend-
+		// backpressure lookahead relaxed so the account's real spend pace cannot
+		// block these checks' provider calls.
+		fs.writeFileSync(
+			path.join(agentDir, "quota-providers.json"),
+			JSON.stringify({
+				providers: {
+					devpass: {
+						module: path.join(REPO_ROOT, "extensions/quota-providers/impls/devpass.ts"),
+						enabled: true,
+						billingCycleAnchor: "2026-11-01T13:33:00.000Z",
+						bypassAllowed: true,
+						enforceHardCap: false,
+						lookaheadHours: 876000,
+					},
+				},
+			}),
+		);
+	}
 	if (project) {
 		fs.mkdirSync(path.join(workDir, ".pi"), { recursive: true });
 		fs.writeFileSync(path.join(workDir, ".pi", "model-tiers.json"), JSON.stringify(project));
@@ -204,6 +235,16 @@ function sessionModel(sessionFile) {
 	return model;
 }
 
+// The assembled system prompt of a provider payload: anthropic-style payloads
+// carry a `system` field, openai-style payloads a system/developer message.
+function extractSystem(payload) {
+	if (typeof payload.system === "string") return payload.system;
+	const parts = (payload.messages || [])
+		.filter((m) => m.role === "system" || m.role === "developer")
+		.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)));
+	return parts.join("\n");
+}
+
 // ─── probe capture: launch pi, send a trivial prompt, read assembled payload ─
 function capturePrompt(agentDir, workDir) {
 	return new Promise((resolve, reject) => {
@@ -234,7 +275,7 @@ function capturePrompt(agentDir, workDir) {
 				clearTimeout(to);
 				const payload = JSON.parse(fs.readFileSync(out, "utf8"));
 				killGroup(proc);
-				const sys = typeof payload.system === "string" ? payload.system : JSON.stringify(payload.system);
+				const sys = extractSystem(payload);
 				setTimeout(() => resolve(sys), 200);
 			}
 		}, 400);
@@ -371,8 +412,8 @@ async function main() {
 		log("── B: injection-overlay ──");
 		{
 			const { agentDir, workDir } = makeAgentDir(ROOT, "B", {
-				global: { cheap: "gpt-5.4-nano", medium: "genitsec-haiku-4-5" },
-				project: { cheap: "gpt-5.4-mini" },
+				global: { cheap: TIER_MODEL, medium: RAW_MODEL },
+				project: { cheap: PROJECT_MODEL },
 			});
 			const sys = await capturePrompt(agentDir, workDir);
 			const cheap = tierRow(sys, "cheap");
@@ -381,48 +422,49 @@ async function main() {
 			observed.B = { cheap, medium, smart };
 			checks.B =
 				!!cheap &&
-				cheap.includes("gpt-5.4-mini") && // project override wins
+				cheap.includes(PROJECT_MODEL) && // project override wins
 				!!medium &&
-				medium.includes("genitsec-haiku-4-5") && // global survives
+				medium.includes(RAW_MODEL) && // global survives
 				!!smart &&
 				smart.includes("(default)"); // unconfigured tier defaults
 		}
 
-		// C. untrusted-project gating
-		log("── C: untrusted-project ──");
+		// C. trust-independent overlay (post-review user ruling: tier remapping
+		// is user configuration, not a trust boundary — no trust gating).
+		log("── C: trust-independent-overlay ──");
 		{
 			const { agentDir, workDir } = makeAgentDir(ROOT, "C", {
-				global: { cheap: "gpt-5.4-nano" },
-				project: { cheap: "gpt-5.4-mini" },
+				global: { cheap: TIER_MODEL },
+				project: { cheap: PROJECT_MODEL },
 				trust: "never",
 			});
 			const sys = await capturePrompt(agentDir, workDir);
 			const cheap = tierRow(sys, "cheap");
 			observed.C = { cheap };
-			// project override must be ignored -> global value shown, not project's
-			checks.C = !!cheap && cheap.includes("gpt-5.4-nano") && !cheap.includes("gpt-5.4-mini");
+			// the project override is honored even when the project is untrusted
+			checks.C = !!cheap && cheap.includes(PROJECT_MODEL) && !cheap.includes(TIER_MODEL);
 		}
 
 		// D. spawn-configured + raw-id passthrough
 		log("── D: spawn-configured ──");
 		{
 			const { agentDir, workDir } = makeAgentDir(ROOT, "D", {
-				global: { cheap: "gpt-5.4-nano" },
+				global: { cheap: TIER_MODEL },
 			});
 			const sessionDir = path.join(ROOT, "D", "sessions");
 			fs.mkdirSync(sessionDir, { recursive: true });
 			const res = await driveSpawn(agentDir, workDir, sessionDir, {
 				spawns: [
 					{ id: "tier", model: "cheap" },
-					{ id: "raw", model: "gpt-5.4-mini" },
+					{ id: "raw", model: RAW_MODEL },
 				],
 				wantListModels: true,
 			});
 			const models = await readChildModels(res.parentSessionFile, ["tier", "raw"]);
 			observed.D = { models, notices: res.notices, listModelsPresent: !!res.listModelsText };
 			const noUnconfigured = !res.notices.some((n) => /unconfigured/i.test(n));
-			checks.D_tierResolved = !!models.tier && models.tier.includes("gpt-5.4-nano");
-			checks.D_rawResolved = !!models.raw && models.raw.includes("gpt-5.4-mini");
+			checks.D_tierResolved = !!models.tier && models.tier.includes(TIER_MODEL);
+			checks.D_rawResolved = !!models.raw && models.raw.includes(RAW_MODEL);
 			checks.D_noUnconfiguredNotice = noUnconfigured;
 			// F. list_models (folded into D's session)
 			const t = res.listModelsText || "";

@@ -43,6 +43,39 @@ teardown, resurrect, fork, await, interrupt). Limitations: only exercises
 the in-process path. Cross-restart resume (parent killed and resumed) is now
 covered by the `resume-restore` tool below.
 
+### persona-workspaces (`persona-workspaces/run.mjs`)
+
+**Purpose:** verify persona takeover end-to-end — workspace `kind: persona`
+declarations (preamble replacement, takeover notices, front-matter
+model/tools/skills binding), spawned-persona identity in children, workspace
+over-spawned override with visible notice, pin-vs-explicit model precedence,
+resurrect capability-gate re-resolution, fork persona inheritance, and child
+project-resource loading from arbitrary folders. Drives real `pi --mode rpc`
+processes under a controlled `PI_CODING_AGENT_DIR` with a
+`before_provider_request` probe capturing every assembled provider payload
+(exact system prompt, tool list, model) as the structural oracle.
+
+**Invocation:** `node tools/manual-test/persona-workspaces/run.mjs [--keep]
+[--timeout <sec>] [--workdir <dir>] [--only <ids>]`. Models/providers are
+overridable via `PW_*` env. See `persona-workspaces/README.md`.
+
+**Inputs:** flags and `PW_*` env; uses ambient gateway credentials
+(`LLMGATEWAY_API_KEY`).
+
+**Outputs:** phase log on stderr; JSON verdict on stdout
+(`{verdict, checks, observed}`); exit 0 = PASS, 1 = FAIL.
+
+**Prerequisites:** `pi` on PATH with this repo loadable as a package. The
+temp agent dir relaxes the quota soft-cap backpressure so the account's real
+spend pace cannot block provider calls.
+
+**Use for:** any topic touching persona declarations, persona precedence and
+notices, persona front-matter binding, or the subagents active-persona spawn
+path. Limitations: headless drivers — the `persona-notice` TUI renderer chrome
+is not exercised (the notice message content is); LLM-driven ordered tool
+calls in the D-drives tolerate instruction drift (oracles are structural,
+never narration); `reload` (extension reload) is not driven.
+
 ### resume-restore (`resume-restore/run.mjs`)
 
 **Purpose:** Drive a real `pi --mode rpc` parent through the full
@@ -62,6 +95,9 @@ structurally cannot reach.
 **Prerequisites:** `pi` on PATH with this package loaded. The harness
 scrubs inherited coding-agent markers from the spawned parent environment so
 the top-level resume flow is exercised when invoked from another pi session.
+Pass `PI_CODING_AGENT_DIR` to point the run at a controlled agent dir (the
+harness forwards it) — this makes the **working tree** under test instead of
+the ambient installed package (used this way in the persona-workspaces run).
 
 **Use for:** any topic touching subagent persistence/restore on session resume.
 Limitations: observes status via `check_status` (the `hasSubgroup` widget/panel
@@ -80,8 +116,12 @@ and `list_models` (resolution, notice, and catalog checks). See
 `model-tiers/README.md`.
 
 **Invocation:** `node tools/manual-test/model-tiers/run.mjs [--keep] [--timeout <sec>] [--workdir <dir>]`.
+Provider/model landscape is env-parameterized: `MT_PROVIDER`, `MT_MODEL`
+(session default), `MT_TIER_MODEL`, `MT_RAW_MODEL`, `MT_PROJECT_MODEL` (three
+real, available, mutually distinct non-default models) — defaults match the
+original azure-foundry environment.
 
-**Inputs:** flags only; uses ambient pi provider config.
+**Inputs:** flags and `MT_*` env; uses ambient pi provider config.
 
 **Outputs:** phase log on stderr; JSON verdict on stdout
 (`{verdict, checks, observed}`); exit 0 = PASS, 1 = FAIL.

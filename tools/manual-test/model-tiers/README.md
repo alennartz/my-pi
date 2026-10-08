@@ -20,8 +20,10 @@ Checks:
 - **B injection-overlay** — global `{cheap, medium}` + project `{cheap}`: the
   tier table shows the project's `cheap` (override wins), the global `medium`
   (survives), and default rows for `smart`/`frontier`.
-- **C untrusted-project** — project config present but project untrusted: the
-  project override is ignored; the tier falls back to the global value.
+- **C trust-independent-overlay** — project config present with the project
+  untrusted: the project override is still honored (post-review user ruling:
+  tier remapping is user configuration, not a trust boundary — both overlays
+  are read unconditionally).
 - **D spawn-configured** — tier `cheap` mapped to a real non-default model:
   spawning a subagent with `model:"cheap"` runs that model (read from the
   child's persisted session file), no unconfigured notice fires, and a raw
@@ -41,6 +43,18 @@ node tools/manual-test/model-tiers/run.mjs [--keep] [--timeout <sec>] [--workdir
 - `--timeout <sec>` — per-phase timeout (default 180).
 - `--workdir <dir>` — use an explicit workdir instead of a fresh mkdtemp.
 - `MT_VERBOSE=1` — echo pi stderr and tool-end events for debugging.
+- `MT_PROVIDER` / `MT_MODEL` — session default provider/model (defaults:
+  `azure-foundry-anthropic-messages` / `claude-opus-4-8`, the original
+  harness environment).
+- `MT_TIER_MODEL` / `MT_RAW_MODEL` / `MT_PROJECT_MODEL` — three real,
+  available, mutually distinct non-default models used by the tier-overlay
+  and spawn checks (defaults match the original azure-foundry environment).
+  The tier table only renders a configured value when the model exists in the
+  registry (otherwise the row shows the session default), so all three must
+  be real.
+- When `LLMGATEWAY_API_KEY` is set, the temp agent dir also registers this
+  repo's devpass quota-provider implementation (with the spend-backpressure
+  lookahead relaxed) so `MT_PROVIDER=devpass-openai-completions` works.
 
 ## Inputs / Outputs
 
