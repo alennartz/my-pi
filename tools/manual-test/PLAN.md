@@ -113,8 +113,8 @@ the spawn path from a global + project JSON config overlay, exposes a
 `list_models` catalog tool, and emits a once-per-session notice when tiers are
 unconfigured. Verify: the table is injected (and the old `## Available Models`
 list is gone), config overlay resolves correctly (project overrides global,
-unshadowed global keys survive, untrusted project ignored), a tier spawn runs
-the configured model while an unconfigured tier falls back to the session
+unshadowed global keys survive; project tier config is read regardless of
+project trust), a tier spawn runs the configured model while an unconfigured tier falls back to the session
 default, raw ids still pass through, and `list_models` returns a priced
 catalog table.
 

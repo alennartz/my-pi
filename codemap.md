@@ -10,6 +10,7 @@ graph LR
   Workflow --> Subagents
   Subagents --> Subagents
   PersonaWorkspaces --> Subagents
+  ManualTesting
   SessionResume
   SessionName
   Worktree
@@ -59,8 +60,8 @@ The ten workflow skills and the autoflow orchestration skill that drives them. A
 - `docs/brainstorms/**`
 - `docs/plans/**`
 - `docs/reviews/**`
-- `docs/manual-tests/**`
-- `tools/manual-test/**`
+- `docs/manual-tests/**` — topic-specific manual-test reports, including persona-workspaces checks T1–T13/R1–R7/D1–D2 and their results
+- `tools/manual-test/**` — permanent live-pi harnesses and journey plan: `persona-workspaces/run.mjs` (+ README) covers root takeover, spawned identity/override, binding, resume/reload, restore and fork; `model-tiers/run.mjs` is MT-provider/model-parameterized with provider-agnostic prompt extraction and devpass quota support; `resume-restore/README.md` documents `PI_CODING_AGENT_DIR` passthrough; `PLAN.md` includes journeys J8/J9 and updated J1/J2
 
 ### Skills
 
@@ -116,9 +117,9 @@ Long-lived in-process subagent orchestration extension — creates and manages S
 
 Extension that lets a persona file take over a session — a *persona file* is either a discovered agent definition or a working directory's `AGENTS.md` with `kind: persona` front matter. The persona body replaces pi's default system-prompt preamble wholesale instead of stacking under it. Persona presence is orthogonal to root-vs-subagent: all four root/child × persona/plain combinations are valid.
 
-**Responsibilities:** strict cwd-only workspace persona declaration parsing (`<cwd>/AGENTS.md` exactly — one directory deep, no ancestor walk; unknown `kind` values silently ignored and a non-persona file left entirely alone as project context), per-run prompt binding (the active persona's body replaces the preamble via `systemPromptOptions.customPrompt` every run — mid-session edits take effect at the next run; an explicit launch `--system-prompt` outranks the ambient persona; the workspace's own AGENTS.md is filtered from `contextFiles` so pi cannot append it twice; a declared `skills` list filters the per-run skill list, while root sessions keep unlisted skills' slash commands loaded — extensions can add skills at discovery but not subtract), fresh-session front-matter binding (`model`/`tools` bind at `startup`/`new`/`fork` via `pi.setModel`/`pi.setActiveTools` with the child-side `resolveChildToolPolicy` normalization; `resume`/`reload` never slap back a user's mid-session choice), and takeover notices (transcript-visible `customType: "persona-notice"` boot/override messages with a registered pi-tui renderer, deduplicated from the transcript). Persona sources are exclusive: a workspace declaration wins wholesale over a spawned definition — one active persona file per session, fields never merged, absent fields fall to pi defaults.
+**Responsibilities:** strict cwd-only workspace persona declaration parsing (`<cwd>/AGENTS.md` exactly — one directory deep, no ancestor walk; unknown `kind` values silently ignored and a non-persona file left entirely alone as project context), per-run prompt binding (`before_agent_start`; the active persona's body replaces the preamble via `systemPromptOptions.customPrompt` every run — mid-session edits take effect at the next run; an explicit launch `--system-prompt` outranks the ambient persona; the workspace's own AGENTS.md is filtered from `contextFiles` so pi cannot append it twice; a declared `skills` list filters the per-run skills view, while root sessions keep unlisted skills' slash commands loaded — extensions can add skills at discovery but not subtract), session-start front-matter binding (`session_start`; root `model`/`tools` rebind at every boundary, including resume/reload/fork, via `pi.setModel`/`pi.setActiveTools` with child-side `resolveChildToolPolicy` normalization; child construction is owned by Subagents), and transcript-visible `customType: "persona-notice"` boot/override messages with a registered pi-tui renderer and transcript-based deduplication. Persona sources are exclusive: a workspace declaration wins wholesale over a spawned definition — one active persona file per session, fields never merged, absent fields fall to defaults/baseline.
 
-**Dependencies:** Subagents (reads the spawn-declared persona payload from `child-session-marker.ts`'s session-manager registry via `ctx.sessionManager`; a child's `model`/`tools`/`skills` are construction-locked by the Subagents spawn path, which resolves the same active file first). Reciprocally, Subagents' `agent-set.ts` imports this module's pure `declaration.ts` parser — the two modules are mutually dependent at file level.
+**Dependencies:** Subagents (reads spawn-declared persona payload from `child-session-marker.ts` via `ctx.sessionManager`; Subagents also imports this module's pure `declaration.ts` parser to resolve active child construction fields).
 
 **Files:**
 - `extensions/persona-workspaces/**` — `declaration.ts` (pure `kind: persona` front-matter parsing + strict cwd loader), `index.ts` (the `session_start` and `before_agent_start` handlers plus the `persona-notice` renderer), `package.json` (pi extension manifest), with colocated tests

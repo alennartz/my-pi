@@ -76,7 +76,7 @@ The `agentScope` parameter on the `subagent` tool controls which directories are
 | `"project"` | Project dir only |
 | `"both"` | Both — project agents override user agents of the same name |
 
-The `confirmProjectAgents` parameter (default `true`) prompts the user before running project-local agents, since those files are repo-controlled and could contain arbitrary instructions. Only trusted repositories should run without confirmation.
+Child sessions trust their working directory and load its project resources, including project-local agent definitions. Use project scope only when you intend to search the current project's `.pi/agents/` directory; do not treat cwd trust as a separate child-session confirmation gate.
 
 **When to use which scope:**
 

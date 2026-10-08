@@ -82,7 +82,8 @@ Long-lived in-process subagent orchestration — run child pi SDK sessions (opti
 
 ### Extensions
 
-- **subagents** — subagent lifecycle, channel messaging, TUI dashboard
+- **subagents** — subagent lifecycle, channel messaging, TUI dashboard; spawned personas replace the child preamble
+- **persona-workspaces** — an `AGENTS.md` with `kind: persona` makes the working directory's root session that specialist, with model, tool, and skill bindings
 - **web-tools** — `web_search` (Brave) and `web_fetch` (bounded retrieval, Readability extraction, disk page cache, offset + findText access)
 - **azure-foundry** — auto-discovers Azure AI Foundry deployments as pi models
 - **quota-providers** — generic provider framework with pro-rated soft-cap enforcement, in-memory agent-tree-scoped bypass, `/quota` command, and footer indicator. Config at `~/.pi/agent/quota-providers.json`.

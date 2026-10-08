@@ -112,7 +112,11 @@ active-persona spawn path (pin-vs-explicit model precedence, resurrect
 capability-gate re-resolution, fork persona inheritance, child project
 resources). Limitations: drives are headless (`--mode rpc`) so the
 `persona-notice` TUI renderer chrome is not exercised (the notice message
-itself is); the D-drives ask a real LLM for a precise tool-call sequence, so
+itself is); persona `model` pins on premium tiers are unexercised while the
+weekly premium allowance forbids them (add a premium-pinned persona case
+when it allows); three of resurrect's four documented error paths are not
+driven (the bogus-session-id path is) — fold into a future J2 run. The
+D-drives ask a real LLM for a precise tool-call sequence, so
 all oracles are structural (probe payloads, session JSONL, persistence
 files), never narration. Reload is driven through the probe's `pw-reload`
 extension command (pi's builtin `/reload` is UI-pipeline-dispatched only;
