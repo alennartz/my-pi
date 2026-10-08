@@ -7,7 +7,7 @@ import {
 	type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { registerLooseTool } from "../../lib/tool-args.ts";
+import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
 import { detect } from "@pimote/sdk/panels";
 import type { PanelHandle } from "@pimote/sdk/panels";
 import {
@@ -241,6 +241,45 @@ function resolveChildModelRef(args: {
 		}
 	}
 	return { model, warnings };
+}
+
+/**
+ * Persona name from a `subagent` call item.
+ *
+ * The public item-schema field is `persona`; the internal
+ * `RegularAgentSpec.agent` property and the persisted lifecycle `agent` key
+ * keep their historical name so old JSONL stays readable without migration.
+ * The read therefore carries a compatibility fallback — `persona ?? agent` —
+ * so historical call payloads and direct `tool.execute` callers (which bypass
+ * schema validation and `prepareArguments`) keep working. Empty strings
+ * normalize to `undefined`, matching the loose-argument "empty equals
+ * omitted" contract.
+ */
+function personaNameOf(item: { persona?: unknown; agent?: unknown }): string | undefined {
+	const name = item.persona ?? item.agent;
+	return typeof name === "string" && name.length > 0 ? name : undefined;
+}
+
+/**
+ * Map a legacy `agent` item field onto the public `persona` field before the
+ * schema-driven empty-optional cleanup, so historical `subagent` payloads
+ * validate against the `persona`-only schema. `persona` wins when both are
+ * present; the legacy key never survives the rewrite. Pure — returns a new
+ * arguments object.
+ */
+function renameLegacyPersonaFields(args: unknown): unknown {
+	if (typeof args !== "object" || args === null || Array.isArray(args)) return args;
+	const items = (args as { agents?: unknown }).agents;
+	if (!Array.isArray(items)) return args;
+	return {
+		...(args as Record<string, unknown>),
+		agents: items.map((item) => {
+			if (typeof item !== "object" || item === null || Array.isArray(item)) return item;
+			const { persona, agent: legacyField, ...rest } = item as Record<string, unknown>;
+			const name = persona ?? legacyField;
+			return name === undefined ? rest : { ...rest, persona: name };
+		}),
+	};
 }
 
 function wasAborted(event: any): boolean {
@@ -914,8 +953,8 @@ class SubagentSessionOwner {
 		const lines = [""];
 		if (agents.length > 0) {
 			lines.push(
-				"The following agent definitions can be referenced in the subagent tool's `agent` field.",
-				"Each is self-contained — it carries its own system prompt, model, and tool restrictions. The description below is all you need to choose and deploy them; do not read their definition files before using them. Just pass the name in the `agent` field with a task string.",
+				"The following agent definitions can be referenced in the subagent tool's `persona` field.",
+				"Each is self-contained — it carries its own system prompt, model, and tool restrictions. The description below is all you need to choose and deploy them; do not read their definition files before using them. Just pass the name in the `persona` field with a task string.",
 				"",
 				renderAgentDefinitions(agents),
 				"",
@@ -937,7 +976,7 @@ class SubagentSessionOwner {
 			"Raw model IDs are also accepted in `agents[].model` when the user names a specific model; `list_models` shows the full catalog.",
 			"Append a thinking-effort suffix to any model id with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) — e.g. `anthropic/claude-opus-4-8:xhigh`. Tier names don't take a suffix; a tier carries whatever level its config encodes.",
 			"",
-			"Omitting the `agent` field spawns a **default general-purpose agent** — use this unless the task specifically matches a specialist's description above. You may set `model` to override the specialist's default unless the agent definition already pins a model.",
+			"Omitting the `persona` field spawns a **default general-purpose agent** — use this unless the task specifically matches a specialist's description above. You may set `model` only to fill a gap: it applies when the active persona declares no `model`; a persona's `model` pin always wins.",
 			"",
 			"Omit `model` entirely by default — subagents then inherit the session's model. Specify a tier only when the user asks for one.",
 			"",
@@ -1024,8 +1063,8 @@ class SubagentSessionOwner {
 	private registerTools(): void {
 		const AgentItem = Type.Object({
 			id: Type.String({ description: "Unique identifier for this agent among the parent's active agents" }),
-			agent: Type.Optional(Type.String({ description: "Agent definition name (omit for default agent)" })),
-			model: Type.Optional(Type.String({ description: "Optional model override: a tier name (`cheap`, `medium`, `smart`, `frontier`) or a concrete model id. Ignored if the selected specialist agent definition already pins a model." })),
+			persona: Type.Optional(Type.String({ description: "Persona name — the `name` of a discovered agent definition (omit for a default general-purpose agent)" })),
+			model: Type.Optional(Type.String({ description: "Optional model override: a tier name (`cheap`, `medium`, `smart`, `frontier`) or a concrete model id. Gap-filling only — it applies when the active persona declares no `model`; a persona's `model` pin always wins." })),
 			task: Type.String({ description: "Task description for this agent" }),
 			channels: Type.Optional(Type.Array(Type.String(), {
 				description: "Peer agent ids this agent can send to (agent-to-agent only; parent is always allowed)",
@@ -1054,7 +1093,11 @@ class SubagentSessionOwner {
 			execute: async (_toolCallId, _params, _signal, _onUpdate, ctx) => this.listModels(ctx),
 		});
 
-		registerLooseTool(this.pi, {
+		const SubagentParams = Type.Object({
+			agents: Type.Array(AgentItem, { description: "Agents to spawn under this parent session" }),
+			await: Type.Optional(Type.Boolean({ description: "Block until all spawned agents complete. Default: false.", default: false })),
+		});
+		this.pi.registerTool({
 			name: "subagent",
 			label: "Subagents",
 			description: "Spawn subagents to delegate work to a seperate context window, optionally with a different model or cwd. Supports inter agent communications",
@@ -1066,10 +1109,11 @@ class SubagentSessionOwner {
 				"Prefer `subagent` over `fork` when the work needs multiple coordinated agents, specialized agents, or a clean slate. Prefer `fork` when you want a copy of your current session context to explore a side quest without bloating your primary context.",
 				"For `subagent` use guidance about task decomposition, pattern selection, and when-to-delegate; read the orchestrating-agents skill.",
 			],
-			parameters: Type.Object({
-				agents: Type.Array(AgentItem, { description: "Agents to spawn under this parent session" }),
-				await: Type.Optional(Type.Boolean({ description: "Block until all spawned agents complete. Default: false.", default: false })),
-			}),
+			parameters: SubagentParams,
+			// Legacy `agent` item fields rewrite to the public `persona` field
+			// first, so the empty-optional cleanup and schema validation see only
+			// the advertised name.
+			prepareArguments: (args: unknown) => dropEmptyOptionals(SubagentParams, renameLegacyPersonaFields(args)) as any,
 			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.spawnAgents(params, signal, ctx),
 		});
 
@@ -1193,12 +1237,12 @@ class SubagentSessionOwner {
 		const availableModels: any[] = ctx.modelRegistry.getAvailable();
 
 		for (const agent of params.agents) {
-			const agentName = agent.agent || undefined;
+			const agentName = personaNameOf(agent);
 			if (agentName) {
 				const foundConfig = allAgentConfigs.find((config) => config.name === agentName);
 				if (!foundConfig) {
 					const available = formatAgentList(allAgentConfigs, 10);
-					throw new Error(`Unknown agent definition "${agentName}". Available: ${available.text}`);
+					throw new Error(`Unknown persona "${agentName}". Available agent definitions: ${available.text}`);
 				}
 			}
 		}
@@ -1220,8 +1264,9 @@ class SubagentSessionOwner {
 		const inheritedModelRef = modelRefOf(ctx.model);
 		const commands = this.pi.getCommands();
 		for (const agent of params.agents) {
-			const agentConfig = agent.agent
-				? allAgentConfigs.find((config) => config.name === agent.agent)
+			const agentName = personaNameOf(agent);
+			const agentConfig = agentName
+				? allAgentConfigs.find((config) => config.name === agentName)
 				: undefined;
 			const effectiveCwd = resolvedCwds.get(agent.id) ?? ctx.cwd;
 			const active = loadActivePersona(effectiveCwd, agentConfig);
@@ -1244,12 +1289,16 @@ class SubagentSessionOwner {
 		}
 
 		const agentSpecs: RegularAgentSpec[] = params.agents.map((agent: any) => {
-			const agentName = agent.agent || undefined;
+			// The public `persona` item field maps onto the internal `agent` spec
+			// property via `personaNameOf`. Neither the public field nor the legacy
+			// fallback key may ride the spread below — they would leak onto the
+			// spec as stray properties.
+			const { persona: _personaField, agent: _legacyPersonaField, ...item } = agent;
 			return Object.freeze({
 				kind: "agent" as const,
-				...agent,
+				...item,
 				channels: agent.channels ? Object.freeze([...agent.channels]) : undefined,
-				agent: agentName,
+				agent: personaNameOf(agent),
 				model: modelById.get(agent.id),
 				cwd: resolvedCwds.get(agent.id),
 				skillPaths: skillPathsById.get(agent.id) ?? Object.freeze([]),

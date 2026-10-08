@@ -239,4 +239,4 @@ Normally, the primary agent (with the TUI) is the lead — it decomposes work an
 - **Incremental growth** — agents can be added to the running set by calling `subagent` again. Individual agents can be removed with `teardown(agent)`, or all agents torn down at once with `teardown()`. A torn-down agent can be brought back later with `resurrect`, using the `session_id` surfaced in its `<agent_idle>` / `<group_complete>` teardown report — persona, model, tools, and prior conversation are inherited from the persisted session.
 - **Let notifications drive you** — `<agent_idle>` arrives automatically when each agent finishes. Don't poll with `check_status` unless you have a specific reason. Use `await_agents` when you need results before your next step — it blocks until the specified agents complete, with any parent-bound message interrupting the wait.
 
-For creating persistent, reusable agent definitions (the `.md` files referenced by the `agent` field), see the **specialist-design** skill.
+For creating persistent, reusable agent definitions (the `.md` files referenced by the `persona` field), see the **specialist-design** skill.

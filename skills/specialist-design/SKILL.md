@@ -7,7 +7,7 @@ description: "Craft guide for creating persistent, reusable agent definitions (.
 
 ## Overview
 
-Agent definitions are Markdown files that turn a generic pi agent into a focused specialist. Each definition declares a name, description, optional tool and skill filters, an optional model pin, and a system prompt. When referenced in the `subagent` tool's `agent` field, the definition shapes the spawned agent's identity — what it knows, what tools it sees, and how it behaves.
+Agent definitions are Markdown files that turn a generic pi agent into a focused specialist. Each definition declares a name, description, optional tool and skill filters, an optional model pin, and a system prompt. When referenced in the `subagent` tool's `persona` field, the definition shapes the spawned agent's identity — what it knows, what tools it sees, and how it behaves. The same file shape can also be a working directory's `AGENTS.md` (via `kind: persona`) — see [Persona Sources and Precedence](#persona-sources-and-precedence).
 
 This skill covers how to write good definitions. For deciding *when* to use agents and *how* to orchestrate them, see the **orchestrating-agents** skill. For writing skills (SKILL.md files) rather than agent definitions, see the **skill-writing** skill.
 
@@ -27,15 +27,39 @@ model: smart
 
 **Frontmatter fields:**
 
-- **`name`** (required, string) — Unique identifier. Used in the `agent` field of the `subagent` tool. Files without a `name` are silently skipped during discovery.
+- **`name`** (required, string) — Unique identifier. Used in the `persona` field of the `subagent` tool, and as the persona name of a `kind: persona` workspace `AGENTS.md`. Files without a `name` are silently skipped during discovery.
 - **`description`** (required, string) — What this agent does. Read by the orchestrator at group-design time to decide whether to use this specialist. Files without a `description` are silently skipped during discovery.
 - **`tools`** (optional, comma-separated) — Filters available tools. Only the listed tools are visible to the agent. Omit to give the agent all available tools.
-- **`skills`** (optional, comma-separated) — Skill names to make available. Resolved to filesystem paths via `resolveSkillPaths` at spawn time. When specified, the agent starts with `--no-skills` and only the listed skills are loaded (via `--skill` flags).
-- **`model`** (optional, string) — Pins the agent's model. Accepts a **tier name** (`cheap`, `medium`, `smart`, `frontier`) — the preferred vocabulary — or a concrete model id. Tier names resolve to concrete models at spawn time from the model-tiers config (`~/.pi/agent/model-tiers.json`, with a trusted-project `.pi/model-tiers.json` override); an unconfigured or unavailable tier falls back to the session default model. You may also append a thinking-effort suffix to any model id with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) — e.g. `anthropic/claude-opus-4-8:xhigh`. Tier names don't accept suffixes; a tier carries whatever level its config encodes. Omit the model field entirely to use the session default. (Use the `list_models` tool to see the full catalog when you need a specific model id.)
+- **`skills`** (optional, comma-separated) — Skill names to make available. Resolved to filesystem paths via `resolveSkillPaths` at spawn time. When specified, the agent starts with `--no-skills` and only the listed skills are loaded (via `--skill` flags). In root sessions the filter is softer — see the slash-command limitation under [Persona Sources and Precedence](#persona-sources-and-precedence).
+- **`model`** (optional, string) — Pins the agent's model. Accepts a **tier name** (`cheap`, `medium`, `smart`, `frontier`) — the preferred vocabulary — or a concrete model id. Tier names resolve to concrete models at spawn time from the model-tiers config (`~/.pi/agent/model-tiers.json`, with a trusted-project `.pi/model-tiers.json` override); an unconfigured or unavailable tier falls back to the session default model. You may also append a thinking-effort suffix to any model id with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) — e.g. `anthropic/claude-opus-4-8:xhigh`. Tier names don't accept suffixes; a tier carries whatever level its config encodes. Omit the model field entirely to use the session default. (Use the `list_models` tool to see the full catalog when you need a specific model id.) The field is a **pin**: it wins over an explicit `model` argument on the `subagent` tool, which is gap-filling only — it applies when the active persona declares no `model`.
 
-**Body** — everything below the frontmatter is the system prompt, injected via `--append-system-prompt`. This is the agent's persistent identity: role, boundaries, behavioral rules. Write it as direct instructions to the agent.
+**Body** — everything below the frontmatter is the persona body. It *replaces* pi's default system-prompt preamble for the session that wears the persona (the `customPrompt` hook) — it does not stack under the generic persona. This is the agent's persistent identity: role, boundaries, behavioral rules. Write it as direct instructions to the agent. An explicit `--system-prompt` at launch outranks the ambient persona.
 
 Both `name` and `description` must be present or the file is silently skipped — no error, no warning. This is intentional; it lets you keep draft files in the agents directory without them polluting discovery.
+
+## Persona Sources and Precedence
+
+An agent definition is a *persona*. Besides the agents directories above, a working directory's `AGENTS.md` can declare itself a persona with `kind: persona` front matter — same fields (`name` required, `description` optional for workspace declarations), same body semantics. Detection is strict: only `<cwd>/AGENTS.md` is consulted, exactly one directory deep — no ancestor walk, no subdirectory recursion. A file without the exact `kind: persona` marker (unknown `kind` values included) is not a persona and is left entirely alone as project context.
+
+Persona sources are **exclusive**, in precedence order:
+
+1. The cwd's `AGENTS.md` with `kind: persona` — a workspace persona.
+2. The spawned persona: the definition named in the `subagent` tool's `persona` field. Applies only when (1) is absent.
+3. Neither — the session has no persona.
+
+One active persona per session, all or nothing. The winner is taken whole: a losing definition is discarded entire and its fields are never merged into the winner's. Fields absent from the active file fall through to pi's defaults — never to the discarded file's values. When a workspace persona overrides a spawned one, the session emits a transcript-visible notice naming both, so the orchestrator's belief about what it deployed is visibly corrected.
+
+Persona presence is orthogonal to root-vs-subagent; all four combinations are valid:
+
+| | Persona | Plain |
+|---|---|---|
+| **Root session** | Interactive specialist workspace: cd into the directory, launch pi, and the session *is* the specialist from the first message. | Ordinary pi session; a non-persona `AGENTS.md` stays project context. |
+| **Subagent child** | The active persona's body replaces the child's preamble and its `model`/`tools`/`skills` bind at construction. A workspace persona at the child's cwd wins over the spawned definition. | Default general-purpose child (the `persona` field omitted). |
+
+Two behaviors worth knowing:
+
+- **Model pin precedence** — covered on the `model` field above: the active persona's pin wins, an explicit `model` spawn argument is gap-filling only.
+- **Root skill filtering doesn't remove slash commands** — in root sessions, a declared `skills` list filters what the model sees per run, but unlisted skills' slash commands remain loaded: extensions can add skills at discovery but not subtract them. In subagent children the skill list is construction-locked (`--no-skills` plus exactly the declared skills).
 
 ## Where to Put Them
 
@@ -105,7 +129,7 @@ Routing metadata. Read by the orchestrating agent at group-design time — never
 
 ### System Prompt (Body)
 
-Persistent identity. Role, boundaries, behavioral style, domain knowledge, output format preferences. Injected once when the agent spawns. This is what makes the agent a *specialist* rather than a generic agent with a task.
+Persistent identity. Role, boundaries, behavioral style, domain knowledge, output format preferences. It replaces pi's default system-prompt preamble for every session that wears the persona. This is what makes the agent a *specialist* rather than a generic agent with a task.
 
 The system prompt should be **invocation-independent** — it describes *who the agent is*, not *what it's doing this time*. If you find yourself writing task-specific instructions in the body, they belong in the task string instead.
 

@@ -187,6 +187,7 @@ The architecture above includes post-test-write rulings: exclusive persona sourc
 - (b) `extensions/subagents/scoped-extension.integration.test.ts` ("propagates persona model, normalized tool policy, skills, and cwd to a native child") pinned the old addendum-stacking behavior (`appendSystemPrompt` contains the specialist body `"Review carefully."`) — an obsolete expectation invalidated by the architecture, since body-as-preamble replacement is this feature's core. Adjusted minimally during Step 2 to assert the body rides as the spawn-declared persona payload instead. The same test's `modelRef: "pinned/model"`-over-explicit-argument expectation is untouched and stays valid under ruling (a).
 - (c) Step 1 detail deviation (Steps 4–6 implementation): `declaration.ts` parses front matter with a local pure scalar parser instead of pi's `parseFrontmatter` — the index test harness mocks `@earendil-works/pi-coding-agent` down to `getAgentDir`, so the transitive runtime import breaks there. Delimiter/body semantics mirror pi's; `declaration.test.ts` stays green.
 - (d) Worker interpretations: spawned-only children emit a name-only boot notice (no fabricated `sourcePath` — interpretation note 7's implication); restores/resurrections read the persisted cwd from the lifecycle record (fallback: manager default) rather than re-parsing pi session-JSONL headers.
+- (e) Step 7 compat: the public field is `persona`, but parameter reads keep a documented legacy fallback (`persona ?? agent`, plus a `renameLegacyPersonaFields` arg rewrite ahead of `dropEmptyOptionals`) so the immutable pre-existing tests' 24 `agent:` call payloads (direct `tool.execute`) and historical JSONL stay valid without migration. `persona` never leaks onto `RegularAgentSpec`; internal/persisted names remain `agent`.
 
 ### Step 1: Parse cwd persona declarations
 
@@ -263,7 +264,7 @@ Update `skills/orchestrating-agents/SKILL.md` and `skills/specialist-design/SKIL
 Update `codemap.md` with the Persona Workspaces module, its owned `extensions/persona-workspaces/**` files and registry dependency, and Subagents' payload/construction responsibility. Preserve unrelated codemap entries.
 
 **Verify:** `rg -n 'agents\[\]\.agent|agent field|agent parameter|`agent` field' skills agents extensions/subagents/session-owner.ts` reports no obsolete public-parameter guidance. Existing discovery/persistence tests remain green, and inspection confirms the tool advertises `persona` while old persistence records still restore.
-**Status:** not started
+**Status:** done
 
 ### Step 8: Verify the integrated behavior
 
@@ -272,4 +273,15 @@ Run `npx vitest run extensions/persona-workspaces extensions/subagents` and then
 Confirm the complete data flow by inspection: the active workspace alone supplies capability declarations; the spawned payload supplies prompt fallback/override identity only; declared pins beat explicit model arguments (which fill gaps only); normal baseline survives undeclared fields; every replacement child manager is marked before handler dispatch; restored capabilities re-resolve without resetting model/thinking; fresh sessions announce once and resume/reload remain silent. Root skill filtering must not claim to unload slash commands.
 
 **Verify:** Both targeted and full test runs pass, `git diff --check` is clean, and every implementation step above has a recorded verification result before being marked done.
-**Status:** not started
+**Status:** done
+
+### Verification log
+
+- **Step 1:** `npx vitest run extensions/persona-workspaces/declaration.test.ts` — 17/17 green, strict cwd-only detection and absent-field assertions included.
+- **Step 2:** `npx vitest run extensions/subagents/{child-session-marker,managed-child-session,agent-set,agent-session-registry}.test.ts` — 44/44 green; inspection: only identity XML in the append list, every `createRuntime` manager marked before extension dispatch.
+- **Step 3:** `npx vitest run extensions/subagents` — 297/297 green; transient-harness inspection (file deleted after) of six scenarios: workspace-absent fields fall to baseline, explicit model gap-fills only (pin wins), wholesale replacement with child-cwd tier overlays, resume/restoration carry no re-derived model/thinking, workspace fork binds declared model/skills. Both pre-existing pin assertions pass untouched.
+- **Step 4:** prompt-binding and skills-filter cases green within `extensions/persona-workspaces/index.test.ts` (36/36 total); successive runs observe edits, explicit custom prompts untouched, plain sessions unmutated.
+- **Step 5:** front-matter cases green (tier + thinking binding, exact `resolveChildToolPolicy` normalization, absent fields, no resume/reload setter calls); child double-bind guard inspected.
+- **Step 6:** notice cases green (shape, winning/replaced names, once-per-session ingestion, fresh reasons, resumed transcripts); narrow-width rendering inspected at 28/40/100 columns via pi-tui `Text`/`Box`; explicit `customPrompt` returns before notices.
+- **Step 7:** the step's `rg` command reports no obsolete public-parameter guidance; `npx vitest run` — 804/804 green including the immutable legacy `agent:` call sites and persistence records (compat recorded as ruling (e)).
+- **Step 8:** `npx vitest run extensions/persona-workspaces extensions/subagents` — 333/333 green; `npx vitest run` — 804/804 green; `git diff --check` clean; diff reviewed — only step-scoped files plus this plan. Data-flow inspection confirmed: the active workspace alone supplies capability declarations; the spawned payload carries prompt-fallback/override identity only; pins beat explicit model arguments (gap-fill); undeclared fields fall to baseline; replacement managers are marked before handler dispatch; restored capabilities re-resolve without resetting model/thinking; fresh sessions announce once while resume/reload stay silent; root skill filtering is documented as not unloading slash commands.
