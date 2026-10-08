@@ -138,9 +138,11 @@ the front matter binds `model` (with `:<level>` thinking suffix), `tools`
 filter). Precedence and resilience paths: an explicit `--system-prompt`
 outranks the directory; plain/unknown-`kind` AGENTS.md files are left alone;
 mid-session edits apply next run; the persona is authoritative at session
-boundaries — reopening a session re-applies the declaration's model/thinking/
-tools over the user's mid-session choices, `reload` never rebinds, and
-resume/reload never re-announce (announcements are fresh-instance-gated).
+boundaries — resume, reload, and fork are one continuation case that
+re-applies the declaration's model/thinking/tools over the user's mid-session
+choices, while continuations never re-announce (announcements fire only on
+genuine takeover: fresh starts, and a fork acquiring a persona its lineage
+never had).
 
 **Why:** This is the topic journey of persona workspaces — "cd into a
 directory, launch pi, and the session IS the specialist from the first

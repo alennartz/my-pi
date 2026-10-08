@@ -230,8 +230,10 @@ function rpcSession({ cwd, agentDir, extraArgs = [], probeOut }) {
 		s.send({ ...cmd, id });
 		return s.waitEvent((e) => e.type === "response" && e.id === id && pred(e), ms);
 	};
-	// Retry idempotent commands until the process is up.
-	s.ready = async (cmd = { type: "get_state" }, ms = 60000) => {
+	// Retry idempotent commands until the process is up AND the model registry
+	// has resolved the session model (an unresolved registry reports id
+	// "unknown" — prompts sent then hang and declared pins cannot bind).
+	s.ready = async (cmd = { type: "get_state" }, ms = 90000) => {
 		const id = `init`;
 		const deadline = Date.now() + ms;
 		for (;;) {
@@ -240,8 +242,8 @@ function rpcSession({ cwd, agentDir, extraArgs = [], probeOut }) {
 				(e) => e.type === "response" && e.id === id,
 				Math.min(2500, deadline - Date.now() || 0),
 			);
-			if (resp) return resp;
-			if (Date.now() > deadline) throw new Error("rpc session did not become ready");
+			if (resp && resp.data?.model?.id && resp.data.model.id !== "unknown") return resp;
+			if (Date.now() > deadline) throw new Error("rpc session did not become ready (model never resolved)");
 		}
 	};
 	s.prompt = async (message) => {

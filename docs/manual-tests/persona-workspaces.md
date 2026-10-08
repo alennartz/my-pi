@@ -65,7 +65,8 @@ driven parent sessions that spawn real children.
   instance): editing the workspace AGENTS.md body changes the next run's
   preamble; the takeover notice is not re-emitted.
 - **T10 Resume rebinds — persona-authoritative at session boundaries**
-  (R6, RPC + resume; re-verified live after the ruling in `916add2`): a
+  (R6, RPC + resume; re-verified live after the continuation ruling in
+  `bff6ae2`): a
   tier-name `model` pin binds through model-tiers.json; a user model +
   thinking change mid-session stands through run boundaries (spot-check: the
   run after `/model` executes with the user's model — no slap-back at run
@@ -74,19 +75,23 @@ driven parent sessions that spawn real children.
   (with its `:<level>` thinking suffix) and tool whitelist (exact
   `resolveChildToolPolicy` normalization) — over the user's choices; the
   *edited* body binds per-run and the resume announces nothing.
-- **T13 Reload never rebinds** (R7, RPC + probe `pw-reload` command): an
+- **T13 Reload is a continuation boundary** (R7, RPC + probe `pw-reload`
+  command; re-verified live after the continuation ruling in `bff6ae2`): an
   extension reload (`ctx.reload()` = `session.reload()`, the same path the
   builtin `/reload` runs) dispatched mid-session after an AGENTS.md edit
-  applies no declaration fields — the user's model + thinking stand — while
-  the edited body still binds per-run and no second notice fires. pi-core
-  reload resets the active tool selection to pi's default set (see *Open
-  Issues*).
+  re-applies the edited declaration in full — model (with its `:<level>`
+  thinking suffix) and tool whitelist — over the user's mid-session choices
+  (pi-core reload resets active tools to defaults; the rebind restores the
+  declared set), the edited body binds per-run, and nothing announces.
 - **T11 Resurrect re-resolves capability gates** (D2): after teardown, the
   workspace file's `model`/`tools` are edited; the resurrected child's tool
   policy comes from the edited file (gates re-resolved) while its persisted
   model survives (DR-038) and no second notice fires.
-- **T12 Fork inherits the workspace persona** (D2): a `fork` child of a
-  persona-workspace parent wears the workspace persona with a boot notice.
+- **T12 Fork inherits the workspace persona silently** (D2): a `fork` child
+  of a persona-workspace parent wears the workspace persona (body + model pin
+  + tool whitelist) as a silent continuation — the single visible notice is
+  the parent's inherited takeover notice on the copied branch (a
+  re-announcing fork would show two).
 
 Promoted to `tools/manual-test/PLAN.md` this run: J8 (persona workspace
 takeover) and J9 (spawned persona identity + override); J1/J2 wording updated
@@ -138,9 +143,9 @@ for the `persona` parameter and body-as-preamble semantics.
   by this run's harness.
 - **Pi does not persist active-tool selection** — not across process restarts
   and not across reloads (model/thinking are persisted). The declared
-  whitelist is observable at binding and at the session-start rebind that
-  restores it (post-ruling); after a reload, pi's default set runs until the
-  session is next opened — see *Open Issues*.
+  whitelist is observable at binding and at every session-start rebind — the
+  continuation ruling (`bff6ae2`) makes that rebind the restore mechanism at
+  resume and reload alike.
 - **Single-user, sequential sessions** — no concurrency, compaction, or
   cross-session interaction is exercised.
 - R6's "user's mid-session choice" is applied through RPC `set_model` /
@@ -153,13 +158,18 @@ files), so no escalation was needed before executing.
 
 ## Results
 
-Record run (live re-verification after the persona-authoritative ruling,
-`916add2`): `node tools/manual-test/persona-workspaces/run.mjs --keep
---workdir /tmp/pw-record2` → **47/47 checks PASS** (verdict JSON kept; the
-prior 42-check run is superseded). Full unit suite at this commit:
-`npx vitest run` → 818/818 green. The record run re-exercised J1–J3 live
-(D1/D2 green); J6/J7 drivers and their code paths are untouched by the
-ruling and remain at the green runs recorded below.
+Record run (live re-verification after the continuation ruling, `bff6ae2`):
+`node tools/manual-test/persona-workspaces/run.mjs --keep --workdir
+/tmp/pw-record4` → **47/47 checks PASS** (verdict JSON kept; prior record
+runs superseded). Full unit suite at this commit: `npx vitest run` → 818/818
+green (38/38 in `extensions/persona-workspaces`). The record run
+re-exercised J1–J3 live (D1/D2 green); J6/J7 drivers and their code paths are
+untouched by the rulings and remain at the green runs recorded below. One
+harness flake en route: an earlier pass booted R1 while the model registry
+was still unresolved (`model:"unknown"` — devpass catalog cold start), so the
+pin could not bind and the prompt produced no request (six R1 checks failed
+vacuously; every ruling-affected check passed in that same run). The
+driver's `ready()` now waits for a resolved session model before prompting.
 
 ### Smoke Suite
 
@@ -234,47 +244,53 @@ ruling and remain at the green runs recorded below.
   rides as context, no notice).
 - **T9 Mid-session edits apply next run** (R5) — pass: v1 body bound on run 1,
   v2 on run 2 of the same session instance, exactly one notice.
-- **T10 Resume rebinds** (R6) — **pass (re-verified)** after the ruling in
-  `916add2`. History for the record: the first run exposed that pi dispatches
-  `session_start` reason `startup` for every initial runtime — including
-  `pi --session <existing>` — which rebound at resume against the then-
-  governing anti-slap-back intent (fixed inline in `7415760` with
-  fresh-session-instance detection); the follow-up user ruling then made the
-  persona authoritative at session boundaries, implemented in `916add2`,
-  re-scoping binding to "every session start but `reload`" and keeping the
-  fresh-instance derivation as the announcement gate only. Live at the record
-  run: the edited declaration's model (`gpt-6.1-sol`) and `:high` thinking
-  rebind over the user's `claude-haiku-5-5`/`medium`, the edited whitelist
-  (`[read, respond]`) rebinds, the edited body binds per-run, zero second
-  notices; the mid-session spot-check confirms the run after `/model`
+- **T10 Resume rebinds — one continuation case** (R6) — **pass (re-verified
+  live)** under the continuation ruling `bff6ae2`. History for the record:
+  the first run exposed that pi dispatches `session_start` reason `startup`
+  for every initial runtime — including `pi --session <existing>` — which
+  rebound at resume against the then-governing anti-slap-back intent (fixed
+  inline in `7415760` with fresh-session-instance detection); ruling (f)
+  then made the persona authoritative at session boundaries (`916add2`,
+  "every session start but `reload`") and the continuation ruling
+  (`bff6ae2`) unified `resume`/`reload`/`fork` as one continuation case —
+  full rebind everywhere, announcements only on genuine takeover. Live at the
+  record run: the edited declaration's model (`gpt-6.1-sol`) and `:high`
+  thinking rebind over the user's `claude-haiku-5-5`/`medium`, the edited
+  whitelist (`[read, respond]`) rebinds, the edited body binds per-run, zero
+  second notices; the mid-session spot-check confirms the run after `/model`
   executed with the user's model. Coherence: the boundary semantics read as
   the ruling intends — **looks coherent**. (38 unit tests green.)
-- **T13 Reload never rebinds** (R7) — pass: reload dispatched live (probe
-  reason log records `reload`), no declaration field applied (user model +
-  thinking stand, the edited `[read, respond]` whitelist absent), edited body
-  binds per-run, no second notice. Coherence: **looks coherent**. New
-  observation (→ *Open Issues*): pi-core reload resets active tools to pi's
-  default set — the boot-bound whitelist survives neither restart nor
-  reload; only the session-start rebind restores it.
+- **T13 Reload is a continuation boundary** (R7) — pass (re-verified live):
+  reload dispatched (probe reason log records `reload`), the edited
+  declaration re-applied in full — model `gpt-6.1-sol`, thinking `high`,
+  whitelist `[read, respond]` — over the user's mid-session choices, edited
+  body binds per-run, no second notice. pi-core reload resets active tools to
+  defaults and the rebind restores the declared set (the earlier open issue
+  about reload dropping the whitelist is resolved by the continuation
+  ruling). Coherence: **looks coherent**.
 - **T11 Resurrect re-resolves capability gates** (D2) — pass: with the
   workspace file edited while torn down, the resurrected child's tool policy
   came from the edited file (`[bash, read, respond]`) while its persisted
   model (`gpt-6.1-sol`) survived (DR-038); exactly one notice in the child
   transcript.
-- **T12 Fork inherits the workspace persona** (D2) — pass: fork child's
-  preamble is the workspace body (v2, post-edit), construction-bound to the
-  workspace model pin (`gpt-6-luna`) and tool set, boot notice names wslead +
-  source path.
+- **T12 Fork inherits the workspace persona silently** (D2) — pass
+  (re-verified live): fork child's preamble is the workspace body (v2,
+  post-edit), construction-bound to the workspace model pin (`gpt-6-luna`)
+  and tool set; exactly one notice is visible — the parent's inherited
+  takeover notice on the copied branch (silent carry-over; a re-announcing
+  fork would show two). Coherence: **looks coherent**.
 
 ## Plan Updates
 
 - **Added J8** (persona workspace takeover — the directory IS the
   specialist): the topic's root journey, driver `persona-workspaces/run.mjs`
   R1–R7.
-- **Modified J8** (post-ruling wording): resume is persona-authoritative —
-  reopening a session re-applies the declaration's model/thinking/tools over
-  mid-session choices, `reload` never rebinds, and announcements stay
-  fresh-instance-gated (resume/reload silent).
+- **Modified J8** (post-ruling wording, updated twice): the persona is
+  authoritative at session boundaries — resume/reload/fork are one
+  continuation case re-applying model/thinking/tools over mid-session
+  choices, while continuations never re-announce (announcements fire only on
+  genuine takeover: fresh starts, and a fork acquiring a persona its lineage
+  never had). `tools/manual-test/PLAN.md`'s J8 text updated accordingly.
 - **Added J9** (spawned persona identity — body as preamble, workspace
   override): the topic's spawn journey, driver `persona-workspaces/run.mjs`
   D1–D2.
@@ -288,15 +304,9 @@ ruling and remain at the green runs recorded below.
 
 ## Open Issues
 
-- **pi drops the active-tool selection at reload** (restored at the next
-  open by the session-start rebind, per the persona-authoritative ruling):
-  after an extension reload the session runs pi's default tool set until the
-  session is reopened. If the declared whitelist should survive reloads too,
-  that needs pi-level tool-state persistence or a ruled reload-rebind — user
-  decision.
-- **`reload` no-rebind is now live-verified** (T13/R7) — closed this
-  re-verification; retained here only as history: it was previously
-  unit-tested only.
+- **`reload` live-verified as a continuation boundary** (T13/R7) — closed;
+  retained as history: reload was previously driven only via unit tests and
+  wrongly pinned as no-rebind before the continuation ruling.
 - **TUI chrome untested**: the `persona-notice` renderer (Box/Text layout,
   theme colors, narrow widths) and its pimote panel counterpart are
   structurally invisible to headless drivers; the notice message content is
@@ -305,8 +315,9 @@ ruling and remain at the green runs recorded below.
   `startup` covers CLI-opened *existing* sessions (`resume` is only for
   in-process switches). Any extension distinguishing fresh-vs-resumed by the
   reason set alone has the same trap; the fresh-session-instance detection
-  (transcript/`parentSession`, introduced in `7415760` and retained as the
-  announcement gate under `916add2`) is the local remedy.
+  (transcript/`parentSession`, introduced in `7415760` and the announcement
+  gate under `916add2`/`bff6ae2` — genuine takeovers only) is the local
+  remedy.
 - **Premium-tier pins unexercised** (harness limitation above): with the
   weekly premium allowance restored, add a premium-pinned persona case to
   `persona-workspaces/run.mjs`.
