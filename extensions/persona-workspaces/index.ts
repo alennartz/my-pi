@@ -8,7 +8,8 @@
  * Two handlers:
  * - `before_agent_start` — prompt binding (persona body replaces the preamble
  *   via `systemPromptOptions.customPrompt`), skills filter, takeover notices.
- * - `session_start` — front-matter binding (model/tools) once at bind time.
+ * - `session_start` — front-matter binding (model/tools) once per fresh
+ *   session instance.
  *
  * Persona resolution comes from `declaration.ts`; spawn-declared payloads come
  * from Subagents' child-session registry (`../subagents/child-session-marker.ts`)
@@ -51,7 +52,7 @@ import {
 /** Custom message type for takeover notices; rendered for clean TUI display. */
 export const PERSONA_NOTICE_TYPE = "persona-notice";
 
-/** The `session_start` reasons at which a session binds its persona and announces the takeover. */
+/** The `session_start` reasons at which a session may bind its persona and announce the takeover. */
 const FRESH_BIND_REASONS: ReadonlySet<string> = new Set(["startup", "new", "fork"]);
 
 type SessionReason = SessionStartEvent["reason"];
@@ -87,13 +88,15 @@ type RunPlan = {
 
 /**
  * The only lifecycle state this extension keeps: the latest `session_start`
- * reason, keyed by the SessionManager it was recorded for. Never persisted and
- * never holding declarations or notice flags — it just tells the prompt
- * handler whether this run may bind-and-announce.
+ * reason and whether it started a fresh session instance, keyed by the
+ * SessionManager it was recorded for. Never persisted and never holding
+ * declarations or notice flags — it just tells the prompt handler whether
+ * this run may bind-and-announce.
  */
 type SessionStartState = {
 	manager: object | undefined;
 	reason: SessionReason | undefined;
+	fresh: boolean;
 };
 
 export default function personaWorkspaces(pi: ExtensionAPI) {
@@ -106,11 +109,16 @@ export default function personaWorkspaces(pi: ExtensionAPI) {
 		return box;
 	});
 
-	const sessionStart: SessionStartState = { manager: undefined, reason: undefined };
+	const sessionStart: SessionStartState = { manager: undefined, reason: undefined, fresh: true };
 
 	pi.on("session_start", (event, ctx) => {
-		recordSessionStart(sessionStart, ctx.sessionManager, event.reason);
-		if (!isFreshBind(event.reason)) return;
+		recordSessionStart(
+			sessionStart,
+			ctx.sessionManager,
+			event.reason,
+			isFreshSessionInstance(event.reason, ctx.sessionManager),
+		);
+		if (!sessionStart.fresh) return;
 		// A subagent child's model/tools/skills are construction-set by the
 		// spawn path; binding here would slap that state back.
 		if (getSubagentPersona(ctx.sessionManager) || isSubagentChildSession(ctx.sessionManager)) return;
@@ -124,7 +132,7 @@ export default function personaWorkspaces(pi: ExtensionAPI) {
 			workspace: loadWorkspacePersona(ctx.cwd),
 			spawned: getSubagentPersona(ctx.sessionManager),
 			explicitCustomPrompt: event.systemPromptOptions.customPrompt,
-			startReason: recordedStartReason(sessionStart, ctx.sessionManager),
+			freshInstance: recordedFreshInstance(sessionStart, ctx.sessionManager),
 			transcript: transcriptEntries(ctx.sessionManager),
 		});
 		if (!plan) return undefined;
@@ -144,7 +152,7 @@ function planRunBinding(input: {
 	workspace: PersonaDeclaration | undefined;
 	spawned: PersonaPayload | undefined;
 	explicitCustomPrompt: string | undefined;
-	startReason: SessionReason | undefined;
+	freshInstance: boolean;
 	transcript: readonly unknown[];
 }): RunPlan | undefined {
 	// One active persona per session, all or nothing: the workspace declaration
@@ -162,16 +170,17 @@ function planRunBinding(input: {
 
 /**
  * Compose the takeover notice for this run, or undefined when the run must
- * stay silent: only fresh binds announce, and each condition announces at
- * most once per session instance — reconstructed from the transcript.
+ * stay silent: only fresh session instances announce, and each condition
+ * announces at most once per session instance — reconstructed from the
+ * transcript.
  */
 function planNotice(input: {
 	workspace: PersonaDeclaration | undefined;
 	spawned: PersonaPayload | undefined;
-	startReason: SessionReason | undefined;
+	freshInstance: boolean;
 	transcript: readonly unknown[];
 }): PersonaNotice | undefined {
-	if (!isFreshBind(input.startReason)) return undefined;
+	if (!input.freshInstance) return undefined;
 	const notice = composeNotice(input.workspace, input.spawned);
 	if (!notice || noticeAlreadyAnnounced(input.transcript, notice.condition)) return undefined;
 	return notice;
@@ -245,32 +254,61 @@ function noticeMessage(notice: PersonaNotice): BeforeAgentStartEventResult["mess
 }
 
 /**
- * Fresh binds are `startup`, `new`, and `fork`; `resume` and `reload` never
- * rebind or announce (a user's mid-session choice is never slapped back). An
- * unrecorded reason counts as fresh — real pi always dispatches
- * `session_start` before the first run, so an unrecorded reason means a fresh
- * session instance, not a resumed one.
+ * Whether a `session_start` started a fresh session instance — one that binds
+ * and announces. `new` and `fork` always do; `resume` and `reload` never do.
+ * `startup` is ambiguous: pi reports it both for a brand-new session file and
+ * for a CLI-opened existing one (`--session`/`--resume`/`--fork` boots all
+ * create the initial runtime as `startup`; `resume` is only dispatched for
+ * in-process switches). A `startup` is a fresh bind only when the session has
+ * no prior conversation to slap back over — or is a CLI fork, which records
+ * its source as the header's `parentSession` and binds like any other fork.
  */
-function isFreshBind(reason: SessionReason | undefined): boolean {
-	return reason === undefined || FRESH_BIND_REASONS.has(reason);
+function isFreshSessionInstance(reason: SessionReason, manager: object): boolean {
+	if (!FRESH_BIND_REASONS.has(reason)) return false;
+	if (reason !== "startup") return true;
+	const header = sessionHeader(manager);
+	if (header?.parentSession !== undefined) return true;
+	return !hasConversation(transcriptEntries(manager));
 }
 
-/** Record the latest session-start reason for the active session manager. */
+/** Whether a transcript carries prior user/assistant turns (a lived-in session). */
+function hasConversation(entries: readonly unknown[]): boolean {
+	return entries.some((entry) => {
+		const record = entry as { type?: string; message?: { role?: string } } | null;
+		return (
+			record?.type === "message" &&
+			(record.message?.role === "user" || record.message?.role === "assistant")
+		);
+	});
+}
+
+/** The session header a manager exposes (real pi sessions), or undefined. */
+function sessionHeader(manager: object): { parentSession?: unknown } | undefined {
+	const m = manager as { getHeader?: () => unknown };
+	const header = typeof m.getHeader === "function" ? m.getHeader() : undefined;
+	return (header as { parentSession?: unknown } | null | undefined) ?? undefined;
+}
+
+/** Record the latest session-start state for the active session manager. */
 function recordSessionStart(
 	state: SessionStartState,
 	manager: object,
 	reason: SessionReason,
+	fresh: boolean,
 ): void {
 	state.manager = manager;
 	state.reason = reason;
+	state.fresh = fresh;
 }
 
-/** The recorded reason for this session manager, or undefined when unrecorded. */
-function recordedStartReason(
-	state: SessionStartState,
-	manager: object,
-): SessionReason | undefined {
-	return state.manager === manager ? state.reason : undefined;
+/**
+ * Whether the session instance recorded for this manager is a fresh bind,
+ * defaulting to fresh when nothing was recorded (real pi always dispatches
+ * `session_start` before the first run, so an unrecorded reason means a fresh
+ * session instance, not a resumed one).
+ */
+function recordedFreshInstance(state: SessionStartState, manager: object): boolean {
+	return state.manager === manager ? state.fresh : true;
 }
 
 /**
