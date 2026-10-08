@@ -87,7 +87,7 @@ Each child construction resolves the workspace declaration twice — once in `sp
 - **Category:** code correctness
 - **Severity:** nit
 - **Location:** `extensions/persona-workspaces/index.ts:368-369`
-- **Status:** open
+- **Status:** resolved
 
 `setModel(model): Promise<boolean>` returns `false` when authentication is not configured for the model's provider. `bindDeclaredModel` awaits it, discards the result, then unconditionally applies `setThinkingLevel(binding.thinking)`. Scenario: a workspace declares `model: some-provider/model:high` where `some-provider` has no API key — the session silently runs on the baseline model with the persona's thinking level clamped onto that model, no diagnostic, while the boot notice says the persona took over. The child path surfaces `resolveCliModel` errors (`managed-child-session.ts:417`). A `false` result should at least raise the existing tier-diagnostic vocabulary and skip the thinking-level call.
 

@@ -346,8 +346,9 @@ async function bindDeclaredFrontMatter(
 
 /**
  * Bind a declared model reference (tier name or model id, `:<level>` suffix
- * allowed). An unavailable or unconfigured reference leaves the baseline in
- * place and reports with the existing tier diagnostics vocabulary.
+ * allowed). An unavailable or unauthenticated reference leaves the baseline in
+ * place and reports with the existing tier diagnostics vocabulary; a model
+ * that did not bind never has its thinking level applied.
  */
 async function bindDeclaredModel(
 	pi: ExtensionAPI,
@@ -365,7 +366,17 @@ async function bindDeclaredModel(
 		ctx.ui.notify(binding.diagnostic, "warning");
 		return;
 	}
-	await pi.setModel(binding.model);
+	const bound = await pi.setModel(binding.model);
+	if (!bound) {
+		// `setModel` returns false when the model's provider has no configured
+		// authentication. The baseline model stands, and the persona's thinking
+		// level must not be clamped onto it.
+		ctx.ui.notify(
+			`Model "${binding.model.provider}/${binding.model.id}" is not authenticated; using the session default model.`,
+			"warning",
+		);
+		return;
+	}
 	if (binding.thinking) pi.setThinkingLevel(binding.thinking);
 }
 
