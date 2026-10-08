@@ -5,7 +5,6 @@ import {
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 	createEventBus,
-	ProjectTrustStore,
 	resolveCliModel,
 	SessionManager,
 	SettingsManager,
@@ -17,7 +16,6 @@ import {
 	type ExtensionError,
 	type ExtensionUIContext,
 	type LoadExtensionsResult,
-	type ProjectTrustContext,
 	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import { formatAgentPath, type AgentPath } from "./agent-path.js";
@@ -25,7 +23,6 @@ import type { ChildToolPolicy } from "./child-tool-policy.js";
 import { markSubagentChildSession, type PersonaPayload } from "./child-session-marker.js";
 import { DelegatingExtensionUI } from "./delegating-extension-ui.js";
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
-import { resolveChildProjectTrust } from "./project-trust.js";
 import { registerSessionTreeStore } from "./scoped-store.js";
 
 export type ChildSessionTarget =
@@ -85,7 +82,6 @@ type RuntimeFactoryOptions = {
 	agentDir: string;
 	sessionManager: SessionManager;
 	sessionStartEvent?: SessionStartEvent;
-	projectTrustContext?: ProjectTrustContext;
 };
 
 /** Owns one SDK-native child runtime and its scoped extension lifecycle. */
@@ -370,7 +366,6 @@ export async function createManagedChildSession(
 ): Promise<ManagedChildSession> {
 	const skillPaths = [...config.skillPaths];
 	const appendSystemPrompt = [...config.appendSystemPrompt];
-	const trustStore = new ProjectTrustStore(dependencies.agentDir);
 	const initial = initialTarget(config.target);
 	const pathName = formatAgentPath(config.path);
 	const headless = createHeadlessUi(hooks.onUiNotify);
@@ -388,12 +383,6 @@ export async function createManagedChildSession(
 			const effectiveCwd = options.sessionManager.getCwd() || options.cwd;
 			const settingsManager = SettingsManager.create(effectiveCwd, options.agentDir);
 			const eventBus = createEventBus();
-			const projectTrustContext: ProjectTrustContext = {
-				cwd: effectiveCwd,
-				mode: "rpc",
-				hasUI: false,
-				ui: presentation.context,
-			};
 			const resourceLoaderOptions = {
 				eventBus,
 				appendSystemPrompt,
@@ -408,21 +397,15 @@ export async function createManagedChildSession(
 						}
 					: {}),
 			};
+			// No trust hook: pi's default project-trusted state stands, so the
+			// child trusts its cwd and loads all project resources there
+			// (.pi/settings.json, .pi/extensions, .pi/skills, .pi/mcp.json, …).
+			// The former cautious ask→no headless adapter is deliberately gone.
 			const services = await createAgentSessionServices({
 				cwd: effectiveCwd,
 				agentDir: options.agentDir,
 				settingsManager,
 				resourceLoaderOptions,
-				resourceLoaderReloadOptions: {
-					resolveProjectTrust: ({ extensionsResult }) => resolveChildProjectTrust({
-						cwd: effectiveCwd,
-						extensionsResult,
-						trustStore,
-						defaultProjectTrust: settingsManager.getDefaultProjectTrust(),
-						projectTrustContext,
-						onExtensionError: (error) => notifyDiagnostic(hooks, error.error, "error"),
-					}),
-				},
 			});
 			reportRuntimeDiagnostics(services.diagnostics, hooks);
 			const treeStore = config.scope.registry.getScopedStore?.();
