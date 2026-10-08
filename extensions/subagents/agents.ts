@@ -4,6 +4,8 @@
  * Forked from examples/extensions/subagent/agents.ts, extended with:
  * - `skills` field in AgentConfig (parsed from frontmatter, comma-separated)
  * - resolveSkillPaths() — resolves skill names to filesystem paths via pi.getCommands()
+ * - resolvePersonaSkillPaths() — the shared active-persona skill resolver
+ *   (failure policy parameter: `fatal` | `subset`)
  */
 
 import * as fs from "node:fs";
@@ -21,6 +23,18 @@ export interface RegularAgentSpec {
 	/** Immutable skill paths resolved as part of this spawn request. */
 	skillPaths?: readonly string[];
 	/**
+	 * `skillPaths` is the complete skill set (persona-declared): suppress
+	 * ordinary skill discovery even when the resolved list is empty — a
+	 * declared-but-stale list degrades to zero skills, never to full discovery.
+	 */
+	noSkills?: boolean;
+	/**
+	 * The active persona file's declared tool allowlist, resolved once when the
+	 * construction inputs were assembled (the declaration is read exactly once
+	 * per child). Absent = no persona tool declaration → ordinary baseline.
+	 */
+	personaTools?: readonly string[];
+	/**
 	 * Working directory for this agent. Always an absolute path once the spec
 	 * reaches `SubagentManager.start` — the tool handler resolves and validates
 	 * any user-supplied (possibly relative) path before spawn. Absent means
@@ -37,6 +51,18 @@ export interface ForkAgentSpec {
 	/** Optional for legacy persisted fork records; absent means default policy. */
 	tools?: string[];
 	skillPaths?: string[];
+	/**
+	 * `skillPaths` is the complete skill set (persona-declared): suppress
+	 * ordinary skill discovery even when the resolved list is empty — a
+	 * declared-but-stale list degrades to zero skills, never to full discovery.
+	 */
+	noSkills?: boolean;
+	/**
+	 * The active persona file's declared tool allowlist, resolved once when the
+	 * construction inputs were assembled (the declaration is read exactly once
+	 * per child). Absent = no persona tool declaration → ordinary baseline.
+	 */
+	personaTools?: readonly string[];
 	thinkingLevel: string;
 	resumeSessionFile?: string;
 	/**
@@ -347,5 +373,43 @@ export function resolveSkillPaths(
 	}
 
 	return paths;
+}
+
+/**
+ * Failure policy for active-persona skill resolution — the single decision
+ * every child-construction path shares:
+ * - "fatal": any unresolvable name throws (fresh spawn, fork, resurrect fail
+ *   closed on a stale declaration).
+ * - "subset": unresolvable names are dropped and reported in `dropped` — a
+ *   stale declaration degrades narrow (never wider than the declared list);
+ *   an all-stale list yields zero skills, never ordinary discovery.
+ */
+export type SkillFailurePolicy = "fatal" | "subset";
+
+/**
+ * Resolve one active persona file's declared skill names against the current
+ * command set for a child construction — the shared resolver for spawn, fork,
+ * resurrect, and restore. Returns the resolved paths (declared order) and, for
+ * the `subset` policy, the names that no longer resolve (the caller logs
+ * them).
+ */
+export function resolvePersonaSkillPaths(
+	skillNames: string[],
+	commands: CommandInfo[],
+	failure: SkillFailurePolicy,
+): { skillPaths: string[]; dropped: string[] } {
+	if (failure === "fatal") {
+		return { skillPaths: resolveSkillPaths(skillNames, commands), dropped: [] };
+	}
+	const skillPaths: string[] = [];
+	const dropped: string[] = [];
+	for (const name of skillNames) {
+		try {
+			skillPaths.push(...resolveSkillPaths([name], commands));
+		} catch {
+			dropped.push(name);
+		}
+	}
+	return { skillPaths, dropped };
 }
 

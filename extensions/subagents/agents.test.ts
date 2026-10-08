@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderAgentDefinitions, type AgentConfig } from "./agents.js";
+import { renderAgentDefinitions, resolvePersonaSkillPaths, type AgentConfig } from "./agents.js";
 
 function agent(overrides: Partial<AgentConfig> = {}): AgentConfig {
 	return {
@@ -35,5 +35,40 @@ describe("renderAgentDefinitions", () => {
 		])).toContain(
 			'  <agent name="reviewer &quot;strict&quot;" source="package:user">Check &lt;files&gt; &amp; report &apos;findings&apos;</agent>',
 		);
+	});
+});
+
+describe("resolvePersonaSkillPaths", () => {
+	const commands = [
+		{ name: "skill:debugging", source: "skill", path: "/skills/debugging/SKILL.md" },
+		{ name: "skill:review", source: "skill", path: "/skills/review/SKILL.md" },
+		{ name: "plain", source: "project", path: "/commands/plain.md" },
+	];
+
+	it("resolves declared names in order under the fatal policy", () => {
+		const result = resolvePersonaSkillPaths(["review", "debugging"], commands, "fatal");
+		expect(result).toEqual({
+			skillPaths: ["/skills/review/SKILL.md", "/skills/debugging/SKILL.md"],
+			dropped: [],
+		});
+	});
+
+	it("throws on an unresolvable name under the fatal policy", () => {
+		expect(() => resolvePersonaSkillPaths(["debugging", "typo"], commands, "fatal")).toThrow(
+			/Skill "typo" not found/,
+		);
+	});
+
+	it("drops unresolvable names and reports them under the subset policy", () => {
+		const result = resolvePersonaSkillPaths(["debugging", "typo", "review"], commands, "subset");
+		expect(result).toEqual({
+			skillPaths: ["/skills/debugging/SKILL.md", "/skills/review/SKILL.md"],
+			dropped: ["typo"],
+		});
+	});
+
+	it("yields zero skills, not failure, when an all-stale list degrades under the subset policy", () => {
+		const result = resolvePersonaSkillPaths(["typo", "gone"], commands, "subset");
+		expect(result).toEqual({ skillPaths: [], dropped: ["typo", "gone"] });
 	});
 });

@@ -21,12 +21,18 @@ import {
 	type ForkAgentSpec,
 	discoverAgents,
 	discoverPackageAgents,
-	resolveSkillPaths,
+	resolvePersonaSkillPaths,
 	resolveAgentCwds,
 	formatAgentList,
 	renderAgentDefinitions,
 } from "./agents.js";
-import { SubagentManager, isSettledState, loadActivePersona, type AgentStatus } from "./agent-set.js";
+import {
+	SubagentManager,
+	isSettledState,
+	loadActivePersona,
+	type AgentStatus,
+	type PersonaCapabilities,
+} from "./agent-set.js";
 import {
 	AgentSessionRegistry,
 	type AgentOperationalSnapshot,
@@ -41,11 +47,11 @@ import { statusesToCards } from "./panel-cards.js";
 import { formatSpawnToolResult } from "./tool-result.js";
 import {
 	SESSION_DEFAULT_LABEL,
-	TIER_NAMES,
+	TIERS_UNCONFIGURED_MESSAGE,
 	type TierConfig,
-	isTierName,
+	findAvailableModel,
 	loadTierConfig,
-	resolveModelRef,
+	resolveDeclaredModelRef,
 	renderTierTable,
 	stripThinkingSuffix,
 } from "./model-tiers.js";
@@ -177,24 +183,6 @@ function modelRefOf(model: { provider?: unknown; id?: unknown } | undefined): st
 	return model.id;
 }
 
-/** True when `ref` names an available model by bare id or `provider/id`. */
-function isAvailableModelRef(ref: string, availableModels: readonly any[]): boolean {
-	return availableModels.some(
-		(candidate: any) => candidate?.id === ref || `${candidate?.provider}/${candidate?.id}` === ref,
-	);
-}
-
-/** The "Unknown model" error text for a rejected winning reference. */
-function unknownModelMessage(modelPart: string, agentId: string, availableModels: readonly any[]): string {
-	const available = availableModels
-		.map((model: any) => `${model?.provider}/${model?.id}`)
-		.filter(Boolean)
-		.sort();
-	const preview = available.length > 0 ? available.slice(0, 20).join(", ") : "none";
-	const more = available.length > 20 ? `, ... (+${available.length - 20} more)` : "";
-	return `Unknown model "${modelPart}" for agent "${agentId}". Tiers: ${TIER_NAMES.join(", ")}. Available models: ${preview}${more}`;
-}
-
 /**
  * Resolve one child construction's winning model reference.
  *
@@ -202,9 +190,12 @@ function unknownModelMessage(modelPart: string, agentId: string, availableModels
  * tool `model` is gap-filling only (it applies when the active persona
  * declares no `model`); otherwise the parent-inherited baseline stands. Only
  * the winner is validated and resolved — a discarded reference is never
- * consulted. Tier names resolve through the tier config; unconfigured or
- * unavailable tiers fall back to the baseline with a warning. Throws when the
- * winner is neither a tier name nor a known model reference.
+ * consulted. Mechanics (tier resolution, suffix split, matching, canonical
+ * re-serialization) live once in `resolveDeclaredModelRef`; this wrapper only
+ * owns the precedence and the child-side failure policy: the caller-supplied
+ * winner is validated (throw), an inherited baseline reference is never
+ * rejected (passthrough), and unconfigured/unavailable tiers fall back to the
+ * baseline with a warning.
  */
 function resolveChildModelRef(args: {
 	pin: string | undefined;
@@ -215,32 +206,21 @@ function resolveChildModelRef(args: {
 	availableModels: readonly any[];
 }): { model: string | undefined; warnings: string[] } {
 	const winner = args.pin || args.explicit || undefined;
-	if (winner !== undefined) {
-		const winnerPart = stripThinkingSuffix(winner).model;
-		if (!isTierName(winner) && !isAvailableModelRef(winnerPart, args.availableModels)) {
-			throw new Error(unknownModelMessage(winnerPart, args.agentId, args.availableModels));
-		}
-	}
+	const ref = winner ?? args.inherited;
+	if (ref === undefined) return { model: undefined, warnings: [] };
+	const resolved = resolveDeclaredModelRef({
+		ref,
+		tiers: args.tiers,
+		available: args.availableModels,
+		failure: winner !== undefined ? "throw" : "passthrough",
+		agentId: args.agentId,
+	});
+	if (resolved.kind === "model") return { model: resolved.canonical, warnings: [] };
+	if (resolved.kind === "diagnostic") return { model: undefined, warnings: [] };
 	const warnings: string[] = [];
-	let model = winner || args.inherited;
-	if (model) {
-		if (isTierName(model) && Object.keys(args.tiers).length === 0) {
-			warnings.push("model tiers unconfigured; all tiers use the session default model");
-		}
-		const resolution = resolveModelRef(model, args.tiers, (ref) => isAvailableModelRef(ref, args.availableModels));
-		if (resolution.warning) warnings.push(resolution.warning);
-		model = resolution.model;
-	}
-	if (model) {
-		const { model: modelPart, thinking } = stripThinkingSuffix(model);
-		const resolved = args.availableModels.find(
-			(candidate: any) => candidate?.id === modelPart || `${candidate?.provider}/${candidate?.id}` === modelPart,
-		);
-		if (resolved?.provider && resolved?.id) {
-			model = thinking ? `${resolved.provider}/${resolved.id}:${thinking}` : `${resolved.provider}/${resolved.id}`;
-		}
-	}
-	return { model, warnings };
+	if (resolved.tiersEmpty) warnings.push(TIERS_UNCONFIGURED_MESSAGE);
+	else if (resolved.warning) warnings.push(resolved.warning);
+	return { model: undefined, warnings };
 }
 
 /**
@@ -961,10 +941,8 @@ class SubagentSessionOwner {
 			);
 		}
 		const availableModels: any[] = ctx.modelRegistry.getAvailable();
-		const isAvailable = (ref: string) => availableModels.some((model: any) =>
-			model?.id === ref || `${model?.provider}/${model?.id}` === ref,
-		);
-		const tiers = this.loadTiers(ctx.cwd, ctx.isProjectTrusted());
+		const isAvailable = (ref: string) => findAvailableModel(availableModels, ref) !== undefined;
+		const tiers = this.loadTiers(ctx.cwd);
 		const defaultModelRef = ctx.model?.id ?? SESSION_DEFAULT_LABEL;
 		lines.push(
 			"## Model Tiers",
@@ -984,11 +962,10 @@ class SubagentSessionOwner {
 		return { systemPrompt: event.systemPrompt + "\n" + lines.join("\n") + "\n" };
 	}
 
-	private loadTiers(cwd: string, projectTrusted: boolean): TierConfig {
+	private loadTiers(cwd: string): TierConfig {
 		return loadTierConfig({
 			globalPath: path.join(getAgentDir(), "model-tiers.json"),
 			projectPath: path.join(cwd, ".pi", "model-tiers.json"),
-			projectTrusted,
 		});
 	}
 
@@ -1256,9 +1233,13 @@ class SubagentSessionOwner {
 
 		// One active persona file per child: the workspace declaration at the
 		// effective child cwd wins wholesale over the discovered spawned
-		// definition. Only the active file's declared skills resolve, and only
-		// the winning model reference is validated and applied — the discarded
-		// file's fields never reach construction.
+		// definition. The file is read exactly once per child here; its resolved
+		// capabilities ride the spec (declared tools; skills and model as resolved
+		// values), so construction never re-reads it. Only the active file's
+		// declared skills resolve, and only the winning model reference is
+		// validated and applied — the discarded file's fields never reach
+		// construction.
+		const activeById = new Map<string, PersonaCapabilities | undefined>();
 		const skillPathsById = new Map<string, readonly string[]>();
 		const modelById = new Map<string, string | undefined>();
 		const inheritedModelRef = modelRefOf(ctx.model);
@@ -1270,19 +1251,23 @@ class SubagentSessionOwner {
 				: undefined;
 			const effectiveCwd = resolvedCwds.get(agent.id) ?? ctx.cwd;
 			const active = loadActivePersona(effectiveCwd, agentConfig);
+			activeById.set(agent.id, active);
 			const resolvedModel = resolveChildModelRef({
 				pin: active?.model,
 				explicit: agent.model,
 				inherited: inheritedModelRef,
 				agentId: agent.id,
-				tiers: this.loadTiers(effectiveCwd, ctx.isProjectTrusted()),
+				tiers: this.loadTiers(effectiveCwd),
 				availableModels,
 			});
 			modelById.set(agent.id, resolvedModel.model);
 			for (const warning of resolvedModel.warnings) session.turns.notifyTierIssueOnce(ctx, warning);
 			if (!active?.skills) continue;
 			try {
-				skillPathsById.set(agent.id, Object.freeze(resolveSkillPaths(active.skills, commands)));
+				skillPathsById.set(
+					agent.id,
+					Object.freeze(resolvePersonaSkillPaths(active.skills, commands, "fatal").skillPaths),
+				);
 			} catch (error: any) {
 				throw new Error(`Failed to resolve skills for agent "${agent.id}": ${error.message}`);
 			}
@@ -1302,6 +1287,8 @@ class SubagentSessionOwner {
 				model: modelById.get(agent.id),
 				cwd: resolvedCwds.get(agent.id),
 				skillPaths: skillPathsById.get(agent.id) ?? Object.freeze([]),
+				noSkills: activeById.get(agent.id)?.skills ? true : undefined,
+				personaTools: activeById.get(agent.id)?.tools,
 			});
 		});
 
@@ -1334,7 +1321,7 @@ class SubagentSessionOwner {
 		let skillPaths: string[];
 		if (active?.skills) {
 			try {
-				skillPaths = resolveSkillPaths(active.skills, commands);
+				skillPaths = resolvePersonaSkillPaths(active.skills, commands, "fatal").skillPaths;
 			} catch (error: any) {
 				throw new Error(`Failed to resolve skills for agent "${params.id}": ${error.message}`);
 			}
@@ -1351,7 +1338,7 @@ class SubagentSessionOwner {
 				explicit: undefined,
 				inherited: undefined,
 				agentId: params.id,
-				tiers: this.loadTiers(ctx.cwd, ctx.isProjectTrusted()),
+				tiers: this.loadTiers(ctx.cwd),
 				availableModels: ctx.modelRegistry.getAvailable(),
 			});
 			for (const warning of resolvedModel.warnings) session.turns.notifyTierIssueOnce(ctx, warning);
@@ -1368,6 +1355,8 @@ class SubagentSessionOwner {
 			sessionFile,
 			tools,
 			skillPaths,
+			noSkills: active?.skills ? true : undefined,
+			personaTools: active?.tools,
 			thinkingLevel,
 			model,
 		};
@@ -1534,7 +1523,9 @@ class SubagentSessionOwner {
 			let skillPaths: readonly string[] = [];
 			if (active?.skills) {
 				try {
-					skillPaths = Object.freeze(resolveSkillPaths(active.skills, this.pi.getCommands()));
+					skillPaths = Object.freeze(
+						resolvePersonaSkillPaths(active.skills, this.pi.getCommands(), "fatal").skillPaths,
+					);
 				} catch (error: any) {
 					throw new Error(`Failed to resolve skills for agent "${agent.id}": ${error.message}`);
 				}
@@ -1548,6 +1539,8 @@ class SubagentSessionOwner {
 				resumeSessionFile: resolved,
 				cwd: record?.cwd,
 				skillPaths,
+				noSkills: active?.skills ? true : undefined,
+				personaTools: active?.tools,
 			});
 		}
 		await session.presentation.ensureWidget(ctx);

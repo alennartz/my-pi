@@ -5,9 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
 	TIER_NAMES,
+	TIERS_UNCONFIGURED_MESSAGE,
+	findAvailableModel,
 	isTierName,
 	loadTierConfig,
 	renderTierTable,
+	resolveDeclaredModelRef,
 	resolveModelRef,
 	stripThinkingSuffix,
 	isThinkingLevel,
@@ -65,8 +68,8 @@ describe("loadTierConfig", () => {
 		fs.writeFileSync(filePath, content);
 	}
 
-	function load(projectTrusted = true): TierConfig {
-		return loadTierConfig({ globalPath, projectPath, projectTrusted });
+	function load(): TierConfig {
+		return loadTierConfig({ globalPath, projectPath });
 	}
 
 	it("returns an empty config when neither file exists", () => {
@@ -89,10 +92,10 @@ describe("loadTierConfig", () => {
 		expect(load()).toEqual({ cheap: "gpt-5.4-mini", smart: "gpt-5.3-codex" });
 	});
 
-	it("ignores the project config when the project is not trusted", () => {
+	it("reads the project overlay unconditionally — tier remapping is not trust-gated", () => {
 		writeConfig(globalPath, JSON.stringify({ cheap: "gpt-5.4-mini" }));
-		writeConfig(projectPath, JSON.stringify({ cheap: "evil-model", smart: "evil-model" }));
-		expect(load(false)).toEqual({ cheap: "gpt-5.4-mini" });
+		writeConfig(projectPath, JSON.stringify({ cheap: "overlaid-model", smart: "overlaid-model" }));
+		expect(load()).toEqual({ cheap: "overlaid-model", smart: "overlaid-model" });
 	});
 
 	it("tolerates unparseable JSON in one file and still uses the other", () => {
@@ -398,5 +401,152 @@ describe("renderTierTable — suffix-aware", () => {
 		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
 			expect(lines.join("\n")).not.toContain(`:${level}`);
 		}
+	});
+});
+
+// ─── findAvailableModel ──────────────────────────────────────────────────────
+
+describe("findAvailableModel", () => {
+	const available = [
+		{ provider: "prov", id: "work-model" },
+		{ id: "bare-model" },
+	];
+
+	it("matches on bare id and provider/id alike", () => {
+		expect(findAvailableModel(available, "work-model")).toBe(available[0]);
+		expect(findAvailableModel(available, "prov/work-model")).toBe(available[0]);
+		expect(findAvailableModel(available, "bare-model")).toBe(available[1]);
+	});
+
+	it("returns undefined when nothing matches", () => {
+		expect(findAvailableModel(available, "prov/other")).toBeUndefined();
+		expect(findAvailableModel(available, "other")).toBeUndefined();
+	});
+});
+
+// ─── resolveDeclaredModelRef ─────────────────────────────────────────────────
+
+describe("resolveDeclaredModelRef", () => {
+	const available = [
+		{ provider: "prov", id: "work-model" },
+		{ provider: "other", id: "second-model" },
+	];
+
+	it("resolves a raw model reference to the matched model with a canonical ref", () => {
+		const result = resolveDeclaredModelRef({
+			ref: "work-model",
+			tiers: {},
+			available,
+			failure: "diagnostic",
+		});
+		expect(result).toMatchObject({
+			kind: "model",
+			model: available[0],
+			canonical: "prov/work-model",
+		});
+		expect(result.kind === "model" && result.thinking).toBeUndefined();
+	});
+
+	it("splits a :<level> suffix into the thinking level and the canonical ref", () => {
+		const result = resolveDeclaredModelRef({
+			ref: "work-model:high",
+			tiers: {},
+			available,
+			failure: "diagnostic",
+		});
+		expect(result).toMatchObject({
+			kind: "model",
+			model: available[0],
+			canonical: "prov/work-model:high",
+		});
+		expect(result.kind === "model" && result.thinking).toBe("high");
+	});
+
+	it("leaves a colon that is not a thinking level whole", () => {
+		const result = resolveDeclaredModelRef({
+			ref: "openai/gpt-x:exacto",
+			tiers: {},
+			available: [{ provider: "openai", id: "gpt-x:exacto" }],
+			failure: "diagnostic",
+		});
+		expect(result).toMatchObject({ kind: "model", canonical: "openai/gpt-x:exacto" });
+	});
+
+	it("resolves a configured tier to its configured model", () => {
+		const result = resolveDeclaredModelRef({
+			ref: "smart",
+			tiers: { smart: "second-model" },
+			available,
+			failure: "diagnostic",
+		});
+		expect(result).toMatchObject({ kind: "model", model: available[1], canonical: "other/second-model" });
+	});
+
+	it("falls back to the baseline for an unconfigured tier, flagging the empty table", () => {
+		const result = resolveDeclaredModelRef({
+			ref: "smart",
+			tiers: {},
+			available,
+			failure: "diagnostic",
+		});
+		expect(result).toEqual({ kind: "fallback", ref: "smart", tiersEmpty: true });
+	});
+
+	it("falls back for an unconfigured tier in a configured table without a warning", () => {
+		const result = resolveDeclaredModelRef({
+			ref: "smart",
+			tiers: { cheap: "work-model" },
+			available,
+			failure: "diagnostic",
+		});
+		expect(result).toEqual({ kind: "fallback", ref: "smart", tiersEmpty: false });
+	});
+
+	it("falls back with a warning for a configured-but-unavailable tier", () => {
+		const result = resolveDeclaredModelRef({
+			ref: "smart",
+			tiers: { smart: "gone-model" },
+			available,
+			failure: "diagnostic",
+		});
+		expect(result.kind).toBe("fallback");
+		expect(result.kind === "fallback" && result.warning).toContain("gone-model");
+	});
+
+	it("throws for an unresolvable reference under the throw policy", () => {
+		expect(() =>
+			resolveDeclaredModelRef({
+				ref: "prov/missing",
+				tiers: {},
+				available,
+				failure: "throw",
+				agentId: "worker",
+			}),
+		).toThrow(/Unknown model "prov\/missing" for agent "worker"/);
+	});
+
+	it("returns a diagnostic for an unresolvable reference under the diagnostic policy", () => {
+		const result = resolveDeclaredModelRef({
+			ref: "prov/missing",
+			tiers: {},
+			available,
+			failure: "diagnostic",
+		});
+		expect(result).toEqual({ kind: "diagnostic", diagnostic: 'Unknown model "prov/missing"' });
+	});
+
+	it("keeps an unresolvable reference raw under the passthrough policy", () => {
+		const result = resolveDeclaredModelRef({
+			ref: "prov/missing:high",
+			tiers: {},
+			available,
+			failure: "passthrough",
+		});
+		expect(result).toMatchObject({ kind: "model", model: undefined, canonical: "prov/missing:high" });
+		expect(result.kind === "model" && result.thinking).toBe("high");
+	});
+
+	it("exposes one shared unconfigured-table message", () => {
+		expect(TIERS_UNCONFIGURED_MESSAGE).toContain("model tiers unconfigured");
 	});
 });

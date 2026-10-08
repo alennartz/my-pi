@@ -60,17 +60,19 @@ export function isTierName(ref: string): ref is TierName {
 /**
  * Read global config then overlay project config.
  * - globalPath: <agentDir>/model-tiers.json (agentDir = ~/.pi/agent)
- * - projectPath: <cwd>/.pi/model-tiers.json, honored only when projectTrusted
+ * - projectPath: <cwd>/.pi/model-tiers.json, read unconditionally — tier
+ *   remapping is user configuration, not a security boundary, so no trust
+ *   gating applies and every caller (root or child, parent cwd or foreign
+ *   workspace) reads the overlay the same way.
  * Missing files, unparseable JSON, non-string values, and unknown keys are
  * tolerated: bad entries are dropped, never thrown. Returns {} at worst.
  */
 export function loadTierConfig(opts: {
 	globalPath: string;
 	projectPath: string;
-	projectTrusted: boolean;
 }): TierConfig {
 	const global = readTierFile(opts.globalPath);
-	const project = opts.projectTrusted ? readTierFile(opts.projectPath) : {};
+	const project = readTierFile(opts.projectPath);
 	return { ...global, ...project };
 }
 
@@ -122,6 +124,109 @@ export function resolveModelRef(
 		model: undefined,
 		warning: `Model tier "${ref}" is configured as "${modelPart}", which is not available; using the session default model.`,
 	};
+}
+
+/** Shared diagnostic text for an entirely unconfigured tier table. */
+export const TIERS_UNCONFIGURED_MESSAGE =
+	"model tiers unconfigured; all tiers use the session default model";
+
+/** Minimal shape of an available model the reference resolver can match. */
+export type ModelRefCandidate = { provider?: unknown; id?: unknown };
+
+/**
+ * Failure semantics for a reference that names no available model — the
+ * per-caller policy the single resolver is parameterized on:
+ * - "throw": spawn-side winner validation rejects the construction.
+ * - "diagnostic": root binding reports to the user and binds nothing.
+ * - "passthrough": an inherited baseline reference is never rejected; it is
+ *   kept as-is when nothing matches.
+ */
+export type ModelRefFailure = "throw" | "diagnostic" | "passthrough";
+
+/**
+ * Resolution outcome for one declared model reference:
+ * - `model` — an available model matched (or, under `passthrough`, an
+ *   unmatched reference kept raw with `model` undefined).
+ * - `fallback` — a tier reference that resolves to nothing; the session
+ *   baseline stands. `warning` is set for a configured-but-unavailable tier;
+ *   `tiersEmpty` distinguishes the entirely-unconfigured table.
+ * - `diagnostic` — an unresolvable reference under the `diagnostic` policy.
+ */
+export type ResolvedModelRef<T extends ModelRefCandidate = ModelRefCandidate> =
+	| { kind: "model"; model: T | undefined; canonical: string; thinking?: ThinkingLevel }
+	| { kind: "fallback"; ref: string; tiersEmpty: boolean; warning?: string }
+	| { kind: "diagnostic"; diagnostic: string };
+
+/** True when `ref` names an available model by bare id or `provider/id`. */
+export function findAvailableModel<T extends ModelRefCandidate>(
+	available: readonly T[],
+	ref: string,
+): T | undefined {
+	return available.find(
+		(candidate) => candidate?.id === ref || `${candidate?.provider}/${candidate?.id}` === ref,
+	);
+}
+
+/** The "Unknown model" error text for a rejected winning reference. */
+export function unknownModelMessage(
+	modelPart: string,
+	agentId: string,
+	availableModels: readonly ModelRefCandidate[],
+): string {
+	const available = availableModels
+		.map((model) => `${model?.provider}/${model?.id}`)
+		.filter(Boolean)
+		.sort();
+	const preview = available.length > 0 ? available.slice(0, 20).join(", ") : "none";
+	const more = available.length > 20 ? `, ... (+${available.length - 20} more)` : "";
+	return `Unknown model "${modelPart}" for agent "${agentId}". Tiers: ${TIER_NAMES.join(", ")}. Available models: ${preview}${more}`;
+}
+
+/**
+ * Resolve one declared model reference (tier name or model id, optional
+ * `:<level>` suffix) against the tier config and the available models — the
+ * single model-reference resolver for every consumer (spawn/fork construction
+ * and root front-matter binding alike). The mechanics live here once: tier
+ * detection, tier resolution, thinking-suffix split, id-or-`provider/id`
+ * matching, and canonical `provider/id(:<level>)` re-serialization. What a
+ * reference that names no available model means is the caller's policy via
+ * `failure`; message wording per outcome stays per-caller.
+ */
+export function resolveDeclaredModelRef<T extends ModelRefCandidate>(args: {
+	ref: string;
+	tiers: TierConfig;
+	available: readonly T[];
+	failure: ModelRefFailure;
+	agentId?: string;
+}): ResolvedModelRef<T> {
+	const isAvailable = (candidate: string) => findAvailableModel(args.available, candidate) !== undefined;
+	// Tier detection is on the raw reference: a tier name never carries a
+	// thinking suffix (per the tier vocabulary).
+	if (isTierName(args.ref) && args.tiers[args.ref] === undefined) {
+		return { kind: "fallback", ref: args.ref, tiersEmpty: Object.keys(args.tiers).length === 0 };
+	}
+	const resolved = resolveModelRef(args.ref, args.tiers, isAvailable);
+	if (resolved.warning !== undefined) {
+		return { kind: "fallback", ref: args.ref, tiersEmpty: false, warning: resolved.warning };
+	}
+	if (resolved.model === undefined) {
+		return { kind: "fallback", ref: args.ref, tiersEmpty: false };
+	}
+	const { model: modelPart, thinking } = stripThinkingSuffix(resolved.model);
+	const match = findAvailableModel(args.available, modelPart);
+	if (match === undefined) {
+		if (args.failure === "throw") {
+			throw new Error(unknownModelMessage(modelPart, args.agentId ?? "agent", args.available));
+		}
+		if (args.failure === "diagnostic") {
+			return { kind: "diagnostic", diagnostic: `Unknown model "${modelPart}"` };
+		}
+		return { kind: "model", model: undefined, canonical: resolved.model, thinking };
+	}
+	const canonical = match.provider && match.id
+		? `${match.provider}/${match.id}${thinking ? `:${thinking}` : ""}`
+		: resolved.model;
+	return { kind: "model", model: match, canonical, thinking };
 }
 
 /**

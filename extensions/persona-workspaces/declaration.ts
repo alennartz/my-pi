@@ -19,7 +19,19 @@
  * Front matter is read by a local scalar parser mirroring pi's
  * `parseFrontmatter` delimiter/body semantics — the pi package stays a
  * type-only import across this extension (its test mock exposes a single
- * runtime export), and the persona fields are flat `key: value` scalars.
+ * runtime export).
+ *
+ * Value semantics are deliberately narrower than pi's YAML parser. The
+ * declared contract is flat `key: value` scalars: a value is the raw text
+ * after the colon with an optional matching outer quote pair stripped.
+ * Inline comments are NOT stripped (`kind: persona # note` is not the marker
+ * `persona`, and `name: "Lead" # x` yields a name that contains the comment),
+ * escape sequences are NOT decoded (`"a\nb"` keeps its literal backslash),
+ * and quotes only act as a matching outer pair. A persona workspace should
+ * therefore keep its front matter plain — no trailing comments, no escapes.
+ * This divergence from `yaml.parse` is accepted (implementation ruling (c))
+ * and documented here so strict, predictable detection remains this
+ * interface's single contract.
  */
 
 import * as fs from "node:fs";
@@ -109,7 +121,11 @@ function parseFlatScalars(yamlString: string): Record<string, unknown> {
 	return frontmatter;
 }
 
-/** A scalar value with optional matching quotes stripped; a blank value is absent. */
+/**
+ * A scalar value with optional matching quotes stripped; a blank value is
+ * absent. Nothing else is interpreted — no comment stripping, no escape
+ * decoding (see the module contract above).
+ */
 function parseScalarValue(raw: string): string | undefined {
 	const value = raw.trim();
 	if (value === "") return undefined;

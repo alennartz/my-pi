@@ -46,6 +46,13 @@ export type ChildSessionConfig = {
 	thinkingLevel?: ThinkingLevel;
 	toolPolicy: ChildToolPolicy;
 	skillPaths: string[];
+	/**
+	 * `skillPaths` is the complete skill set (persona-declared): suppress
+	 * ordinary skill discovery even when `skillPaths` is empty — a
+	 * declared-but-stale list degrades to zero skills, never to full discovery.
+	 * Absent = ordinary discovery.
+	 */
+	noSkills?: boolean;
 	appendSystemPrompt: string[];
 	/** Spawn-declared persona payload recorded on the child's session manager. */
 	persona?: PersonaPayload;
@@ -392,7 +399,14 @@ export async function createManagedChildSession(
 				appendSystemPrompt,
 				extensionFactories: [{ name: "subagents-child", factory: createSubagentsExtension(config.scope) }],
 				extensionsOverride: createExtensionsOverride,
-				...(skillPaths.length > 0 ? { additionalSkillPaths: skillPaths, noSkills: true } : {}),
+				// `noSkills` (persona-declared set) or a non-empty list pins the exact
+				// skill set; an empty undeclared list leaves ordinary discovery intact.
+				...(config.noSkills || skillPaths.length > 0
+					? {
+							noSkills: true,
+							...(skillPaths.length > 0 ? { additionalSkillPaths: skillPaths } : {}),
+						}
+					: {}),
 			};
 			const services = await createAgentSessionServices({
 				cwd: effectiveCwd,

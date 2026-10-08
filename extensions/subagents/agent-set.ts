@@ -14,7 +14,7 @@ import {
 	type AgentSpec,
 	type ForkAgentSpec,
 	isValidCwd,
-	resolveSkillPaths,
+	resolvePersonaSkillPaths,
 } from "./agents.js";
 import { childAgentPath, qualifiedAgentId, type AgentPath } from "./agent-path.js";
 import {
@@ -64,7 +64,7 @@ export type PersonaCapabilities = {
 	model?: string;
 	/** Tool allowlist; absent selects the ordinary child/fork baseline. */
 	tools?: string[];
-	/** Skill names for `resolveSkillPaths`; absent leaves ordinary discovery intact. */
+	/** Skill names for `resolvePersonaSkillPaths`; absent leaves ordinary discovery intact. */
 	skills?: string[];
 };
 
@@ -552,17 +552,13 @@ export class SubagentManager {
 			: undefined;
 		const appendSystemPrompt = [identityXml];
 		const forkSpec = spec.kind === "fork" ? spec : undefined;
-		// Construction inputs derive from one active persona file: the workspace
-		// declaration at the child's effective cwd wins wholesale over the
-		// discovered spawned definition, so a discarded file's tool allowlist
-		// never reaches the policy. An absent `tools` field selects the ordinary
-		// child/fork baseline.
-		const active = loadActivePersona(
-			spec.kind === "fork" ? this.opts.cwd : spec.cwd ?? this.opts.cwd,
-			agentConfig,
-		);
-		const toolPolicy = active?.tools !== undefined
-			? resolveChildToolPolicy({ kind: "persona", tools: active.tools })
+		// One active persona file per child, read exactly once per construction:
+		// the winning capabilities ride the spec (tools below; skills and model as
+		// already-resolved values), so the declaration is never re-read here and
+		// an edit between two reads cannot mix capabilities. An absent
+		// `personaTools` field selects the ordinary child/fork baseline.
+		const toolPolicy = spec.personaTools !== undefined
+			? resolveChildToolPolicy({ kind: "persona", tools: [...spec.personaTools] })
 			: spec.kind === "fork"
 				? forkSpec?.tools === undefined
 					? resolveChildToolPolicy({ kind: "default" })
@@ -583,6 +579,7 @@ export class SubagentManager {
 				thinkingLevel: spec.kind === "fork" ? spec.thinkingLevel as any : undefined,
 				toolPolicy,
 				skillPaths,
+				noSkills: spec.noSkills,
 				appendSystemPrompt,
 				persona,
 				uplink: entry.port,
@@ -1138,7 +1135,8 @@ export class SubagentManager {
 	 * record. Capability gates (tools/skills) re-resolve from the active persona
 	 * file at the opened session's persisted cwd — workspace declaration first,
 	 * else the persisted persona name (DR-033). Model/thinking are deliberately
-	 * not re-derived: the persisted session keeps its own (DR-038).
+	 * not re-derived: the persisted session keeps its own (DR-038). The active
+	 * file is read exactly once here; its resolved capabilities ride the spec.
 	 */
 	private toRestoreSpec(agent: PersistedAgentRecord, agentConfigs: AgentConfig[]): AgentSpec {
 		const effectiveCwd = agent.cwd ?? this.opts.cwd;
@@ -1147,7 +1145,9 @@ export class SubagentManager {
 			// the fork snapshot list wholesale; its absence preserves ordinary
 			// fork behavior (the persisted snapshot).
 			const workspace = loadActivePersona(effectiveCwd, undefined);
-			const skillPaths = this.resolveRestoredSkills(workspace?.skills, agent.id) ?? agent.skillPaths;
+			const resolved = workspace?.skills
+				? this.resolveRestoredSkills(workspace.skills, agent.id)
+				: undefined;
 			return {
 				kind: "fork",
 				id: agent.id,
@@ -1157,7 +1157,9 @@ export class SubagentManager {
 				// An absent legacy tools field is intentionally preserved as undefined:
 				// it selects the default policy rather than explicit respond-only mode.
 				tools: agent.tools,
-				skillPaths,
+				skillPaths: resolved?.skillPaths ?? agent.skillPaths,
+				noSkills: resolved !== undefined ? true : undefined,
+				personaTools: workspace?.tools,
 				thinkingLevel: this.opts.pi.getThinkingLevel() as string,
 			} as AgentSpec;
 		}
@@ -1165,6 +1167,9 @@ export class SubagentManager {
 			? agentConfigs.find((candidate) => candidate.name === agent.agent)
 			: undefined;
 		const active = loadActivePersona(effectiveCwd, agentConfig);
+		const resolved = active?.skills
+			? this.resolveRestoredSkills(active.skills, agent.id)
+			: undefined;
 		return {
 			kind: "agent",
 			id: agent.id,
@@ -1173,26 +1178,32 @@ export class SubagentManager {
 			channels: agent.channels,
 			resumeSessionFile: agent.sessionFile,
 			cwd: agent.cwd,
-			skillPaths: this.resolveRestoredSkills(active?.skills, agent.id) ?? [],
+			skillPaths: resolved?.skillPaths ?? [],
+			noSkills: resolved !== undefined ? true : undefined,
+			personaTools: active?.tools,
 		};
 	}
 
 	/**
 	 * Resolve an active file's declared skill names against the current command
-	 * set for a restored child. `undefined` means "no usable declaration" — the
-	 * caller applies its baseline fallback. A stale skill list is logged, never
-	 * fatal: restore must not fail on it.
+	 * set for a restored child — the shared `resolvePersonaSkillPaths` resolver
+	 * under its `subset` failure policy. A stale list degrades narrow:
+	 * unresolvable names are dropped and logged, the resolved remainder is the
+	 * complete skill set (`noSkills`), and an all-stale list yields zero skills
+	 * — never ordinary discovery. Restore must not fail on a stale list, and
+	 * must not widen capabilities because of one.
 	 */
-	private resolveRestoredSkills(skillNames: string[] | undefined, agentId: string): string[] | undefined {
-		if (!skillNames) return undefined;
-		try {
-			return resolveSkillPaths(skillNames, this.opts.pi.getCommands());
-		} catch (error) {
+	private resolveRestoredSkills(
+		skillNames: string[],
+		agentId: string,
+	): { skillPaths: string[]; dropped: string[] } {
+		const resolved = resolvePersonaSkillPaths(skillNames, this.opts.pi.getCommands(), "subset");
+		if (resolved.dropped.length > 0) {
 			console.error(
-				`[subagents] Failed to resolve skills for "${agentId}": ${error instanceof Error ? error.message : String(error)}`,
+				`[subagents] Dropped unresolvable skills for "${agentId}": ${resolved.dropped.join(", ")}`,
 			);
-			return undefined;
 		}
+		return resolved;
 	}
 }
 

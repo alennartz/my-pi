@@ -35,7 +35,6 @@ import type {
 	ExtensionContext,
 	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
-import type { Model } from "@earendil-works/pi-ai";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { loadWorkspacePersona } from "./declaration.ts";
 import type { PersonaDeclaration } from "./declaration.ts";
@@ -43,12 +42,11 @@ import { getSubagentPersona, isSubagentChildSession } from "../subagents/child-s
 import type { PersonaPayload } from "../subagents/child-session-marker.ts";
 import { resolveChildToolPolicy } from "../subagents/child-tool-policy.ts";
 import {
-	isTierName,
+	TIERS_UNCONFIGURED_MESSAGE,
 	loadTierConfig,
-	resolveModelRef,
+	resolveDeclaredModelRef,
 	stripThinkingSuffix,
 } from "../subagents/model-tiers.ts";
-import type { ThinkingLevel, TierConfig } from "../subagents/model-tiers.ts";
 
 /** Custom message type for takeover notices; rendered for clean TUI display. */
 export const PERSONA_NOTICE_TYPE = "persona-notice";
@@ -346,7 +344,8 @@ async function bindDeclaredFrontMatter(
 
 /**
  * Bind a declared model reference (tier name or model id, `:<level>` suffix
- * allowed). An unavailable or unauthenticated reference leaves the baseline in
+ * allowed) through the shared model-reference resolver (`diagnostic` failure
+ * policy). An unavailable or unauthenticated reference leaves the baseline in
  * place and reports with the existing tier diagnostics vocabulary; a model
  * that did not bind never has its thinking level applied.
  */
@@ -358,65 +357,40 @@ async function bindDeclaredModel(
 	const tiers = loadTierConfig({
 		globalPath: path.join(getAgentDir(), "model-tiers.json"),
 		projectPath: path.join(ctx.cwd, ".pi", "model-tiers.json"),
-		projectTrusted: ctx.isProjectTrusted(),
 	});
-	const binding = resolveDeclaredModel(modelRef, tiers, ctx.modelRegistry.getAvailable());
-	if (!binding) return;
-	if ("diagnostic" in binding) {
-		ctx.ui.notify(binding.diagnostic, "warning");
+	const resolution = resolveDeclaredModelRef({
+		ref: modelRef,
+		tiers,
+		available: ctx.modelRegistry.getAvailable(),
+		failure: "diagnostic",
+	});
+	if (resolution.kind === "diagnostic") {
+		ctx.ui.notify(resolution.diagnostic, "warning");
 		return;
 	}
-	const bound = await pi.setModel(binding.model);
+	if (resolution.kind === "fallback") {
+		// An unconfigured or unavailable tier leaves the baseline in place.
+		const diagnostic =
+			resolution.warning ??
+			(resolution.tiersEmpty
+				? TIERS_UNCONFIGURED_MESSAGE
+				: `Model tier "${resolution.ref}" is not configured; using the session default model.`);
+		ctx.ui.notify(diagnostic, "warning");
+		return;
+	}
+	if (resolution.model === undefined) return;
+	const bound = await pi.setModel(resolution.model);
 	if (!bound) {
 		// `setModel` returns false when the model's provider has no configured
 		// authentication. The baseline model stands, and the persona's thinking
 		// level must not be clamped onto it.
 		ctx.ui.notify(
-			`Model "${binding.model.provider}/${binding.model.id}" is not authenticated; using the session default model.`,
+			`Model "${stripThinkingSuffix(resolution.canonical).model}" is not authenticated; using the session default model.`,
 			"warning",
 		);
 		return;
 	}
-	if (binding.thinking) pi.setThinkingLevel(binding.thinking);
-}
-
-type ModelBinding = { model: Model<unknown>; thinking?: ThinkingLevel } | { diagnostic: string };
-
-/**
- * Resolve a declared model reference against the tier config and the available
- * models. Pure. Matching is the `/fmodel` pattern: id or provider/id.
- */
-function resolveDeclaredModel(
-	modelRef: string,
-	tiers: TierConfig,
-	available: readonly Model<unknown>[],
-): ModelBinding | undefined {
-	if (isTierName(modelRef) && tiers[modelRef] === undefined) {
-		return {
-			diagnostic:
-				Object.keys(tiers).length === 0
-					? "model tiers unconfigured; all tiers use the session default model"
-					: `Model tier "${modelRef}" is not configured; using the session default model.`,
-		};
-	}
-	const resolved = resolveModelRef(modelRef, tiers, (ref) => findAvailableModel(available, ref) !== undefined);
-	if (resolved.warning) return { diagnostic: resolved.warning };
-	if (!resolved.model) return undefined;
-	// A `:<level>` suffix binds the thinking level alongside the model.
-	const { model, thinking } = stripThinkingSuffix(resolved.model);
-	const match = findAvailableModel(available, model);
-	if (!match) return { diagnostic: `Unknown model "${model}"` };
-	return thinking !== undefined ? { model: match, thinking } : { model: match };
-}
-
-/** Find an available model by id or provider/id. */
-function findAvailableModel(
-	available: readonly Model<unknown>[],
-	ref: string,
-): Model<unknown> | undefined {
-	return available.find(
-		(candidate) => candidate?.id === ref || `${candidate?.provider}/${candidate?.id}` === ref,
-	);
+	if (resolution.thinking) pi.setThinkingLevel(resolution.thinking);
 }
 
 /** The informational text of a custom message (string content, or its text parts). */

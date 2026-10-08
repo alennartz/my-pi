@@ -415,6 +415,17 @@ describe("createManagedChildSession construction", () => {
 		expect(sdk.state.servicesArgs[2].resourceLoaderOptions.additionalSkillPaths).toBeUndefined();
 	});
 
+	it("pins zero skills for a declared-but-stale list that resolved empty", async () => {
+		// `noSkills` marks `skillPaths` as the complete persona-declared set: an
+		// empty resolved list degrades to zero skills, never to full discovery.
+		await createChild(
+			{ kind: "new", cwd: "/repo", sessionDir: "/sessions" },
+			{ skillPaths: [], noSkills: true },
+		);
+		expect(sdk.state.servicesArgs[0].resourceLoaderOptions.noSkills).toBe(true);
+		expect(sdk.state.servicesArgs[0].resourceLoaderOptions.additionalSkillPaths).toBeUndefined();
+	});
+
 	it("isolates model runtimes for sibling children", async () => {
 		const dependencies = makeDependencies();
 		const target: ChildSessionConfig["target"] = { kind: "new", cwd: "/repo", sessionDir: "/sessions" };
