@@ -17,6 +17,10 @@
  * Pure declaration parsing; `loadWorkspacePersona` performs the one file read.
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+
 /** A parsed workspace persona declaration. */
 export type PersonaDeclaration = {
 	/** Exact marker; anything else (or absent) = not a persona. */
@@ -45,7 +49,40 @@ export function parsePersonaDeclaration(
 	content: string,
 	sourcePath: string,
 ): PersonaDeclaration | undefined {
-	throw new Error("not implemented");
+	const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content);
+	if (frontmatter.kind !== "persona") return undefined;
+	const name = nonBlankString(frontmatter.name);
+	if (name === undefined) return undefined;
+	const description = nonBlankString(frontmatter.description);
+	const model = nonBlankString(frontmatter.model);
+	const tools = parseCommaSeparatedList(frontmatter.tools);
+	const skills = parseCommaSeparatedList(frontmatter.skills);
+	return {
+		kind: "persona",
+		name,
+		...(description !== undefined ? { description } : {}),
+		...(tools !== undefined ? { tools } : {}),
+		...(model !== undefined ? { model } : {}),
+		...(skills !== undefined ? { skills } : {}),
+		body,
+		sourcePath,
+	};
+}
+
+/** The value of a front-matter field when it is a non-blank string, else absent. */
+function nonBlankString(value: unknown): string | undefined {
+	if (typeof value !== "string" || value.trim() === "") return undefined;
+	return value;
+}
+
+/** Split a front-matter list field (`"read, bash"`) into trimmed, non-empty items. */
+function parseCommaSeparatedList(value: unknown): string[] | undefined {
+	if (typeof value !== "string") return undefined;
+	const items = value
+		.split(",")
+		.map((item) => item.trim())
+		.filter((item) => item.length > 0);
+	return items.length > 0 ? items : undefined;
 }
 
 /**
@@ -54,5 +91,12 @@ export function parsePersonaDeclaration(
  * unreadable file, and non-persona file all yield `undefined`.
  */
 export function loadWorkspacePersona(cwd: string): PersonaDeclaration | undefined {
-	throw new Error("not implemented");
+	const sourcePath = path.resolve(cwd, "AGENTS.md");
+	let content: string;
+	try {
+		content = fs.readFileSync(sourcePath, "utf-8");
+	} catch {
+		return undefined;
+	}
+	return parsePersonaDeclaration(content, sourcePath);
 }

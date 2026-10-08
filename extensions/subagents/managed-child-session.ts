@@ -22,7 +22,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { formatAgentPath, type AgentPath } from "./agent-path.js";
 import type { ChildToolPolicy } from "./child-tool-policy.js";
-import { markSubagentChildSession } from "./child-session-marker.js";
+import { markSubagentChildSession, type PersonaPayload } from "./child-session-marker.js";
 import { DelegatingExtensionUI } from "./delegating-extension-ui.js";
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import { resolveChildProjectTrust } from "./project-trust.js";
@@ -47,6 +47,8 @@ export type ChildSessionConfig = {
 	toolPolicy: ChildToolPolicy;
 	skillPaths: string[];
 	appendSystemPrompt: string[];
+	/** Spawn-declared persona payload recorded on the child's session manager. */
+	persona?: PersonaPayload;
 };
 
 export type ChildSessionHooks = {
@@ -363,7 +365,6 @@ export async function createManagedChildSession(
 	const appendSystemPrompt = [...config.appendSystemPrompt];
 	const trustStore = new ProjectTrustStore(dependencies.agentDir);
 	const initial = initialTarget(config.target);
-	markSubagentChildSession(initial.sessionManager);
 	const pathName = formatAgentPath(config.path);
 	const headless = createHeadlessUi(hooks.onUiNotify);
 	const presentation = new DelegatingExtensionUI({ headless });
@@ -372,6 +373,9 @@ export async function createManagedChildSession(
 	let managed: ManagedChildSession | undefined;
 
 	const createRuntime = async (options: RuntimeFactoryOptions) => {
+		// Mark before any extension session-start dispatch: covers the initial
+		// manager and every SDK replacement session alike.
+		markSubagentChildSession(options.sessionManager, config.persona);
 		try {
 			options.sessionManager.appendSessionInfo(pathName);
 			const effectiveCwd = options.sessionManager.getCwd() || options.cwd;

@@ -56,6 +56,11 @@ export type CreateAgentNodeRequest = {
 	task: string;
 	agentDef?: string;
 	channels: string[];
+	/**
+	 * Child construction inputs, including the spawn-declared `persona` payload.
+	 * The registry forwards this object into `ChildSessionConfig` as-is — the
+	 * payload lives only there, never in a second registry-side store.
+	 */
 	session: Omit<ChildSessionConfig, "path" | "scope"> & { uplink: MessagePort };
 	hooks: ChildSessionHooks;
 	initialOperational: AgentOperationalSnapshot;

@@ -7,18 +7,23 @@
  * The subagents extension owns that knowledge and marks the child's
  * SessionManager at construction time; other extensions query it here.
  *
- * The registry is process-global (children are in-process SDK sessions) and is
- * deliberately not persisted: a session restored through
- * `createManagedChildSession` is re-marked on restore.
+ * The registry is a process-global WeakMap keyed by the child's SessionManager
+ * (children are in-process SDK sessions) and is deliberately not persisted: a
+ * session restored through `createManagedChildSession` is re-marked on restore.
+ * Key presence answers "is this a child?"; the mapped value carries the
+ * spawn-declared persona payload, so a child without a persona stays
+ * distinguishable from a root session.
  */
 
 const REGISTRY_KEY = Symbol.for("my-pi/subagents/child-session-managers");
 
-function getRegistry(): WeakSet<object> {
+type ChildSessionRegistry = WeakMap<object, PersonaPayload | undefined>;
+
+function getRegistry(): ChildSessionRegistry {
 	const globals = globalThis as Record<symbol, unknown>;
 	const existing = globals[REGISTRY_KEY];
-	if (existing instanceof WeakSet) return existing as WeakSet<object>;
-	const created = new WeakSet<object>();
+	if (existing instanceof WeakMap) return existing as ChildSessionRegistry;
+	const created: ChildSessionRegistry = new WeakMap();
 	globals[REGISTRY_KEY] = created;
 	return created;
 }
@@ -36,7 +41,7 @@ export type PersonaPayload = { name: string; body: string };
  * recording the spawn-declared persona payload.
  */
 export function markSubagentChildSession(sessionManager: object, payload?: PersonaPayload): void {
-	getRegistry().add(sessionManager);
+	getRegistry().set(sessionManager, payload);
 }
 
 /**
@@ -45,7 +50,7 @@ export function markSubagentChildSession(sessionManager: object, payload?: Perso
  * without a named agent definition.
  */
 export function getSubagentPersona(sessionManager: object): PersonaPayload | undefined {
-	throw new Error("not implemented");
+	return getRegistry().get(sessionManager);
 }
 
 /** Whether this session manager hosts a subagent child session. */

@@ -1454,6 +1454,9 @@ describe("root orchestration integration", () => {
 		const allowedTools = managed.created[0].config.toolPolicy.allowedTools;
 		expect(new Set(allowedTools)).toEqual(new Set(["send", "respond"]));
 		expect(allowedTools).toHaveLength(2);
-		expect(managed.created[0].config.appendSystemPrompt).toContain("Review carefully.");
+		// Adjudicated: the specialist body rides as the spawn-declared persona
+		// payload; only identity XML is appended as addendum.
+		expect(managed.created[0].config.persona).toEqual({ name: "reviewer", body: "Review carefully." });
+		expect(managed.created[0].config.appendSystemPrompt).not.toContain("Review carefully.");
 	});
 });

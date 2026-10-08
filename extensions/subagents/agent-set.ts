@@ -24,6 +24,7 @@ import {
 	type CreateAgentNodeRequest,
 } from "./agent-session-registry.js";
 import { resolveChildToolPolicy } from "./child-tool-policy.js";
+import type { PersonaPayload } from "./child-session-marker.js";
 import {
 	appendAgentAdded,
 	appendAgentRemoved,
@@ -500,10 +501,13 @@ export class SubagentManager {
 		const target = this.sessionTarget(spec, sessionDir);
 		const identityXml = this.identityPrompt(spec, agentConfigs, entry.channels, batch);
 		const skillPaths = this.skillPathsFor(spec);
-		const appendSystemPrompt = [
-			...(spec.kind === "agent" && agentConfig && !spec.resumeSessionFile ? [agentConfig.systemPrompt] : []),
-			identityXml,
-		];
+		// The spawned persona body travels as a first-class payload (recorded on
+		// the child's session manager), never as addendum prompt. Restored
+		// children are re-marked with the same re-resolved payload.
+		const persona: PersonaPayload | undefined = agentConfig
+			? { name: agentConfig.name, body: agentConfig.systemPrompt }
+			: undefined;
+		const appendSystemPrompt = [identityXml];
 		const forkSpec = spec.kind === "fork" ? spec : undefined;
 		const toolPolicy = spec.kind === "fork"
 			? forkSpec?.tools === undefined
@@ -527,6 +531,7 @@ export class SubagentManager {
 				toolPolicy,
 				skillPaths,
 				appendSystemPrompt,
+				persona,
 				uplink: entry.port,
 			},
 			hooks: {
