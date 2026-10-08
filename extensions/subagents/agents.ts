@@ -39,6 +39,12 @@ export interface ForkAgentSpec {
 	skillPaths?: string[];
 	thinkingLevel: string;
 	resumeSessionFile?: string;
+	/**
+	 * Resolved winning model reference bound at a fresh workspace fork's
+	 * construction (the workspace declaration's `model` pin). Deliberately
+	 * absent on restore so the persisted session's model survives (DR-038).
+	 */
+	model?: string;
 }
 
 export type AgentSpec = RegularAgentSpec | ForkAgentSpec;

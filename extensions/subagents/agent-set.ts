@@ -25,6 +25,7 @@ import {
 } from "./agent-session-registry.js";
 import { resolveChildToolPolicy } from "./child-tool-policy.js";
 import type { PersonaPayload } from "./child-session-marker.js";
+import { loadWorkspacePersona, type PersonaDeclaration } from "../persona-workspaces/declaration.ts";
 import {
 	appendAgentAdded,
 	appendAgentRemoved,
@@ -52,6 +53,48 @@ import {
 	type ActiveAgentsCompleteData,
 	type AgentCompleteData,
 } from "./messages.js";
+
+/**
+ * Capability fields of one persona file — a workspace declaration or a
+ * discovered spawned definition. Absent fields fall through to the ordinary
+ * construction baseline; a discarded file's values never survive.
+ */
+export type PersonaCapabilities = {
+	/** Raw model reference (tier name or model id, `":<level>"` suffix allowed). A pin: it outranks an explicit `model` spawn argument. */
+	model?: string;
+	/** Tool allowlist; absent selects the ordinary child/fork baseline. */
+	tools?: string[];
+	/** Skill names for `resolveSkillPaths`; absent leaves ordinary discovery intact. */
+	skills?: string[];
+};
+
+/**
+ * Select the one active persona file for a child construction, wholesale: a
+ * workspace declaration at the child's effective cwd wins outright over the
+ * discovered spawned definition — the loser is discarded entire and its fields
+ * are never merged into the winner. With neither, nothing binds.
+ */
+export function selectActivePersona(
+	workspace: PersonaDeclaration | undefined,
+	spawned: AgentConfig | undefined,
+): PersonaCapabilities | undefined {
+	const active = workspace ?? spawned;
+	if (active === undefined) return undefined;
+	return { model: active.model, tools: active.tools, skills: active.skills };
+}
+
+/**
+ * The active persona capabilities for a child constructed at `effectiveCwd`:
+ * its workspace declaration (`<effectiveCwd>/AGENTS.md`, strict cwd-only read),
+ * else the discovered spawned definition. I/O edge around the pure
+ * `selectActivePersona`.
+ */
+export function loadActivePersona(
+	effectiveCwd: string,
+	spawned: AgentConfig | undefined,
+): PersonaCapabilities | undefined {
+	return selectActivePersona(loadWorkspacePersona(effectiveCwd), spawned);
+}
 
 /**
  * `idle` and `errored` are both settled-with-a-live-session: a later send
@@ -427,10 +470,10 @@ export class SubagentManager {
 		}
 	}
 
-	/** Resolve the persisted persona attached to a session UUID, including removed records. */
-	findPersistedAgentName(sessionId: string): string | undefined {
+	/** Resolve the persisted record attached to a session UUID, including removed records. */
+	findPersistedAgentRecord(sessionId: string): PersistedAgentRecord | undefined {
 		const parentSessionFile = this.opts.parentSessionFile;
-		return parentSessionFile ? findAgentRecordBySessionId(parentSessionFile, sessionId)?.agent : undefined;
+		return parentSessionFile ? findAgentRecordBySessionId(parentSessionFile, sessionId) : undefined;
 	}
 
 	private serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
@@ -509,13 +552,22 @@ export class SubagentManager {
 			: undefined;
 		const appendSystemPrompt = [identityXml];
 		const forkSpec = spec.kind === "fork" ? spec : undefined;
-		const toolPolicy = spec.kind === "fork"
-			? forkSpec?.tools === undefined
-				? resolveChildToolPolicy({ kind: "default" })
-				: resolveChildToolPolicy({ kind: "fork", parentActiveTools: forkSpec.tools })
-			: agentConfig?.tools === undefined
-				? resolveChildToolPolicy({ kind: "default" })
-				: resolveChildToolPolicy({ kind: "persona", tools: agentConfig.tools });
+		// Construction inputs derive from one active persona file: the workspace
+		// declaration at the child's effective cwd wins wholesale over the
+		// discovered spawned definition, so a discarded file's tool allowlist
+		// never reaches the policy. An absent `tools` field selects the ordinary
+		// child/fork baseline.
+		const active = loadActivePersona(
+			spec.kind === "fork" ? this.opts.cwd : spec.cwd ?? this.opts.cwd,
+			agentConfig,
+		);
+		const toolPolicy = active?.tools !== undefined
+			? resolveChildToolPolicy({ kind: "persona", tools: active.tools })
+			: spec.kind === "fork"
+				? forkSpec?.tools === undefined
+					? resolveChildToolPolicy({ kind: "default" })
+					: resolveChildToolPolicy({ kind: "fork", parentActiveTools: forkSpec.tools })
+				: resolveChildToolPolicy({ kind: "default" });
 
 		return {
 			localId: entry.id,
@@ -524,9 +576,10 @@ export class SubagentManager {
 			channels: [...entry.channels],
 			session: {
 				target,
-				// Fresh specs already carry the resolved persona/tool model. Resumed specs
-				// intentionally omit it so the persisted session keeps its concrete model.
-				modelRef: spec.kind === "agent" ? spec.model : undefined,
+				// Fresh specs already carry the resolved winning model (persona pin
+				// first, explicit argument as gap-fill). Resumed specs intentionally
+				// omit it so the persisted session keeps its concrete model.
+				modelRef: spec.model,
 				thinkingLevel: spec.kind === "fork" ? spec.thinkingLevel as any : undefined,
 				toolPolicy,
 				skillPaths,
@@ -1080,8 +1133,21 @@ export class SubagentManager {
 		}
 	}
 
+	/**
+	 * Re-derive one restored child's construction inputs from its persisted
+	 * record. Capability gates (tools/skills) re-resolve from the active persona
+	 * file at the opened session's persisted cwd — workspace declaration first,
+	 * else the persisted persona name (DR-033). Model/thinking are deliberately
+	 * not re-derived: the persisted session keeps its own (DR-038).
+	 */
 	private toRestoreSpec(agent: PersistedAgentRecord, agentConfigs: AgentConfig[]): AgentSpec {
+		const effectiveCwd = agent.cwd ?? this.opts.cwd;
 		if (agent.kind === "fork") {
+			// Forks have no spawned definition. A workspace declaration replaces
+			// the fork snapshot list wholesale; its absence preserves ordinary
+			// fork behavior (the persisted snapshot).
+			const workspace = loadActivePersona(effectiveCwd, undefined);
+			const skillPaths = this.resolveRestoredSkills(workspace?.skills, agent.id) ?? agent.skillPaths;
 			return {
 				kind: "fork",
 				id: agent.id,
@@ -1091,23 +1157,14 @@ export class SubagentManager {
 				// An absent legacy tools field is intentionally preserved as undefined:
 				// it selects the default policy rather than explicit respond-only mode.
 				tools: agent.tools,
-				skillPaths: agent.skillPaths,
+				skillPaths,
 				thinkingLevel: this.opts.pi.getThinkingLevel() as string,
 			} as AgentSpec;
 		}
 		const agentConfig = agent.agent
 			? agentConfigs.find((candidate) => candidate.name === agent.agent)
 			: undefined;
-		let skillPaths: string[] = [];
-		if (agentConfig?.skills) {
-			try {
-				skillPaths = resolveSkillPaths(agentConfig.skills, this.opts.pi.getCommands());
-			} catch (error) {
-				console.error(
-					`[subagents] Failed to resolve skills for "${agent.id}": ${error instanceof Error ? error.message : String(error)}`,
-				);
-			}
-		}
+		const active = loadActivePersona(effectiveCwd, agentConfig);
 		return {
 			kind: "agent",
 			id: agent.id,
@@ -1116,8 +1173,26 @@ export class SubagentManager {
 			channels: agent.channels,
 			resumeSessionFile: agent.sessionFile,
 			cwd: agent.cwd,
-			skillPaths,
+			skillPaths: this.resolveRestoredSkills(active?.skills, agent.id) ?? [],
 		};
+	}
+
+	/**
+	 * Resolve an active file's declared skill names against the current command
+	 * set for a restored child. `undefined` means "no usable declaration" — the
+	 * caller applies its baseline fallback. A stale skill list is logged, never
+	 * fatal: restore must not fail on it.
+	 */
+	private resolveRestoredSkills(skillNames: string[] | undefined, agentId: string): string[] | undefined {
+		if (!skillNames) return undefined;
+		try {
+			return resolveSkillPaths(skillNames, this.opts.pi.getCommands());
+		} catch (error) {
+			console.error(
+				`[subagents] Failed to resolve skills for "${agentId}": ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return undefined;
+		}
 	}
 }
 

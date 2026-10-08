@@ -26,7 +26,7 @@ import {
 	formatAgentList,
 	renderAgentDefinitions,
 } from "./agents.js";
-import { SubagentManager, isSettledState, type AgentStatus } from "./agent-set.js";
+import { SubagentManager, isSettledState, loadActivePersona, type AgentStatus } from "./agent-set.js";
 import {
 	AgentSessionRegistry,
 	type AgentOperationalSnapshot,
@@ -175,6 +175,72 @@ function modelRefOf(model: { provider?: unknown; id?: unknown } | undefined): st
 		return `${model.provider}/${model.id}`;
 	}
 	return model.id;
+}
+
+/** True when `ref` names an available model by bare id or `provider/id`. */
+function isAvailableModelRef(ref: string, availableModels: readonly any[]): boolean {
+	return availableModels.some(
+		(candidate: any) => candidate?.id === ref || `${candidate?.provider}/${candidate?.id}` === ref,
+	);
+}
+
+/** The "Unknown model" error text for a rejected winning reference. */
+function unknownModelMessage(modelPart: string, agentId: string, availableModels: readonly any[]): string {
+	const available = availableModels
+		.map((model: any) => `${model?.provider}/${model?.id}`)
+		.filter(Boolean)
+		.sort();
+	const preview = available.length > 0 ? available.slice(0, 20).join(", ") : "none";
+	const more = available.length > 20 ? `, ... (+${available.length - 20} more)` : "";
+	return `Unknown model "${modelPart}" for agent "${agentId}". Tiers: ${TIER_NAMES.join(", ")}. Available models: ${preview}${more}`;
+}
+
+/**
+ * Resolve one child construction's winning model reference.
+ *
+ * Precedence: the active persona's `model` pin wins outright; the explicit
+ * tool `model` is gap-filling only (it applies when the active persona
+ * declares no `model`); otherwise the parent-inherited baseline stands. Only
+ * the winner is validated and resolved — a discarded reference is never
+ * consulted. Tier names resolve through the tier config; unconfigured or
+ * unavailable tiers fall back to the baseline with a warning. Throws when the
+ * winner is neither a tier name nor a known model reference.
+ */
+function resolveChildModelRef(args: {
+	pin: string | undefined;
+	explicit: string | undefined;
+	inherited: string | undefined;
+	agentId: string;
+	tiers: TierConfig;
+	availableModels: readonly any[];
+}): { model: string | undefined; warnings: string[] } {
+	const winner = args.pin || args.explicit || undefined;
+	if (winner !== undefined) {
+		const winnerPart = stripThinkingSuffix(winner).model;
+		if (!isTierName(winner) && !isAvailableModelRef(winnerPart, args.availableModels)) {
+			throw new Error(unknownModelMessage(winnerPart, args.agentId, args.availableModels));
+		}
+	}
+	const warnings: string[] = [];
+	let model = winner || args.inherited;
+	if (model) {
+		if (isTierName(model) && Object.keys(args.tiers).length === 0) {
+			warnings.push("model tiers unconfigured; all tiers use the session default model");
+		}
+		const resolution = resolveModelRef(model, args.tiers, (ref) => isAvailableModelRef(ref, args.availableModels));
+		if (resolution.warning) warnings.push(resolution.warning);
+		model = resolution.model;
+	}
+	if (model) {
+		const { model: modelPart, thinking } = stripThinkingSuffix(model);
+		const resolved = args.availableModels.find(
+			(candidate: any) => candidate?.id === modelPart || `${candidate?.provider}/${candidate?.id}` === modelPart,
+		);
+		if (resolved?.provider && resolved?.id) {
+			model = thinking ? `${resolved.provider}/${resolved.id}:${thinking}` : `${resolved.provider}/${resolved.id}`;
+		}
+	}
+	return { model, warnings };
 }
 
 function wasAborted(event: any): boolean {
@@ -1125,30 +1191,14 @@ class SubagentSessionOwner {
 		const discovery = session.environment.discoverAgents(ctx.cwd);
 		const allAgentConfigs = discovery.agents;
 		const availableModels: any[] = ctx.modelRegistry.getAvailable();
-		const isValidModelRef = (model: string) => availableModels.some(
-			(candidate: any) => candidate?.id === model || `${candidate?.provider}/${candidate?.id}` === model,
-		);
 
 		for (const agent of params.agents) {
-			let foundConfig: AgentConfig | undefined;
 			const agentName = agent.agent || undefined;
 			if (agentName) {
-				foundConfig = allAgentConfigs.find((config) => config.name === agentName);
+				const foundConfig = allAgentConfigs.find((config) => config.name === agentName);
 				if (!foundConfig) {
 					const available = formatAgentList(allAgentConfigs, 10);
 					throw new Error(`Unknown agent definition "${agentName}". Available: ${available.text}`);
-				}
-			}
-			if (agent.model) {
-				const modelPart = stripThinkingSuffix(agent.model).model;
-				if (!foundConfig?.model && !isTierName(agent.model) && !isValidModelRef(modelPart)) {
-					const available = availableModels
-						.map((model: any) => `${model?.provider}/${model?.id}`)
-						.filter(Boolean)
-						.sort();
-					const preview = available.length > 0 ? available.slice(0, 20).join(", ") : "none";
-					const more = available.length > 20 ? `, ... (+${available.length - 20} more)` : "";
-					throw new Error(`Unknown model "${modelPart}" for agent "${agent.id}". Tiers: ${TIER_NAMES.join(", ")}. Available models: ${preview}${more}`);
 				}
 			}
 		}
@@ -1159,50 +1209,48 @@ class SubagentSessionOwner {
 			params.agents.map((agent: any) => ({ id: agent.id, cwd: agent.cwd })),
 			ctx.cwd,
 		);
+
+		// One active persona file per child: the workspace declaration at the
+		// effective child cwd wins wholesale over the discovered spawned
+		// definition. Only the active file's declared skills resolve, and only
+		// the winning model reference is validated and applied — the discarded
+		// file's fields never reach construction.
 		const skillPathsById = new Map<string, readonly string[]>();
+		const modelById = new Map<string, string | undefined>();
+		const inheritedModelRef = modelRefOf(ctx.model);
 		const commands = this.pi.getCommands();
 		for (const agent of params.agents) {
 			const agentConfig = agent.agent
 				? allAgentConfigs.find((config) => config.name === agent.agent)
 				: undefined;
-			if (!agentConfig?.skills) continue;
+			const effectiveCwd = resolvedCwds.get(agent.id) ?? ctx.cwd;
+			const active = loadActivePersona(effectiveCwd, agentConfig);
+			const resolvedModel = resolveChildModelRef({
+				pin: active?.model,
+				explicit: agent.model,
+				inherited: inheritedModelRef,
+				agentId: agent.id,
+				tiers: this.loadTiers(effectiveCwd, ctx.isProjectTrusted()),
+				availableModels,
+			});
+			modelById.set(agent.id, resolvedModel.model);
+			for (const warning of resolvedModel.warnings) session.turns.notifyTierIssueOnce(ctx, warning);
+			if (!active?.skills) continue;
 			try {
-				skillPathsById.set(agent.id, Object.freeze(resolveSkillPaths(agentConfig.skills, commands)));
+				skillPathsById.set(agent.id, Object.freeze(resolveSkillPaths(active.skills, commands)));
 			} catch (error: any) {
 				throw new Error(`Failed to resolve skills for agent "${agent.id}": ${error.message}`);
 			}
 		}
 
-		const tiers = this.loadTiers(ctx.cwd, ctx.isProjectTrusted());
-		const inheritedModelRef = modelRefOf(ctx.model);
 		const agentSpecs: RegularAgentSpec[] = params.agents.map((agent: any) => {
 			const agentName = agent.agent || undefined;
-			const agentConfig = agentName ? allAgentConfigs.find((config) => config.name === agentName) : undefined;
-			const rawModel = agentConfig?.model || agent.model;
-			let model: string | undefined = rawModel || inheritedModelRef;
-			if (model) {
-				if (isTierName(model) && Object.keys(tiers).length === 0) {
-					session.turns.notifyTierIssueOnce(ctx, "model tiers unconfigured; all tiers use the session default model");
-				}
-				const resolution = resolveModelRef(model, tiers, isValidModelRef);
-				if (resolution.warning) session.turns.notifyTierIssueOnce(ctx, resolution.warning);
-				model = resolution.model;
-			}
-			if (model) {
-				const { model: modelPart, thinking } = stripThinkingSuffix(model);
-				const resolved = availableModels.find(
-					(candidate: any) => candidate?.id === modelPart || `${candidate?.provider}/${candidate?.id}` === modelPart,
-				);
-				if (resolved?.provider && resolved?.id) {
-					model = thinking ? `${resolved.provider}/${resolved.id}:${thinking}` : `${resolved.provider}/${resolved.id}`;
-				}
-			}
 			return Object.freeze({
 				kind: "agent" as const,
 				...agent,
 				channels: agent.channels ? Object.freeze([...agent.channels]) : undefined,
 				agent: agentName,
-				model,
+				model: modelById.get(agent.id),
 				cwd: resolvedCwds.get(agent.id),
 				skillPaths: skillPathsById.get(agent.id) ?? Object.freeze([]),
 			});
@@ -1227,10 +1275,43 @@ class SubagentSessionOwner {
 		const sessionFile = ctx.sessionManager.getSessionFile();
 		if (!sessionFile) throw new Error("Cannot fork: no active session file");
 		const tools = [...this.pi.getActiveTools()];
-		const skillPaths = this.pi.getCommands()
-			.filter((command: any) => command.source === "skill" && command.path)
-			.map((command: any) => command.path!);
-		const thinkingLevel = this.pi.getThinkingLevel() as string;
+		const commands = this.pi.getCommands();
+		// A fork inherits the parent cwd and has no spawned definition: the
+		// workspace declaration there is the only persona a fork can wear. Its
+		// declared skills replace the fork snapshot list and its declared
+		// model/thinking bind at the fresh bind; absent fields preserve ordinary
+		// fork behavior.
+		const active = loadActivePersona(ctx.cwd, undefined);
+		let skillPaths: string[];
+		if (active?.skills) {
+			try {
+				skillPaths = resolveSkillPaths(active.skills, commands);
+			} catch (error: any) {
+				throw new Error(`Failed to resolve skills for agent "${params.id}": ${error.message}`);
+			}
+		} else {
+			skillPaths = commands
+				.filter((command: any) => command.source === "skill" && command.path)
+				.map((command: any) => command.path!);
+		}
+		let model: string | undefined;
+		let thinkingLevel = this.pi.getThinkingLevel() as string;
+		if (active?.model) {
+			const resolvedModel = resolveChildModelRef({
+				pin: active.model,
+				explicit: undefined,
+				inherited: undefined,
+				agentId: params.id,
+				tiers: this.loadTiers(ctx.cwd, ctx.isProjectTrusted()),
+				availableModels: ctx.modelRegistry.getAvailable(),
+			});
+			for (const warning of resolvedModel.warnings) session.turns.notifyTierIssueOnce(ctx, warning);
+			if (resolvedModel.model !== undefined) {
+				model = resolvedModel.model;
+				const declaredThinking = stripThinkingSuffix(resolvedModel.model).thinking;
+				if (declaredThinking) thinkingLevel = declaredThinking;
+			}
+		}
 		const forkSpec: ForkAgentSpec = {
 			kind: "fork",
 			id: params.id,
@@ -1239,6 +1320,7 @@ class SubagentSessionOwner {
 			tools,
 			skillPaths,
 			thinkingLevel,
+			model,
 		};
 		await session.presentation.ensureWidget(ctx);
 		const ack = await manager.start([forkSpec], []);
@@ -1392,12 +1474,18 @@ class SubagentSessionOwner {
 				}
 				throw new Error(`No session found with id ${agent.sessionId}.`);
 			}
-			const persona = manager.findPersistedAgentName(agent.sessionId);
+			// Capability gates re-resolve from the active persona file at the
+			// opened session's persisted cwd (workspace declaration first, else
+			// the persisted persona name per DR-033). Model/thinking stay as
+			// persisted (DR-038): a resurrected spec carries no model override.
+			const record = manager.findPersistedAgentRecord(agent.sessionId);
+			const persona = record?.agent;
 			const config = persona ? discovery.agents.find((candidate) => candidate.name === persona) : undefined;
+			const active = loadActivePersona(record?.cwd ?? ctx.cwd, config);
 			let skillPaths: readonly string[] = [];
-			if (config?.skills) {
+			if (active?.skills) {
 				try {
-					skillPaths = Object.freeze(resolveSkillPaths(config.skills, this.pi.getCommands()));
+					skillPaths = Object.freeze(resolveSkillPaths(active.skills, this.pi.getCommands()));
 				} catch (error: any) {
 					throw new Error(`Failed to resolve skills for agent "${agent.id}": ${error.message}`);
 				}
@@ -1409,6 +1497,7 @@ class SubagentSessionOwner {
 				task: agent.task,
 				channels: agent.channels,
 				resumeSessionFile: resolved,
+				cwd: record?.cwd,
 				skillPaths,
 			});
 		}

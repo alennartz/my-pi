@@ -15,11 +15,15 @@
  * an error, never treated as a persona).
  *
  * Pure declaration parsing; `loadWorkspacePersona` performs the one file read.
+ *
+ * Front matter is read by a local scalar parser mirroring pi's
+ * `parseFrontmatter` delimiter/body semantics — the pi package stays a
+ * type-only import across this extension (its test mock exposes a single
+ * runtime export), and the persona fields are flat `key: value` scalars.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 
 /** A parsed workspace persona declaration. */
 export type PersonaDeclaration = {
@@ -49,7 +53,7 @@ export function parsePersonaDeclaration(
 	content: string,
 	sourcePath: string,
 ): PersonaDeclaration | undefined {
-	const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content);
+	const { frontmatter, body } = parseScalarFrontmatter(content);
 	if (frontmatter.kind !== "persona") return undefined;
 	const name = nonBlankString(frontmatter.name);
 	if (name === undefined) return undefined;
@@ -67,6 +71,53 @@ export function parsePersonaDeclaration(
 		body,
 		sourcePath,
 	};
+}
+
+/**
+ * Split content into front matter and body with pi's `parseFrontmatter`
+ * semantics: only a leading `---` block delimited by a line starting with `---`
+ * is front matter, and the body after it is trimmed. Values are flat
+ * `key: value` scalars (optional single/double quotes stripped); nested YAML
+ * structures are out of scope for a persona declaration.
+ */
+function parseScalarFrontmatter(content: string): {
+	frontmatter: Record<string, unknown>;
+	body: string;
+} {
+	const normalized = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	if (!normalized.startsWith("---")) return { frontmatter: {}, body: normalized };
+	const endIndex = normalized.indexOf("\n---", 3);
+	if (endIndex === -1) return { frontmatter: {}, body: normalized };
+	return {
+		frontmatter: parseFlatScalars(normalized.slice(4, endIndex)),
+		body: normalized.slice(endIndex + 4).trim(),
+	};
+}
+
+/** Parse flat `key: value` lines into a record; blank, comment, and nested lines are skipped. */
+function parseFlatScalars(yamlString: string): Record<string, unknown> {
+	const frontmatter: Record<string, unknown> = {};
+	for (const rawLine of yamlString.split("\n")) {
+		const trimmed = rawLine.trim();
+		if (trimmed === "" || trimmed.startsWith("#") || /^\s/.test(rawLine)) continue;
+		const colon = trimmed.indexOf(":");
+		if (colon === -1) continue;
+		const key = trimmed.slice(0, colon).trim();
+		if (key === "") continue;
+		frontmatter[key] = parseScalarValue(trimmed.slice(colon + 1));
+	}
+	return frontmatter;
+}
+
+/** A scalar value with optional matching quotes stripped; a blank value is absent. */
+function parseScalarValue(raw: string): string | undefined {
+	const value = raw.trim();
+	if (value === "") return undefined;
+	const first = value[0];
+	if ((first === '"' || first === "'") && value.length >= 2 && value.endsWith(first)) {
+		return value.slice(1, -1);
+	}
+	return value;
 }
 
 /** The value of a front-matter field when it is a non-blank string, else absent. */

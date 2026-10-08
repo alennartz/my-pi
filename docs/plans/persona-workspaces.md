@@ -185,6 +185,8 @@ The architecture above includes post-test-write rulings: exclusive persona sourc
 
 - (a) The draft "explicit caller arguments outrank any pin" rule is superseded (user ruling): a persona's `model` is a pin and wins over an explicit `model` spawn argument; the explicit argument is gap-filling only — it applies when the active persona declares no `model`, and a discarded persona's pin never applies. Interface 4 carries the corrected rule; Steps 3, 5, 7, 8 text updated accordingly.
 - (b) `extensions/subagents/scoped-extension.integration.test.ts` ("propagates persona model, normalized tool policy, skills, and cwd to a native child") pinned the old addendum-stacking behavior (`appendSystemPrompt` contains the specialist body `"Review carefully."`) — an obsolete expectation invalidated by the architecture, since body-as-preamble replacement is this feature's core. Adjusted minimally during Step 2 to assert the body rides as the spawn-declared persona payload instead. The same test's `modelRef: "pinned/model"`-over-explicit-argument expectation is untouched and stays valid under ruling (a).
+- (c) Step 1 detail deviation (Steps 4–6 implementation): `declaration.ts` parses front matter with a local pure scalar parser instead of pi's `parseFrontmatter` — the index test harness mocks `@earendil-works/pi-coding-agent` down to `getAgentDir`, so the transitive runtime import breaks there. Delimiter/body semantics mirror pi's; `declaration.test.ts` stays green.
+- (d) Worker interpretations: spawned-only children emit a name-only boot notice (no fabricated `sourcePath` — interpretation note 7's implication); restores/resurrections read the persisted cwd from the lifecycle record (fallback: manager default) rather than re-parsing pi session-JSONL headers.
 
 ### Step 1: Parse cwd persona declarations
 
@@ -217,7 +219,7 @@ For fresh children, model precedence is active file `model` (a persona pin — i
 On restore/resurrection, re-resolve active-file tools/skills and spawned payload through the current discovery/persistence-name contract (DR-033), but omit persona-derived model/thinking overrides so the persisted model survives (DR-038). Keep the lifecycle log's existing persona-name storage readable. Do not copy active-file fields into the log or invent a second durable configuration source.
 
 **Verify:** Existing subagent spawn, cwd, fork, restore, resurrection, tool-policy, skill-path, and model-tier tests pass with `npx vitest run extensions/subagents`. Inspect requests for a workspace with absent fields: discarded tools/skills/model never survive, an explicit caller model applies only when the winning persona declares no pin (never over a pin), and resume requests contain no re-derived model override.
-**Status:** in progress
+**Status:** done
 
 ### Step 4: Bind persona prompts and skill declarations
 
@@ -228,7 +230,7 @@ Set only `options.customPrompt = persona.body` for preamble replacement; never u
 Keep all per-run decisions local and argument-driven. Do not cache declaration content between runs. The extension manifest already exposes `./index.ts`, and the root manifest already discovers `./extensions`; no new dependency or manifest change is required.
 
 **Verify:** Prompt-binding and skills-filter cases in `extensions/persona-workspaces/index.test.ts` pass; successive runs observe edits, explicit custom prompts are untouched, and plain sessions produce no mutations.
-**Status:** in progress
+**Status:** done
 
 ### Step 5: Bind root front matter at fresh session start
 
@@ -239,7 +241,7 @@ For root model binding, use `getAgentDir()`, `<agentDir>/model-tiers.json`, `<cw
 Retain only the latest session-start reason keyed/reset for the active SessionManager as extension-instance lifecycle state, as approved in Interface 5. This state communicates bind eligibility to the prompt handler; it contains neither parsed declarations nor emitted-notice flags and is never persisted.
 
 **Verify:** Front-matter cases in `extensions/persona-workspaces/index.test.ts` pass, including tier and thinking binding, exact tool normalization, absent fields, and no resume setter calls. Inspect reload handling and child guards for the same no-slap-back/pin-precedence rules.
-**Status:** in progress
+**Status:** done
 
 ### Step 6: Render and deduplicate takeover notices
 
@@ -250,7 +252,7 @@ Gate both boot and override announcements to fresh bind reasons (`startup`, `new
 Implement the registered `persona-notice` renderer using pi-tui's `Text`/`Box` pattern from `examples/extensions/message-renderer.ts`, the supplied theme/output padding, and the same informational text. Keep non-TUI behavior independent from rendering.
 
 **Verify:** `npx vitest run extensions/persona-workspaces/index.test.ts` passes notice shape, winning/replaced names, once-per-session ingestion, fresh reasons, and resumed transcript cases. Inspect narrow-width rendering through the standard components and ensure explicit customPrompt returns before notices.
-**Status:** in progress
+**Status:** done
 
 ### Step 7: Rename the public persona parameter and guidance
 
