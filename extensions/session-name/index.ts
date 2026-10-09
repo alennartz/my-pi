@@ -13,7 +13,7 @@ export default function (pi: ExtensionAPI) {
 		name: "set_session_name",
 		label: "Set Session Name",
 		description:
-			"Set or clear the display name of the current session. The name shows in session lists and resume pickers, so name the session once its task is clear instead of leaving it anonymous. Only session metadata changes; the conversation is untouched.",
+			"Set name of the current session once the task is clear. Keep the name short, <= 12 characters. Prefix with a two-letter code that represents the current working directory.",
 		promptSnippet: "Name the session once the task is clear",
 		promptGuidelines: [
 			'Call set_session_name once the task is clear, with a short descriptive phrase (for example "fix webhook retry backoff").',
