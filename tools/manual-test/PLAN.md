@@ -131,18 +131,19 @@ spawns and `list_models`. (See `tools/manual-test/README.md`.)
 ### J8: Persona workspace takeover — the directory IS the specialist
 
 **What:** Boot pi in a directory whose `AGENTS.md` has `kind: persona` front
-matter. The persona body replaces the system-prompt preamble wholesale, one
-transcript-visible takeover notice names the persona and its source file, and
-the front matter binds `model` (with `:<level>` thinking suffix), `tools`
-(exact `resolveChildToolPolicy` normalization), and `skills` (per-run list
-filter). Precedence and resilience paths: an explicit `--system-prompt`
-outranks the directory; plain/unknown-`kind` AGENTS.md files are left alone;
-mid-session edits apply next run; the persona is authoritative at session
-boundaries — resume, reload, and fork are one continuation case that
-re-applies the declaration's model/thinking/tools over the user's mid-session
-choices, while continuations never re-announce (announcements fire only on
-genuine takeover: fresh starts, and a fork acquiring a persona its lineage
-never had).
+matter. The persona body replaces the system-prompt preamble wholesale — a
+silent takeover by design (`/sysprompt`'s projection is the pre-run
+visibility surface) — and the front matter binds `model` (with `:<level>`
+thinking suffix), `tools` (exact `resolveChildToolPolicy` normalization),
+and `skills` (per-run list filter). Precedence and resilience paths: an
+explicit `--system-prompt` outranks the directory; plain/unknown-`kind`
+AGENTS.md files are left alone; mid-session edits apply next run; the
+persona is authoritative at session boundaries — resume, reload, and fork
+are one continuation case that re-applies the declaration's model/thinking/
+tools over the user's mid-session choices. No takeover ever announces: the
+only announcement is the child-side override notice (plus the `subagent`
+tool-result note) when a spawn-declared persona loses wholesale to the
+workspace persona (J9).
 
 **Why:** This is the topic journey of persona workspaces — "cd into a
 directory, launch pi, and the session IS the specialist from the first
@@ -154,13 +155,15 @@ either hijack a general session or defeat a specialist workspace.
 ### J9: Spawned persona identity — body as preamble, workspace override
 
 **What:** Spawn subagents via `persona:` — the definition body becomes the
-child's preamble (never stacked under the generic persona), with a name-only
-boot notice. A named persona spawned into a persona workspace loses
-wholesale to the workspace (body + capability fields + model pin) with an
-override notice naming both. A persona's `model` pin beats an explicit
-spawn `model` (gap-fill only); children load project resources from their
-arbitrary cwd; forks of a persona-workspace parent wear the workspace
-persona.
+child's preamble (never stacked under the generic persona), silently (the
+takeover announces nothing). A named persona spawned into a persona
+workspace loses wholesale to the workspace (body + capability fields + model
+pin) with the child-side override notice naming both, plus an override note
+in the `subagent` tool result (`persona 'X' overridden by workspace persona
+'Y' (<cwd>)`) so the calling LLM's belief is corrected at spawn time. A
+persona's `model` pin beats an explicit spawn `model` (gap-fill only);
+children load project resources from their arbitrary cwd; forks of a
+persona-workspace parent wear the workspace persona silently.
 
 **Why:** The spawn path is how specialists are deployed across every
 workflow phase; the old addendum-stacking caused identity confusion this
