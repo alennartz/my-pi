@@ -13,6 +13,7 @@ export default function (pi: ExtensionAPI) {
 		exposure: "model-only",
 		description:
 			"Open a file in the built-in editor for the user to edit manually. The user can modify the content and save, or cancel. Returns whether the file was saved or the edit was cancelled.",
+		promptSnippet: "Open a file in the built-in editor for the user to edit, save, or cancel.",
 		parameters: Type.Object({
 			path: Type.String({ description: "File path to open for editing, resolved relative to the working directory" }),
 		}),

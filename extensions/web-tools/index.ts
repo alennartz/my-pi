@@ -24,9 +24,9 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Search",
 		description:
 			"Search the web via Brave and return compact result cards (title, URL, snippet, age). Use web_fetch to read the content of a result.",
+		promptSnippet: "Discover sources; returns links and snippets, not page content.",
 		parameters: webSearchParameters,
 		promptGuidelines: [
-			"Use web_search to discover sources; it returns links and snippets, not page content.",
 			"Fetch only the most promising results with web_fetch rather than everything.",
 		],
 		async execute(_toolCallId, params: WebSearchParams, signal) {
@@ -43,9 +43,9 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Fetch",
 		description:
 			"Fetch one or more URLs (max 8) as markdown via Readability. Full content is stored on disk — explore with findText first to pull the passages relevant to your goal, then use offset to read around or past a hit.",
+		promptSnippet: "Fetch URLs you already know, from web_search or the user, as markdown for targeted reading.",
 		parameters: webFetchParameters,
 		promptGuidelines: [
-			"Use web_fetch on URLs you already know (from web_search or the user).",
 			"Explore a fetched page with findText first: pass terms from your goal and read only the matching passages. Read from the start only when findText returns nothing useful.",
 			"Long output is truncated — continue with the reported offset instead of refetching.",
 		],

@@ -1065,10 +1065,10 @@ class SubagentSessionOwner {
 			name: "subagent",
 			label: "Subagents",
 			description: "Spawn subagents to delegate work to a seperate context window, optionally with a different model or cwd. Supports inter agent communications",
+			promptSnippet: "Delegate work to separate context windows; non-blocking by default, results arrive later as notifications; pass await=true to block.",
 			promptGuidelines: [
 				"When using subagent a channel to \"parent\" (you) is auto-injected into every agent's channel list. The channels field governs peer agent communication only.",
 				"Agents can be added incrementally — call subagent again to add more agents to the existing set. New agents join the running infrastructure.",
-				"`subagent` defaults to non-blocking, returning immediately. The results of subagents will arrive later as notifications. If you want to block use `await=true`",
 				"When using `subagent` without awaiting resist the urge to also do the same work you just delegated it is NOT your responsibility.",
 				"Prefer `subagent` over `fork` when the work needs multiple coordinated agents, specialized agents, or a clean slate. Prefer `fork` when you want a copy of your current session context to explore a side quest without bloating your primary context.",
 				"For `subagent` use guidance about task decomposition, pattern selection, and when-to-delegate; read the orchestrating-agents skill.",
@@ -1085,7 +1085,7 @@ class SubagentSessionOwner {
 			name: "fork",
 			label: "Fork",
 			description: "Clone yourself into a sub-agent with your full conversation history. Useful for existing context dependent side quests where data explored is much larger that required retained output.",
-			promptGuidelines: ["`fork` generally functions exactly like `subagent` except that you keep your current session context, model and cwd without the ability to overrie them"],
+			promptSnippet: "Clone yourself into a sub-agent with your full conversation history; like subagent but you keep your context, model, and cwd.",
 			parameters: Type.Object({
 				id: Type.String({ description: "Unique identifier for the forked agent" }),
 				task: Type.String({ description: "Task description for the forked agent" }),
@@ -1098,8 +1098,8 @@ class SubagentSessionOwner {
 			name: "send",
 			label: "Send Message",
 			description: "Send a mid-task clarification or coordination message to another active agent; do not use for final task reporting.",
+			promptSnippet: "Send a mid-task message to another active agent; fire-and-forget by default, use expectResponse=true to block for a response.",
 			promptGuidelines: [
-				"`send` is Fire-and-forget by default: sends the message and returns immediately. The target agent will receive it as an <agent_message> block. If you need a response use `expectResponse=true`",
 				"As a subagent with a parent. You do not need to use `send` a completed-task summary to the parent. Your final text is delivered automatically.",
 				"For scatter-gather: call send(expectResponse=true) to multiple agents in the same turn. Each returns when its target responds.",
 			],
@@ -1115,6 +1115,7 @@ class SubagentSessionOwner {
 			name: "respond",
 			label: "Respond",
 			description: "Responds to an agent_message with response_expected=\"true\" from another agent. Responses are mandatory when expected!",
+			promptSnippet: "Answer an agent_message marked response_expected=true; responses are mandatory.",
 			parameters: Type.Object({
 				correlationId: Type.String({ description: "The correlation_id from the incoming agent_message" }),
 				message: Type.String({ description: "Response content" }),
@@ -1127,7 +1128,7 @@ class SubagentSessionOwner {
 			label: "Check Status",
 			annotations: { readOnlyHint: true },
 			description: "Query agent status. Omit agent for summary of all active agents.",
-			promptGuidelines: ["Use check_status only when you have a specific reason: diagnosing a suspected stall, answering a user question about progress, or checking usage mid-run."],
+			promptSnippet: "Query agent status; use only for a specific reason: suspected stall, progress question, or mid-run usage check.",
 			parameters: Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to query. Omit for summary of all active agents." })) }),
 			execute: async (_toolCallId, params) => this.checkStatus(params),
 		});
@@ -1136,7 +1137,7 @@ class SubagentSessionOwner {
 			name: "teardown",
 			label: "Teardown",
 			description: "Remove an agent or tear down all agents. Returns a completion report.",
-			promptGuidelines: ["Call teardown when an agent or all agents are no longer needed. Idle or errored (but not dead) agents remain usable — you can send new messages to restart or continue work or retry after errors."],
+			promptSnippet: "Remove agents no longer needed; idle or errored agents stay usable, so send new messages to restart or continue work.",
 			parameters: Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to remove. Omit to tear down all agents." })) }),
 			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => this.teardownAgents(params, ctx),
 		});
@@ -1145,8 +1146,8 @@ class SubagentSessionOwner {
 			name: "resurrect",
 			label: "Resurrect",
 			description: "Bring a previously-torn-down subagent back online from its session file by using it's session_id.",
+			promptSnippet: "Bring torn-down agents back online from their session_id; persona, model, and tools are inherited and fixed; only id, channels, and task are re-declared.",
 			promptGuidelines: [
-				"Each resurrected agent inherits its persona, model, and tool set from the resumed session — none of those can be changed here. Only `id`, `channels`, and `task` must be re-declared.",
 				"To resurrect a mesh of agents that talked to each other, resurrect them in a single call: each agent may declare channels to its siblings, since they come online together.",
 			],
 			parameters: Type.Object({ agents: Type.Array(ResurrectItem, { description: "Agents to resurrect from their session files." }) }),
@@ -1157,8 +1158,8 @@ class SubagentSessionOwner {
 			name: "await_agents",
 			label: "Await Agents",
 			description: "Block until an agent completes or sends you a message. Returns final agent output or sent message.",
+			promptSnippet: "Block until specified agents complete or send you a message; omit the list to wait on all active agents.",
 			promptGuidelines: [
-				"Use `await_agents` when you need results before your next step — it blocks until all specified agents complete (or all agents, if none specified).",
 				"Any agent non terminal message sent to you while you are in an await_agents tool call interrupts the wait. If an expect-response message interrupts, you must call `respond` before waiting again.",
 			],
 			parameters: Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to wait on. Omit to wait on all active agents." })) }),
@@ -1169,7 +1170,7 @@ class SubagentSessionOwner {
 			name: "interrupt",
 			label: "Interrupt",
 			description: "Halt a subagent immediately without tearing it down. Interrupts any in-flight tool call — useful when one is hung or stuck.",
-			promptGuidelines: ["Prefer `send` to `interrpupt` unless you realize the subagent is going wrong and must be stopped now."],
+			promptSnippet: "Halt an agent immediately without tearing it down; prefer send unless the agent must stop now.",
 			parameters: Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to interrupt. Omit to interrupt all active agents." })) }),
 			execute: async (_toolCallId, params, signal) => this.interruptAgents(params, signal),
 		});
