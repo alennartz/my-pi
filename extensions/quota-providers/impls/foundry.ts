@@ -94,7 +94,7 @@ function mapBackend(
 		if (caps.responses === "true") {
 			return {
 				api: "openai-responses",
-				catalogProvider: "azure-openai-responses",
+				catalogProvider: "azure",
 				baseUrlPath: "/openai/v1",
 				authHeader: false,
 			};
@@ -102,7 +102,7 @@ function mapBackend(
 		if (caps.chatCompletion === "true") {
 			return {
 				api: "openai-completions",
-				catalogProvider: "azure-openai-responses",
+				catalogProvider: "azure",
 				baseUrlPath: "/openai/v1",
 				authHeader: false,
 			};

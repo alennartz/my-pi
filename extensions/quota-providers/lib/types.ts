@@ -87,7 +87,7 @@ export interface ModelEntry extends ModelMetadataOverrides {
   /** Full pi-ai Api union — core passes it through to pi.registerProvider. */
   api: Api;
   /** Which pi-ai catalog provider to resolve modelName against (e.g. "anthropic",
-   *  "azure-openai-responses"). Absent or miss → conservative defaults. */
+   *  "azure"). Absent or miss → conservative defaults. */
   catalogProvider?: string;
   /** Appended to baseUrl for this model's backend, e.g. "/anthropic". */
   baseUrlPath?: string;
