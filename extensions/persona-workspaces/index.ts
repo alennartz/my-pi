@@ -160,7 +160,7 @@ export default function personaWorkspaces(pi: ExtensionAPI) {
  * persona at all, or an explicit `--system-prompt` that outranks the ambient
  * persona (nothing binds and nothing announces).
  */
-function planRunBinding(input: {
+export function planRunBinding(input: {
 	workspace: PersonaDeclaration | undefined;
 	spawned: PersonaPayload | undefined;
 	explicitCustomPrompt: string | undefined;
