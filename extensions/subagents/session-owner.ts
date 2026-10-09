@@ -264,17 +264,6 @@ function renameLegacyPersonaFields(args: unknown): unknown {
 	};
 }
 
-function wasAborted(event: any): boolean {
-	if (event?.willRetry) return false;
-	const messages = Array.isArray(event?.messages) ? event.messages : [];
-	for (let index = messages.length - 1; index >= 0; index -= 1) {
-		const message = messages[index];
-		if (message?.role !== "assistant") continue;
-		return message.stopReason === "aborted";
-	}
-	return false;
-}
-
 function terminalError(event: any): string | undefined {
 	if (event?.willRetry) return undefined;
 	const messages = Array.isArray(event?.messages) ? event.messages : [];
@@ -300,7 +289,6 @@ class SessionTurnCoordinator {
 	private readonly stopSequences: StopSequenceManager;
 	private waitState: WaitState | null = null;
 	private rootRunError: string | undefined;
-	private runAborted = false;
 	private readonly notifiedTierIssues = new Set<string>();
 
 	constructor(pi: ExtensionAPI) {
@@ -391,15 +379,12 @@ class SessionTurnCoordinator {
 
 	endRun(event: any): string | undefined {
 		this.queue.clearPendingTools();
-		this.runAborted = wasAborted(event);
 		const error = terminalError(event);
 		if (error) this.rootRunError = error;
 		return error;
 	}
 
-	settleRun(): { aborted: boolean; rootError: string | undefined } {
-		const aborted = this.runAborted;
-		this.runAborted = false;
+	settleRun(aborted: boolean): { aborted: boolean; rootError: string | undefined } {
 		this.queue.setParentBusy(false, { flush: !aborted });
 		if (aborted) this.queue.deferAll();
 		return { aborted, rootError: this.rootRunError };
@@ -781,7 +766,7 @@ class SubagentSessionOwner {
 			case "agent_end":
 				return this.handleAgentEnd(event, ctx);
 			case "agent_settled":
-				return this.handleAgentSettled(ctx);
+				return this.handleAgentSettled(event, ctx);
 			case "message_end":
 				return this.handleMessageEnd(event, ctx);
 			case "session_info_changed":
@@ -852,9 +837,9 @@ class SubagentSessionOwner {
 		if (this.scope.kind === "root" && error) this.updateRootOperational({ lastError: error });
 	}
 
-	private handleAgentSettled(ctx: ExtensionContext): void {
+	private handleAgentSettled(event: any, ctx: ExtensionContext): void {
 		const session = this.requireActiveSession();
-		const { rootError } = session.turns.settleRun();
+		const { rootError } = session.turns.settleRun(event?.aborted === true);
 		if (this.scope.kind === "root") {
 			session.registry.updateOperational([], {
 				...session.registry.getSnapshot([])!.operational,

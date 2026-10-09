@@ -631,7 +631,7 @@ describe("child-scoped extension routing", () => {
 			willRetry: false,
 			messages: [{ role: "assistant", stopReason: "aborted", content: [] }],
 		}, aborting);
-		await handlers.get("agent_settled")?.({ type: "agent_settled" }, ctx);
+		await handlers.get("agent_settled")?.({ type: "agent_settled", aborted: true }, ctx);
 
 		expect(pi.sendMessage).toHaveBeenCalledTimes(1);
 		expect(pi.sendMessage).toHaveBeenCalledWith(
