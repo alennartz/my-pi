@@ -30,6 +30,7 @@ import {
 	SubagentManager,
 	isSettledState,
 	loadActivePersona,
+	selectActivePersona,
 	type AgentStatus,
 	type PersonaCapabilities,
 } from "./agent-set.js";
@@ -44,7 +45,8 @@ import { serializeAgentComplete, serializeAgentMessage, type AgentCompleteData }
 import { createStopSequenceManager, type StopSequenceManager } from "./stop-sequences.js";
 import { NotificationQueue } from "./notification-queue.js";
 import { statusesToCards } from "./panel-cards.js";
-import { formatSpawnToolResult } from "./tool-result.js";
+import { formatOverrideNote, formatSpawnToolResult } from "./tool-result.js";
+import { loadWorkspacePersona } from "../persona-workspaces/declaration.ts";
 import {
 	SESSION_DEFAULT_LABEL,
 	TIERS_UNCONFIGURED_MESSAGE,
@@ -1243,6 +1245,7 @@ class SubagentSessionOwner {
 		const skillPathsById = new Map<string, readonly string[]>();
 		const modelById = new Map<string, string | undefined>();
 		const inheritedModelRef = modelRefOf(ctx.model);
+		const overrideNotes: string[] = [];
 		const commands = this.pi.getCommands();
 		for (const agent of params.agents) {
 			const agentName = personaNameOf(agent);
@@ -1250,8 +1253,15 @@ class SubagentSessionOwner {
 				? allAgentConfigs.find((config) => config.name === agentName)
 				: undefined;
 			const effectiveCwd = resolvedCwds.get(agent.id) ?? ctx.cwd;
-			const active = loadActivePersona(effectiveCwd, agentConfig);
+			const workspace = loadWorkspacePersona(effectiveCwd);
+			const active = selectActivePersona(workspace, agentConfig);
 			activeById.set(agent.id, active);
+			// A requested persona that lost wholesale to the workspace is
+			// surfaced to the orchestrator in the tool result — the reliable
+			// parent-context channel, read immediately at spawn time.
+			if (agentName && workspace) {
+				overrideNotes.push(formatOverrideNote(agentName, workspace.name, effectiveCwd));
+			}
 			const resolvedModel = resolveChildModelRef({
 				pin: active?.model,
 				explicit: agent.model,
@@ -1296,12 +1306,13 @@ class SubagentSessionOwner {
 		const ack = await manager.start(agentSpecs, allAgentConfigs);
 		session.presentation.refresh(manager);
 		session.turns.addStopSequenceOnce("<agent_idle");
+		const overrideNote = overrideNotes.length > 0 ? `\n\n${overrideNotes.join("\n")}` : "";
 		if (params.await) {
 			const ids = params.agents.map((agent: any) => agent.id);
 			const waitResult = await session.turns.awaitAgentCompletion(ids, manager, signal);
-			return { content: [{ type: "text", text: formatSpawnToolResult(waitResult) }] };
+			return { content: [{ type: "text", text: formatSpawnToolResult(waitResult) + overrideNote }] };
 		}
-		return { content: [{ type: "text", text: ack }] };
+		return { content: [{ type: "text", text: ack + overrideNote }] };
 	}
 
 	private async forkAgent(params: any, signal: AbortSignal | undefined, ctx: ExtensionContext): Promise<any> {

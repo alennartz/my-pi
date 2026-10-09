@@ -19,10 +19,10 @@ come from session JSONL, the subagents persistence files, and RPC
 
 Root checks (fresh `pi --mode rpc` sessions; R5/R6 use two):
 
-- **R1 boot-takeover** — `kind: persona` AGENTS.md: body replaces the
+- **R1 silent-takeover** — `kind: persona` AGENTS.md: body replaces the
   preamble (generic preamble gone, body exactly once — the file is not
-  double-appended as context), one boot notice (customType `persona-notice`,
-  `display: true`) naming persona + absolute source path, front-matter `model`
+  double-appended as context), no notice (the takeover is silent —
+  `/sysprompt`'s projection is the pre-run visibility surface), front-matter `model`
   (with `:<level>` thinking suffix), `tools` (exactly
   `resolveChildToolPolicy` normalization: `ask_user` dropped, `respond`
   appended), `skills` filter, and unlisted skills' slash commands still
@@ -34,7 +34,7 @@ Root checks (fresh `pi --mode rpc` sessions; R5/R6 use two):
   intact, content rides as project context, no notice.
 - **R4 unknown-kind** — `kind:` other than `persona` is silently ignored.
 - **R5 mid-session-edit** — editing the workspace body takes effect on the
-  next run of the same session; the notice is not re-emitted.
+  next run of the same session; no notice ever fires (takeovers are silent).
 - **R6 resume-rebinds** — a tier-name `model` pin binds through
   model-tiers.json; after an in-session `set_model` + `set_thinking_level`
   (the `/model` API) the choice stands mid-session, but a resume whose
@@ -55,19 +55,20 @@ Root checks (fresh `pi --mode rpc` sessions; R5/R6 use two):
 Drive checks (LLM-driven parent sessions spawning real children):
 
 - **D1 spawned-identity** — a spawned persona's body IS the child's preamble
-  (generic preamble gone, body once — not stacked in the addendum) with a
-  name-only boot notice (no fabricated `sourcePath`); a persona without a
+  (generic preamble gone, body once — not stacked in the addendum) with no
+  notice (persona takeovers are silent); a persona without a
   `model` lets an explicit spawn `model` gap-fill; a child spawned into an
   arbitrary folder loads that folder's project resources (project skill in
   the prompt, plain AGENTS.md as project context, project `.pi/extensions`
   extension fires); messaging works (expect-response and fire-and-forget).
 - **D2 override+resurrect** — a named persona spawned into a persona
   workspace loses wholesale to the workspace (body + model pin), the override
-  notice names both; after teardown the workspace file is edited and the
+  notice names both and the subagent tool result carries the override note;
+  after teardown the workspace file is edited and the
   resurrected child re-resolves its tool policy from the edited file while its
   persisted model survives (DR-038); a `fork` child of a persona-workspace
-  parent wears the workspace persona (body + declared model pin + tool set +
-  boot notice); a bogus resurrect errors cleanly.
+  parent wears the workspace persona (body + declared model pin + tool set)
+  silently; a bogus resurrect errors cleanly.
 
 ## Invocation
 

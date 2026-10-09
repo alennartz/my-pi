@@ -200,39 +200,37 @@ describe("prompt binding", () => {
 
 		const event = agentStartEvent();
 		const result = (await s.beforeAgentStart(event, ctxFor(cwd, { sessionManager }))) as
-			| { message?: { content?: unknown } }
+			| { message?: { customType?: string; content?: unknown; details?: { condition?: string } } }
 			| undefined;
 
 		expect(event.systemPromptOptions.customPrompt).toContain(WORKSPACE_BODY);
 		expect(event.systemPromptOptions.customPrompt).not.toContain("Spawned scout body.");
+		expect(result?.message?.customType).toBe("persona-notice");
+		expect(result?.message?.details?.condition).toBe("override");
 		expect(String(result?.message?.content)).toContain("workspace-lead");
 		expect(String(result?.message?.content)).toContain("scout");
 	});
 });
 
-describe("takeover notices", () => {
-	it("announces the takeover with a persona-notice message naming the persona and its source file", async () => {
+describe("override notices", () => {
+	it("takes over a fresh session silently — the directory is the agent", async () => {
 		const s = setup();
 		const cwd = personaWorkspace();
-		const sourcePath = join(cwd, "AGENTS.md");
 		const transcript = transcriptSessionManager();
 		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { sessionManager: transcript.sessionManager }));
 
 		const event = agentStartEvent();
-		const result = (await s.beforeAgentStart(event, ctxFor(cwd, { sessionManager: transcript.sessionManager }))) as
-			| { message?: { customType?: string; content?: unknown; display?: boolean } }
-			| undefined;
+		const result = await s.beforeAgentStart(event, ctxFor(cwd, { sessionManager: transcript.sessionManager }));
 
-		expect(result?.message?.customType).toBe("persona-notice");
-		expect(result?.message?.display).toBe(true);
-		expect(String(result?.message?.content)).toContain("workspace-lead");
-		expect(String(result?.message?.content)).toContain(sourcePath);
+		expect(result).toBeUndefined();
+		expect(event.systemPromptOptions.customPrompt).toContain(WORKSPACE_BODY);
 	});
 
-	it("emits the boot notice at most once per session instance", async () => {
+	it("emits the override notice at most once per session instance", async () => {
 		const s = setup();
 		const cwd = personaWorkspace();
 		const transcript = transcriptSessionManager();
+		markSubagentChildSession(transcript.sessionManager, { name: "scout", body: "Spawned scout body." });
 		const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager });
 		await s.sessionStart({ type: "session_start", reason: "startup" }, ctx);
 
@@ -248,7 +246,7 @@ describe("takeover notices", () => {
 		expect(second?.message).toBeUndefined();
 	});
 
-	it("binds and announces on genuine fresh starts (startup, new)", async () => {
+	it("stays silent on genuine fresh starts (startup, new) — no takeover announcement", async () => {
 		for (const reason of ["startup", "new"]) {
 			const s = setup();
 			const cwd = personaWorkspace();
@@ -256,19 +254,18 @@ describe("takeover notices", () => {
 			const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager });
 			await s.sessionStart({ type: "session_start", reason }, ctx);
 
-			const result = (await s.beforeAgentStart(agentStartEvent(), ctx)) as
-				| { message?: { customType?: string } }
-				| undefined;
+			const result = await s.beforeAgentStart(agentStartEvent(), ctx);
 
-			expect(result?.message?.customType, `reason=${reason}`).toBe("persona-notice");
+			expect(result, `reason=${reason}`).toBeUndefined();
 		}
 	});
 
-	it("does not re-fire notices on a resumed session whose transcript already has one", async () => {
+	it("does not re-fire the override notice on a resumed session whose transcript already has one", async () => {
 		const s = setup();
 		const cwd = personaWorkspace();
 		const transcript = transcriptSessionManager();
-		transcript.ingest({ customType: "persona-notice", content: "earlier boot notice" });
+		markSubagentChildSession(transcript.sessionManager, { name: "scout", body: "Spawned scout body." });
+		transcript.ingest({ customType: "persona-notice", content: "Persona override: earlier override notice" });
 		const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager });
 		await s.sessionStart({ type: "session_start", reason: "resume" }, ctx);
 
@@ -421,7 +418,7 @@ describe("front-matter binding at session start", () => {
 		expect(result).toBeUndefined();
 	});
 
-	it("announces at fork when the persona is new to the lineage", async () => {
+	it("stays silent at fork even when the persona is new to the lineage (takeovers announce nothing)", async () => {
 		const s = setup();
 		const cwd = personaWorkspace();
 		const transcript = transcriptSessionManager();
@@ -429,11 +426,9 @@ describe("front-matter binding at session start", () => {
 		const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager });
 
 		await s.sessionStart({ type: "session_start", reason: "fork" }, ctx);
-		const result = (await s.beforeAgentStart(agentStartEvent(), ctx)) as
-			| { message?: { customType?: string } }
-			| undefined;
+		const result = await s.beforeAgentStart(agentStartEvent(), ctx);
 
-		expect(result?.message?.customType).toBe("persona-notice");
+		expect(result).toBeUndefined();
 	});
 
 	it("binds nothing when the front matter declares neither model nor tools", async () => {

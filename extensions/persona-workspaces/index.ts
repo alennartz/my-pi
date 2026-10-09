@@ -7,7 +7,8 @@
  *
  * Two handlers:
  * - `before_agent_start` — prompt binding (persona body replaces the preamble
- *   via `systemPromptOptions.customPrompt`), skills filter, takeover notices.
+ *   via `systemPromptOptions.customPrompt`), skills filter, the override
+ *   notice.
  * - `session_start` — front-matter binding (model/tools) at every session
  *   start: the persona is persistent session config and authoritative at
  *   every session boundary, so fresh starts and continuations (`resume` and
@@ -65,7 +66,11 @@ const CONTINUATION_REASONS: ReadonlySet<string> = new Set(["resume", "reload"]);
 
 type SessionReason = SessionStartEvent["reason"];
 
-/** A takeover notice's condition: a first binding, or a workspace overriding a spawn-declared persona. */
+/**
+ * A notice's condition. "boot" survives only to classify legacy transcript
+ * entries — every notice this extension emits now is an "override" (a persona
+ * takeover of a fresh session is silent by design).
+ */
 type NoticeCondition = "boot" | "override";
 
 /**
@@ -181,14 +186,14 @@ export function planRunBinding(input: {
 }
 
 /**
- * Compose the takeover notice for this run, or undefined when the run must
- * stay silent. Continuations (`resume`, `reload`, CLI resumes) never announce
- * — the transcript carries the takeover notice. A `fork` continues the
- * parent's lineage, so it is silent while the inherited transcript carries a
- * notice and announces only when the persona is genuinely new to the lineage
- * (a fork acquiring a persona the parent never had is a real takeover) — the
- * once-per-condition transcript dedup decides. Each condition announces at
- * most once per session instance.
+ * Compose the notice for this run, or undefined when the run must stay
+ * silent. Only an override — a workspace declaration beating a spawn-declared
+ * persona — ever announces: persona takeovers are silent by design (the
+ * directory IS the agent; `/sysprompt`'s projection is the pre-run visibility
+ * surface), and the calling orchestrator learns of an override from the
+ * spawn tool result. Continuations (`resume`, `reload`, CLI resumes, `fork`)
+ * never announce, and each condition announces at most once per session
+ * instance — the transcript dedup decides.
  */
 function planNotice(input: {
 	workspace: PersonaDeclaration | undefined;
@@ -203,10 +208,9 @@ function planNotice(input: {
 }
 
 /**
- * The notice text and details for a persona binding. A workspace overriding a
- * spawn-declared payload gets one override notice naming both — the single
- * message slot cannot carry a separate boot notice as well. A spawn-declared
- * payload alone has no source file, and none is ever fabricated.
+ * The notice for a workspace declaration overriding a spawn-declared persona,
+ * naming both. This is the only notice the extension emits: every other
+ * persona binding is silent.
  */
 function composeNotice(
 	workspace: PersonaDeclaration | undefined,
@@ -224,20 +228,6 @@ function composeNotice(
 				sourcePath: workspace.sourcePath,
 				replaced: spawned.name,
 			},
-		};
-	}
-	if (workspace) {
-		return {
-			condition: "boot",
-			content: `Persona takeover: "${workspace.name}" (${workspace.sourcePath}) is now this session's persona.`,
-			details: { condition: "boot", persona: workspace.name, sourcePath: workspace.sourcePath },
-		};
-	}
-	if (spawned) {
-		return {
-			condition: "boot",
-			content: `Persona takeover: spawned persona "${spawned.name}" is now this session's persona.`,
-			details: { condition: "boot", persona: spawned.name },
 		};
 	}
 	return undefined;

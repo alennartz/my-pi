@@ -1459,4 +1459,46 @@ describe("root orchestration integration", () => {
 		expect(managed.created[0].config.persona).toEqual({ name: "reviewer", body: "Review carefully." });
 		expect(managed.created[0].config.appendSystemPrompt).not.toContain("Review carefully.");
 	});
+
+	it("surfaces a wholesale workspace override in the subagent tool result", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		const childCwd = path.join(tmpRoot!, "override-project");
+		const plainCwd = path.join(tmpRoot!, "plain-project");
+		fs.writeFileSync(parentSessionFile, "");
+		fs.mkdirSync(path.join(tmpRoot!, ".pi", "agents"), { recursive: true });
+		fs.mkdirSync(childCwd, { recursive: true });
+		fs.mkdirSync(plainCwd, { recursive: true });
+		fs.writeFileSync(
+			path.join(childCwd, "AGENTS.md"),
+			`---\nkind: persona\nname: ws-lead\n---\nYou are the workspace lead.`,
+		);
+		fs.writeFileSync(
+			path.join(tmpRoot!, ".pi", "agents", "reviewer.md"),
+			`---\nname: reviewer\ndescription: Review changes\n---\nReview carefully.`,
+		);
+
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+
+		const overridden = (await execute(
+			tools,
+			"subagent",
+			{ agents: [{ id: "rev", persona: "reviewer", task: "review", cwd: childCwd }] },
+			ctx,
+		)) as { content?: Array<{ text?: string }> };
+		const plain = (await execute(
+			tools,
+			"subagent",
+			{ agents: [{ id: "plain", persona: "reviewer", task: "review", cwd: plainCwd }] },
+			ctx,
+		)) as { content?: Array<{ text?: string }> };
+
+		const overrideText = String(overridden?.content?.[0]?.text ?? "");
+		const plainText = String(plain?.content?.[0]?.text ?? "");
+		expect(overrideText).toContain("persona 'reviewer' overridden by workspace persona 'ws-lead'");
+		expect(overrideText).toContain(childCwd);
+		expect(plainText).not.toContain("overridden by");
+	});
 });

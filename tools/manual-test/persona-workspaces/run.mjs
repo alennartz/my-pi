@@ -13,11 +13,12 @@
  * and RPC `get_state`/`get_commands` — never from model narration.
  *
  * Root checks (fresh `pi --mode rpc` sessions; R5/R6 use two):
- *   R1 boot-takeover     — `kind: persona` AGENTS.md: body replaces the
+ *   R1 silent-takeover   — `kind: persona` AGENTS.md: body replaces the
  *                          preamble (generic preamble gone, body exactly
  *                          once — the file is not double-appended as
- *                          context), one boot notice naming persona +
- *                          absolute source path, front-matter model (with
+ *                          context), no notice (the takeover is silent —
+ *                          /sysprompt's projection is the pre-run visibility
+ *                          surface), front-matter model (with
  *                          `:<level>` thinking suffix), tools (exactly
  *                          resolveChildToolPolicy normalization), skills
  *                          filter, and unlisted skills' slash commands still
@@ -30,8 +31,8 @@
  *                          no notice.
  *   R4 unknown-kind      — `kind:` other than `persona` is silently ignored.
  *   R5 mid-session-edit  — editing the workspace body takes effect on the
- *                          next run of the same session; the notice is not
- *                          re-emitted.
+ *                          next run of the same session; no notice ever
+ *                          fires (takeovers are silent).
  *   R6 resume-rebinds     — persona-authoritative at session boundaries: a
  *                          resume whose AGENTS.md model/tools were edited
  *                          meanwhile re-applies the edited declaration —
@@ -55,7 +56,8 @@
  * Drive checks (LLM-driven parent sessions spawning real children):
  *   D1 spawned-identity  — a spawned persona's body IS the child's preamble
  *                          (generic preamble gone, body once — not stacked in
- *                          the addendum) with a name-only boot notice; a
+ *                          the addendum) with no notice (persona takeovers
+ *                          are silent); a
  *                          persona without a `model` lets an explicit spawn
  *                          `model` gap-fill; a child spawned into an
  *                          arbitrary folder loads that folder's project
@@ -64,7 +66,9 @@
  *                          (expect-response and fire-and-forget) works.
  *   D2 override+resurrect — a named persona spawned into a persona workspace
  *                          loses wholesale to the workspace (body + pin),
- *                          the override notice names both; after teardown the
+ *                          the override notice names both and the subagent
+ *                          tool result carries the override note; after
+ *                          teardown the
  *                          workspace file is edited and the resurrected child
  *                          re-resolves its tool policy from the edited file
  *                          while its persisted model survives; a fork child
@@ -468,7 +472,7 @@ const FULL_TOOL_V1 = "read, bash, subagent, fork, teardown, resurrect";
 // ─── checks ──────────────────────────────────────────────────────────────────
 
 async function R1(root, agentDir, probeOut) {
-	log("── R1: boot-takeover ──");
+	log("── R1: silent-takeover ──");
 	const dir = path.join(root, "R1", "work");
 	fs.mkdirSync(dir, { recursive: true });
 	fs.writeFileSync(
@@ -498,15 +502,10 @@ async function R1(root, agentDir, probeOut) {
 			generic: sys.includes(GENERIC_PREAMBLE),
 		});
 		check("r1_no_double_append", count(sys, "PREAMBLE-R1") === 1, { occurrences: count(sys, "PREAMBLE-R1") });
-		check(
-			"r1_boot_notice",
-			notices.length === 1 &&
-				notices[0].details?.condition === "boot" &&
-				notices[0].details?.persona === "BenchLead" &&
-				(notices[0].content || "").includes(path.join(dir, "AGENTS.md")) &&
-				notices[0].display === true,
-			notices.map((n) => ({ content: n.content, details: n.details })),
-		);
+		check("r1_silent_takeover", notices.length === 0, {
+			note: "the directory IS the agent — a fresh-session takeover announces nothing",
+			notices: notices.map((n) => ({ content: n.content, details: n.details })),
+		});
 		const model = state.model?.id || assistantModels(entries).at(-1) || "";
 		check(
 			"r1_model_pin",
@@ -620,7 +619,7 @@ async function R5(root, agentDir, probeOut) {
 		const v1 = all.find((x) => x.sys.includes("R5-BODY-71"));
 		const v2 = all.find((x) => x.sys.includes("R5-BODY-72"));
 		check("r5_edit_applies_next_run", !!v1 && !!v2 && !v1.sys.includes("R5-BODY-72") && !v2.sys.includes("R5-BODY-71"), {});
-		check("r5_notice_once", noticesIn(entries).length === 1, {});
+		check("r5_no_notice", noticesIn(entries).length === 0, {});
 	} finally {
 		s.kill();
 	}
@@ -709,7 +708,7 @@ async function R6(root, agentDir, probeOut) {
 			tools: resumed?.tools,
 			note: "the edited declaration's whitelist rebinds at the next open (exactly resolveChildToolPolicy normalization: ask_user dropped, respond appended); pi does not persist active tool selection across process restarts, so the rebind is also what restores the declared set",
 		});
-		check("r6_no_reannounce", noticesIn(entries).length === 1, {
+		check("r6_no_notice", noticesIn(entries).length === 0, {
 			notices: noticesIn(entries).map((n) => n.details),
 		});
 	} finally {
@@ -766,14 +765,10 @@ async function D1(root, agentDir, probeOut) {
 				!zetaPayload.sys.includes(GENERIC_PREAMBLE),
 			{ occurrences: zetaPayload ? count(zetaPayload.sys, "ZETA-BODY-11") : null },
 		);
-		check(
-			"d1_name_only_boot_notice",
-			zetaNotices.length === 1 &&
-				zetaNotices[0].details?.condition === "boot" &&
-				zetaNotices[0].details?.persona === "zeta" &&
-				zetaNotices[0].details?.sourcePath === undefined,
-			zetaNotices.map((n) => n.details),
-		);
+		check("d1_silent_spawn", zetaNotices.length === 0, {
+			note: "a spawned persona taking over a child announces nothing (takeovers are silent)",
+			notices: zetaNotices.map((n) => n.details),
+		});
 
 		const etaPayload = payloads(probeOut).find(
 			(x) => x.sys.includes("ETA-BODY-22") && x.sys.includes(CHILD_IDENTITY),
@@ -849,13 +844,14 @@ async function D2(root, agentDir, probeOut) {
 			(x) => x.sys.includes("WS-BODY-33") && !x.sys.includes(CHILD_IDENTITY),
 		);
 		check(
-			"d2_parent_takeover",
+			"d2_parent_silent_takeover",
 			!!parentPayload &&
 				!parentPayload.sys.includes(GENERIC_PREAMBLE) &&
-				parentNotices.length === 1 &&
-				parentNotices[0].details?.condition === "boot" &&
-				parentNotices[0].details?.persona === "wslead",
-			parentNotices.map((n) => n.details),
+				parentNotices.length === 0,
+			{
+				note: "a workspace takeover of the root session announces nothing (takeovers are silent)",
+				notices: parentNotices.map((n) => n.details),
+			},
 		);
 
 		const { logFile } = persistencePaths(parentState.sessionFile);
@@ -895,6 +891,17 @@ async function D2(root, agentDir, probeOut) {
 				v1Notices[0].details?.replaced === "zeta" &&
 				(v1Notices[0].content || "").includes(path.join(dir, "AGENTS.md")),
 			v1Notices.map((n) => n.details),
+		);
+		// The calling LLM's awareness channel: the spawn tool result carries the
+		// override note naming the requested persona, the winner, and the cwd.
+		const spawnText = (s.toolResults("subagent") || [])
+			.map((r) => (r.result?.content || []).map((c) => c.text || "").join("\n"))
+			.join("\n");
+		check(
+			"d2_override_tool_note",
+			spawnText.includes("persona 'zeta' overridden by workspace persona 'wslead'") &&
+				spawnText.includes(dir),
+			{ note: spawnText.split("\n").filter((l) => l.includes("overridden by")) },
 		);
 		check(
 			"d2_pin_beats_explicit",
@@ -954,9 +961,8 @@ async function D2(root, agentDir, probeOut) {
 		// construction path binds the workspace declaration's model pin + tools,
 		// and the per-run prompt binding supplies its body. (Fork children carry
 		// no <subagent_identity> addendum — that is spawn-path-only.) Fork is a
-		// silent continuation: the child's copied transcript already carries the
-		// parent's takeover notice, so exactly one notice (the inherited one) may
-		// be visible — a re-announcing fork would show two.
+		// silent continuation: the persona carries over and announces nothing
+		// (takeovers are silent by design).
 		const forkPayload = payloads(probeOut).find(
 			(x) =>
 				x.sys.includes("WS-BODY-44") &&
@@ -971,12 +977,9 @@ async function D2(root, agentDir, probeOut) {
 				!forkPayload.sys.includes(GENERIC_PREAMBLE) &&
 				!forkPayload.sys.includes("ZETA-BODY-11") &&
 				JSON.stringify(forkPayload.tools) === JSON.stringify(["bash", "read", "respond"]) &&
-				forkNotices.length === 1 &&
-				forkNotices[0].details?.condition === "boot" &&
-				forkNotices[0].details?.persona === "wslead" &&
-				!!forkNotices[0].details?.sourcePath,
+				forkNotices.length === 0,
 			{ tools: forkPayload?.tools, model: forkPayload?.raw.model, notices: forkNotices.map((n) => n.details),
-				note: "silent continuation: the single notice is the parent's inherited takeover notice (fork copies the branch); the fork child announces nothing new" },
+				note: "silent continuation: the persona carries over; no takeover announcements exist to inherit or re-emit" },
 		);
 
 		const resurrects = s.toolResults("resurrect");
@@ -1075,7 +1078,7 @@ async function R7(root, agentDir, probeOut) {
 			!!after && after.sys.includes("R7-BODY-82") && !after.sys.includes("R7-BODY-81"),
 			{},
 		);
-		check("r7_reload_no_notice", noticesIn(entries).length === 1, {});
+		check("r7_reload_no_notice", noticesIn(entries).length === 0, {});
 	} finally {
 		s.kill();
 	}
