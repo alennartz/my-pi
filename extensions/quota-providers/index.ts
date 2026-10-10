@@ -90,14 +90,6 @@ function evaluateProviderQuota(
 		{ blocked: false };
 }
 
-/** Keep quota rejection observable in both TUI and headless child sessions. */
-export function notifyQuotaBlocked(
-	ctx: Pick<ExtensionContext, "ui">,
-	message: string,
-): void {
-	ctx.ui.notify(message, "error");
-}
-
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -476,31 +468,19 @@ export default async function (pi: ExtensionAPI) {
 		refreshStatusline(providerIdToRecord.get(ctx.model?.provider ?? ""), ctx);
 	});
 
-	// Fast-path ordinary user prompts so a blocked message is not appended to
-	// session history. The provider stream guard above remains authoritative for
-	// every other request path (tool loops, retries, compaction, and extensions).
+	// Quota blocks surface as provider-stream errors: guardStreamSimple above
+	// throws before the provider is invoked, so a blocked prompt fails like a
+	// real provider error. Pi appends the submitted message to the session and
+	// the failed turn keeps it visible. The block text carries no retriable
+	// wording, so pi-ai's text classifier marks it non-retryable and fails fast
+	// without auto-retry or a retry affordance.
+	//
+	// This handler only refreshes usage and the status line before the run.
 	pi.on("input", (event, ctx) => {
-		// Registered extension commands are handled before this event by the SDK,
-		// so `/quota bypass on` remains reachable without exempting unknown slash
-		// prompts from the quota gate.
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
 		if (!record || !record.hasUsageSeam) return;
-
 		maybeRefreshUsage(record);
-
-		const store = treeStore ?? getOrCreateSessionTreeStore(ctx.sessionManager);
-		const decision = evaluateProviderQuota(record, store, Date.now(), ctx.model?.id);
-
 		refreshStatusline(record, ctx);
-
-		if (!decision?.blocked) return;
-
-		// The headless child UI forwards notify() to the subagent manager, which
-		// settles a prompt rejected before agent_start. Keep console output only as
-		// the fallback for a truly UI-less host; never replace notify() with it.
-		notifyQuotaBlocked(ctx, decision.message);
-		if (!ctx.hasUI) console.error(decision.message);
-		return { action: "handled" };
 	});
 
 	// =========================================================================
