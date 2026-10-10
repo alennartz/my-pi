@@ -8,6 +8,6 @@
 
 | File | What you'll find there |
 |---|---|
-| [codemap.md](./codemap.md) | Every module: responsibilities, dependencies, owned files. Start here before touching code. |
+| [codemap.md](./codemap.md) | Every module: responsibilities, dependencies, owned files. always read before touching or exploring code. |
 | [docs/conventions.md](./docs/conventions.md) | Repo working rules. |
 | [docs/decisions/](./docs/decisions/) | Decision records for significant choices. |
