@@ -10,6 +10,7 @@ import { Type } from "typebox";
 import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
 import { detect } from "@pimote/sdk/panels";
 import type { PanelHandle } from "@pimote/sdk/panels";
+import { answerActivity } from "@pimote/sdk/activity";
 import {
 	getOrCreateSessionTreeStore,
 	registerSessionTreeStore,
@@ -42,6 +43,7 @@ import {
 import type { AgentPath } from "./agent-path.js";
 import { getPersistencePaths } from "./persistence.js";
 import { serializeAgentComplete, serializeAgentMessage, type AgentCompleteData } from "./messages.js";
+import { hasLiveBackgroundWork } from "./activity.js";
 import { createStopSequenceManager, type StopSequenceManager } from "./stop-sequences.js";
 import { NotificationQueue } from "./notification-queue.js";
 import { statusesToCards } from "./panel-cards.js";
@@ -668,6 +670,20 @@ class SubagentSessionOwner {
 		this.registerTools();
 		this.registerCommand();
 		this.registerEventHandlers();
+		// Pimote's idle reaper polls before closing an idle, clientless session
+		// (DR-054). Root scope answers for the whole tree; children never answer —
+		// pimote asks only the session it would reap. The callback reads the
+		// current phase at poll time, so it stays correct across bundle rebuilds.
+		if (this.scope.kind === "root" && typeof this.pi.events?.on === "function") {
+			answerActivity(this.pi, () => this.isTreeActive());
+		}
+	}
+
+	/** DR-054: true when closing this session now would destroy live agent work. */
+	private isTreeActive(): boolean {
+		const phase = this.phase;
+		if (phase.kind !== "active") return false;
+		return hasLiveBackgroundWork(phase.session.registry.listDescendants([]));
 	}
 
 	async start(event: any, ctx: ExtensionContext): Promise<void> {
