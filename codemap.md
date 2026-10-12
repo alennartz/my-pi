@@ -15,7 +15,6 @@ graph LR
   SessionName
   Worktree
   ModelPromptOverlays
-  AgentsPhilosophy
   ToolscriptExtension
   UserEdit
 ```
@@ -239,17 +238,6 @@ Extension that discovers AGENTS.*.md overlay files, matches them against the act
 
 **Files:**
 - `extensions/model-prompt-overlays/**`
-
-### Agents Philosophy
-
-Extension that injects the AGENTS.md authoring philosophy into the system prompt: an AGENTS.md file is a map, not a container — a vision statement for its folder plus a lookup table to the files that carry the detail (codemap, glossary, decision records, plans), with everything else living in referenced files rather than inline.
-
-**Responsibilities:** AGENTS.md philosophy system prompt section (pure content renderer, fixed `agents-md` section tag via `systemPromptOptions.sections`, never clobbering a pre-populated section, no full-prompt forcing so it composes with other prompt handlers)
-
-**Dependencies:** none (standalone extension; hooks `before_agent_start`)
-
-**Files:**
-- `extensions/agents-philosophy/**`
 
 ### Prompts
 
