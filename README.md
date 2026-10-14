@@ -85,8 +85,7 @@ Long-lived in-process subagent orchestration — run child pi SDK sessions (opti
 - **subagents** — subagent lifecycle, channel messaging, TUI dashboard; spawned personas replace the child preamble
 - **persona-workspaces** — an `AGENTS.md` with `kind: persona` makes the working directory's root session that specialist, with model, tool, and skill bindings
 - **web-tools** — `web_search` (Brave) and `web_fetch` (bounded retrieval, Readability extraction, disk page cache, offset + findText access)
-- **azure-foundry** — auto-discovers Azure AI Foundry deployments as pi models
-- **quota-providers** — generic provider framework with pro-rated soft-cap enforcement, in-memory agent-tree-scoped bypass, `/quota` command, and footer indicator. Config at `~/.pi/agent/quota-providers.json`.
+- **quota-providers** — generic provider framework with pro-rated soft-cap enforcement, in-memory agent-tree-scoped bypass, `/quota` command, footer indicator, and built-in Azure Foundry and DevPass implementations. Config at `~/.pi/agent/quota-providers.json`.
 - **worktree** — `/worktree` command for git worktree-based branch sessions
 - **session-resume** — detects interrupted sessions and injects resume markers
 - **autoflow-autostart** — opt-in autoflow invocation on the first message of a new session. Config at `~/.pi/agent/autoflow.json`.
@@ -95,6 +94,9 @@ Long-lived in-process subagent orchestration — run child pi SDK sessions (opti
 - **toolscript** — runs [toolscript](https://github.com/badlogic/toolscript) as an MCP child and exposes its tools
 - **user-edit** — `user_edit` tool that opens a file in pi's built-in editor
 - **numbered-select** — TUI helper for numbered selection
+- **my-pi-docs** — injects a system-prompt pointer to the extension configuration reference
+
+The full extension and configuration reference is [`docs/extensions.md`](./docs/extensions.md).
 
 ### Prompts
 

@@ -4,13 +4,13 @@ description: Introduction to this package and setup walkthrough
 
 # Package Onboarding
 
-This is **alenna-pi**, a personal [pi coding agent](https://github.com/badlogic/pi-mono) package. It extends pi with custom workflow skills, provider extensions, and reusable components.
+This is **alenna-pi**, a personal [pi coding agent](https://github.com/badlogic/pi-mono) package. It extends pi with custom workflow skills, provider extensions, and reusable components. Read `docs/extensions.md` for the canonical extension configuration reference.
 
 ## What's Included
 
 - **Workflow pipeline** — a structured development flow: brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle-review → cleanup. Each phase is a skill that produces artifacts consumed by the next. Driven by `/autoflow`: brainstorm and architect are interactive; remaining phases run autonomously via subagents, with transitions validated against bundled artifact checks.
 - **Autoflow autostart (opt-in)** — make every new session open with autoflow: the first message you send is delivered as an autoflow invocation with your message appended, exactly as if you had invoked it yourself. Disabled by default; enable it by writing `{ "autoStart": true }` to `~/.pi/agent/autoflow.json` (optional `"command"` key to change the invocation, default `/skill:autoflow`).
-- **Providers and quota enforcement** — Azure AI Foundry auto-discovers model deployments and registers them as pi models with dynamic Azure AD token refresh. Quota-providers framework adds pro-rated soft-cap enforcement, session-scoped bypass, `/quota` command for usage tracking, and footer indicator. Configured at `~/.pi/agent/quota-providers.json`.
+- **Providers and quota enforcement** — the quota-providers framework adds pro-rated soft-cap enforcement, session-scoped bypass, `/quota` command for usage tracking, and a footer indicator. Built-in Azure Foundry and DevPass implementations add provider-specific model discovery and usage support. Configured at `~/.pi/agent/quota-providers.json`.
 - **Standalone skills** — `codemap` (generate/refresh a codebase map) and `debugging` (structured root-cause investigation).
 - **Subagent orchestration** — run specialized agents as in-process pi SDK sessions with channel-based inter-agent communication. Parent-local routers enforce topology and deadlock detection; child sessions retain persistent per-parent records, append-only lifecycle logging for restore/replay, and a live TUI widget. Tools: `subagent`, `fork`, `send`, `respond`, `check_status`, `teardown`, `resurrect`, `await_agents`.
 - **Agent definitions** — reusable specialist agents distributed with the package. Currently includes `scout` — a read-only codebase lookup agent that runs on a cheap model for lightweight, mechanical exploration (locating definitions, finding usage sites, grepping for patterns). Always returns file paths with line ranges so the parent reads only what matters.

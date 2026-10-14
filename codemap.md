@@ -182,18 +182,17 @@ Generic quota-aware provider extension. Out-of-repo provider implementations plu
 - `lib/session-tree-store.ts` — shared interface for tree-scoped extension state
 - `lib/tool-args.ts` — shared schema-driven normalizer (`dropEmptyOptionals`, `registerLooseTool`): treats empty optional tool parameters (`""`, `[]`, `false` for booleans) as omission via the `prepareArguments` hook
 
-### Azure Foundry
+### Quota Provider Implementations
 
-Provider extension that auto-discovers Azure AI Foundry model deployments and registers them as pi models.
+Built-in quota-provider implementation modules for Azure AI Foundry and the LLM Gateway DevPass service. They are loaded through the Quota Providers extension rather than as standalone extensions.
 
-**Responsibilities:** Azure deployment discovery via az CLI, Azure AD token caching and refresh, multi-backend stream routing (Anthropic, OpenAI completions, OpenAI responses)
+**Responsibilities:** Azure deployment discovery via `az`, Azure AD token acquisition, LLM Gateway catalog and usage discovery, provider-specific authentication and billing-window interpretation
 
-**Dependencies:** none (standalone extension loaded by pi)
-
-**Notes:** The Quota Providers extension provides a more general mechanism for quota-aware provider implementations. A migration path exists: create an out-of-repo Quota Providers implementation for your Azure setup, update the `quota-providers.json` config to use it, then remove the Azure Foundry extension. This transition is pending user action.
+**Dependencies:** Quota Providers (typed implementation seams), Azure CLI for Foundry, provider environment variables
 
 **Files:**
-- `extensions/azure-foundry/**`
+- `extensions/quota-providers/impls/foundry.ts`
+- `extensions/quota-providers/impls/devpass.ts`
 
 ### Toolscript Extension
 
@@ -239,6 +238,19 @@ Extension that discovers AGENTS.*.md overlay files, matches them against the act
 
 **Files:**
 - `extensions/model-prompt-overlays/**`
+
+### My-pi Documentation
+
+Extension configuration reference and the prompt pointer that makes it discoverable to agents.
+
+**Responsibilities:** maintain the canonical extension/configuration reference; inject its absolute path into a small `before_agent_start` system-prompt section without copying the full document into every turn
+
+**Dependencies:** none beyond pi's extension API
+
+**Files:**
+- `docs/extensions.md`
+- `extensions/my-pi-docs/index.ts`
+- `extensions/my-pi-docs/index.test.ts`
 
 ### Prompts
 
