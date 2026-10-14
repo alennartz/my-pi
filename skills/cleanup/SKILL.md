@@ -62,6 +62,7 @@ Remove the working artifacts for this topic:
 - `docs/reviews/<topic>.md`
 - `docs/reviews/<topic>-tests.md`
 - `docs/manual-tests/<topic>.md`
+- `docs/mocks/<topic>/` — the interaction mocks linked from the plan, if any
 
 Do **not** delete anything under `tools/manual-test/` — that's the persistent manual-testing module.
 

@@ -64,13 +64,23 @@ For other decisions, lead with your recommendation based on what you found in th
 
 **Capture the reasoning.** When the user makes a decision — about technology, interfaces, module boundaries, or anything else — make sure the *why* is captured, not just the *what*. If the reasoning isn't obvious and the user doesn't explain it, ask.
 
-### 4. Capture the Outcome
+### 4. Mock the Interactions (UI Work Only)
+
+If the work involves UI, settle the interaction design before you capture the plan. Build a **low-fidelity interaction mock**: a static HTML page with vanilla JavaScript. No build step, no dependencies, no framework.
+
+**In scope:** high-level interactions and affordances — what each control does, which states exist, how the user moves between them. Make it interactive enough to try.
+
+**Out of scope:** colors, spacing, typography, theming, and any visual polish. Placeholder styling is enough. A lo-fi mock, not a comp.
+
+Put mocks in `docs/mocks/<topic>/`. Walk the user through each one and go back and forth — revise until the interactions and affordances feel right. The approved mock is the interaction contract for the design. It is throwaway and never becomes production code.
+
+### 5. Capture the Outcome
 
 **Watch for summarization drift.** When any decision involved extended back-and-forth — especially where you initially leaned one direction and the user corrected you, or where you worked through confusion together — re-read the conversation to find the specific exchange where agreement was reached. Capture *that*, not your general impression of the discussion. The longer and more contested a decision was, the more likely your summary will regress toward your earlier (wrong) position, because that's where your completions were already leaning. If you argued for X, the user corrected you toward Y, and you agreed Y was right — the plan must say Y, with Y's reasoning. Not a softened version of X.
 
 Write the architectural section of `docs/plans/<topic>.md`. Follow the artifact format below.
 
-### 5. Check for Blind Spots
+### 6. Check for Blind Spots
 
 If `docs/brainstorms/<topic>.md` exists, spawn a default subagent on the `cheap` model tier with the brainstorm and plan file paths — the check is a mechanical two-file comparison. Its task: read both files and identify brainstorm intent that the architecture doesn't cover. Each gap should name the missing intent and explain why the architectural decisions don't address it.
 
@@ -103,6 +113,10 @@ Commit with message: `architect: <topic>`
 
 [Component boundary contracts for interfaces affected by the changes. For each boundary: what data flows across it (shapes, structures), what operations each component exposes, and what contracts callers and callees must satisfy. These must be specific enough that a test writer can materialize them as code — types, function signatures, expected behaviors — without making design decisions. Pseudocode and type signatures encouraged. Not full API specs, but thorough enough to code against.]
 
+### Interaction Mocks
+
+- `docs/mocks/<topic>/<name>.html` — [which interaction this mock settles]
+
 ### Technology Choices
 
 [Any new tech being introduced or existing tech being replaced. What was chosen and why, what alternatives were considered.]
@@ -118,6 +132,7 @@ Commit with message: `architect: <topic>`
 - **Impacted Modules** — use the codemap's module names. Focus on what changes about each module's responsibilities and dependencies, not file-level details.
 - **New Modules** — same level of detail as a codemap module entry: purpose, responsibilities, dependencies, approximate location. Not exact files.
 - **Interfaces** — component boundary contracts for interfaces affected by the changes. Describe what data flows across each boundary, what operations each side exposes, and what shapes are expected. Be specific enough that a test writer can materialize these as real code (types, function signatures, behavioral expectations) without making design decisions. Pseudocode and type signatures encouraged when they add precision; prose alone is fine when the contract is simple.
+- **Interaction Mocks** — only present when the work involves UI. One line per approved mock: its path under `docs/mocks/<topic>/` and the interaction it settles. Later phases read these mocks; cleanup deletes them.
 - **Technology Choices** — only present when new tech is introduced or existing tech is replaced. Include what was considered and why the choice was made. Omit this section if no technology decisions were needed.
 - **DR Supersessions** — only present when the architecture supersedes one or more existing decision records. List each superseded DR with its number, title, reason for supersession, and a summary of the replacement decision. Cleanup uses this section to delete old DRs and write replacements with provenance.
 - **Omit empty sections.** If there are no new modules, no technology choices, or no DR supersessions, leave those sections out entirely.
