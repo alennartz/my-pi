@@ -50,10 +50,8 @@ import { statusesToCards } from "./panel-cards.js";
 import { formatOverrideNote, formatSpawnToolResult } from "./tool-result.js";
 import { loadWorkspacePersona } from "../persona-workspaces/declaration.ts";
 import {
-	SESSION_DEFAULT_LABEL,
 	TIERS_UNCONFIGURED_MESSAGE,
 	type TierConfig,
-	findAvailableModel,
 	loadTierConfig,
 	resolveDeclaredModelRef,
 	renderTierTable,
@@ -943,16 +941,12 @@ class SubagentSessionOwner {
 				"",
 			);
 		}
-		const availableModels: any[] = ctx.modelRegistry.getAvailable();
-		const isAvailable = (ref: string) => findAvailableModel(availableModels, ref) !== undefined;
-		const tiers = this.loadTiers(ctx.cwd);
-		const defaultModelRef = ctx.model?.id ?? SESSION_DEFAULT_LABEL;
 		lines.push(
 			"## Model Tiers",
 			"",
-			"The `subagent` tool's `agents[].model` field accepts a tier name. Tiers resolve to concrete models at spawn time:",
+			"The `subagent` tool's `agents[].model` field accepts a tier name. Choose a tier using the short table below; read `skills/orchestrating-agents/SKILL.md` for detailed guidance. The tier resolves to a configured concrete model at spawn time:",
 			"",
-			...renderTierTable(tiers, isAvailable, defaultModelRef),
+			...renderTierTable(),
 			"",
 			"Raw model IDs are also accepted in `agents[].model` when the user names a specific model; `list_models` shows the full catalog.",
 			"Append a thinking-effort suffix to any model id with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) — e.g. `anthropic/claude-opus-4-8:xhigh`. Tier names don't take a suffix; a tier carries whatever level its config encodes.",

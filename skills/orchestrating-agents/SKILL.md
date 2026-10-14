@@ -11,6 +11,23 @@ Subagents let you delegate work to separate agent processes, each with its own c
 
 Beyond context management, subagents enable parallel execution, specialist coordination, and rich inter-agent communication. Child agent sessions are persisted per parent session and reconstructed from append-only lifecycle logs rather than treated as disposable temp processes, so explicit `teardown` matters semantically. This skill covers the thinking that happens *before* you call `subagent` — task decomposition, pattern selection, topology design. Once agents are running, the tool descriptions, notifications (`<agent_idle>`, `<agent_message>`), and communication tools carry you from there.
 
+## Choosing a Model Tier
+
+Tier names are configurable aliases. Choose them by task shape, not by assumptions about a specific provider or model.
+
+For general development work, use these defaults:
+
+- **`cheap`** — quick codebase scouting, file discovery, and factual documentation updates.
+- **`medium`** — routine implementation, summaries, explanations of unfamiliar code, final synthesis, human-led planning, and writing tests.
+- **`smart`** — test strategy, concrete debugging, design proposals that compare approaches, and documentation whose complexity grows during the work.
+- **`frontier`** — reviewing tests, ambiguous or intermittent failures, major refactors or migrations, security/concurrency/reliability analysis, performance analysis, and code review.
+
+Apply these adjustments:
+
+- Architecture and implementation planning is interactive and human-led. Start at `medium`; use `smart` for broader scope. Do not use `frontier` only because the task is planning.
+- Factual documentation updates start at `cheap`; escalate to `medium` for explanation or synthesis, and to `smart` for design trade-offs.
+- Conflicting review feedback is an escalator situation. Keep the human as adjudicator and escalate the agent only when the human decides that more reasoning is needed.
+
 ## When to Use Subagents
 
 ### Context preservation — the primary reason

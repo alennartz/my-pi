@@ -188,49 +188,20 @@ describe("resolveModelRef", () => {
 // ─── renderTierTable ─────────────────────────────────────────────────────────
 
 describe("renderTierTable", () => {
-	const always = () => true;
-	const never = () => false;
-
-	function tableText(tiers: TierConfig, isAvailable: (ref: string) => boolean, defaultModel = "session-default-model"): string {
-		const lines = renderTierTable(tiers, isAvailable, defaultModel);
-		expect(Array.isArray(lines)).toBe(true);
-		return lines.join("\n");
-	}
-
-	it("includes a row for every tier name", () => {
-		const text = tableText({}, always);
+	it("includes one-sentence guidance for every tier without exposing model IDs", () => {
+		const text = renderTierTable().join("\n");
 		for (const name of TIER_NAMES) {
 			expect(text).toContain(name);
 		}
+		expect(text).toContain("Use when");
+		expect(text).not.toContain("gpt-");
+		expect(text).not.toContain("claude-");
 	});
 
-	it("shows the configured model id for a configured, available tier", () => {
-		const text = tableText({ smart: "claude-opus-4-8" }, always);
-		expect(text).toContain("claude-opus-4-8");
-	});
-
-	it("shows the session-default model with a (default) marker for unconfigured tiers", () => {
-		const text = tableText({}, always, "gpt-5.4");
-		expect(text).toContain("gpt-5.4");
-		expect(text).toContain("(default)");
-	});
-
-	it("shows the session-default model with a (default) marker for a configured tier whose model is unavailable", () => {
-		const text = tableText({ frontier: "gone-model" }, never, "gpt-5.4");
-		expect(text).toContain("(default)");
-		expect(text).toContain("gpt-5.4");
-		expect(text).not.toContain("gone-model");
-	});
-
-	it("distinguishes configured and default tiers in a mixed config", () => {
-		const lines = renderTierTable({ cheap: "gpt-5.4-mini" }, always, "gpt-5.4");
-		const cheapLine = lines.find((l) => l.includes("cheap"));
-		const frontierLine = lines.find((l) => l.includes("frontier"));
-		expect(cheapLine).toBeDefined();
-		expect(frontierLine).toBeDefined();
-		expect(cheapLine!).toContain("gpt-5.4-mini");
-		expect(cheapLine!).not.toContain("(default)");
-		expect(frontierLine!).toContain("(default)");
+	it("returns a markdown table with one guidance row per tier", () => {
+		const lines = renderTierTable();
+		expect(lines.slice(0, 2)).toEqual(["| Tier | Use when |", "| --- | --- |"]);
+		expect(lines).toHaveLength(TIER_NAMES.length + 2);
 	});
 });
 
@@ -352,55 +323,6 @@ describe("resolveModelRef — suffix-aware", () => {
 		const result = resolveModelRef("medium", { medium: "anthropic/claude-sonnet-4-6" }, (ref) => ref === "anthropic/claude-sonnet-4-6");
 		expect(result.model).toBe("anthropic/claude-sonnet-4-6");
 		expect(result.warning).toBeUndefined();
-	});
-});
-
-// ─── renderTierTable — suffix-aware behavior ──────────────────────────────────
-
-describe("renderTierTable — suffix-aware", () => {
-	it("renders the full suffixed string in the model column for a configured available tier", () => {
-		const lines = renderTierTable(
-			{ smart: "anthropic/claude-opus-4-8:xhigh" },
-			(ref) => ref === "anthropic/claude-opus-4-8",
-			"session-default",
-		);
-		const text = lines.join("\n");
-		expect(text).toContain("anthropic/claude-opus-4-8:xhigh");
-	});
-
-	it("judges availability on the model part of a suffixed configured value", () => {
-		// Model part 'anthropic/claude-opus-4-8' is available; suffixed form should appear
-		const seen: string[] = [];
-		renderTierTable(
-			{ smart: "anthropic/claude-opus-4-8:high" },
-			(ref) => {
-				seen.push(ref);
-				return true;
-			},
-			"session-default",
-		);
-		// Should have been checked with the model part, not the full suffixed string
-		expect(seen.some(r => r === "anthropic/claude-opus-4-8")).toBe(true);
-		expect(seen.some(r => r === "anthropic/claude-opus-4-8:high")).toBe(false);
-	});
-
-	it("falls back to session default when the model part of a suffixed tier is unavailable", () => {
-		const lines = renderTierTable(
-			{ frontier: "anthropic/gone-model:xhigh" },
-			() => false,
-			"gpt-5.4",
-		);
-		const frontierLine = lines.find(l => l.includes("frontier"));
-		expect(frontierLine).toBeDefined();
-		expect(frontierLine!).toContain("(default)");
-		expect(frontierLine!).not.toContain("gone-model");
-	});
-
-	it("does not render the thinking suffix in the model column for unavailable/unconfigured tiers", () => {
-		const lines = renderTierTable({}, () => false, "session-default");
-		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
-			expect(lines.join("\n")).not.toContain(`:${level}`);
-		}
 	});
 });
 

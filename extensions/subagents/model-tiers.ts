@@ -13,6 +13,15 @@
 import * as fs from "node:fs";
 
 export const TIER_NAMES = ["cheap", "medium", "smart", "frontier"] as const;
+export type TierName = (typeof TIER_NAMES)[number];
+
+/** One-sentence guidance for the system-prompt tier table. */
+export const TIER_GUIDANCE: Record<TierName, string> = {
+	cheap: "Quick codebase scouting, file discovery, and factual documentation updates.",
+	medium: "Routine implementation, summaries, unfamiliar-code explanations, human-led planning, and writing tests.",
+	smart: "Test strategy, concrete debugging, design trade-offs, and complexity-sensitive documentation.",
+	frontier: "Reviewing tests, ambiguous failures, major migrations, security/reliability/performance analysis, and code review.",
+};
 
 /** The seven pi thinking levels, mirrored locally for suffix validation. */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -40,15 +49,6 @@ export function stripThinkingSuffix(pattern: string): { model: string; thinking?
 	if (!isThinkingLevel(suffix)) return { model: pattern };
 	return { model: pattern.slice(0, lastColon), thinking: suffix };
 }
-
-export type TierName = (typeof TIER_NAMES)[number];
-
-/**
- * Label used when the concrete session-default model id is unknown (i.e.
- * `ctx.model` is undefined at injection time). Rendered without code
- * backticks so it never reads as a real model id an LLM could echo back.
- */
-export const SESSION_DEFAULT_LABEL = "session default";
 
 /** Flat tier→model-id map; any subset of tiers may be configured. */
 export type TierConfig = Partial<Record<TierName, string>>;
@@ -229,31 +229,11 @@ export function resolveDeclaredModelRef<T extends ModelRefCandidate>(args: {
 	return { kind: "model", model: match, canonical, thinking };
 }
 
-/**
- * Render the tier table lines for system-prompt injection. Each configured
- * tier shows its resolved model id; unconfigured/unavailable tiers show the
- * concrete session-default model id with a "(default)" marker, so transcripts
- * always record which model a tier-named spawn actually used. Pure — returns
- * string[].
- */
-export function renderTierTable(
-	tiers: TierConfig,
-	isAvailable: (ref: string) => boolean,
-	defaultModelRef: string,
-): string[] {
-	const lines = ["| Tier | Model |", "| --- | --- |"];
-	for (const name of TIER_NAMES) {
-		const configured = tiers[name];
-		const modelPart = configured !== undefined ? stripThinkingSuffix(configured).model : undefined;
-		if (configured !== undefined && isAvailable(modelPart!)) {
-			lines.push(`| ${name} | \`${configured}\` |`);
-		} else if (defaultModelRef === SESSION_DEFAULT_LABEL) {
-			// Unknown concrete model — render the plain label, no backticks, so
-			// it isn't mistaken for a real model id.
-			lines.push(`| ${name} | ${defaultModelRef} (default) |`);
-		} else {
-			lines.push(`| ${name} | \`${defaultModelRef}\` (default) |`);
-		}
-	}
-	return lines;
+/** Render the tier guidance table for system-prompt injection. */
+export function renderTierTable(): string[] {
+	return [
+		"| Tier | Use when |",
+		"| --- | --- |",
+		...TIER_NAMES.map((name) => `| ${name} | ${TIER_GUIDANCE[name]} |`),
+	];
 }
