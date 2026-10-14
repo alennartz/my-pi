@@ -87,6 +87,7 @@ Commit with message: `review: <topic>`
 - **Severity:** critical | warning | nit
 - **Location:** `path/to/file.ts:42-58`
 - **Status:** open
+- **Fix:** [one line — the smallest change that works]
 
 [What's wrong and why it matters. Be specific — reference the plan step if it's a deviation, describe the actual risk if it's a correctness issue. Keep it concise.]
 
@@ -105,7 +106,8 @@ Commit with message: `review: <topic>`
 
 - **Summary first** — the reader should know the overall verdict before diving into findings.
 - **Findings are numbered sequentially.** Order by severity (critical first), then by category (plan deviations before correctness).
-- **Every finding has all five fields** — category, severity, location, status, description. No exceptions.
+- **Every finding has all six fields** — category, severity, location, status, fix, description. No exceptions.
+- **Fix is a proposal, not a change** — one line: the smallest change that works. Prefer a fix that deletes code over one that adds it. Never add layers, frameworks, or config the problem does not need. handle-review applies it.
 - **Status is always `open`** when the review is first written. The handle-review skill updates it later to `resolved` or `dismissed`.
 - **Severity meanings:**
   - `critical` — likely bug, security issue, or major plan deviation that changes behavior
@@ -119,7 +121,7 @@ Commit with message: `review: <topic>`
 - **The plan is the spec** — plan adherence is measured against what the plan said, not what you think it should have said.
 - **Judgment over pedantry** — flag what matters, skip what doesn't. Reasonable adaptations during implementation are expected, not defects.
 - **Every finding is a real risk** — if you can't articulate why a finding matters, drop it.
-- **No fixes, no implementation** — the review produces findings, full stop. Don't fix code, don't suggest rewrites, don't open PRs.
+- **No fixes, no implementation** — the review proposes the smallest fix per finding and applies nothing. Don't edit code, don't propose rewrites, don't open PRs.
 - **Full context, not just the diff** — read the surrounding code to understand whether something is actually wrong or just looks odd in isolation.
 - **Design doctrine is part of the bar** — read the **codebase-design** skill (including `FUNCTIONS.md`) and review against it: shallow modules, hypothetical seams, impure-by-default functions, lying names, and duplicated business operations are findings.
 - **One shot** — run both passes, write the report, commit. No interactive checkpoints.

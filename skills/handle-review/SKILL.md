@@ -29,7 +29,7 @@ This is not a planning skill. Review findings are small and surgical — add mis
 For each finding that isn't already `resolved` or `dismissed`, assess two things:
 
 - **Is the diagnosis clearly correct?** Is this actually a problem, or could the reviewer be wrong?
-- **Is the fix unambiguous?** Is there really only one reasonable way to fix this, or are there trade-offs to weigh?
+- **Is the fix unambiguous?** Is there really only one reasonable way to fix this, or are there trade-offs to weigh? When the finding names a `Fix`, judge that fix.
 
 If both are high confidence → **fix it.**
 If either is uncertain → **escalate it.**
@@ -40,7 +40,7 @@ Don't overthink the triage. If you hesitate, that's a signal to escalate.
 
 For each finding marked to fix:
 
-1. Make the change.
+1. Make the smallest change that works. Prefer a fix that deletes code over one that adds it. Never add layers, frameworks, or config the problem does not need. When the finding names a `Fix` and it still looks right, follow it.
 2. Verify it — at minimum, ensure the code compiles / parses. Run relevant tests if they exist.
 3. Mark the finding `resolved` in the review file.
 
@@ -73,6 +73,7 @@ Leave the rest of the finding intact. The review file is a record — don't dele
 
 ## Key Principles
 
+- **Minimal fixes** — the smallest change that works. Prefer a fix that deletes code over one that adds it. Never add layers, frameworks, or config the problem does not need.
 - **Confidence in both diagnosis and fix** — both must be high for autonomous action. If either is uncertain, escalate.
 - **When in doubt, escalate** — a wrong fix is worse than asking. Hesitation is a signal.
 - **Direct fixes, no plans** — review findings are surgical. If something is big enough to need a plan, escalate it as such.
