@@ -111,6 +111,7 @@ Long-lived in-process subagent orchestration extension — creates and manages S
 - `skills/orchestrating-agents/SKILL.md`
 - `skills/specialist-design/SKILL.md`
 - `agents/scout.md`
+- `agents/comment-sicko.md`
 
 ### Persona Workspaces
 
