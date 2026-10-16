@@ -336,14 +336,8 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 	//
 	// `pi.sendUserMessage` is fire-and-forget from the extension's perspective:
 	// the runner wraps the underlying async send as `(...).catch(...)` without
-	// returning the promise. Calling any "is the agent idle?" probe immediately
-	// after therefore races — the queued message may not yet have transitioned
-	// the agent into a streaming state.
-	//
-	// Instead we observe `agent_start` / `agent_end` events. We pre-arm the
-	// start barrier BEFORE sending so the start event can't fire and be missed,
-	// then wait for the matching end event. This works as long as the command
-	// handler runs while the agent is idle (which is when slash commands fire).
+	// returning the promise. We observe `agent_start` / `agent_end` events and
+	// pre-arm both barriers before sending so neither event can be missed.
 	let agentRunning = false;
 	const startWaiters: Array<() => void> = [];
 	const endWaiters: Array<() => void> = [];
@@ -359,7 +353,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 		for (const resolve of pending) resolve();
 	});
 
-	async function sendUserMessageAndAwaitTurn(message: string): Promise<void> {
+	async function sendUserMessageAndAwaitTurn(ctx: ExtensionCommandContext, message: string): Promise<void> {
 		// This helper assumes the caller is running OUTSIDE an agent turn — i.e.
 		// from a slash-command handler, which pi dispatches before kicking off
 		// `agent.prompt`. If we're somehow already inside a turn (e.g. invoked
@@ -372,6 +366,10 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 					"This helper must run from a slash-command handler, not from inside a tool call.",
 			);
 		}
+		// Pi marks a run busy before before_agent_start handlers finish. Wait for
+		// the command context's authoritative idle boundary before starting the
+		// separate merge run, so the local agentRunning flag cannot go stale.
+		await ctx.waitForIdle();
 		// Arm BOTH barriers before firing so we can't miss `agent_start`.
 		const startBarrier = new Promise<void>((resolve) => startWaiters.push(resolve));
 		const endBarrier = new Promise<void>((resolve) => endWaiters.push(resolve));
@@ -399,7 +397,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 			}
 
 			const controller = createWorktreeController(
-				createDependencies(ctx, sendUserMessageAndAwaitTurn),
+				createDependencies(ctx, (message) => sendUserMessageAndAwaitTurn(ctx, message)),
 			);
 			if (parsed.command.kind === "create") {
 				await controller.create(parsed.command.request);
