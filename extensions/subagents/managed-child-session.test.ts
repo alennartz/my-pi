@@ -391,6 +391,23 @@ describe("createManagedChildSession construction", () => {
 		expect(sdk.state.servicesArgs[0].resourceLoaderOptions.additionalSkillPaths).toBeUndefined();
 	});
 
+	it("runs the scoped subagents extension before discovered session-start extensions", async () => {
+		await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" });
+		const override = sdk.state.servicesArgs[0].resourceLoaderOptions.extensionsOverride;
+		const base = {
+			extensions: [
+				{ path: "/repo/extensions/session-resume.ts" },
+				{ path: "<inline:subagents-child>" },
+			],
+			errors: [],
+		};
+
+		expect(override(base).extensions.map((extension: { path: string }) => extension.path)).toEqual([
+			"<inline:subagents-child>",
+			"/repo/extensions/session-resume.ts",
+		]);
+	});
+
 	it("isolates model runtimes for sibling children", async () => {
 		const dependencies = makeDependencies();
 		const target: ChildSessionConfig["target"] = { kind: "new", cwd: "/repo", sessionDir: "/sessions" };

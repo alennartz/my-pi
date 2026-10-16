@@ -39,7 +39,7 @@ function childConfig(sessionFile: string, sessionDir: string, agentPath: AgentPa
 	};
 }
 
-describe("ManagedChildSession legacy RPC-session compatibility", () => {
+describe("ManagedChildSession lifecycle and legacy compatibility", () => {
 	it("opens an existing persisted JSONL directly without migrating its identity or cwd", async () => {
 		tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-legacy-session-"));
 		const cwd = path.join(tmpRoot, "legacy-project");
@@ -94,6 +94,69 @@ describe("ManagedChildSession legacy RPC-session compatibility", () => {
 			expect(child.session.sessionManager.getCwd()).toBe(cwd);
 			expect(child.session.sessionManager.getHeader()).toEqual(originalHeader);
 			expect(child.session.sessionManager.getSessionName()).toBe(formatAgentPath(agentPath));
+		} finally {
+			await child.dispose();
+		}
+	});
+
+	it("binds the scoped subagents lifecycle before a resumed turn can use its tools", async () => {
+		tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-startup-race-"));
+		const cwd = path.join(tmpRoot, "project");
+		const sessionDir = path.join(tmpRoot, "sessions");
+		const agentDir = path.join(tmpRoot, "agent");
+		fs.mkdirSync(path.join(cwd, ".pi", "extensions"), { recursive: true });
+		fs.mkdirSync(agentDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(cwd, ".pi", "extensions", "resume.ts"),
+			"export default function (pi) { pi.on(\"session_start\", async () => { pi.sendMessage({ customType: \"session-resumed\", content: \"[session resumed]\", display: false }, { triggerTurn: true }); }); }",
+		);
+
+		const source = SessionManager.create(cwd, sessionDir);
+		source.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "resume this work" }],
+			timestamp: Date.now(),
+		} as any);
+		source.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "still working" }],
+			api: "openai-completions",
+			provider: "legacy-provider",
+			model: "legacy-model",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		} as any);
+
+		const diagnostics: string[] = [];
+		let settled!: () => void;
+		const settledRun = new Promise<void>((resolve) => { settled = resolve; });
+		const child = await createManagedChildSession(
+			childConfig(source.getSessionFile()!, sessionDir, ["resumed"]),
+			{ agentDir },
+			{
+				onEvent: (event) => {
+					if (event.type === "agent_settled") settled();
+				},
+				onUiNotify: () => {},
+				onDiagnostic: (message) => diagnostics.push(message),
+				onSessionChanged: () => {},
+				onShutdownRequested: () => {},
+			},
+		);
+		try {
+			await Promise.race([
+				settledRun,
+				new Promise<void>((resolve) => setTimeout(resolve, 500)),
+			]);
+			expect(diagnostics).not.toEqual(expect.arrayContaining([expect.stringMatching(/session has not started/i)]));
 		} finally {
 			await child.dispose();
 		}

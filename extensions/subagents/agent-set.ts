@@ -689,19 +689,15 @@ export class SubagentManager {
 	private submitInitialTask(entry: AgentEntry): void {
 		const node = this.opts.registry.get(entry.path);
 		if (!node || node.snapshot.ownership !== "registry") return;
-		// A forked session may have a pending source turn when its isolated
-		// session_start hooks bind (for example, session-resume's automatic
-		// continuation). Queue the fork directive behind that turn instead of
-		// treating the expected busy preflight as a runtime failure. Do not reset
-		// the started marker for that follow-up: the source turn may already be
-		// active, and a later error notification must not misclassify it as a
-		// pre-agent-start block.
-		const streamingBehavior = entry.kind === "fork" ? "followUp" : undefined;
-		if (streamingBehavior === undefined) entry.agentStartedSinceLastPrompt = false;
+		// Every child can have a startup continuation in flight when its session
+		// binds (for example, session-resume's automatic continuation). Queue the
+		// task behind that turn instead of treating the expected busy preflight as
+		// a runtime failure. Do not reset the started marker: the earlier turn may
+		// already be active, and a later error notification must not misclassify it
+		// as a pre-agent-start block.
+		const streamingBehavior = "followUp" as const;
 		entry.pendingTerminalError = undefined;
-		const submission = streamingBehavior === undefined
-			? node.session.submit(`Task: ${entry.task}`)
-			: node.session.submit(`Task: ${entry.task}`, streamingBehavior);
+		const submission = node.session.submit(`Task: ${entry.task}`, streamingBehavior);
 		void submission.catch((error) => {
 			// A rejected submit means the task never landed, but the session is
 			// still there: treat it as errored so a send can retry the prompt.

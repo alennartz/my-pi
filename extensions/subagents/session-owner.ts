@@ -658,10 +658,21 @@ class SubagentSessionOwner {
 	private phase: SessionPhase = { kind: "before-start" };
 	private readonly turns: SessionTurnCoordinator;
 	private readonly incomingMessages: IncomingMessageState;
+	private readonly startReady: Promise<void>;
+	private resolveStartReady!: () => void;
+	private rejectStartReady!: (error: unknown) => void;
+	private startReadySettled = false;
 
 	constructor(private readonly scope: SubagentScope, private readonly pi: ExtensionAPI) {
 		this.turns = new SessionTurnCoordinator(pi);
 		this.incomingMessages = new IncomingMessageState(this.turns);
+		this.startReady = new Promise<void>((resolve, reject) => {
+			this.resolveStartReady = resolve;
+			this.rejectStartReady = reject;
+		});
+		// Reject waiting callers without creating an unhandled rejection when no
+		// caller is waiting.
+		this.startReady.catch(() => {});
 	}
 
 	register(): void {
@@ -684,6 +695,64 @@ class SubagentSessionOwner {
 		return hasLiveBackgroundWork(phase.session.registry.listDescendants([]));
 	}
 
+	private resolveStart(): void {
+		if (this.startReadySettled) return;
+		this.startReadySettled = true;
+		this.resolveStartReady();
+	}
+
+	private rejectStart(error: unknown): void {
+		if (this.startReadySettled) return;
+		this.startReadySettled = true;
+		this.rejectStartReady(error);
+	}
+
+	private async waitForActiveSession(signal?: AbortSignal): Promise<ActiveSubagentSession> {
+		const phase = this.phase;
+		if (phase.kind === "active") return phase.session;
+		if (phase.kind === "shutting-down") throw new Error("Subagents session is shutting down.");
+
+		if (signal?.aborted) throw new Error("Cancelled");
+		if (!signal) {
+			await this.startReady;
+		} else {
+			await new Promise<void>((resolve, reject) => {
+				let settled = false;
+				const cleanup = () => signal.removeEventListener("abort", onAbort);
+				const onAbort = () => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					reject(new Error("Cancelled"));
+				};
+				signal.addEventListener("abort", onAbort, { once: true });
+				this.startReady.then(
+					() => {
+						if (settled) return;
+						settled = true;
+						cleanup();
+						resolve();
+					},
+					(error) => {
+						if (settled) return;
+						settled = true;
+						cleanup();
+						reject(error);
+					},
+				);
+			});
+		}
+		return this.requireActiveSession();
+	}
+
+	private async runWhenReady<T>(
+		signal: AbortSignal | undefined,
+		action: () => Promise<T> | T,
+	): Promise<T> {
+		await this.waitForActiveSession(signal);
+		return action();
+	}
+
 	async start(event: any, ctx: ExtensionContext): Promise<void> {
 		if (this.phase.kind !== "before-start") {
 			if (this.phase.kind === "starting" || this.phase.kind === "active") return;
@@ -692,58 +761,68 @@ class SubagentSessionOwner {
 		this.phase = { kind: "starting" };
 		if (this.scope.kind === "child") this.incomingMessages.subscribeUplink(this.scope.uplink);
 
-		let packageAgents: { user: AgentConfig[]; project: AgentConfig[] } | null = null;
 		try {
-			packageAgents = await discoverPackageAgents(ctx.cwd);
-		} catch {
-			packageAgents = null;
-		}
-		if (this.phase.kind !== "starting") return;
-		const environment = createSessionEnvironmentFromContext(ctx, packageAgents);
-		const registry = this.scope.kind === "child" ? this.scope.registry : this.createRootRegistry(ctx);
-		const ownerPath: AgentPath = this.scope.kind === "child" ? this.scope.path : [];
-		const turns = this.turns;
-		const presentation = new SubagentPresentation(this.pi, this.scope);
-		const incomingMessages = this.incomingMessages;
-		const manager = new SubagentManager({
-			pi: this.pi,
-			cwd: ctx.cwd,
-			registry,
-			ownerPath,
-			parentSessionFile: ctx.sessionManager.getSessionFile(),
-			resolveContextWindow: (modelId) => environment.resolveContextWindow(modelId),
-			onUpdate: (current) => presentation.refresh(current),
-			onAgentComplete: (current, agentId, allDone) => turns.notifyAgentComplete(current, agentId, allDone),
-			onParentMessage: (port, content, meta) => incomingMessages.receiveSerialized(port, content, meta, "local"),
-		});
-		const session: ActiveSubagentSession = Object.freeze({
-			environment,
-			registry,
-			manager,
-			presentation,
-			turns,
-			incomingMessages,
-		});
-		this.phase = { kind: "active", session };
-		presentation.subscribe(registry, ownerPath, manager);
-
-		if (this.scope.kind === "child") {
-			if (event.reason === "resume") {
-				void this.restoreChildDescendants(ctx, session).catch((error) => {
-					const message = error instanceof Error ? error.message : String(error);
-					console.error(`[subagents] Failed to restore nested subagents: ${message}`);
-				});
+			let packageAgents: { user: AgentConfig[]; project: AgentConfig[] } | null = null;
+			try {
+				packageAgents = await discoverPackageAgents(ctx.cwd);
+			} catch {
+				packageAgents = null;
 			}
-			return;
-		}
+			if (this.phase.kind !== "starting") return;
+			const environment = createSessionEnvironmentFromContext(ctx, packageAgents);
+			const registry = this.scope.kind === "child" ? this.scope.registry : this.createRootRegistry(ctx);
+			const ownerPath: AgentPath = this.scope.kind === "child" ? this.scope.path : [];
+			const turns = this.turns;
+			const presentation = new SubagentPresentation(this.pi, this.scope);
+			const incomingMessages = this.incomingMessages;
+			const manager = new SubagentManager({
+				pi: this.pi,
+				cwd: ctx.cwd,
+				registry,
+				ownerPath,
+				parentSessionFile: ctx.sessionManager.getSessionFile(),
+				resolveContextWindow: (modelId) => environment.resolveContextWindow(modelId),
+				onUpdate: (current) => presentation.refresh(current),
+				onAgentComplete: (current, agentId, allDone) => turns.notifyAgentComplete(current, agentId, allDone),
+				onParentMessage: (port, content, meta) => incomingMessages.receiveSerialized(port, content, meta, "local"),
+			});
+			const session: ActiveSubagentSession = Object.freeze({
+				environment,
+				registry,
+				manager,
+				presentation,
+				turns,
+				incomingMessages,
+			});
+			this.phase = { kind: "active", session };
+			this.resolveStart();
+			presentation.subscribe(registry, ownerPath, manager);
 
-		if (event.reason === "new" || event.reason === "fork") return;
-		await manager.restoreFromPersistence(environment.discoverAgents(ctx.cwd).agents);
-		if (this.phase.kind !== "active" || this.phase.session !== session || !manager.hasAgents()) return;
-		await presentation.ensureWidget(ctx);
-		if (this.phase.kind !== "active" || this.phase.session !== session) return;
-		presentation.refresh(manager);
-		turns.addStopSequenceOnce("<agent_idle");
+			if (this.scope.kind === "child") {
+				if (event.reason === "resume") {
+					void this.restoreChildDescendants(ctx, session).catch((error) => {
+						const message = error instanceof Error ? error.message : String(error);
+						console.error(`[subagents] Failed to restore nested subagents: ${message}`);
+					});
+				}
+				return;
+			}
+
+			if (event.reason === "new" || event.reason === "fork") return;
+			await manager.restoreFromPersistence(environment.discoverAgents(ctx.cwd).agents);
+			if (this.phase.kind !== "active" || this.phase.session !== session || !manager.hasAgents()) return;
+			await presentation.ensureWidget(ctx);
+			if (this.phase.kind !== "active" || this.phase.session !== session) return;
+			presentation.refresh(manager);
+			turns.addStopSequenceOnce("<agent_idle");
+		} catch (error) {
+			if (this.phase.kind === "starting") {
+				this.phase = { kind: "shutting-down" };
+				this.incomingMessages.shutdown();
+				this.rejectStart(error);
+			}
+			throw error;
+		}
 	}
 
 	async shutdown(ctx: ExtensionContext): Promise<void> {
@@ -751,6 +830,7 @@ class SubagentSessionOwner {
 		const previous = this.phase;
 		this.phase = { kind: "shutting-down" };
 		if (previous.kind !== "active") {
+			this.rejectStart(new Error("Subagents session is shutting down."));
 			this.turns.clear();
 			this.incomingMessages.shutdown();
 			return;
@@ -839,20 +919,20 @@ class SubagentSessionOwner {
 		registry.updateOperational([], next);
 	}
 
-	private handleAgentStart(ctx: ExtensionContext): void {
-		const session = this.requireActiveSession();
+	private async handleAgentStart(ctx: ExtensionContext): Promise<void> {
+		const session = await this.waitForActiveSession();
 		session.turns.beginRun();
 		if (this.scope.kind === "root") this.updateRootOperational({ state: "running", lastError: undefined });
 	}
 
-	private handleAgentEnd(event: any, ctx: ExtensionContext): void {
-		const session = this.requireActiveSession();
+	private async handleAgentEnd(event: any, ctx: ExtensionContext): Promise<void> {
+		const session = await this.waitForActiveSession();
 		const error = session.turns.endRun(event);
 		if (this.scope.kind === "root" && error) this.updateRootOperational({ lastError: error });
 	}
 
-	private handleAgentSettled(event: any, ctx: ExtensionContext): void {
-		const session = this.requireActiveSession();
+	private async handleAgentSettled(event: any, ctx: ExtensionContext): Promise<void> {
+		const session = await this.waitForActiveSession();
 		const { rootError } = session.turns.settleRun(event?.aborted === true);
 		if (this.scope.kind === "root") {
 			session.registry.updateOperational([], {
@@ -863,9 +943,9 @@ class SubagentSessionOwner {
 		}
 	}
 
-	private handleMessageEnd(event: any, ctx: ExtensionContext): void {
+	private async handleMessageEnd(event: any, ctx: ExtensionContext): Promise<void> {
 		if (this.scope.kind !== "root" || event?.message?.role !== "assistant") return;
-		const { registry } = this.requireActiveSession();
+		const { registry } = await this.waitForActiveSession();
 		const message = event.message;
 		const usage = message.usage;
 		const operational = registry.getSnapshot([])!.operational;
@@ -895,12 +975,12 @@ class SubagentSessionOwner {
 		});
 	}
 
-	private handleSessionInfoChanged(event: any): void {
-		this.requireActiveSession().presentation.setSessionName(event.name);
+	private async handleSessionInfoChanged(event: any): Promise<void> {
+		(await this.waitForActiveSession()).presentation.setSessionName(event.name);
 	}
 
-	private handleToolExecutionStart(event: any, ctx: ExtensionContext): void {
-		const session = this.requireActiveSession();
+	private async handleToolExecutionStart(event: any, ctx: ExtensionContext): Promise<void> {
+		const session = await this.waitForActiveSession();
 		session.turns.trackToolStart(event.toolCallId);
 		if (this.scope.kind !== "root") return;
 		const raw = event as any;
@@ -918,8 +998,8 @@ class SubagentSessionOwner {
 		});
 	}
 
-	private handleToolExecutionEnd(event: any, ctx: ExtensionContext): void {
-		const session = this.requireActiveSession();
+	private async handleToolExecutionEnd(event: any, ctx: ExtensionContext): Promise<void> {
+		const session = await this.waitForActiveSession();
 		if (ctx.signal?.aborted) {
 			session.turns.clearPendingTools();
 			return;
@@ -928,7 +1008,7 @@ class SubagentSessionOwner {
 	}
 
 	private async handleBeforeAgentStart(event: any, ctx: ExtensionContext): Promise<{ systemPrompt: string } | undefined> {
-		const session = this.requireActiveSession();
+		const session = await this.waitForActiveSession();
 		if (!this.pi.getActiveTools().includes("subagent")) return undefined;
 		const agents = session.environment.discoverAgents(ctx.cwd).agents;
 		const lines = [""];
@@ -1005,7 +1085,7 @@ class SubagentSessionOwner {
 	}
 
 	private async setForcedModel(args: string, ctx: ExtensionContext): Promise<void> {
-		this.requireActiveSession();
+		await this.waitForActiveSession(ctx.signal);
 		const store = getOrCreateSessionTreeStore(ctx.sessionManager);
 		const input = args.trim();
 		if (!input) {
@@ -1064,7 +1144,7 @@ class SubagentSessionOwner {
 			description: "List all available models with context window and pricing. Complements the model-tier table for cases where a concrete model id is explicitly required.",
 			promptSnippet: "Call `list_models` to see the full model catalog when a concrete model id (rather than a tier) is explicitly required.",
 			parameters: Type.Object({}),
-			execute: async (_toolCallId, _params, _signal, _onUpdate, ctx) => this.listModels(ctx),
+			execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.listModels(ctx)),
 		});
 
 		const SubagentParams = Type.Object({
@@ -1084,11 +1164,12 @@ class SubagentSessionOwner {
 				"For `subagent` use guidance about task decomposition, pattern selection, and when-to-delegate; read the orchestrating-agents skill.",
 			],
 			parameters: SubagentParams,
+			executionMode: "sequential",
 			// Legacy `agent` item fields rewrite to the public `persona` field
 			// first, so the empty-optional cleanup and schema validation see only
 			// the advertised name.
 			prepareArguments: (args: unknown) => dropEmptyOptionals(SubagentParams, renameLegacyPersonaFields(args)) as any,
-			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.spawnAgents(params, signal, ctx),
+			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.spawnAgents(params, signal, ctx)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1101,7 +1182,8 @@ class SubagentSessionOwner {
 				task: Type.String({ description: "Task description for the forked agent" }),
 				await: Type.Optional(Type.Boolean({ description: "Block until the forked agent completes. Default: false.", default: false })),
 			}),
-			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.forkAgent(params, signal, ctx),
+			executionMode: "sequential",
+			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.forkAgent(params, signal, ctx)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1118,7 +1200,7 @@ class SubagentSessionOwner {
 				message: Type.String({ description: "Message content" }),
 				expectResponse: Type.Optional(Type.Boolean({ description: "Wait for a response (blocking). Default: false.", default: false })),
 			}),
-			execute: async (_toolCallId, params, signal) => this.sendMessage(params, signal),
+			execute: async (_toolCallId, params, signal) => this.runWhenReady(signal, () => this.sendMessage(params, signal)),
 		});
 
 		this.pi.registerTool({
@@ -1130,7 +1212,7 @@ class SubagentSessionOwner {
 				correlationId: Type.String({ description: "The correlation_id from the incoming agent_message" }),
 				message: Type.String({ description: "Response content" }),
 			}),
-			execute: async (_toolCallId, params) => this.respondToMessage(params),
+			execute: async (_toolCallId, params, signal) => this.runWhenReady(signal, () => this.respondToMessage(params)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1140,7 +1222,7 @@ class SubagentSessionOwner {
 			description: "Query agent status. Omit agent for summary of all active agents.",
 			promptSnippet: "Query agent status; use only for a specific reason: suspected stall, progress question, or mid-run usage check.",
 			parameters: Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to query. Omit for summary of all active agents." })) }),
-			execute: async (_toolCallId, params) => this.checkStatus(params),
+			execute: async (_toolCallId, params, signal) => this.runWhenReady(signal, () => this.checkStatus(params)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1149,7 +1231,7 @@ class SubagentSessionOwner {
 			description: "Remove an agent or tear down all agents. Returns a completion report.",
 			promptSnippet: "Remove agents no longer needed; idle or errored agents stay usable, so send new messages to restart or continue work.",
 			parameters: Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to remove. Omit to tear down all agents." })) }),
-			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => this.teardownAgents(params, ctx),
+			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.teardownAgents(params, ctx)),
 		});
 
 		this.pi.registerTool({
@@ -1161,7 +1243,8 @@ class SubagentSessionOwner {
 				"To resurrect a mesh of agents that talked to each other, resurrect them in a single call: each agent may declare channels to its siblings, since they come online together.",
 			],
 			parameters: Type.Object({ agents: Type.Array(ResurrectItem, { description: "Agents to resurrect from their session files." }) }),
-			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => this.resurrectAgents(params, ctx),
+			executionMode: "sequential",
+			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.resurrectAgents(params, ctx)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1173,7 +1256,7 @@ class SubagentSessionOwner {
 				"Any agent non terminal message sent to you while you are in an await_agents tool call interrupts the wait. If an expect-response message interrupts, you must call `respond` before waiting again.",
 			],
 			parameters: Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to wait on. Omit to wait on all active agents." })) }),
-			execute: async (_toolCallId, params, signal) => this.awaitAgents(params, signal),
+			execute: async (_toolCallId, params, signal) => this.runWhenReady(signal, () => this.awaitAgents(params, signal)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1182,7 +1265,7 @@ class SubagentSessionOwner {
 			description: "Halt a subagent immediately without tearing it down. Interrupts any in-flight tool call — useful when one is hung or stuck.",
 			promptSnippet: "Halt an agent immediately without tearing it down; prefer send unless the agent must stop now.",
 			parameters: Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to interrupt. Omit to interrupt all active agents." })) }),
-			execute: async (_toolCallId, params, signal) => this.interruptAgents(params, signal),
+			execute: async (_toolCallId, params, signal) => this.runWhenReady(signal, () => this.interruptAgents(params, signal)),
 		});
 	}
 

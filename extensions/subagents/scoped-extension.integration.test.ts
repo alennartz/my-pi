@@ -72,6 +72,7 @@ vi.mock("./broker.js", () => ({
 
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import { SubagentPresentation } from "./session-owner.js";
+import * as agentDiscovery from "./agents.js";
 import type { AgentPath } from "./agent-path.js";
 import { appendAgentAdded, ensurePersistence } from "./persistence.js";
 import { AgentSessionRegistry } from "./agent-session-registry.js";
@@ -367,6 +368,41 @@ afterEach(() => {
 });
 
 describe("child-scoped extension routing", () => {
+	it("waits for session_start initialization before running a tool", async () => {
+		let releaseDiscovery!: () => void;
+		const discoveryGate = new Promise<void>((resolve) => {
+			releaseDiscovery = resolve;
+		});
+		const discovery = vi.spyOn(agentDiscovery, "discoverPackageAgents").mockImplementation(async () => {
+			await discoveryGate;
+			return { user: [], project: [] };
+		});
+		try {
+			const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+			fs.writeFileSync(parentSessionFile, "");
+			const { pi, tools, handlers } = makePi();
+			await createSubagentsExtension({ kind: "root" })(pi as any);
+			const ctx = makeContext(parentSessionFile);
+			const promptPreparation = handlers.get("before_agent_start")?.({ systemPrompt: "base" }, ctx);
+			const starting = handlers.get("session_start")?.({ reason: "new" }, ctx);
+			await vi.waitFor(() => expect(discovery).toHaveBeenCalled());
+
+			let settled = false;
+			const listing = execute(tools, "list_models", {}, ctx).finally(() => {
+				settled = true;
+			});
+			await Promise.resolve();
+			expect(settled).toBe(false);
+
+			releaseDiscovery();
+			await starting;
+			await expect(promptPreparation).resolves.toMatchObject({ systemPrompt: expect.stringContaining("Model Tiers") });
+			await expect(listing).resolves.toMatchObject({ content: [{ type: "text" }] });
+		} finally {
+			discovery.mockRestore();
+		}
+	});
+
 	it("routes child sends and responses through its explicit uplink, not process globals", async () => {
 		const uplink = makePort("child");
 		const scope: SubagentScope = {
@@ -990,7 +1026,7 @@ describe("root orchestration integration", () => {
 				identity: { id: "worker", task: "inspect", channels: ["parent"] },
 			},
 		});
-		expect(created.child.submit).toHaveBeenCalledWith("Task: inspect");
+		expect(created.child.submit).toHaveBeenCalledWith("Task: inspect", "followUp");
 		expect(ctx.ui.setWidget).toHaveBeenCalled();
 
 		created.hooks.onEvent({ type: "agent_start" });

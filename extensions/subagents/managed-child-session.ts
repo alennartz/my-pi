@@ -282,6 +282,7 @@ function createHeadlessUi(onUiNotify: ChildSessionHooks["onUiNotify"]): Extensio
 }
 
 const ROOT_SUBAGENTS_EXTENSION_PATH = normalizePath(fileURLToPath(new URL("./index.ts", import.meta.url)));
+const CHILD_SUBAGENTS_EXTENSION_PATH = "<inline:subagents-child>";
 function normalizePath(value: string): string {
 	return value.replaceAll("\\", "/");
 }
@@ -334,8 +335,22 @@ function isRootSubagentsExtension(extension: { path?: string; resolvedPath?: str
 		.map(normalizePath)
 		.some((candidate) => candidate === ROOT_SUBAGENTS_EXTENSION_PATH);
 }
+function isChildSubagentsExtension(extension: { path?: string; resolvedPath?: string }): boolean {
+	return [extension.resolvedPath, extension.path]
+		.filter((candidate): candidate is string => candidate !== undefined)
+		.map(normalizePath)
+		.some((candidate) => candidate === CHILD_SUBAGENTS_EXTENSION_PATH);
+}
 function createExtensionsOverride(base: LoadExtensionsResult): LoadExtensionsResult {
-	return { ...base, extensions: base.extensions.filter((extension) => !isRootSubagentsExtension(extension)) };
+	const extensions = base.extensions.filter((extension) => !isRootSubagentsExtension(extension));
+	// Startup extensions can trigger a turn. Bind the scoped owner first so
+	// those turns cannot observe a child before its lifecycle is ready.
+	const childIndex = extensions.findIndex(isChildSubagentsExtension);
+	if (childIndex > 0) {
+		const [child] = extensions.splice(childIndex, 1);
+		extensions.unshift(child);
+	}
+	return { ...base, extensions };
 }
 
 function initialTarget(target: ChildSessionTarget): {
