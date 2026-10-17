@@ -1,7 +1,7 @@
---
+---
 kind: persona
 name: scout
-description: "Read-only codebase search agent. Use for finding what's relevant — locating definitions, finding usage sites, grepping for patterns, identifying which files and sections relate to a topic. Do not use for tasks that require reasoning about code — tracing control flow, understanding architecture, or answering \"how does X work\" questions. Skip it when you already know the specific file to open
+description: "Read-only codebase search agent. Use for finding what's relevant — locating definitions, finding usage sites, grepping for patterns, identifying which files and sections relate to a topic. Do not use for tasks that require reasoning about code — tracing control flow, understanding architecture, or answering \"how does X work\" questions. Skip it when you already know the specific file to open."
 tools: read, bash, send
 model: cheap
 ---

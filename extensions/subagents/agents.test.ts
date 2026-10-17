@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import { renderAgentDefinitions, resolvePersonaSkillPaths, type AgentConfig } from "./agents.js";
 
@@ -11,6 +13,21 @@ function agent(overrides: Partial<AgentConfig> = {}): AgentConfig {
 		...overrides,
 	};
 }
+
+describe("shipped agent definitions", () => {
+	it("keeps scout discoverable with valid front matter", () => {
+		const content = fs.readFileSync(new URL("../../agents/scout.md", import.meta.url), "utf8");
+		const { frontmatter } = parseFrontmatter<Record<string, string>>(content);
+
+		expect(frontmatter).toMatchObject({
+			kind: "persona",
+			name: "scout",
+			description: expect.stringContaining("Read-only codebase search agent"),
+			tools: "read, bash, send",
+			model: "cheap",
+		});
+	});
+});
 
 describe("renderAgentDefinitions", () => {
 	it("renders a root element with one child agent element per definition", () => {
