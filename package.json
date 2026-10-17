@@ -36,7 +36,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@mozilla/readability": "^0.6.0",
-    "@pimote/sdk": "^0.15.0-rc.1",
+    "@pimote/sdk": "^0.15.0-rc.4",
     "jiti": "^2.7.0",
     "jsdom": "^29.1.1",
     "turndown": "^7.2.4",
