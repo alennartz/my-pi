@@ -1000,6 +1000,11 @@ describe("root orchestration integration", () => {
 		);
 		expect(result.systemPrompt).toContain("</available_agent_definitions>");
 		expect(result.systemPrompt).not.toContain("## Available Agent Definitions");
+		expect(result.systemPrompt).toContain("Leave `agents[].model` unspecified by default");
+		expect(result.systemPrompt).toContain("prefer its name in the `persona` field");
+		expect(result.systemPrompt).toContain("| Tier | Use when |");
+		expect(result.systemPrompt).toContain("optional guidance");
+		expect(result.systemPrompt).not.toContain("Choose a tier");
 	});
 
 	it("owns SDK-native children, projects lifecycle/status updates, and records replacement metadata", async () => {

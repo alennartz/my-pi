@@ -15,12 +15,12 @@ import * as fs from "node:fs";
 export const TIER_NAMES = ["cheap", "medium", "smart", "frontier"] as const;
 export type TierName = (typeof TIER_NAMES)[number];
 
-/** One-sentence guidance for the system-prompt tier table. */
+/** One-sentence guidance for deliberate model overrides. */
 export const TIER_GUIDANCE: Record<TierName, string> = {
 	cheap: "Quick codebase scouting, file discovery, and factual documentation updates.",
-	medium: "Routine implementation, summaries, unfamiliar-code explanations, human-led planning, and writing tests.",
-	smart: "Test strategy, concrete debugging, design trade-offs, and complexity-sensitive documentation.",
-	frontier: "Reviewing tests, ambiguous failures, major migrations, security/reliability/performance analysis, and code review.",
+	medium: "Routine implementation or summaries",
+	smart: "Test strategy, debugging easily reproduced issues, discussing design tradeoffs.",
+	frontier: "code review, debugging rare bugs or races security/reliability/performance analysis.",
 };
 
 /** The seven pi thinking levels, mirrored locally for suffix validation. */

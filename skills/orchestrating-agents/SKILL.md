@@ -13,16 +13,18 @@ Beyond context management, subagents enable parallel execution, specialist coord
 
 ## Choosing a Model Tier
 
-Tier names are configurable aliases. Choose them by task shape, not by assumptions about a specific provider or model.
+Tier names are configurable aliases. Leave `agents[].model` unspecified by default; an omitted model inherits the current session model.
 
-For general development work, use these defaults:
+Prefer a matching specialist persona when one is listed. Pass its name in `persona`; a persona's model pin wins over an explicit model field. Use a default general-purpose agent when no listed specialist matches.
 
-- **`cheap`** — quick codebase scouting, file discovery, and factual documentation updates.
-- **`medium`** — routine implementation, summaries, explanations of unfamiliar code, final synthesis, human-led planning, and writing tests.
-- **`smart`** — test strategy, concrete debugging, design proposals that compare approaches, and documentation whose complexity grows during the work.
-- **`frontier`** — reviewing tests, ambiguous or intermittent failures, major refactors or migrations, security/concurrency/reliability analysis, performance analysis, and code review.
+When a deliberate model choice is useful, choose a tier by task shape rather than assumptions about a specific provider or model:
 
-Apply these adjustments:
+- **`cheap`** — optional lower-cost or lower-latency choice for straightforward tasks.
+- **`medium`** — optional balanced choice for routine tasks.
+- **`smart`** — optional stronger-reasoning choice for difficult tasks.
+- **`frontier`** — optional highest-capability choice for unusually difficult tasks.
+
+Apply these adjustments when an explicit model choice is useful:
 
 - Architecture and implementation planning is interactive and human-led. Start at `medium`; use `smart` for broader scope. Do not use `frontier` only because the task is planning.
 - Factual documentation updates start at `cheap`; escalate to `medium` for explanation or synthesis, and to `smart` for design trade-offs.

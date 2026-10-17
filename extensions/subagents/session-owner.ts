@@ -1024,16 +1024,17 @@ class SubagentSessionOwner {
 		lines.push(
 			"## Model Tiers",
 			"",
-			"The `subagent` tool's `agents[].model` field accepts a tier name. Choose a tier using the short table below; read `skills/orchestrating-agents/SKILL.md` for detailed guidance. The tier resolves to a configured concrete model at spawn time:",
+			"Leave `agents[].model` unspecified by default; an omitted model inherits the current session model.",
+			"If a matching specialist is listed above, prefer its name in the `persona` field instead of choosing a tier. A persona's model pin always wins.",
+			"If no listed specialist matches, omit `persona` for a default general-purpose agent.",
+			"The `subagent` tool's `agents[].model` field accepts a tier name. Use the table below as optional guidance when a deliberate model choice is useful or the user requests one:",
 			"",
 			...renderTierTable(),
 			"",
 			"Raw model IDs are also accepted in `agents[].model` when the user names a specific model; `list_models` shows the full catalog.",
 			"Append a thinking-effort suffix to any model id with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) — e.g. `anthropic/claude-opus-4-8:xhigh`. Tier names don't take a suffix; a tier carries whatever level its config encodes.",
 			"",
-			"Omitting the `persona` field spawns a **default general-purpose agent** — use this unless the task specifically matches a specialist's description above. You may set `model` only to fill a gap: it applies when the active persona declares no `model`; a persona's `model` pin always wins.",
-			"",
-			"Omit `model` entirely by default — subagents then inherit the session's model. Specify a tier only when the user asks for one.",
+			"The table is guidance for deliberate model choices, not a requirement to set `model` for every task.",
 			"",
 		);
 		return { systemPrompt: event.systemPrompt + "\n" + lines.join("\n") + "\n" };
@@ -1118,7 +1119,7 @@ class SubagentSessionOwner {
 		const AgentItem = Type.Object({
 			id: Type.String({ description: "Unique identifier for this agent among the parent's active agents" }),
 			persona: Type.Optional(Type.String({ description: "Persona name — the `name` of a discovered agent definition (omit for a default general-purpose agent)" })),
-			model: Type.Optional(Type.String({ description: "Optional model override: a tier name (`cheap`, `medium`, `smart`, `frontier`) or a concrete model id. Gap-filling only — it applies when the active persona declares no `model`; a persona's `model` pin always wins." })),
+			model: Type.Optional(Type.String({ description: "Optional model override. Omit by default; use when an explicit model choice is useful or the user requests one. Accepts a tier name (`cheap`, `medium`, `smart`, `frontier`) or a concrete model id; a persona's model pin always wins." })),
 			task: Type.String({ description: "Task description for this agent" }),
 			channels: Type.Optional(Type.Array(Type.String(), {
 				description: "Peer agent ids this agent can send to (agent-to-agent only; parent is always allowed)",
@@ -1154,7 +1155,7 @@ class SubagentSessionOwner {
 		this.pi.registerTool({
 			name: "subagent",
 			label: "Subagents",
-			description: "Spawn subagents to delegate work to a seperate context window, optionally with a different model or cwd. Supports inter agent communications",
+			description: "Spawn subagents to delegate work to a separate context window. Children inherit the current model by default; an explicit model or cwd is optional. Supports inter-agent communication.",
 			promptSnippet: "Delegate work to separate context windows; non-blocking by default, results arrive later as notifications; pass await=true to block.",
 			promptGuidelines: [
 				"When using subagent a channel to \"parent\" (you) is auto-injected into every agent's channel list. The channels field governs peer agent communication only.",
