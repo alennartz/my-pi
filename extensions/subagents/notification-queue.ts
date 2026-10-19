@@ -151,7 +151,7 @@ export class NotificationQueue {
 		return this.entries.length;
 	}
 
-	// ─── Private ─────────────────────────────────────────────────────────
+// Private
 
 	private doFlush(): void {
 		if (this.entries.length === 0) return;

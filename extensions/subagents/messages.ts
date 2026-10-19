@@ -4,7 +4,7 @@
  * LLM-facing messages use XML serialization.
  */
 
-// ─── LLM-facing XML types and serializers ────────────────────────────────────
+// LLM-facing XML types and serializers
 
 export interface AgentMessageData {
 	from: string;

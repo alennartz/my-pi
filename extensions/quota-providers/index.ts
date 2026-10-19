@@ -37,9 +37,7 @@ import type { SessionTreeStore } from "../../lib/session-tree-store.js";
 import { decideBlock } from "./lib/enforce.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-// =============================================================================
 // Module-level state — init-then-freeze; consumed by Steps 10–13.
-// =============================================================================
 
 export interface ProviderRecord {
 	id: string;
@@ -90,9 +88,7 @@ function evaluateProviderQuota(
 		{ blocked: false };
 }
 
-// =============================================================================
 // Helpers
-// =============================================================================
 
 function formatDollars(amount: number): string {
 	// Whole dollars drop the cents — every character counts on mobile layouts.
@@ -164,9 +160,7 @@ export function refreshStatusline(
 	ctx.ui.setStatus("quota-providers", line);
 }
 
-// =============================================================================
 // Helpers
-// =============================================================================
 
 /** Fire-and-forget background discover; never blocks, never throws. */
 function spawnRefreshDetached(args: string[]): void {
@@ -185,9 +179,7 @@ async function loadImpl(modulePath: string): Promise<ProviderImplementation> {
 	return jiti.import(modulePath) as Promise<ProviderImplementation>;
 }
 
-// =============================================================================
 // Extension Entry Point
-// =============================================================================
 
 export default async function (pi: ExtensionAPI) {
 	// Distinguish process cold start from /new or /reload within the same process.
@@ -483,9 +475,7 @@ export default async function (pi: ExtensionAPI) {
 		refreshStatusline(record, ctx);
 	});
 
-	// =========================================================================
 	// /quota command
-	// =========================================================================
 
 	pi.registerCommand("quota", {
 		description: "Show quota status or toggle bypass (/quota bypass [on|off])",

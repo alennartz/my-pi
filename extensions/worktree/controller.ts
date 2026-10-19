@@ -219,12 +219,8 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 					"warning",
 				);
 			}
-			// Forking the current session into the main worktree path is our
-			// workaround for "change the cwd of the current session": the new
-			// file carries all the history forward and lands the runtime in
-			// mainWorktree.path. The source file is then redundant — every entry
-			// has been copied into the fork — so we drop it to avoid leaving a
-			// duplicate behind.
+			// No API to change a session's cwd; fork into the target path and
+			// drop the source duplicate.
 			const sessionFile = await sessions.forkFrom(sourceSessionFile, mainWorktree.path);
 			const switchResult = await runtime.switchSession(sessionFile);
 			if (switchResult.cancelled) {

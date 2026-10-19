@@ -4,9 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cachePaths, loadProvidersConfig, parseProvidersConfig, POLICY_KEYS } from "./config.js";
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 function noExpand(p: string): string {
 	return p;
@@ -16,9 +14,7 @@ function makeRaw(providers: Record<string, unknown>): string {
 	return JSON.stringify({ providers });
 }
 
-// ---------------------------------------------------------------------------
 // parseProvidersConfig
-// ---------------------------------------------------------------------------
 
 describe("parseProvidersConfig", () => {
 	it("applies policy defaults when optional fields are absent", () => {
@@ -141,9 +137,7 @@ describe("parseProvidersConfig", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
 // loadProvidersConfig
-// ---------------------------------------------------------------------------
 
 describe("loadProvidersConfig", () => {
 	let tmpDir: string;
@@ -183,9 +177,7 @@ describe("loadProvidersConfig", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
 // cachePaths
-// ---------------------------------------------------------------------------
 
 describe("cachePaths", () => {
 	it("returns paths nested under <agentDir>/cache/quota-providers/<implId>/", () => {

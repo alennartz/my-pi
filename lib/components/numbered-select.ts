@@ -3,9 +3,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Input, matchesKey, Key, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { Component, Focusable, TUI } from "@earendil-works/pi-tui";
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Wrap styled content with a prefix on the first line and spaces on
@@ -18,9 +16,7 @@ function wrapWithIndent(prefix: string, content: string, width: number, prefixWi
 	return wrapped.map((line, i) => (i === 0 ? prefix + line : indent + line));
 }
 
-// ---------------------------------------------------------------------------
 // Public types
-// ---------------------------------------------------------------------------
 
 export interface NumberedSelectOption {
 	label: string;
@@ -33,9 +29,7 @@ export interface NumberedSelectResult {
 	annotation?: string;
 }
 
-// ---------------------------------------------------------------------------
 // Component
-// ---------------------------------------------------------------------------
 
 type Mode = "navigation" | "text";
 
@@ -241,9 +235,7 @@ class NumberedSelectComponent implements Component, Focusable {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Public API
-// ---------------------------------------------------------------------------
 
 export async function showNumberedSelect(
 	ctx: ExtensionContext,

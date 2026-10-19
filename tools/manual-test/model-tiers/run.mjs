@@ -52,7 +52,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 
-// ─── args ────────────────────────────────────────────────────────────────────
+// args
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(`--${n}`);
 const opt = (n, d) => {
@@ -115,7 +115,7 @@ function killGroup(proc) {
 	} catch {}
 }
 
-// ─── temp agent dir scaffolding ──────────────────────────────────────────────
+// temp agent dir scaffolding
 const PROBE_EXT = `import * as fs from "node:fs";
 export default function(pi) {
   pi.on("before_provider_request", (event) => {
@@ -182,7 +182,7 @@ function makeAgentDir(root, name, { global, project, trust = "always" }) {
 	return { agentDir, workDir };
 }
 
-// ─── persistence path derivation (mirror persistence.ts) ─────────────────────
+// persistence path derivation (mirror persistence.ts)
 function persistencePaths(parentSessionFile) {
 	const dir = path.dirname(parentSessionFile);
 	const base = path.basename(parentSessionFile, path.extname(parentSessionFile));
@@ -245,7 +245,7 @@ function extractSystem(payload) {
 	return parts.join("\n");
 }
 
-// ─── probe capture: launch pi, send a trivial prompt, read assembled payload ─
+// probe capture: launch pi, send a trivial prompt, read assembled payload
 function capturePrompt(agentDir, workDir) {
 	return new Promise((resolve, reject) => {
 		const out = path.join(agentDir, "payload.json");
@@ -282,7 +282,7 @@ function capturePrompt(agentDir, workDir) {
 	});
 }
 
-// ─── spawn driver: drive the agent to call subagent (+ optional list_models) ─
+// spawn driver: drive the agent to call subagent (+ optional list_models)
 // Returns { notices: string[], childModels: {id: model}, listModelsText }.
 function driveSpawn(agentDir, workDir, sessionDir, { spawns, wantListModels }) {
 	return new Promise((resolve, reject) => {
@@ -381,7 +381,7 @@ function readChildModels(parentSessionFile, ids, tries = 6) {
 	});
 }
 
-// ─── checks ──────────────────────────────────────────────────────────────────
+// checks
 function tierRow(sys, tier) {
 	const re = new RegExp(`\\| ${tier} \\| ([^|]+) \\|`);
 	const m = sys.match(re);

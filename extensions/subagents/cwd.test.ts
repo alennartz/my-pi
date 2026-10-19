@@ -15,8 +15,7 @@ afterEach(() => {
 	try {
 		fs.rmSync(tmpRoot, { recursive: true, force: true });
 	} catch {
-		// best effort
-	}
+		}
 });
 
 describe("isValidCwd", () => {

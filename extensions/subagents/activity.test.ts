@@ -6,7 +6,7 @@ import { hasLiveBackgroundWork, type ActivityNode } from "./activity.js";
 import type { AgentPath } from "./agent-path.js";
 import type { MessagePort } from "./message-router.js";
 
-// --- Helpers ---
+// Helpers
 
 function createMockEventBus(): EventBus & { handlers: Map<string, Set<(data: unknown) => void>> } {
 	const handlers = new Map<string, Set<(data: unknown) => void>>();
@@ -38,7 +38,7 @@ function node(path: string[], state: ActivityNode["operational"]["state"], waiti
 	return { path, operational: { state, waitingFor } };
 }
 
-// --- Predicate ---
+// Predicate
 
 describe("hasLiveBackgroundWork", () => {
 	it("empty tree is not live", () => {
@@ -67,7 +67,7 @@ describe("hasLiveBackgroundWork", () => {
 	});
 });
 
-// --- Wiring ---
+// Wiring
 
 describe("subagents activity responder", () => {
 	it("root scope registers and answers the poll (false before session_start)", async () => {

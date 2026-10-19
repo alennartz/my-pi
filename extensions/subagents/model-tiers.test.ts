@@ -17,7 +17,7 @@ import {
 	type TierConfig,
 } from "./model-tiers.js";
 
-// ─── isTierName ──────────────────────────────────────────────────────────────
+// isTierName
 
 describe("isTierName", () => {
 	it("recognizes each of the four tier names", () => {
@@ -42,7 +42,7 @@ describe("isTierName", () => {
 	});
 });
 
-// ─── loadTierConfig ──────────────────────────────────────────────────────────
+// loadTierConfig
 
 describe("loadTierConfig", () => {
 	let tmpRoot: string;
@@ -59,8 +59,7 @@ describe("loadTierConfig", () => {
 		try {
 			fs.rmSync(tmpRoot, { recursive: true, force: true });
 		} catch {
-			// best effort
-		}
+			}
 	});
 
 	function writeConfig(filePath: string, content: string): void {
@@ -128,7 +127,7 @@ describe("loadTierConfig", () => {
 	});
 });
 
-// ─── resolveModelRef ─────────────────────────────────────────────────────────
+// resolveModelRef
 
 describe("resolveModelRef", () => {
 	const always = () => true;
@@ -185,7 +184,7 @@ describe("resolveModelRef", () => {
 	});
 });
 
-// ─── renderTierTable ─────────────────────────────────────────────────────────
+// renderTierTable
 
 describe("renderTierTable", () => {
 	it("includes one-sentence guidance for every tier without exposing model IDs", () => {
@@ -205,7 +204,7 @@ describe("renderTierTable", () => {
 	});
 });
 
-// ─── isThinkingLevel ─────────────────────────────────────────────────────────
+// isThinkingLevel
 
 describe("isThinkingLevel", () => {
 	it("recognizes all seven valid thinking levels", () => {
@@ -231,7 +230,7 @@ describe("isThinkingLevel", () => {
 	});
 });
 
-// ─── stripThinkingSuffix ─────────────────────────────────────────────────────
+// stripThinkingSuffix
 
 describe("stripThinkingSuffix", () => {
 	it("strips a valid thinking level suffix from a provider/id pattern", () => {
@@ -279,7 +278,7 @@ describe("stripThinkingSuffix", () => {
 	});
 });
 
-// ─── resolveModelRef — suffix-aware behavior ─────────────────────────────────
+// resolveModelRef — suffix-aware behavior
 
 describe("resolveModelRef — suffix-aware", () => {
 	const alwaysAvailable = () => true;
@@ -326,7 +325,7 @@ describe("resolveModelRef — suffix-aware", () => {
 	});
 });
 
-// ─── findAvailableModel ──────────────────────────────────────────────────────
+// findAvailableModel
 
 describe("findAvailableModel", () => {
 	const available = [
@@ -346,7 +345,7 @@ describe("findAvailableModel", () => {
 	});
 });
 
-// ─── resolveDeclaredModelRef ─────────────────────────────────────────────────
+// resolveDeclaredModelRef
 
 describe("resolveDeclaredModelRef", () => {
 	const available = [

@@ -32,9 +32,7 @@ const DEFAULT_POLICY: QuotaPolicy = {
   enforceHardCap: false,
 };
 
-// ---------------------------------------------------------------------------
 // effectiveSpend
-// ---------------------------------------------------------------------------
 
 describe("effectiveSpend", () => {
   it("returns snapshot.spend when ledger is empty", () => {
@@ -71,9 +69,7 @@ describe("effectiveSpend", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // proratedLine
-// ---------------------------------------------------------------------------
 
 describe("proratedLine", () => {
   it("returns 0 at windowStart", () => {
@@ -103,9 +99,7 @@ describe("proratedLine", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // daysAhead
-// ---------------------------------------------------------------------------
 
 describe("daysAhead", () => {
   it("returns 0 for degenerate quota", () => {
@@ -137,9 +131,7 @@ describe("daysAhead", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // evaluateQuota
-// ---------------------------------------------------------------------------
 
 describe("evaluateQuota", () => {
   it("returns ok when under budget with no lookahead concern", () => {
@@ -233,9 +225,7 @@ describe("evaluateQuota", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // applicableSnapshots / remainingHeadroom / firstHitSnapshot
-// ---------------------------------------------------------------------------
 
 describe("applicableSnapshots", () => {
   const monthly = makeSnapshot({}); // no limitId → applies to every model

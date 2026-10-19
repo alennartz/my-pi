@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// Helpers
 
 type ToolDef = {
 	name: string;
@@ -50,7 +50,7 @@ beforeEach(async () => {
 	factory = mod.default;
 });
 
-// ─── Registration ────────────────────────────────────────────────────────────
+// Registration
 
 describe("registration", () => {
 	it("registers a direct, idempotent tool", () => {
@@ -62,7 +62,7 @@ describe("registration", () => {
 	});
 });
 
-// ─── Setting names ───────────────────────────────────────────────────────────
+// Setting names
 
 describe("setting names", () => {
 	it("sets the session name and reports the effective value", async () => {
@@ -100,7 +100,7 @@ describe("setting names", () => {
 	});
 });
 
-// ─── Clearing names ──────────────────────────────────────────────────────────
+// Clearing names
 
 describe("clearing names", () => {
 	it("clears the name with an empty string and reports the previous name", async () => {
@@ -113,7 +113,7 @@ describe("clearing names", () => {
 	});
 });
 
-// ─── Validation ──────────────────────────────────────────────────────────────
+// Validation
 
 describe("validation", () => {
 	it("rejects names longer than 200 characters", async () => {

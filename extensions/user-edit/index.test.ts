@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ─── Mocks ───────────────────────────────────────────────────────────────────
+// Mocks
 
 vi.mock("fs/promises", () => ({
 	readFile: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// Helpers
 
 type ToolDef = {
 	name: string;
@@ -49,7 +49,7 @@ beforeEach(async () => {
 	tool = registerTool.mock.calls[0][0];
 });
 
-// ─── No UI ───────────────────────────────────────────────────────────────────
+// No UI
 
 describe("user_edit — no UI", () => {
 	it("throws when hasUI is false", async () => {
@@ -60,7 +60,7 @@ describe("user_edit — no UI", () => {
 	});
 });
 
-// ─── Path handling ───────────────────────────────────────────────────────────
+// Path handling
 
 describe("user_edit — path handling", () => {
 	it("strips leading @ from path", async () => {
@@ -87,7 +87,7 @@ describe("user_edit — path handling", () => {
 	});
 });
 
-// ─── Existing file ───────────────────────────────────────────────────────────
+// Existing file
 
 describe("user_edit — existing file", () => {
 	it("passes file content as editor prefill", async () => {
@@ -103,7 +103,7 @@ describe("user_edit — existing file", () => {
 	});
 });
 
-// ─── New file ────────────────────────────────────────────────────────────────
+// New file
 
 describe("user_edit — new file", () => {
 	it("opens editor with empty string for non-existent file", async () => {
@@ -121,7 +121,7 @@ describe("user_edit — new file", () => {
 	});
 });
 
-// ─── Cancel ──────────────────────────────────────────────────────────────────
+// Cancel
 
 describe("user_edit — cancel", () => {
 	it("returns cancel message when editor returns undefined", async () => {
@@ -136,7 +136,7 @@ describe("user_edit — cancel", () => {
 	});
 });
 
-// ─── Save ────────────────────────────────────────────────────────────────────
+// Save
 
 describe("user_edit — save", () => {
 	it("writes edited content and returns save message", async () => {
@@ -177,7 +177,7 @@ describe("user_edit — save", () => {
 	});
 });
 
-// ─── Errors ──────────────────────────────────────────────────────────────────
+// Errors
 
 describe("user_edit — errors", () => {
 	it("throws on non-ENOENT read errors", async () => {

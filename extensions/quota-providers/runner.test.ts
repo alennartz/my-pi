@@ -16,17 +16,13 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-// ---------------------------------------------------------------------------
 // Paths
-// ---------------------------------------------------------------------------
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RUNNER_PATH = join(__dirname, "runner.mjs");
 const FAKE_IMPL_PATH = join(__dirname, "test", "fake-impl.ts");
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 function makeTempDir(): string {
 	return mkdtempSync(join(tmpdir(), "quota-runner-test-"));
@@ -75,9 +71,7 @@ function runRunner(args: string[]): RunResult {
 	};
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 describe("runner.mjs — discover", () => {
 	let tmpDir: string;

@@ -13,7 +13,7 @@ function createQueue(overrides?: Partial<NotificationQueueConfig>) {
 	return { queue, delivered, deferred };
 }
 
-// ─── Normal delivery ─────────────────────────────────────────────────────────
+// Normal delivery
 
 describe("NotificationQueue — normal delivery", () => {
 	it("auto-flushes when parent is not busy", () => {
@@ -65,7 +65,7 @@ describe("NotificationQueue — normal delivery", () => {
 	});
 });
 
-// ─── Steer delivery ─────────────────────────────────────────────────────────
+// Steer delivery
 
 describe("NotificationQueue — steer delivery", () => {
 	it("auto-flushes when busy with no pending tool calls", () => {
@@ -126,7 +126,7 @@ describe("NotificationQueue — steer delivery", () => {
 	});
 });
 
-// ─── Waiting flag suppresses delivery ────────────────────────────────────────
+// Waiting flag suppresses delivery
 
 describe("NotificationQueue — waiting suppresses delivery", () => {
 	it("accumulates without flushing when waiting is set", () => {
@@ -180,7 +180,7 @@ describe("NotificationQueue — waiting suppresses delivery", () => {
 	});
 });
 
-// ─── drainAll ────────────────────────────────────────────────────────────────
+// drainAll
 
 describe("NotificationQueue — drainAll", () => {
 	it("returns concatenated content and empties the queue", () => {
@@ -199,7 +199,7 @@ describe("NotificationQueue — drainAll", () => {
 	});
 });
 
-// ─── drainLocal ──────────────────────────────────────────────────────────────
+// drainLocal
 
 describe("NotificationQueue — drainLocal", () => {
 	it("removes local-source notifications and preserves uplink entries", () => {
@@ -213,7 +213,7 @@ describe("NotificationQueue — drainLocal", () => {
 	});
 });
 
-// ─── Deferred delivery (aborted run) ──────────────────────────────────────
+// Deferred delivery (aborted run)
 
 describe("NotificationQueue — deferred delivery", () => {
 	it("setParentBusy(false, { flush: false }) clears busy without delivering", () => {
@@ -255,7 +255,7 @@ describe("NotificationQueue — deferred delivery", () => {
 	});
 });
 
-// ─── clear ───────────────────────────────────────────────────────────────────
+// clear
 
 describe("NotificationQueue — clear", () => {
 	it("removes all notifications regardless of source", () => {

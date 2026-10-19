@@ -25,9 +25,7 @@ import type {
 	TokenResult,
 } from "../lib/types.js";
 
-// =============================================================================
 // Settings (from the config block, minus policy keys)
-// =============================================================================
 
 interface FoundrySettings {
 	account: string; // Cognitive Services account name
@@ -111,9 +109,7 @@ function mapBackend(
 	return null; // embeddings / non-chat / unknown
 }
 
-// =============================================================================
 // Implementation
-// =============================================================================
 
 const impl: ProviderImplementation = {
 	id: "foundry",

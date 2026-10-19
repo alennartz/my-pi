@@ -6,7 +6,6 @@ import {
 } from "@earendil-works/pi-ai";
 import type { ProviderStreamSimple } from "./stream-guard.js";
 
-// =============================================================================
 // Retryable-error mapping
 //
 // pi classifies provider failures as retryable or not by pattern-matching the
@@ -16,7 +15,6 @@ import type { ProviderStreamSimple } from "./stream-guard.js";
 // owns the single, deliberate hack that translates that verdict into pi's
 // vocabulary: prefix the message with wording pi's classifier already treats
 // as retryable.
-// =============================================================================
 
 /**
  * Wording matched by pi's existing `/provider.?returned.?error/i` retryable

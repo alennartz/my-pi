@@ -3,10 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { QuotaPolicy } from "./types.js";
 
-// =============================================================================
 // Policy keys — reserved in each provider config block.
 // Everything else passes through as ImplContext.settings.
-// =============================================================================
 
 export const POLICY_KEYS = [
 	"module",
@@ -17,9 +15,7 @@ export const POLICY_KEYS = [
 	"enforceHardCap",
 ] as const;
 
-// =============================================================================
 // Types
-// =============================================================================
 
 export interface ResolvedProvider {
 	id: string;
@@ -29,9 +25,7 @@ export interface ResolvedProvider {
 	settings: Record<string, unknown>;
 }
 
-// =============================================================================
 // Pure parsing
-// =============================================================================
 
 const POLICY_DEFAULTS: QuotaPolicy = {
 	bypassAllowed: true,
@@ -127,9 +121,7 @@ export function parseProvidersConfig(
 	return { providers, warnings };
 }
 
-// =============================================================================
 // I/O shell
-// =============================================================================
 
 /**
  * Resolve the pi agent directory, mirroring azure-foundry's resolveAgentDir().
@@ -164,9 +156,7 @@ export function loadProvidersConfig(path?: string): {
 	return parseProvidersConfig(raw, expandHome);
 }
 
-// =============================================================================
 // Cache path layout
-// =============================================================================
 
 export interface CachePaths {
 	dir: string;

@@ -332,7 +332,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 		return { trusted: "undecided" };
 	});
 
-	// --- Reliable wait-for-agent-turn ---
+// Reliable wait-for-agent-turn
 	//
 	// `pi.sendUserMessage` is fire-and-forget from the extension's perspective:
 	// the runner wraps the underlying async send as `(...).catch(...)` without
@@ -380,12 +380,8 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 
 	pi.registerCommand("worktree", {
 		description: "Create, resume, and clean up git worktree sessions",
-		// NOTE: pi's `getArgumentCompletions` is passed only the prefix — there is
-		// no `ctx`, so we cannot resolve `ctx.cwd` here the way the handler does.
-		// We fall back to `process.cwd()`. After a session switch into a worktree,
-		// the runtime cwd and `process.cwd()` can diverge, so branch completions
-		// may be listed from the original repo rather than the active worktree.
-		// Unavoidable until the completions API exposes the command context.
+		// getArgumentCompletions gets no ctx; process.cwd() may diverge from
+		// the session cwd after a worktree switch.
 		getArgumentCompletions: (prefix) => {
 			return toAutocompleteItems(getWorktreeArgumentCompletions(prefix, listGitBranches(process.cwd())));
 		},

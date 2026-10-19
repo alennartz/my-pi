@@ -10,9 +10,7 @@ import {
 	resolveModelMeta,
 } from "./registration.js";
 
-// =============================================================================
 // groupModels
-// =============================================================================
 
 describe("groupModels", () => {
 	it("puts models with the same api/baseUrlPath/authHeader into one group", () => {
@@ -107,9 +105,7 @@ describe("groupModels", () => {
 	});
 });
 
-// =============================================================================
 // resolveModelMeta
-// =============================================================================
 
 describe("resolveModelMeta", () => {
 	it("returns DEFAULTS copy when catalogProvider is undefined", () => {
@@ -191,9 +187,7 @@ describe("resolveModelMeta", () => {
 	});
 });
 
-// =============================================================================
 // buildProviderConfig
-// =============================================================================
 
 describe("buildProviderConfig", () => {
 	const impl = { id: "test-impl", name: "Test Impl", baseUrl: "https://api.example.com" };
@@ -404,9 +398,7 @@ describe("buildProviderConfig", () => {
 	});
 });
 
-// =============================================================================
 // readModelsCache
-// =============================================================================
 
 describe("readModelsCache", () => {
 	it("returns null for a nonexistent path", () => {
@@ -449,9 +441,7 @@ describe("readModelsCache", () => {
 	});
 });
 
-// =============================================================================
 // discoveryRefreshDue
-// =============================================================================
 
 describe("discoveryRefreshDue", () => {
 	const now = 1_000_000_000_000;

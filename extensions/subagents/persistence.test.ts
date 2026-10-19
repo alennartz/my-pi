@@ -28,8 +28,7 @@ afterEach(() => {
 	try {
 		fs.rmSync(tmpRoot, { recursive: true, force: true });
 	} catch {
-		// best effort
-	}
+		}
 });
 
 function baseRecord(overrides: Partial<PersistedAgentRecord> = {}): PersistedAgentRecord {

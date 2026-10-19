@@ -1,10 +1,8 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 
-// =============================================================================
 // Seam types — the interface between the core and out-of-repo implementations.
 // Out-of-repo implementations import only via `import type` so there is no
 // runtime path coupling to this repo.
-// =============================================================================
 
 /** Default export of an implementation module. */
 export interface ProviderImplementation {
@@ -138,9 +136,7 @@ export interface ImplContext {
   signal?: AbortSignal;
 }
 
-// =============================================================================
 // Internal core types — used by quota-providers core, not exposed to impls.
-// =============================================================================
 
 export interface LedgerEntry {
   timestamp: number;

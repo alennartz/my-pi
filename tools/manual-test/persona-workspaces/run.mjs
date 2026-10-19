@@ -106,7 +106,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 
-// ─── args / config ───────────────────────────────────────────────────────────
+// args / config
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(`--${n}`);
 const opt = (n, d) => {
@@ -150,7 +150,7 @@ function wanted(id) {
 	return ONLY.length === 0 || ONLY.includes(id);
 }
 
-// ─── process plumbing ────────────────────────────────────────────────────────
+// process plumbing
 function cleanEnv(extra) {
 	const env = { ...process.env, ...extra };
 	delete env.PI_PARENT_LINK;
@@ -265,7 +265,7 @@ function rpcSession({ cwd, agentDir, extraArgs = [], probeOut }) {
 	return s;
 }
 
-// ─── probe / session / persistence oracles ───────────────────────────────────
+// probe / session / persistence oracles
 function readNdjson(file) {
 	try {
 		return fs
@@ -341,7 +341,7 @@ function agentRecords(logFile) {
 	return all;
 }
 
-// ─── temp agent dir scaffolding ──────────────────────────────────────────────
+// temp agent dir scaffolding
 const PROBE_EXT = `import * as fs from "node:fs";
 export default function(pi) {
   // Manual-test hook: pi's builtin /reload is dispatched by the TUI input
@@ -469,7 +469,7 @@ function makeFxFixture(root) {
 
 const FULL_TOOL_V1 = "read, bash, subagent, fork, teardown, resurrect";
 
-// ─── checks ──────────────────────────────────────────────────────────────────
+// checks
 
 async function R1(root, agentDir, probeOut) {
 	log("── R1: silent-takeover ──");
@@ -1084,7 +1084,7 @@ async function R7(root, agentDir, probeOut) {
 	}
 }
 
-// ─── main ────────────────────────────────────────────────────────────────────
+// main
 async function main() {
 	const root = opt("workdir", null) || fs.mkdtempSync(path.join(os.tmpdir(), "pw-"));
 	fs.mkdirSync(root, { recursive: true });

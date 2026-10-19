@@ -50,7 +50,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-// ─── arg parsing ─────────────────────────────────────────────────────────────
+// arg parsing
 const argv = process.argv.slice(2);
 function flag(name) {
 	const i = argv.indexOf(`--${name}`);
@@ -116,7 +116,7 @@ function piArgs(extra) {
 	return [...base, ...extra];
 }
 
-// ─── persistence helpers (read-only, mirror persistence.ts path derivation) ──
+// persistence helpers (read-only, mirror persistence.ts path derivation)
 function persistencePaths(parentSessionFile) {
 	const dir = path.dirname(parentSessionFile);
 	const base = path.basename(parentSessionFile, path.extname(parentSessionFile));
@@ -180,7 +180,7 @@ function reparse(sessionFile) {
 	return snap;
 }
 
-// ─── phase 1: spawn a worker and let it idle ─────────────────────────────────
+// phase 1: spawn a worker and let it idle
 function spawnPhase(sessionDir, workCwd) {
 	return new Promise((resolve, reject) => {
 		const proc = spawn("pi", piArgs(["--session-dir", sessionDir]), {
@@ -242,7 +242,7 @@ function spawnPhase(sessionDir, workCwd) {
 	});
 }
 
-// ─── phase 2: resume and read restored status via check_status ───────────────
+// phase 2: resume and read restored status via check_status
 function resumePhase(parentSessionFile, sessionDir, workCwd) {
 	return new Promise((resolve, reject) => {
 		const proc = spawn("pi", piArgs(["--session", parentSessionFile, "--session-dir", sessionDir, "--tools", "check_status"]), {
@@ -317,7 +317,7 @@ function resumePhase(parentSessionFile, sessionDir, workCwd) {
 	});
 }
 
-// ─── parse the check_status detail block ─────────────────────────────────────
+// parse the check_status detail block
 function parseDetail(text) {
 	const get = (re) => {
 		const m = text.match(re);
@@ -337,7 +337,7 @@ function parseDetail(text) {
 	};
 }
 
-// ─── main ────────────────────────────────────────────────────────────────────
+// main
 async function main() {
 	let cleanup = false;
 	if (!WORKDIR) {

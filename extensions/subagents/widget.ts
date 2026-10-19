@@ -1,10 +1,7 @@
 /**
- * Subagent dashboard widget — rich box-card layout with aggregate footer.
- *
- * Replaces the old one-line-per-agent renderer with a WrapPanel of
- * bordered cards showing per-agent state, activity, channels, context
- * fill, and token usage. Implements the TUI Component interface for
- * use with the setWidget factory overload.
+ * Subagent dashboard widget — a WrapPanel of bordered cards showing per-agent
+ * state, activity, channels, context fill, and token usage. Implements the TUI
+ * Component interface for use with the setWidget factory overload.
  */
 
 import type { Component } from "@earendil-works/pi-tui";
@@ -40,14 +37,14 @@ function isDimState(state: AgentState): boolean {
 
 const SUBGROUP_ICON = "\uDB81\uDEA9"; // nf-md-file_tree
 
-// ─── Percentage formatting ──────────────────────────────────────────
+// Percentage formatting
 
 function fmtPct(input: number, window: number): string {
 	if (window <= 0) return "0%";
 	return `${Math.round((input / window) * 100)}%`;
 }
 
-// ─── Qualified id fitting ───────────────────────────────────────────
+// Qualified id fitting
 
 /**
  * Fit a possibly path-qualified agent id (`worker/scout/probe`) into `max`
@@ -65,7 +62,7 @@ export function fitAgentId(id: string, max: number): string {
 	return truncateToWidth(segments[segments.length - 1] ?? id, max);
 }
 
-// ─── Dashboard component ────────────────────────────────────────────
+// Dashboard component
 
 export class SubagentDashboard implements Component {
 	private theme: Theme;
@@ -103,7 +100,7 @@ export class SubagentDashboard implements Component {
 		this.cachedLines = undefined;
 	}
 
-	// ─── Internal rendering ─────────────────────────────────────────
+// Internal rendering
 
 	private doRender(width: number): string[] {
 		if (this.statuses.length === 0) return [];
@@ -329,14 +326,13 @@ export class SubagentDashboard implements Component {
 		return truncateToWidth(line, width);
 	}
 
-	// ─── Helpers ────────────────────────────────────────────────────
+// Helpers
 
 	/** Format channel list with waiting-for highlighting. */
 	private formatChannels(s: AgentStatus, dimmed: boolean): string {
 		const t = this.theme;
 		const waitSet = new Set(s.waitingFor);
 
-		// Sort: waited-on first, then rest
 		const waited = s.channels.filter((c) => waitSet.has(c));
 		const rest = s.channels.filter((c) => !waitSet.has(c));
 		const ordered = [...waited, ...rest];

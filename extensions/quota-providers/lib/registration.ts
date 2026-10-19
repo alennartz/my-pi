@@ -4,9 +4,7 @@ import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 import type { ModelEntry, ModelMetadataOverrides } from "./types.js";
 
-// =============================================================================
 // Model metadata
-// =============================================================================
 
 /** Per-million-token cost rates. */
 type ModelCost = Model<Api>["cost"];
@@ -99,9 +97,7 @@ export function resolveModelMeta(
 	return mergeModelMeta(resolved, overrides);
 }
 
-// =============================================================================
 // Provider grouping
-// =============================================================================
 
 export interface ProviderGroup {
 	providerId: string;
@@ -145,9 +141,7 @@ export function groupModels(
 	return [...byKey.values()];
 }
 
-// =============================================================================
 // Provider config
-// =============================================================================
 
 /**
  * Build the exact object for `pi.registerProvider(group.providerId, …)`.
@@ -201,9 +195,7 @@ export function buildProviderConfig(
 	};
 }
 
-// =============================================================================
 // Discovery cache
-// =============================================================================
 
 interface ModelsCache {
 	writtenAt: number;
@@ -225,9 +217,7 @@ export function readModelsCache(path: string): { writtenAt: number; models: Mode
 	return null;
 }
 
-// =============================================================================
 // Refresh policy
-// =============================================================================
 
 /** Cold-start guard: skip background refresh if cache is younger than this. */
 export const REFRESH_FLOOR_MS = 30_000;

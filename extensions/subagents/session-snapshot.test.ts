@@ -17,8 +17,7 @@ afterEach(() => {
 	try {
 		fs.rmSync(tmpRoot, { recursive: true, force: true });
 	} catch {
-		// best effort
-	}
+		}
 });
 
 /** Write JSONL lines to a fresh session file and return its path. */
