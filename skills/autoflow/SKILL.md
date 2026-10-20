@@ -8,30 +8,21 @@ disable-model-invocation: true
 
 ## Invocation Contract (Strict)
 
-When this skill is invoked (via `/autoflow ...`) or explicitly provided by the user as instructions, it is **mandatory**.
-
-- Do **not** switch to direct implementation mode.
-- Do **not** make ad-hoc code edits outside the defined phase flow.
-- Start at the Brainstorm phase and proceed through this skill's workflow unless the user explicitly asks to bypass/exit autoflow.
-- If there is any ambiguity about whether autoflow applies, ask the user before doing any non-autoflow work.
-
-Before taking substantive actions, acknowledge you are running autoflow and state the current phase.
+- Unless otherwise specified start at the Brainstorm phase and proceed through this skill's workflow.
 
 ## Overview
 
 Drive the full development workflow pipeline — brainstorm through cleanup — with minimal human intervention. The first two phases (brainstorm, architect) are interactive: you run them directly in conversation with the user. All subsequent phases run autonomously via subagents, with the primary agent orchestrating transitions, validating artifacts, and escalating only when necessary.
 
-Invoke with `/autoflow <description of what you want to build or change>`.
-
 ## Locating Sibling Phase Skills
 
-Every phase skill this workflow drives (`brainstorming`, `architecting`, `test-writing`, `test-review`, `impl-planning`, `implementing`, `code-review`, `handle-review`, `manual-testing`, `cleanup`) is flagged `disable-model-invocation: true`. That hides each one from every agent's available-skills list — including yours and any subagent's — so none of them gets picked up outside this pipeline. It also means you cannot look one up by name; you must resolve its file yourself:
+Every phase skill this workflow drives (`brainstorming`, `architecting`, `test-writing`, `test-review`, `impl-planning`, `implementing`, `code-review`, `handle-review`, `manual-testing`, `cleanup`) is flagged `disable-model-invocation: true`. In order to invoke them resolve them as follows:
 
 1. Take the absolute path this autoflow skill was loaded from — the `location` on this skill's own `<skill>` wrapper (or, if you read this file directly, the path you read it from).
 2. That path's directory is this skill's own directory: `.../skills/autoflow`.
 3. A sibling phase skill's file sits one level up, then into its own directory: `.../skills/<skill-name>/SKILL.md`.
 
-Use this for every reference below. When you read a sibling skill yourself (Interactive Phases), just `read` the resolved absolute path. When you hand a phase to a subagent (Autonomous Phase Orchestration), resolve the absolute path yourself first and put that literal absolute path in the task string — a fresh subagent has no anchor of its own, so a bare skill name or repo-relative fragment won't resolve for it.
+Use this for every reference below. When you read a sibling skill yourself (Interactive Phases), just `read` the resolved absolute path. When you hand a phase to a subagent (Autonomous Phase Orchestration), resolve the absolute path yourself first and put that literal absolute path in the task string.
 
 ## Interactive Phases
 
@@ -51,7 +42,7 @@ Use this for every reference below. When you read a sibling skill yourself (Inte
 
 After architect completes, evaluate the scope of the change to decide which phases to run. The choice is *where to enter the pipeline* and *which optional phases to include* — the bullets below are the common cases, not the whole space of valid options.
 
-- **Full pipeline** — for large or high-stakes changes: broad module impact, tricky behavioral contracts, security-sensitive surfaces. Proceed to test-write, then test-review.
+- **Full pipeline** — for large or high-stakes changes: broad module impact, tricky behavioral contracts, security-sensitive surfaces. Proceed to test-write, then test-review etc.
 - **Skip test-review** — Run test-write, then proceed directly to impl-plan. Test Review is mostly valuable for topics where a missed behavioral gap is expensive or where the intended behavior might be misunderstood by smaller models.
 - **Skip to impl-plan** — for small, straightforward changes where upfront tests add little value. Bypasses test-write and test-review.
 - **Skip to implement** — for very small changes (a few lines, a single file, a config tweak). Bypasses test-write, test-review, and impl-plan.
@@ -94,32 +85,22 @@ After the interactive phases and any skip scaffolding, execute the remaining pha
 test-write → test-review → impl-plan → implement → review → handle-review → manual-test → cleanup
 ```
 
-Start from whichever phase the skip decision targets (or test-write for the full pipeline).
+Start from whichever phase the skip decision targets.
 
 ### Spawning Phase Subagents
 
-For each phase, spawn a single subagent using the `subagent` tool. Before building the task string, resolve the target skill's absolute path per Locating Sibling Phase Skills — the subagent's own available-skills list won't contain it, and it has no anchor to resolve a relative fragment against, so the path in the task string must already be absolute. The task string must contain:
+For each phase, spawn a single subagent using the `subagent` tool. Set the subagent's `model` field to the phase's tier from the mapping table below. Tiers (`cheap`, `medium`, `smart`, `frontier`) resolve to concrete models via the machine's tier config. Before building the task string, resolve the target skill's absolute path per Locating Sibling Phase Skills. The task string must contain:
 
-1. **Skill reference** — the resolved absolute path to the skill file to read and follow.
-2. **Topic** — the filename slug.
-3. **Working directory** — the repo root.
-4. **Clarification invariant** — the following exact text:
-
-Additionally, set the subagent's `model` field to the phase's tier from the mapping table below. Tiers (`cheap`, `medium`, `smart`, `frontier`) resolve to concrete models via the machine's tier config. You may append a thinking-effort suffix to any model with `:<level>` (levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`), but tier names don't take suffixes — use a concrete model id if you need to specify thinking effort.
-
-> If you need clarification or encounter ambiguity, use `send(to='parent', expectResponse=true)` to ask. Do not stop or complete without finishing the phase.
+1. **resolved-absolute-path** — the resolved absolute path to the skill file to read and follow.
+2. **topic** — the filename slug.
 
 **Task string template:**
 
 ```
 Read and follow the skill at `<resolved-absolute-path>` for topic `<topic>`.
 
-Working directory: <cwd>
-
 If you need clarification or encounter ambiguity, use `send(to='parent', expectResponse=true)` to ask. Do not stop or complete without finishing the phase.
 ```
-
-`<resolved-absolute-path>` is the absolute path from step 1 above — never paste the `skills/<skill-name>/SKILL.md` fragment from the mapping table verbatim; it's a suffix to resolve against this skill's own directory, not a path any agent's cwd can reach.
 
 The skill-to-phase mapping:
 
@@ -127,18 +108,13 @@ The skill-to-phase mapping:
 |-------|-----------|------------|
 | test-write | `skills/test-writing/SKILL.md` | `medium` |
 | test-review | `skills/test-review/SKILL.md` | `smart` |
-| impl-plan | `skills/impl-planning/SKILL.md` | `frontier` |
+| impl-plan | `skills/impl-planning/SKILL.md` | `smart` |
 | implement | `skills/implementing/SKILL.md` | `medium` |
 | review | `skills/code-review/SKILL.md` | `medium` |
 | handle-review | `skills/handle-review/SKILL.md` | `medium` |
 | manual-test | `skills/manual-testing/SKILL.md` | `medium` |
 | cleanup | `skills/cleanup/SKILL.md` | `medium` |
 
-Tier rationale: impl-plan gets `frontier` because plan quality multiplies through every downstream phase. Review runs on `medium` because it only orchestrates — its correctness pass spawns on `frontier` (see the code-review skill). Phases executing against explicit specs run on `medium`.
-
-**Phase-specific task-string addenda.** Weaker tiers need the phase boundary spelled out, not inferred. For the **test-write** phase, append this to the task string:
-
-> Do NOT write any implementation in this phase — no function bodies that compute a result, no parsing/splitting/branching logic, even "obvious" one-liners. Interface bodies are stubs that throw "not implemented." Before committing, run the Red Gate (skill step 2.5): every new test MUST fail. If any new test passes, you wrote implementation — remove it until the test is red. A green new test in this phase is a failed phase.
 
 ### Waiting and Handling Interrupts
 
@@ -150,7 +126,7 @@ If an `<agent_message>` interrupt arrives with `response_expected="true"`:
 3. If you can't answer it — the question requires user judgment — relay it to the user, get their answer, then call `respond`.
 4. After responding, call `await_agents` again to resume waiting.
 
-### Transition Validation
+### MANDATORY: Transition Validation
 
 After each subagent goes idle, validate the expected artifact before proceeding.
 
@@ -195,11 +171,8 @@ After handle-review completes and passes validation, read `docs/reviews/<topic>.
      verify each of your prior findings is resolved, and check the fix diff for
      newly introduced issues. Write a fresh docs/reviews/<topic>.md (the old one
      was deleted) and commit. Do not re-run the full-baseline review or the
-     two-pass fan-out. Prefer resurrecting your pass subagents for the
-     verification — their accumulated file context is mostly cache-priced
-     (~10% of fresh tokens), far cheaper than re-reading files at full price.
-     Only do the re-check directly when the fix diff is trivial enough that a
-     couple of fresh reads settle it.
+     two-pass fan-out. Resurrect your pass subagents for the
+     verification, do not do them yourself.
      ```
 
   4. After that completes and passes validation, **resurrect the original handle-review agent** the same way, with a task pointing at the fresh review file.

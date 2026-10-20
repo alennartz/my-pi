@@ -6,9 +6,7 @@ disable-model-invocation: true
 
 # Test Writing
 
-> **This skill does not pause at the Explore→Act boundary.** The work here is plan execution — proceed through the full process without stopping for confirmation.
-
-> **⛔ DO NOT IMPLEMENT. This phase writes interfaces and failing tests — nothing else.**
+> **⛔ DO NOT IMPLEMENT LOGIC. This phase writes interfaces, their exposed data types and failing tests — nothing else.**
 > You are forbidden from writing any working logic: no function bodies that compute a
 > result, no parsing, splitting, branching business rules, or algorithms — even if the
 > logic is "obvious" or "one line." Interface bodies are stubs that `throw new Error("not
