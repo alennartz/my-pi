@@ -48,6 +48,28 @@ import { createStopSequenceManager, type StopSequenceManager } from "./stop-sequ
 import { NotificationQueue } from "./notification-queue.js";
 import { statusesToCards } from "./panel-cards.js";
 import { formatOverrideNote, formatSpawnToolResult } from "./tool-result.js";
+import { truncateForModel } from "../../lib/truncate.ts";
+import {
+	completionDataFor,
+	formatUsageLine,
+	isZeroUsage,
+	lifecycleStatus,
+	statusData,
+	type InterruptResultData,
+	type ModelsResultData,
+	type ResurrectResultData,
+	type SendResultData,
+	type StatusResultData,
+	type TeardownAgentData,
+	type TeardownResultData,
+	InterruptResultSchema,
+	ModelsResultSchema,
+	ResurrectResultSchema,
+	SendResultSchema,
+	SpawnResultSchema,
+	StatusResultSchema,
+	TeardownResultSchema,
+} from "./tool-results.js";
 import { loadWorkspacePersona } from "../persona-workspaces/declaration.ts";
 import {
 	TIERS_UNCONFIGURED_MESSAGE,
@@ -105,7 +127,7 @@ type SessionPhase =
 	| { kind: "shutting-down" };
 
 interface WaitState {
-	resolve: (result: string) => void;
+	resolve: (result: { text: string; agents: AgentCompleteData[] }) => void;
 	satisfied: () => boolean;
 	abortCleanup: (() => void) | null;
 }
@@ -396,7 +418,7 @@ class SessionTurnCoordinator {
 		this.waitState = null;
 		state.abortCleanup?.();
 		this.queue.setWaiting(false);
-		state.resolve(this.queue.drainAll());
+		state.resolve(this.queue.drainDetailed());
 	}
 
 	resolveSatisfiedWait(): void {
@@ -407,14 +429,17 @@ class SessionTurnCoordinator {
 		ids: string[],
 		manager: SubagentManager,
 		signal?: AbortSignal | null,
-	): Promise<string> {
+	): Promise<{ text: string; agents: AgentCompleteData[] }> {
 		const isSatisfied = () => ids.every((id) => {
 			const status = manager.getAgentStatus(id);
 			return !status || isSettledState(status.state);
 		});
 		if (isSatisfied()) {
-			const result = this.queue.drainAll();
-			return result || "All specified agents have already completed. No pending notifications.";
+			const drained = this.queue.drainDetailed();
+			return this.truncatedWaitResult(
+				drained.text || "All specified agents have already completed. No pending notifications.",
+				drained.agents.length > 0 ? drained.agents : completionDataFor(ids, manager),
+			);
 		}
 		const blocked = manager.getBlockedSenders().filter((pending) => ids.includes(pending.from));
 		if (blocked.length > 0) {
@@ -426,12 +451,12 @@ class SessionTurnCoordinator {
 				`so ${blocked.length === 1 ? "it" : "they"} cannot settle until you answer. ` +
 				"Call respond for each pending correlation_id (the question arrived as an <agent_message>), " +
 				"then call await_agents again if you still need to wait.";
-			return [this.queue.drainAll(), notice].filter(Boolean).join("\n");
+			return { text: [this.queue.drainAll(), notice].filter(Boolean).join("\n"), agents: [] };
 		}
 		if (this.waitState) throw new Error("Another await_agents call is already active.");
 		this.queue.setWaiting(true);
 		try {
-			const result = await new Promise<string>((resolve, reject) => {
+			const result = await new Promise<{ text: string; agents: AgentCompleteData[] }>((resolve, reject) => {
 				const state: WaitState = { resolve, satisfied: isSatisfied, abortCleanup: null };
 				this.waitState = state;
 				if (!signal) return;
@@ -447,7 +472,10 @@ class SessionTurnCoordinator {
 				signal.addEventListener("abort", onAbort, { once: true });
 				state.abortCleanup = () => signal.removeEventListener("abort", onAbort);
 			});
-			return result || "All specified agents have completed. No pending notifications.";
+			return this.truncatedWaitResult(
+				result.text || "All specified agents have completed. No pending notifications.",
+				result.agents.length > 0 ? result.agents : completionDataFor(ids, manager),
+			);
 		} catch (error: any) {
 			if (error?.message === "Aborted") throw new Error("Wait cancelled.");
 			throw error;
@@ -464,14 +492,19 @@ class SessionTurnCoordinator {
 			error: status.state === "errored" || status.state === "dead"
 				? (status.lastError || "Agent run ended with an error")
 				: undefined,
+			sessionId: manager.getSessionId(agentId),
 		};
 		let xml = serializeAgentComplete(data);
 		if (allDone) {
 			const total = manager.getAgentStatuses().length;
 			xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have settled. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
 		}
-		this.queue.queue(xml, "local");
+		this.queue.queue(xml, "local", data);
 		this.resolveSatisfiedWait();
+	}
+
+	private async truncatedWaitResult(text: string, agents: AgentCompleteData[]): Promise<{ text: string; agents: AgentCompleteData[] }> {
+		return { text: (await truncateForModel(text)).text, agents };
 	}
 }
 
@@ -1142,6 +1175,7 @@ class SubagentSessionOwner {
 			name: "list_models",
 			label: "List Models",
 			annotations: { readOnlyHint: true },
+			outputSchema: ModelsResultSchema,
 			description: "List all available models with context window and pricing. Complements the model-tier table for cases where a concrete model id is explicitly required.",
 			promptSnippet: "Call `list_models` to see the full model catalog when a concrete model id (rather than a tier) is explicitly required.",
 			parameters: Type.Object({}),
@@ -1155,6 +1189,7 @@ class SubagentSessionOwner {
 		this.pi.registerTool({
 			name: "subagent",
 			label: "Subagents",
+			outputSchema: SpawnResultSchema,
 			description: "Spawn subagents to delegate work to a separate context window. Children inherit the current model by default; an explicit model or cwd is optional. Supports inter-agent communication.",
 			promptSnippet: "Delegate work to separate context windows; non-blocking by default, results arrive later as notifications; pass await=true to block.",
 			promptGuidelines: [
@@ -1176,6 +1211,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "fork",
 			label: "Fork",
+			outputSchema: SpawnResultSchema,
 			description: "Clone yourself into a sub-agent with your full conversation history. Useful for existing context dependent side quests where data explored is much larger that required retained output.",
 			promptSnippet: "Clone yourself into a sub-agent with your full conversation history; like subagent but you keep your context, model, and cwd.",
 			parameters: Type.Object({
@@ -1190,6 +1226,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "send",
 			label: "Send Message",
+			outputSchema: SendResultSchema,
 			description: "Send a mid-task clarification or coordination message to another active agent; do not use for final task reporting.",
 			promptSnippet: "Send a mid-task message to another active agent; fire-and-forget by default, use expectResponse=true to block for a response.",
 			promptGuidelines: [
@@ -1220,6 +1257,7 @@ class SubagentSessionOwner {
 			name: "check_status",
 			label: "Check Status",
 			annotations: { readOnlyHint: true },
+			outputSchema: StatusResultSchema,
 			description: "Query agent status. Omit agent for summary of all active agents.",
 			promptSnippet: "Query agent status; use only for a specific reason: suspected stall, progress question, or mid-run usage check.",
 			parameters: Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to query. Omit for summary of all active agents." })) }),
@@ -1229,6 +1267,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "teardown",
 			label: "Teardown",
+			outputSchema: TeardownResultSchema,
 			description: "Remove an agent or tear down all agents. Returns a completion report.",
 			promptSnippet: "Remove agents no longer needed; idle or errored agents stay usable, so send new messages to restart or continue work.",
 			parameters: Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to remove. Omit to tear down all agents." })) }),
@@ -1238,6 +1277,7 @@ class SubagentSessionOwner {
 		this.pi.registerTool({
 			name: "resurrect",
 			label: "Resurrect",
+			outputSchema: ResurrectResultSchema,
 			description: "Bring a previously-torn-down subagent back online from its session file by using it's session_id.",
 			promptSnippet: "Bring torn-down agents back online from their session_id; persona, model, and tools are inherited and fixed; only id, channels, and task are re-declared.",
 			promptGuidelines: [
@@ -1251,6 +1291,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "await_agents",
 			label: "Await Agents",
+			outputSchema: SpawnResultSchema,
 			description: "Block until an agent completes or sends you a message. Returns final agent output or sent message.",
 			promptSnippet: "Block until specified agents complete or send you a message; omit the list to wait on all active agents.",
 			promptGuidelines: [
@@ -1263,6 +1304,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "interrupt",
 			label: "Interrupt",
+			outputSchema: InterruptResultSchema,
 			description: "Halt a subagent immediately without tearing it down. Interrupts any in-flight tool call — useful when one is hung or stuck.",
 			promptSnippet: "Halt an agent immediately without tearing it down; prefer send unless the agent must stop now.",
 			parameters: Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to interrupt. Omit to interrupt all active agents." })) }),
@@ -1270,23 +1312,26 @@ class SubagentSessionOwner {
 		});
 	}
 
-	private listModels(ctx: ExtensionContext): any {
+	private listModels(ctx: ExtensionContext): { content: { type: "text"; text: string }[]; details: ModelsResultData; structuredContent: ModelsResultData } {
 		this.requireActiveSession();
 		const models: any[] = ctx.modelRegistry.getAvailable();
-		const fmtCost = (value: unknown) => typeof value === "number" ? value.toFixed(2) : "-";
-		const rows = models.map((model: any) => ({
-			ref: `${model?.provider}/${model?.id}`,
-			contextWindow: typeof model?.contextWindow === "number" ? String(model.contextWindow) : "-",
-			input: fmtCost(model?.cost?.input),
-			output: fmtCost(model?.cost?.output),
-			cacheRead: fmtCost(model?.cost?.cacheRead),
-		})).sort((a, b) => a.ref.localeCompare(b.ref));
+		const data: ModelsResultData = {
+			models: models.map((model: any) => ({
+				ref: `${model?.provider}/${model?.id}`,
+				contextWindow: typeof model?.contextWindow === "number" ? model.contextWindow : null,
+				inputCostPerMtok: typeof model?.cost?.input === "number" ? model.cost.input : null,
+				outputCostPerMtok: typeof model?.cost?.output === "number" ? model.cost.output : null,
+				cacheReadCostPerMtok: typeof model?.cost?.cacheRead === "number" ? model.cost.cacheRead : null,
+			})).sort((a, b) => a.ref.localeCompare(b.ref)),
+		};
+		const fmtCost = (value: number | null) => value === null ? "-" : value.toFixed(2);
 		const lines = [
 			"| provider/id | context window | input $/Mtok | output $/Mtok | cacheRead $/Mtok |",
 			"| --- | --- | --- | --- | --- |",
-			...rows.map((row) => `| ${row.ref} | ${row.contextWindow} | ${row.input} | ${row.output} | ${row.cacheRead} |`),
+			...data.models.map((row) =>
+				`| ${row.ref} | ${row.contextWindow ?? "-"} | ${fmtCost(row.inputCostPerMtok)} | ${fmtCost(row.outputCostPerMtok)} | ${fmtCost(row.cacheReadCostPerMtok)} |`),
 		];
-		return { content: [{ type: "text", text: lines.join("\n") }] };
+		return { content: [{ type: "text", text: lines.join("\n") }], details: data, structuredContent: data };
 	}
 
 	private async spawnAgents(params: any, signal: AbortSignal | undefined, ctx: ExtensionContext): Promise<any> {
@@ -1389,10 +1434,15 @@ class SubagentSessionOwner {
 		const overrideNote = overrideNotes.length > 0 ? `\n\n${overrideNotes.join("\n")}` : "";
 		if (params.await) {
 			const ids = params.agents.map((agent: any) => agent.id);
-			const waitResult = await session.turns.awaitAgentCompletion(ids, manager, signal);
-			return { content: [{ type: "text", text: formatSpawnToolResult(waitResult) + overrideNote }] };
+			const wait = await session.turns.awaitAgentCompletion(ids, manager, signal);
+			return this.structuredTextResult(formatSpawnToolResult(wait.text) + overrideNote, { agents: wait.agents });
 		}
-		return { content: [{ type: "text", text: ack + overrideNote }] };
+		return this.structuredTextResult(ack + overrideNote, {
+			agents: params.agents.map((agent: any) => ({
+				id: agent.id,
+				status: manager.getAgentStatus(agent.id)?.state ?? "running",
+			})),
+		});
 	}
 
 	private async forkAgent(params: any, signal: AbortSignal | undefined, ctx: ExtensionContext): Promise<any> {
@@ -1456,10 +1506,12 @@ class SubagentSessionOwner {
 		session.presentation.refresh(manager);
 		session.turns.addStopSequenceOnce("<agent_idle");
 		if (params.await) {
-			const result = await session.turns.awaitAgentCompletion([params.id], manager, signal);
-			return { content: [{ type: "text", text: formatSpawnToolResult(result) }] };
+			const wait = await session.turns.awaitAgentCompletion([params.id], manager, signal);
+			return this.structuredTextResult(formatSpawnToolResult(wait.text), { agents: wait.agents });
 		}
-		return { content: [{ type: "text", text: ack }] };
+		return this.structuredTextResult(ack, {
+			agents: [{ id: params.id, status: manager.getAgentStatus(params.id)?.state ?? "running" }],
+		});
 	}
 
 	private async sendMessage(params: any, signal: AbortSignal | undefined): Promise<any> {
@@ -1484,7 +1536,8 @@ class SubagentSessionOwner {
 			expectResponse: params.expectResponse,
 		});
 		if (!params.expectResponse) {
-			return { content: [{ type: "text", text: `Message sent to ${params.to}.` }] };
+			const data: SendResultData = { response: null, deferred: false };
+			return { content: [{ type: "text", text: `Message sent to ${params.to}.` }], details: data, structuredContent: data };
 		}
 		const correlationId = receipt.correlationId;
 		const responsePromise = receipt.response;
@@ -1540,36 +1593,50 @@ class SubagentSessionOwner {
 			);
 		});
 		if (outcome.kind === "deferred") {
+			const data: SendResultData = { response: null, deferred: true, correlationId };
 			return { content: [{ type: "text", text:
 				`Your blocking wait on "${params.to}" was interrupted, not cancelled. "${params.to}" is still working; ` +
 				`its reply will arrive later as an <agent_message> notification (correlation_id="${correlationId}"). ` +
 				"Handle whatever the user needs now — you'll be prompted again when the response lands.",
-			}] };
+			}], details: data, structuredContent: data };
 		}
-		if (outcome.response.type === "response") return { content: [{ type: "text", text: outcome.response.message }] };
+		if (outcome.response.type === "response") {
+			const bounded = await truncateForModel(outcome.response.message);
+			const data: SendResultData = { response: outcome.response.message, deferred: false, correlationId };
+			return { content: [{ type: "text", text: bounded.text }], details: data, structuredContent: data };
+		}
 		throw new Error(outcome.response.error);
 	}
 
 	private async respondToMessage(params: any): Promise<any> {
 		const session = this.requireActiveSession();
 		await session.incomingMessages.respond(params.correlationId, params.message);
-		return { content: [{ type: "text", text: "Response sent." }] };
+		return { content: [{ type: "text", text: "Response sent." }], details: undefined };
 	}
 
-	private checkStatus(params: any): any {
+	private checkStatus(params: any): { content: { type: "text"; text: string }[]; details: StatusResultData; structuredContent: StatusResultData } {
 		const { manager } = this.requireActiveSession();
 		if (!manager.hasAgents()) throw new Error("No agents running.");
+		const toData = (statuses: AgentStatus[]): StatusResultData => ({ agents: statuses.map(statusData) });
 		if (params.agent) {
 			const status = manager.getAgentStatus(params.agent);
 			if (!status) throw new Error(`Unknown agent: "${params.agent}"`);
-			return { content: [{ type: "text", text: formatAgentStatusDetail(status) }] };
+			const data = toData([status]);
+			return { content: [{ type: "text", text: formatAgentStatusDetail(status) }], details: data, structuredContent: data };
 		}
-		return { content: [{ type: "text", text: manager.getAgentStatuses().map(formatAgentStatusSummary).join("\n") }] };
+		const statuses = manager.getAgentStatuses();
+		const data = toData(statuses);
+		return { content: [{ type: "text", text: statuses.map(formatAgentStatusSummary).join("\n") }], details: data, structuredContent: data };
 	}
 
 	private async teardownAgents(params: any, ctx: ExtensionContext): Promise<any> {
 		const session = this.requireActiveSession();
 		if (!session.manager.hasAgents()) throw new Error("No agents to teardown.");
+		const targetIds: string[] = params.agent ? [params.agent] : session.manager.getAgentStatuses().map((status) => status.id);
+		const reports = targetIds.flatMap((id) => {
+			const data = this.teardownAgentData(session.manager, id);
+			return data ? [data] : [];
+		});
 		const { report, empty } = await session.manager.teardown(params.agent || undefined);
 		if (empty) {
 			session.turns.drainLocal();
@@ -1578,7 +1645,24 @@ class SubagentSessionOwner {
 			session.presentation.refresh(session.manager);
 		}
 		const label = params.agent ? `Agent "${params.agent}" removed.` : "All agents terminated.";
-		return { content: [{ type: "text", text: `${label}\n\n${report}` }] };
+		const single = reports.length === 1 ? reports[0] : undefined;
+		const usageLine = single ? `\n\n${formatUsageLine(single.usage, single.usageBaseline)}` : "";
+		const bounded = await truncateForModel(`${label}\n\n${report}${usageLine}`);
+		const data: TeardownResultData = { agents: reports };
+		return { content: [{ type: "text", text: bounded.text }], details: data, structuredContent: data };
+	}
+
+	private teardownAgentData(manager: SubagentManager, id: string): TeardownAgentData | undefined {
+		const status = manager.getAgentStatus(id);
+		const delta = manager.getUsageDelta(id);
+		if (!status && !delta) return undefined;
+		return {
+			id,
+			status: lifecycleStatus(status?.state ?? "idle"),
+			sessionId: manager.getSessionId(id),
+			usage: delta?.delta ?? status?.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
+			usageBaseline: delta && !isZeroUsage(delta.baseline) ? delta.baseline : undefined,
+		};
 	}
 
 	private async resurrectAgents(params: any, ctx: ExtensionContext): Promise<any> {
@@ -1638,7 +1722,10 @@ class SubagentSessionOwner {
 		const ack = await manager.start(specs, discovery.agents);
 		session.presentation.refresh(manager);
 		session.turns.addStopSequenceOnce("<agent_idle");
-		return { content: [{ type: "text", text: ack }] };
+		const data: ResurrectResultData = {
+			agents: params.agents.map((agent: any) => ({ id: agent.id, sessionId: agent.sessionId })),
+		};
+		return { content: [{ type: "text", text: ack }], details: data, structuredContent: data };
 	}
 
 	private async awaitAgents(params: any, signal: AbortSignal | undefined): Promise<any> {
@@ -1651,7 +1738,7 @@ class SubagentSessionOwner {
 		}
 		const ids = requested ?? manager.getAgentStatuses().map((status) => status.id);
 		const result = await session.turns.awaitAgentCompletion(ids, manager, signal);
-		return { content: [{ type: "text", text: result }] };
+		return this.structuredTextResult(result.text, { agents: result.agents });
 	}
 
 	private async interruptAgents(params: any, signal: AbortSignal | undefined): Promise<any> {
@@ -1679,7 +1766,8 @@ class SubagentSessionOwner {
 			"Likely stuck in a tool call that ignores cancellation. Check status before relying on it, and tear it down if it stays busy.",
 		);
 		if (failed.length > 0) lines.push(`Failed: ${failed.join("; ")}`);
-		return { content: [{ type: "text", text: lines.join("\n") || "No agents interrupted." }] };
+		const data: InterruptResultData = { interrupted, pending, failed };
+		return { content: [{ type: "text", text: lines.join("\n") || "No agents interrupted." }], details: data, structuredContent: data };
 	}
 
 	private assertNewAgentIds(ids: string[], manager: SubagentManager): void {
@@ -1689,6 +1777,11 @@ class SubagentSessionOwner {
 		for (const id of ids) {
 			if (existingIds.has(id)) throw new Error(`Agent id "${id}" already exists`);
 		}
+	}
+
+	/** Tool result whose details and structuredContent carry the same payload. */
+	private structuredTextResult<T>(text: string, data: T) {
+		return { content: [{ type: "text" as const, text }], details: data, structuredContent: data };
 	}
 
 	private async restoreChildDescendants(ctx: ExtensionContext, session: ActiveSubagentSession): Promise<void> {

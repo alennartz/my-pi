@@ -152,6 +152,9 @@ async function boundedSettle(
 	}
 }
 
+/** Cumulative token/cost accounting for one agent. */
+export type AgentUsage = AgentStatus["usage"];
+
 export interface AgentStatus {
 	id: string;
 	state: AgentState;
@@ -188,6 +191,8 @@ interface AgentEntry {
 	readonly forkSkillPaths?: string[];
 	readonly port: MessagePort;
 	readonly seenAssistantMessages: WeakSet<object>;
+	/** Usage at entry creation: zero for spawns and resurrects, replayed usage for parent-session restores. Teardown deltas subtract it. */
+	readonly usageBaseline: AgentUsage;
 	completionNotified: boolean;
 	agentStartedSinceLastPrompt: boolean;
 	pendingTerminalError?: string;
@@ -259,6 +264,26 @@ export class SubagentManager {
 			.listChildren(this.opts.ownerPath)
 			.find((candidate) => candidate.localId === agentId);
 		return snapshot ? projectStatus(snapshot) : undefined;
+	}
+
+	/** Child session file id for resurrect, or undefined for an unknown agent. */
+	getSessionId(agentId: string): string | undefined {
+		return this.opts.registry
+			.listChildren(this.opts.ownerPath)
+			.find((candidate) => candidate.localId === agentId)?.sessionId;
+	}
+
+	/** Usage consumed since the entry was created (spawn, resurrect, or parent-session restore), plus the baseline it was measured from. */
+	getUsageDelta(agentId: string): { delta: AgentUsage; baseline: AgentUsage } | undefined {
+		const entry = this.findEntry(agentId);
+		const snapshot = this.opts.registry
+			.listChildren(this.opts.ownerPath)
+			.find((candidate) => candidate.localId === agentId);
+		if (!entry || !snapshot) return undefined;
+		return {
+			delta: subtractUsage(snapshot.operational.usage, entry.usageBaseline),
+			baseline: { ...entry.usageBaseline },
+		};
 	}
 
 	hasAgents(): boolean {
@@ -523,6 +548,7 @@ export class SubagentManager {
 			forkSkillPaths: forkSpec?.skillPaths === undefined ? undefined : [...forkSpec.skillPaths],
 			port,
 			seenAssistantMessages: new WeakSet<object>(),
+			usageBaseline: { ...initialOperational.usage },
 			completionNotified: false,
 			agentStartedSinceLastPrompt: false,
 			completionPending: false,
@@ -1226,6 +1252,17 @@ function projectStatus(snapshot: AgentNodeSnapshot): AgentStatus {
 
 function zeroUsage(): AgentOperationalSnapshot["usage"] {
 	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
+}
+
+function subtractUsage(current: AgentUsage, baseline: AgentUsage): AgentUsage {
+	return {
+		input: current.input - baseline.input,
+		output: current.output - baseline.output,
+		cacheRead: current.cacheRead - baseline.cacheRead,
+		cacheWrite: current.cacheWrite - baseline.cacheWrite,
+		cost: current.cost - baseline.cost,
+		turns: current.turns - baseline.turns,
+	};
 }
 
 function zeroOperational(): AgentOperationalSnapshot {

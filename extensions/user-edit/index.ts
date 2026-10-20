@@ -46,6 +46,7 @@ export default function (pi: ExtensionAPI) {
 			if (result === undefined) {
 				return {
 					content: [{ type: "text" as const, text: `User cancelled editing ${rawPath}` }],
+					details: { path: absolutePath, saved: false },
 				};
 			}
 
@@ -55,8 +56,10 @@ export default function (pi: ExtensionAPI) {
 				await writeFile(absolutePath, result, "utf-8");
 			});
 
+			// No outputSchema: model-only tools never run in codemode, so structuredContent has no audience.
 			return {
 				content: [{ type: "text" as const, text: `User saved ${rawPath}` }],
+				details: { path: absolutePath, saved: true },
 			};
 		},
 	});

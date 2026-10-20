@@ -267,3 +267,53 @@ describe("NotificationQueue — clear", () => {
 		expect(queue.length).toBe(0);
 	});
 });
+
+// structured payloads and truncation
+
+describe("NotificationQueue — structured payloads", () => {
+	it("drainDetailed returns per-agent data alongside the text", () => {
+		const { queue } = createQueue({ steerDelivery: false });
+		queue.setParentBusy(true);
+		const a = { id: "a", status: "idle" as const, output: "done" };
+		queue.queue("<agent_idle id=\"a\"/>", "local", a);
+		queue.queue("<agent_message from=\"b\"/>", "local");
+		const drained = queue.drainDetailed();
+		expect(drained.text).toBe("<agent_idle id=\"a\"/>\n<agent_message from=\"b\"/>");
+		expect(drained.agents).toEqual([a]);
+		expect(queue.length).toBe(0);
+	});
+
+	it("drainAll still returns only text", () => {
+		const { queue } = createQueue({ steerDelivery: false });
+		queue.setParentBusy(true);
+		queue.queue("<agent_idle id=\"a\"/>", "local", { id: "a", status: "idle" as const });
+		expect(queue.drainAll()).toBe("<agent_idle id=\"a\"/>");
+	});
+});
+
+describe("NotificationQueue — flush truncation", () => {
+	const big = "x".repeat(30 * 1024);
+
+	it("middle-truncates oversized deliveries", () => {
+		const { queue, delivered } = createQueue();
+		queue.queue(big, "local");
+		expect(delivered).toHaveLength(1);
+		expect(delivered[0]).toContain("chars truncated…");
+		expect(delivered[0].length).toBeLessThan(big.length);
+	});
+
+	it("middle-truncates deferred deliveries", () => {
+		const { queue, deferred } = createQueue();
+		queue.setParentBusy(true);
+		queue.queue(big, "local");
+		queue.deferAll();
+		expect(deferred).toHaveLength(1);
+		expect(deferred[0]).toContain("chars truncated…");
+	});
+
+	it("leaves small deliveries untouched", () => {
+		const { queue, delivered } = createQueue();
+		queue.queue("<event>a</event>", "local");
+		expect(delivered).toEqual(["<event>a</event>"]);
+	});
+});

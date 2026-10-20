@@ -39,6 +39,7 @@ export default function (pi: ExtensionAPI) {
 			if (result === undefined) {
 				return {
 					content: [{ type: "text" as const, text: "User cancelled the selection." }],
+					details: { cancelled: true },
 				};
 			}
 
@@ -47,8 +48,14 @@ export default function (pi: ExtensionAPI) {
 				parts.push(`Annotation: ${result.annotation}`);
 			}
 
+			// No outputSchema: model-only tools never run in codemode, so structuredContent has no audience.
 			return {
 				content: [{ type: "text" as const, text: parts.join("\n") }],
+				details: {
+					label: result.label,
+					index: result.index,
+					...(result.annotation !== undefined && { annotation: result.annotation }),
+				},
 			};
 		},
 	});

@@ -1,13 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
-const { startMock } = vi.hoisted(() => ({ startMock: vi.fn() }));
+const { startMock, callToolMock } = vi.hoisted(() => ({
+	startMock: vi.fn(),
+	callToolMock: vi.fn(),
+}));
 
 vi.mock("./client.ts", () => ({
 	ToolscriptClient: class {
 		start = startMock;
+		callTool = callToolMock;
 		stop = vi.fn(async () => {});
 		constructor(_cwd: string) {}
 	},
+	wrapResultSchema: (outputSchema?: object) => ({ wrapped: outputSchema ?? null }),
 }));
 
 const { default: toolscript } = await import("./index.ts");
@@ -15,7 +20,7 @@ const { default: toolscript } = await import("./index.ts");
 type Handler = (event: any, ctx: any) => unknown;
 
 interface StartResult {
-	tools: Array<{ name: string; description?: string; inputSchema?: unknown }>;
+	tools: Array<{ name: string; description?: string; inputSchema?: unknown; outputSchema?: object }>;
 	instructions?: string;
 }
 
@@ -129,5 +134,68 @@ describe("toolscript instructions section", () => {
 		const definition = pi.registerTool.mock.calls[0][0] as Record<string, unknown>;
 		expect(definition.promptSnippet).toBe("Search things");
 		expect(definition).not.toHaveProperty("promptGuidelines");
+	});
+});
+
+describe("toolscript tool results", () => {
+	it("declares the wrapped output schema", async () => {
+		const { handlers, pi } = setup();
+		await bootSession(handlers, Promise.resolve(makeStartResult({
+			tools: [{ name: "search", description: "Search things", inputSchema: {}, outputSchema: { type: "object" } }],
+		})));
+
+		const definition = pi.registerTool.mock.calls[0][0] as Record<string, unknown>;
+		expect(definition.outputSchema).toEqual({ wrapped: { type: "object" } });
+	});
+
+	it("joins text blocks, keeps images, and wraps the script result", async () => {
+		const { handlers, pi } = setup();
+		await bootSession(handlers);
+		const definition = pi.registerTool.mock.calls[0][0] as { execute: (id: string, params: unknown) => Promise<Record<string, any>> };
+
+		callToolMock.mockResolvedValue({
+			blocks: [
+				{ type: "text", text: "alpha" },
+				{ type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+				{ type: "text", text: "omega" },
+			],
+			rawContent: [{ type: "text", text: "alpha" }],
+			structuredContent: { hits: 2 },
+			isError: false,
+		});
+		const result = await definition.execute("call-1", {});
+
+		expect(result.content).toEqual([
+			{ type: "text", text: "alpha\nomega" },
+			{ type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+		]);
+		expect(result.structuredContent).toEqual({
+			content: [{ type: "text", text: "alpha" }],
+			structuredContent: { hits: 2 },
+			isError: false,
+		});
+		expect(result.isError).toBeUndefined();
+		expect(result.details).toEqual({ isError: false, truncated: false });
+	});
+
+	it("surfaces an upstream error as a failed result", async () => {
+		const { handlers, pi } = setup();
+		await bootSession(handlers);
+		const definition = pi.registerTool.mock.calls[0][0] as { execute: (id: string, params: unknown) => Promise<Record<string, any>> };
+
+		callToolMock.mockResolvedValue({
+			blocks: [{ type: "text", text: "boom" }],
+			rawContent: [{ type: "text", text: "boom" }],
+			isError: true,
+		});
+		const result = await definition.execute("call-1", {});
+
+		expect(result.isError).toBe(true);
+		expect(result.structuredContent).toEqual({
+			content: [{ type: "text", text: "boom" }],
+			structuredContent: undefined,
+			isError: true,
+		});
+		expect(result.details).toEqual({ isError: true, truncated: false });
 	});
 });

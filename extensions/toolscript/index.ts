@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
-import { ToolscriptClient } from "./client.ts";
+import { truncateForModel } from "../../lib/truncate.ts";
+import { ToolscriptClient, wrapResultSchema, type CallToolBlock } from "./client.ts";
 
 export default function (pi: ExtensionAPI) {
 	let client: ToolscriptClient | null = null;
@@ -49,17 +50,38 @@ export default function (pi: ExtensionAPI) {
 				const mcpTool = result.tools[i];
 				const toolName = "toolscript_" + mcpTool.name;
 
+				// The wrapper makes every result machine-readable for codemode scripts:
+				// the raw MCP content blocks, the upstream structured content, and the
+				// error flag. Refs in an upstream schema are not relocated, so those
+				// tools get `{}` instead.
 				pi.registerTool({
 					name: toolName,
 					label: "Toolscript: " + mcpTool.name,
 					description: mcpTool.description,
 					promptSnippet: mcpTool.description,
 					parameters: mcpTool.inputSchema as TSchema,
+					outputSchema: wrapResultSchema(mcpTool.outputSchema),
 					async execute(_toolCallId, params) {
 						const r = await c.callTool(mcpTool.name, params as Record<string, unknown>);
+						const text = r.blocks
+							.filter((block): block is Extract<CallToolBlock, { type: "text" }> => block.type === "text")
+							.map((block) => block.text)
+							.join("\n");
+						const images = r.blocks.filter((block): block is Extract<CallToolBlock, { type: "image" }> => block.type === "image");
+						const truncation = await truncateForModel(text);
 						return {
-							content: [{ type: "text" as const, text: r.content }],
-							details: { isError: r.isError },
+							content: [{ type: "text" as const, text: truncation.text }, ...images],
+							structuredContent: {
+								content: r.rawContent,
+								structuredContent: r.structuredContent ?? undefined,
+								isError: r.isError,
+							},
+							...(r.isError ? { isError: true as const } : {}),
+							details: {
+								isError: r.isError,
+								truncated: truncation.truncated,
+								...(truncation.fullOutputPath ? { fullOutputPath: truncation.fullOutputPath } : {}),
+							},
 						};
 					},
 				});

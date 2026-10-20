@@ -132,6 +132,7 @@ describe("user_edit — cancel", () => {
 		const result = await tool.execute("1", { path: "file.ts" }, undefined, undefined, ctx);
 
 		expect(text(result)).toBe("User cancelled editing file.ts");
+		expect(result.details).toEqual({ path: "/workspace/file.ts", saved: false });
 		expect(writeFile).not.toHaveBeenCalled();
 	});
 });
@@ -149,6 +150,7 @@ describe("user_edit — save", () => {
 		const result = await tool.execute("1", { path: "file.ts" }, undefined, undefined, ctx);
 
 		expect(text(result)).toBe("User saved file.ts");
+		expect(result.details).toEqual({ path: "/workspace/file.ts", saved: true });
 		expect(writeFile).toHaveBeenCalledWith("/workspace/file.ts", "modified", "utf-8");
 	});
 

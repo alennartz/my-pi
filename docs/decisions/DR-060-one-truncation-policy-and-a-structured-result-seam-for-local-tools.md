@@ -1,0 +1,17 @@
+# DR-060: one truncation policy and a structured result seam for local tools
+
+## Status
+Accepted
+
+## Context
+An audit against pi's tool-calling-seam guidance (docs/extensions.md §Tools, docs/codemode.md, the truncated-tool example) found three classes of deviation across our tools. First, the agent loop applies no safety-net truncation to custom tool results, and the subagent tools returned unbounded text: a child's entire final message rode `<agent_idle>` notifications, drain results, teardown reports, and blocking `send` responses straight into the parent's context. Second, codemode scripts calling our tools received only prose — a script spawning agents and awaiting them had to regex `<agent_idle>` XML out of a string, because none of our tools declared `outputSchema`. Third, the toolscript MCP bridge dropped the machine-readable half of every MCP result: `structuredContent` discarded, `isError` flattened into success, and no truncation where pi's own MCP bridge middle-truncates at 20 KiB and names the full-output temp file.
+
+pi exports `truncateHead`/`truncateTail` and the 50 KiB/2000-line defaults but not `truncateMiddle` or its temp-file saver — the package `exports` map blocks deep imports — so the MCP bridge's exact behavior could not be imported, only mirrored.
+
+## Decision
+Every model-facing surface passes through exactly one truncation point using pi's middle-truncation semantics with pi's defaults, mirrored in `lib/truncate.ts` (same `…N chars truncated…` marker, 20 KiB cap, warning header, `[Full output: <path> (read it with offset/limit)]` notice, temp-file fallback): tool results wrap once at the session-owner boundary, notification flushes use the sync pure form. Tools reachable from codemode declare `outputSchema` and set `structuredContent` (scripts get data instead of text; the model still reads `content`); `model-only` tools declare none since scripts can never call them. Toolscript wraps every result as `{ content, structuredContent, isError }` like pi's MCP bridge and surfaces upstream errors as real errors.
+
+Subagent usage follows the lifecycle: each manager entry records a usage baseline at creation (zero for spawn and resurrect, replayed usage for parent-session restore), `teardown` reports the delta per agent, and a non-zero baseline is labeled so the delta is not mistaken for lifetime usage. Resurrect needs no explicit baseline because its manager-side usage already starts at zero; the baseline exists for the restore path, where replayed usage would otherwise masquerade as new spend.
+
+## Consequences
+Tool result content is bounded everywhere, so a chatty child can no longer blow a fixed hole in the parent's context; the price is that output beyond 20 KiB arrives middle-cut with a temp-file path instead of in full. Scripts get typed results and lose nothing, because schemas include the payload fields (web_fetch keeps `markdown` in `structuredContent` precisely because scripts stop receiving text once a schema is declared). Idle notifications now carry `session_id`, matching what the orchestrating-agents skill already claimed. The vendored truncation mirrors an unexported pi internal — if pi exports `truncateMiddle` later, the mirror should be replaced with the import. Structured shapes are declared by hand next to their builders, so a payload change without a schema change passes silently; tests pin the important shapes.

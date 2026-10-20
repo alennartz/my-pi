@@ -46,6 +46,46 @@ export const webFetchParameters = Type.Object({
 
 export type WebFetchParams = Static<typeof webFetchParameters>;
 
+/** JSON schema of structuredContent: every result, including the page slice. */
+export const webFetchOutput = Type.Object({
+	results: Type.Array(
+		Type.Object({
+			url: Type.String({ description: "Requested URL" }),
+			effectiveUrl: Type.String({ description: "Final URL after redirects" }),
+			title: Type.Optional(Type.String()),
+			markdown: Type.String({
+				description: "Extracted content (markdown format; plain text for text/plain sources)",
+			}),
+			contentHash: Type.String({ description: "sha256 hex of the full untruncated markdown" }),
+			charCount: Type.Number({ description: "Character count of the full untruncated markdown" }),
+			truncated: Type.Boolean({
+				description: "True if the returned markdown was cut by maxCharacters",
+			}),
+			nextOffset: Type.Optional(
+				Type.Number({ description: "Present when truncated: offset to request next" }),
+			),
+			status: Type.Union([Type.Literal("ok"), Type.Literal("error")]),
+			errorCode: Type.Optional(
+				Type.Union([
+					Type.Literal("blocked-url"),
+					Type.Literal("bad-content-type"),
+					Type.Literal("too-large"),
+					Type.Literal("http-error"),
+					Type.Literal("timeout"),
+					Type.Literal("network"),
+					Type.Literal("retry-exhausted"),
+					Type.Literal("extraction-failed"),
+				]),
+			),
+			errorMessage: Type.Optional(Type.String()),
+			attempts: Type.Number({ description: "HTTP attempts made (>= 1)" }),
+			fromCache: Type.Boolean(),
+		}),
+	),
+});
+
+export type WebFetchStructured = Static<typeof webFetchOutput>;
+
 export interface WebFetchDeps {
 	store: FetchStore;
 	fetchImpl?: typeof fetch;
@@ -223,6 +263,8 @@ function renderResult(full: FetchResult, params: WebFetchParams, fromCache: bool
 export interface WebFetchOutcome {
 	text: string;
 	details: FetchResult[];
+	/** Same array as `details`, wrapped as `{ results }`. */
+	structuredContent: WebFetchStructured;
 }
 
 /** Batch entry point: validate params, fetch with bounded concurrency. */
@@ -246,7 +288,7 @@ export async function runWebFetch(
 		fetchOne(url, params, deps),
 	);
 
-	return { text: results.map(renderOne).join("\n\n"), details: results };
+	return { text: results.map(renderOne).join("\n\n"), details: results, structuredContent: { results } };
 }
 
 function renderOne(result: FetchResult): string {

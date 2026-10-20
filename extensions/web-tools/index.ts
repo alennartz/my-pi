@@ -3,8 +3,8 @@ import { registerLooseTool } from "../../lib/tool-args.ts";
 import { TtlLruCache } from "./cache.js";
 import { openFetchStore } from "./fetch-store.js";
 import type { SearchResponse } from "./types.js";
-import { runWebSearch, webSearchParameters, type WebSearchParams } from "./web-search.js";
-import { runWebFetch, webFetchParameters, type WebFetchParams } from "./web-fetch.js";
+import { runWebSearch, webSearchOutput, webSearchParameters, type WebSearchParams } from "./web-search.js";
+import { runWebFetch, webFetchOutput, webFetchParameters, type WebFetchParams } from "./web-fetch.js";
 
 /**
  * web-tools extension: `web_search` and `web_fetch`.
@@ -26,6 +26,7 @@ export default function (pi: ExtensionAPI) {
 			"Search the web via Brave and return compact result cards (title, URL, snippet, age). Use web_fetch to read the content of a result.",
 		promptSnippet: "Discover sources; returns links and snippets, not page content.",
 		parameters: webSearchParameters,
+		outputSchema: webSearchOutput,
 		promptGuidelines: [
 			"Fetch only the most promising results with web_fetch rather than everything.",
 		],
@@ -34,6 +35,7 @@ export default function (pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text" as const, text: outcome.text }],
 				details: outcome.details,
+				structuredContent: outcome.structuredContent,
 			};
 		},
 	});
@@ -45,6 +47,7 @@ export default function (pi: ExtensionAPI) {
 			"Fetch one or more URLs (max 8) as markdown via Readability. Full content is stored on disk — explore with findText first to pull the passages relevant to your goal, then use offset to read around or past a hit.",
 		promptSnippet: "Fetch URLs you already know, from web_search or the user, as markdown for targeted reading.",
 		parameters: webFetchParameters,
+		outputSchema: webFetchOutput,
 		promptGuidelines: [
 			"Explore a fetched page with findText first: pass terms from your goal and read only the matching passages. Read from the start only when findText returns nothing useful.",
 			"Long output is truncated — continue with the reported offset instead of refetching.",
@@ -54,6 +57,7 @@ export default function (pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text" as const, text: outcome.text }],
 				details: outcome.details,
+				structuredContent: outcome.structuredContent,
 			};
 		},
 	});

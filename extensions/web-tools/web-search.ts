@@ -31,6 +31,30 @@ export const webSearchParameters = Type.Object({
 
 export type WebSearchParams = Static<typeof webSearchParameters>;
 
+/** JSON schema of structuredContent: the full response plus the filter drop count. */
+export const webSearchOutput = Type.Object({
+	query: Type.String({ description: "The search query" }),
+	results: Type.Array(
+		Type.Object({
+			sourceId: Type.String({ description: 'Stable within a response: "s1", "s2", ...' }),
+			url: Type.String({ description: "Result URL as returned by the provider" }),
+			title: Type.String(),
+			snippet: Type.Optional(Type.String()),
+			age: Type.Optional(
+				Type.String({ description: 'Provider age string, verbatim (e.g. "2 days ago")' }),
+			),
+			provider: Type.Literal("brave"),
+			rank: Type.Number({ description: "1-based position before dedupe" }),
+		}),
+	),
+	responseId: Type.String({
+		description: "Random id; key for follow-up retrieval of this response",
+	}),
+	dropped: Type.Number({ description: "Results hidden by domain filters" }),
+});
+
+export type WebSearchStructured = Static<typeof webSearchOutput>;
+
 export interface WebSearchDeps {
 	/** Search cache shared across calls in this process. */
 	cache: TtlLruCache<{ response: SearchResponse; dropped: number }>;
@@ -52,6 +76,8 @@ function cacheKeyFor(params: WebSearchParams): string {
 export interface WebSearchOutcome {
 	text: string;
 	details: SearchResponse & { dropped: number };
+	/** Same object as `details`. */
+	structuredContent: WebSearchStructured;
 }
 
 /** Core search pipeline — cache → adapter → dedupe → filters → cards. */
@@ -62,9 +88,11 @@ export async function runWebSearch(
 	const key = cacheKeyFor(params);
 	const cached = deps.cache.get(key);
 	if (cached) {
+		const details = { ...cached.response, dropped: cached.dropped };
 		return {
 			text: renderCached(cached.response, cached.dropped),
-			details: { ...cached.response, dropped: cached.dropped },
+			details,
+			structuredContent: details,
 		};
 	}
 
@@ -81,11 +109,13 @@ export async function runWebSearch(
 	const deduped = dedupeResults(response.results);
 	const { kept, dropped } = applyDomainFilters(deduped, params.includeDomains, params.excludeDomains);
 	const filtered: SearchResponse = { ...response, results: kept };
+	const details = { ...filtered, dropped };
 
 	deps.cache.set(key, { response: filtered, dropped });
 	return {
 		text: renderCached(filtered, dropped),
-		details: { ...filtered, dropped },
+		details,
+		structuredContent: details,
 	};
 }
 

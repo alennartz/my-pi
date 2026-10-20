@@ -3,11 +3,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { Type, type TSchema } from "typebox";
 
 export interface McpToolDef {
 	name: string;
 	description: string;
 	inputSchema: object;
+	outputSchema?: object;
 }
 
 export interface StartResult {
@@ -15,9 +17,53 @@ export interface StartResult {
 	instructions: string;
 }
 
+export type CallToolBlock = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+
 export interface CallToolResult {
-	content: string;
+	blocks: CallToolBlock[];
+	rawContent: unknown[];
+	structuredContent?: unknown;
 	isError: boolean;
+}
+
+export function extractBlocks(content: unknown): CallToolBlock[] {
+	if (!Array.isArray(content)) return [];
+	const blocks: CallToolBlock[] = [];
+	for (const item of content) {
+		if (typeof item !== "object" || item === null) continue;
+		const block = item as Record<string, unknown>;
+		if (block.type === "text" && typeof block.text === "string") {
+			blocks.push({ type: "text", text: block.text });
+		} else if (block.type === "image" && typeof block.data === "string" && typeof block.mimeType === "string") {
+			blocks.push({ type: "image", data: block.data, mimeType: block.mimeType });
+		}
+	}
+	return blocks;
+}
+
+export function errorResult(text: string): CallToolResult {
+	const block = { type: "text", text } as const;
+	return { blocks: [block], rawContent: [block], isError: true };
+}
+
+export function hasSchemaRefs(schema: unknown): boolean {
+	if (Array.isArray(schema)) return schema.some((item) => hasSchemaRefs(item));
+	if (typeof schema !== "object" || schema === null) return false;
+	return Object.entries(schema).some(([key, value]) => key === "$ref" || key === "$defs" || hasSchemaRefs(value));
+}
+
+const blockSchema = Type.Union([
+	Type.Object({ type: Type.Literal("text"), text: Type.String() }),
+	Type.Object({ type: Type.Literal("image"), data: Type.String(), mimeType: Type.String() }),
+]);
+
+export function wrapResultSchema(outputSchema?: object): TSchema {
+	const structuredContent = outputSchema && !hasSchemaRefs(outputSchema) ? outputSchema : {};
+	return Type.Object({
+		content: Type.Array(blockSchema),
+		structuredContent: Type.Optional(structuredContent as TSchema),
+		isError: Type.Optional(Type.Boolean()),
+	}, { additionalProperties: true });
 }
 
 export class ToolscriptClient {
@@ -112,6 +158,7 @@ export class ToolscriptClient {
 				name: tool.name,
 				description: tool.description ?? "",
 				inputSchema: tool.inputSchema,
+				...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
 			}));
 
 			// Only mark running once boot fully succeeded — a partially booted
@@ -139,39 +186,22 @@ export class ToolscriptClient {
 			try {
 				await this.restartPromise;
 			} catch (err) {
-				return {
-					content: `toolscript crashed and could not be restarted: ${err instanceof Error ? err.message : String(err)}${this.stderrSnippet()}`,
-					isError: true,
-				};
+				return errorResult(`toolscript crashed and could not be restarted: ${err instanceof Error ? err.message : String(err)}${this.stderrSnippet()}`);
 			}
-			return {
-				content: "toolscript crashed and has been restarted. The previous call was lost — please retry.",
-				isError: true,
-			};
+			return errorResult("toolscript crashed and has been restarted. The previous call was lost — please retry.");
 		}
 
 		try {
 			const result = await this.client!.callTool({ name, arguments: args });
-
-			// Extract text content
-			const textParts: string[] = [];
-			if (Array.isArray(result.content)) {
-				for (const item of result.content) {
-					if (typeof item === "object" && item !== null && "type" in item && item.type === "text" && "text" in item) {
-						textParts.push(item.text as string);
-					}
-				}
-			}
-
+			const rawContent = Array.isArray(result.content) ? result.content : [];
 			return {
-				content: textParts.join("\n"),
+				blocks: extractBlocks(rawContent),
+				rawContent,
+				structuredContent: result.structuredContent,
 				isError: result.isError ?? false,
 			};
 		} catch (err) {
-			return {
-				content: `toolscript call failed: ${err instanceof Error ? err.message : String(err)}${this.stderrSnippet()}`,
-				isError: true,
-			};
+			return errorResult(`toolscript call failed: ${err instanceof Error ? err.message : String(err)}${this.stderrSnippet()}`);
 		}
 	}
 

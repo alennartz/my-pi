@@ -21,6 +21,9 @@
  * nothing restarts.
  */
 
+import { truncateMiddle } from "../../lib/truncate.ts";
+import type { AgentCompleteData } from "./messages.js";
+
 export type NotificationSource = "local" | "uplink";
 
 export interface NotificationQueueConfig {
@@ -48,6 +51,8 @@ export interface NotificationQueueConfig {
 interface QueueEntry {
 	xml: string;
 	source: NotificationSource;
+	/** Structured payload for tool-result consumers; absent for message notifications. */
+	data?: AgentCompleteData;
 }
 
 export class NotificationQueue {
@@ -58,8 +63,8 @@ export class NotificationQueue {
 
 	constructor(private config: NotificationQueueConfig) {}
 
-	queue(xml: string, source: NotificationSource): void {
-		this.entries.push({ xml, source });
+	queue(xml: string, source: NotificationSource, data?: AgentCompleteData): void {
+		this.entries.push({ xml, source, data });
 
 		if (this._isWaiting) {
 			return;
@@ -93,6 +98,13 @@ export class NotificationQueue {
 		return combined;
 	}
 
+	/** Drain all entries, keeping the structured per-agent payloads alongside the text. */
+	drainDetailed(): { text: string; agents: AgentCompleteData[] } {
+		const agents = this.entries.flatMap((e) => e.data ? [e.data] : []);
+		const text = this.drainAll();
+		return { text, agents };
+	}
+
 	drainLocal(): void {
 		this.entries = this.entries.filter((e) => e.source !== "local");
 	}
@@ -121,7 +133,7 @@ export class NotificationQueue {
 		if (this._isWaiting) return;
 		if (this.entries.length === 0) return;
 		const combined = this.drainAll();
-		this.config.deliverDeferred(combined);
+		this.config.deliverDeferred(truncateMiddle(combined).content);
 	}
 
 	setWaiting(waiting: boolean): void {
@@ -159,6 +171,6 @@ export class NotificationQueue {
 		this.parentBusy = true;
 		const combined = this.entries.map((e) => e.xml).join("\n");
 		this.entries.length = 0;
-		this.config.deliver(combined);
+		this.config.deliver(truncateMiddle(combined).content);
 	}
 }

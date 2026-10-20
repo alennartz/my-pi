@@ -49,6 +49,47 @@ describe("runWebFetch", () => {
 		expect(outcome.text).toContain("Title: Understanding Node Streams");
 	});
 
+	it("returns structuredContent identical to results and matching the schema shape", async () => {
+		const fetchImpl = vi.fn(async () => htmlResponse(articleHtml));
+		const outcome = await runWebFetch(
+			{ url: "https://example.com/streams", maxCharacters: 500 },
+			deps(fetchImpl),
+		);
+		expect(outcome.structuredContent.results).toBe(outcome.details);
+		expect(outcome.structuredContent.results[0]).toEqual({
+			url: "https://example.com/streams",
+			effectiveUrl: "https://example.com/streams",
+			title: "Understanding Node Streams",
+			markdown: outcome.details[0].markdown,
+			contentHash: expect.any(String),
+			charCount: expect.any(Number),
+			truncated: true,
+			nextOffset: 500,
+			status: "ok",
+			attempts: 1,
+			fromCache: false,
+		});
+	});
+
+	it("shapes error results in structuredContent", async () => {
+		const fetchImpl = vi.fn();
+		const outcome = await runWebFetch({ url: "http://127.0.0.1:8080/x" }, deps(fetchImpl));
+		expect(outcome.structuredContent.results).toBe(outcome.details);
+		expect(outcome.structuredContent.results[0]).toEqual({
+			url: "http://127.0.0.1:8080/x",
+			effectiveUrl: "http://127.0.0.1:8080/x",
+			markdown: "",
+			contentHash: "",
+			charCount: 0,
+			truncated: false,
+			status: "error",
+			errorCode: "blocked-url",
+			errorMessage: expect.any(String),
+			attempts: 0,
+			fromCache: false,
+		});
+	});
+
 	it("rejects policy-violating URLs without network", async () => {
 		const fetchImpl = vi.fn();
 		const outcome = await runWebFetch({ url: "http://127.0.0.1:8080/x" }, deps(fetchImpl));

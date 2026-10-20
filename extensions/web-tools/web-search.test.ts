@@ -36,6 +36,30 @@ describe("runWebSearch", () => {
 		expect(outcome1.details.results).toHaveLength(1);
 	});
 
+	it("returns structuredContent identical to details and matching the schema shape", async () => {
+		const search = vi.fn(async () => fakeResponse(["https://a.com/1"]));
+		const d = deps();
+		const outcome1 = await runWebSearch(baseParams, { ...d, search });
+		const outcome2 = await runWebSearch(baseParams, { ...d, search });
+		expect(outcome1.structuredContent).toBe(outcome1.details);
+		expect(outcome2.structuredContent).toBe(outcome2.details);
+		expect(outcome1.structuredContent).toEqual({
+			query: "test query",
+			results: [
+				{
+					sourceId: "s1",
+					url: "https://a.com/1",
+					title: "Result 1",
+					snippet: "snippet",
+					provider: "brave",
+					rank: 1,
+				},
+			],
+			responseId: "abc123",
+			dropped: 0,
+		});
+	});
+
 	it("dedupes results before rendering", async () => {
 		const search = vi.fn(async () =>
 			fakeResponse(["https://a.com/1", "https://a.com/1/", "https://b.com/2"]),
