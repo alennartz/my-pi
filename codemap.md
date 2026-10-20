@@ -274,22 +274,20 @@ Extension configuration reference and the prompt pointer that makes it discovera
 
 Slash-command prompts distributed with the package.
 
-**Responsibilities:** `onboard` introduces the package and offers to install behavioral conventions (model-specific overlays); `tidy` runs repo tidying; `resolve-conflicts` works an in-progress merge/rebase conflict by intent; `experiment` runs a goal-driven experiment campaign (candidate queue, single-variable A/B trials with baseline and keep-or-revert, living experiment log).
+**Responsibilities:** `tidy` runs repo tidying; `resolve-conflicts` works an in-progress merge/rebase conflict by intent; `experiment` runs a goal-driven experiment campaign (candidate queue, single-variable A/B trials with baseline and keep-or-revert, living experiment log).
 
 **Dependencies:** none.
 
 **Files:**
-- `prompts/onboard.md`
 - `prompts/tidy.md`
 - `prompts/resolve-conflicts.md`
 - `prompts/experiment.md`
 
 ### Conventions
 
-Reusable convention content the onboard prompt offers to install into the user's `AGENTS.md`.
+Repo working rules for this package (`docs/conventions.md`): codebase rules that hold when working in `my-pi` — skill format, raw-TS extensions with no build step, agent definition format, subagents as a local extension. Cross-repo rules (dependency changes, git hooks, tone, initiative) live in `~/.pi/agent/AGENTS.md` and are not repeated here.
 
-**Responsibilities:** house general engineering stances that aren't model-specific overlays — currently the coding principles (pure functions, deliberate mutation, globals, closure lifecycle, naming, one-function-per-business-operation).
-
-**Dependencies:** none; content is plain Markdown read by `onboard`.
+**Dependencies:** none.
 
 **Files:**
+- `docs/conventions.md`
