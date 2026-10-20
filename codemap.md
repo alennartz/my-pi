@@ -274,7 +274,7 @@ Extension configuration reference and the prompt pointer that makes it discovera
 
 Slash-command prompts distributed with the package.
 
-**Responsibilities:** `onboard` introduces the package and offers to install behavioral conventions (model-specific overlays); `tidy` runs repo tidying; `resolve-conflicts` works an in-progress merge/rebase conflict by intent.
+**Responsibilities:** `onboard` introduces the package and offers to install behavioral conventions (model-specific overlays); `tidy` runs repo tidying; `resolve-conflicts` works an in-progress merge/rebase conflict by intent; `experiment` runs a goal-driven experiment campaign (candidate queue, single-variable A/B trials with baseline and keep-or-revert, living experiment log).
 
 **Dependencies:** none.
 
@@ -282,6 +282,7 @@ Slash-command prompts distributed with the package.
 - `prompts/onboard.md`
 - `prompts/tidy.md`
 - `prompts/resolve-conflicts.md`
+- `prompts/experiment.md`
 
 ### Conventions
 
