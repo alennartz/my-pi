@@ -383,7 +383,8 @@ describe("child-scoped extension routing", () => {
 			const { pi, tools, handlers } = makePi();
 			await createSubagentsExtension({ kind: "root" })(pi as any);
 			const ctx = makeContext(parentSessionFile);
-			const promptPreparation = handlers.get("before_agent_start")?.({ systemPrompt: "base" }, ctx);
+			const promptEvent = { systemPrompt: "base", systemPromptOptions: { sections: {} } };
+			const promptPreparation = handlers.get("before_agent_start")?.(promptEvent, ctx);
 			const starting = handlers.get("session_start")?.({ reason: "new" }, ctx);
 			await vi.waitFor(() => expect(discovery).toHaveBeenCalled());
 
@@ -396,7 +397,8 @@ describe("child-scoped extension routing", () => {
 
 			releaseDiscovery();
 			await starting;
-			await expect(promptPreparation).resolves.toMatchObject({ systemPrompt: expect.stringContaining("Model Tiers") });
+			await promptPreparation;
+			expect(promptEvent.systemPromptOptions.sections["subagents"]).toContain("Model Tiers");
 			await expect(listing).resolves.toMatchObject({ content: [{ type: "text" }] });
 		} finally {
 			discovery.mockRestore();
@@ -989,22 +991,22 @@ describe("root orchestration integration", () => {
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
 		await startSession(handlers, ctx);
-		const result = await handlers.get("before_agent_start")?.(
-			{ systemPrompt: "base prompt" },
-			ctx,
-		);
+		const promptEvent = { systemPrompt: "base prompt", systemPromptOptions: { sections: {} } };
+		const result = await handlers.get("before_agent_start")?.(promptEvent, ctx);
+		const section = promptEvent.systemPromptOptions.sections["subagents"];
 
-		expect(result.systemPrompt).toContain("<available_agent_definitions>");
-		expect(result.systemPrompt).toContain(
+		expect(result).toBeUndefined();
+		expect(section).toContain("<available_agent_definitions>");
+		expect(section).toContain(
 			'  <agent name="reviewer" source="project">Review &lt;changes&gt; &amp; report findings</agent>',
 		);
-		expect(result.systemPrompt).toContain("</available_agent_definitions>");
-		expect(result.systemPrompt).not.toContain("## Available Agent Definitions");
-		expect(result.systemPrompt).toContain("Leave `agents[].model` unspecified by default");
-		expect(result.systemPrompt).toContain("prefer its name in the `persona` field");
-		expect(result.systemPrompt).toContain("| Tier | Use when |");
-		expect(result.systemPrompt).toContain("optional guidance");
-		expect(result.systemPrompt).not.toContain("Choose a tier");
+		expect(section).toContain("</available_agent_definitions>");
+		expect(section).not.toContain("## Available Agent Definitions");
+		expect(section).toContain("Leave `agents[].model` unspecified by default");
+		expect(section).toContain("prefer its name in the `persona` field");
+		expect(section).toContain("| Tier | Use when |");
+		expect(section).toContain("optional guidance");
+		expect(section).not.toContain("Choose a tier");
 	});
 
 	it("owns SDK-native children, projects lifecycle/status updates, and records replacement metadata", async () => {

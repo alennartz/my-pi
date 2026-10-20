@@ -41,7 +41,11 @@ export default function modelPromptOverlays(pi: ExtensionAPI) {
 		const block = renderOverlayAppendBlock(sorted);
 
 		if (block) {
-			return { systemPrompt: event.systemPrompt + "\n\n" + block };
+			// Structured section, not a forced prompt: pi records and diffs it,
+			// and it composes with every other prompt contribution in any
+			// extension load order (e.g. the persona preamble that
+			// persona-workspaces binds).
+			event.systemPromptOptions.sections["model-overlays"] = block;
 		}
 
 		return undefined;

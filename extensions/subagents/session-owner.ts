@@ -1040,7 +1040,7 @@ class SubagentSessionOwner {
 		session.turns.trackToolEnd(event.toolCallId);
 	}
 
-	private async handleBeforeAgentStart(event: any, ctx: ExtensionContext): Promise<{ systemPrompt: string } | undefined> {
+	private async handleBeforeAgentStart(event: any, ctx: ExtensionContext): Promise<undefined> {
 		const session = await this.waitForActiveSession();
 		if (!this.pi.getActiveTools().includes("subagent")) return undefined;
 		const agents = session.environment.discoverAgents(ctx.cwd).agents;
@@ -1070,7 +1070,11 @@ class SubagentSessionOwner {
 			"The table is guidance for deliberate model choices, not a requirement to set `model` for every task.",
 			"",
 		);
-		return { systemPrompt: event.systemPrompt + "\n" + lines.join("\n") + "\n" };
+		// Structured section, not a forced prompt: pi records and diffs it, and
+		// it composes with every other prompt contribution in any load order
+		// (e.g. the persona preamble that persona-workspaces binds).
+		event.systemPromptOptions.sections["subagents"] = lines.join("\n");
+		return undefined;
 	}
 
 	private loadTiers(cwd: string): TierConfig {

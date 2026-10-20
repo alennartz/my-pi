@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
-import { planRunBinding } from "../persona-workspaces/index.js";
+import { planRunBinding, personaBindingMode, STACKED_PERSONA_SECTION } from "../persona-workspaces/index.js";
 import { loadWorkspacePersona } from "../persona-workspaces/declaration.js";
 import { getSubagentPersona } from "../subagents/child-session-marker.js";
 
@@ -63,7 +63,12 @@ function projectPersonaPreamble(
 		transcript: [],
 	});
 	if (!plan) return base;
+	// Stacked tier (unpatched host): pi's preamble stays; the persona rides
+	// as the section it will bind under at the first run.
+	if (personaBindingMode() === "stacked") {
+		return `${base}\n\n<${STACKED_PERSONA_SECTION}>\n${plan.body}\n</${STACKED_PERSONA_SECTION}>`;
+	}
 	const cut = base.indexOf("\n<");
-	const projected = cut === -1 ? plan.customPrompt : `${plan.customPrompt}${base.slice(cut)}`;
+	const projected = cut === -1 ? plan.body : `${plan.body}${base.slice(cut)}`;
 	return `[projected — persona binds at the first turn]\n\n${projected}`;
 }

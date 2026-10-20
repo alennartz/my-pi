@@ -8,7 +8,9 @@ and source paths. Read pi's own documentation for the host extension API.
 
 `my-pi` is a pi package. The root `package.json` registers `./extensions`,
 `./skills`, `./prompts`, `./themes`, and `./agents` as package resources.
-Extensions are raw TypeScript. Pi loads them at runtime. There is no build step.
+Every prompt contribution composes through pi's structured prompt options, so
+extension load order carries no correctness weight. Extensions are raw
+TypeScript. Pi loads them at runtime. There is no build step.
 
 Unless an extension says otherwise, the pi agent directory is `~/.pi/agent`.
 Pi's `PI_CODING_AGENT_DIR` setting changes that directory for extensions that use
@@ -203,6 +205,24 @@ Supported front matter fields:
 - `skills` is a comma-separated skill allowlist.
 - The Markdown body becomes the persona preamble.
 
+The body replaces pi's default identity — the persona IS the personality.
+The mechanism is a self-healing host patch: at extension activation,
+persona-workspaces rewrites the running pi's prompt builder to accept
+`sections.preamble` as an override of the default identity sentence (an
+explicit `--system-prompt` still outranks it). On a patched host the body is
+the preamble — pi's first slot — with pi's own tool declarations, rules,
+docs, project context, skills, and working directory untouched below it, and
+a body edit records as a small preamble-only delta. The running process keeps
+its in-memory module, so the patch activates from the next session start; the
+extension notifies once. On an unpatched or incompatible host the persona
+stacks as a plain `<persona>` custom section on top of pi's preamble until
+the patch activates. Ancestor `AGENTS.md` files still load as project
+context; only the persona file itself is dropped from context so its body
+does not appear twice. `AGENTS.<model>.md` overlays are separate files and
+keep applying. Other package prompt contributions (subagent definitions,
+model overlays) ride as tagged sections, so extension load order does not
+matter.
+
 The workspace persona wins wholesale over a spawned persona. Fields do not
 merge. An explicit launch `--system-prompt` wins over the ambient persona.
 The declaration is re-applied when a session starts, resumes, reloads, or
@@ -225,8 +245,8 @@ Use the repository's review checklist for this model.
 ```
 
 `models` is required and must be a non-empty string or string array. Values are
-simple `*` globs matched against the active model ID. The body is appended to
-the system prompt when a pattern matches.
+simple `*` globs matched against the active model ID. The body is added to the
+system prompt as a `model-overlays` section when a pattern matches.
 
 The global agent directory always participates. Project ancestors participate
 only when pi marks the project trusted. Overlays apply from broad to narrow,

@@ -1,12 +1,13 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-const agentDirState = vi.hoisted(() => ({ dir: "" }));
+const hostPathState = vi.hoisted(() => ({ agentDir: "", packageDir: "" }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
-	getAgentDir: () => agentDirState.dir,
+	getAgentDir: () => hostPathState.agentDir,
+	getPackageDir: () => hostPathState.packageDir,
 }));
 
 import personaWorkspaces from "./index.ts";
@@ -34,7 +35,25 @@ function plainDirectory(): string {
 	return dir;
 }
 
+/** A host runtime whose prompt module already carries the preamble override. */
+function usePatchedHost(): string {
+	const dir = mkdtempSync(join(tmpdir(), "persona-host-patched-"));
+	mkdirSync(join(dir, "dist", "core"), { recursive: true });
+	writeFileSync(join(dir, "dist", "core", "system-prompt.js"), "customSections.preamble ??\n");
+	hostPathState.packageDir = dir;
+	return dir;
+}
+
+/** A host runtime with an unpatched (or missing) prompt module. */
+function useUnpatchedHost(): string {
+	const dir = mkdtempSync(join(tmpdir(), "persona-host-plain-"));
+	hostPathState.packageDir = dir;
+	return dir;
+}
+
 function setup() {
+	hostPathState.agentDir = "";
+	usePatchedHost();
 	const handlers = new Map<string, Handler>();
 	const setModel = vi.fn(async () => true);
 	const setActiveTools = vi.fn();
@@ -100,6 +119,7 @@ function agentStartEvent(options?: {
 			customPrompt: options?.customPrompt,
 			contextFiles: options?.contextFiles ?? [{ path: "/elsewhere/NOTES.md", content: "notes" }],
 			skills: options?.skills ?? [{ name: "alpha" }, { name: "beta" }],
+			sections: {},
 		},
 	};
 }
@@ -113,7 +133,38 @@ describe("prompt binding", () => {
 		const event = agentStartEvent();
 		await s.beforeAgentStart(event, ctxFor(cwd));
 
-		expect(event.systemPromptOptions.customPrompt).toContain(WORKSPACE_BODY);
+		expect(event.systemPromptOptions.sections.preamble).toContain(WORKSPACE_BODY);
+	});
+
+	it("stacks the persona as a custom section on an unpatched host", async () => {
+		const s = setup();
+		const cwd = personaWorkspace();
+		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		useUnpatchedHost();
+
+		const event = agentStartEvent();
+		const ctx = ctxFor(cwd);
+		await s.beforeAgentStart(event, ctx);
+
+		expect(event.systemPromptOptions.sections.persona).toContain(WORKSPACE_BODY);
+		expect(event.systemPromptOptions.sections.preamble).toBeUndefined();
+		expect(event.systemPromptOptions.customPrompt).toBeUndefined();
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("stacking the persona as a section"),
+			"warning",
+		);
+	});
+
+	it("binds a spawned agent's body as the preamble section on a patched host", async () => {
+		const s = setup();
+		const cwd = plainDirectory();
+		const { sessionManager } = transcriptSessionManager();
+		markSubagentChildSession(sessionManager, { name: "scout", body: "Spawned scout body." });
+
+		const event = agentStartEvent();
+		await s.beforeAgentStart(event, ctxFor(cwd, { sessionManager }));
+
+		expect(event.systemPromptOptions.sections.preamble).toContain("Spawned scout body.");
 	});
 
 	it("drops the workspace AGENTS.md from context files so pi cannot append it twice", async () => {
@@ -146,8 +197,8 @@ describe("prompt binding", () => {
 		const second = agentStartEvent();
 		await s.beforeAgentStart(second, ctxFor(cwd));
 
-		expect(first.systemPromptOptions.customPrompt).toContain(WORKSPACE_BODY);
-		expect(second.systemPromptOptions.customPrompt).toContain("Second body.");
+		expect(first.systemPromptOptions.sections.preamble).toContain(WORKSPACE_BODY);
+		expect(second.systemPromptOptions.sections.preamble).toContain("Second body.");
 	});
 
 	it("yields to an explicit --system-prompt and touches nothing", async () => {
@@ -160,6 +211,7 @@ describe("prompt binding", () => {
 
 		expect(event.systemPromptOptions.customPrompt).toBe("The user's own prompt.");
 		expect(event.systemPromptOptions.contextFiles).toEqual([{ path: "/elsewhere/NOTES.md", content: "notes" }]);
+		expect(event.systemPromptOptions.sections).toEqual({});
 		expect(result).toBeUndefined();
 	});
 
@@ -173,6 +225,7 @@ describe("prompt binding", () => {
 
 		expect(event.systemPromptOptions.customPrompt).toBeUndefined();
 		expect(event.systemPromptOptions.contextFiles).toEqual([{ path: "/elsewhere/NOTES.md", content: "notes" }]);
+		expect(event.systemPromptOptions.sections).toEqual({});
 		expect(event.systemPromptOptions.skills.map((skill: { name: string }) => skill.name)).toEqual([
 			"alpha",
 			"beta",
@@ -189,7 +242,7 @@ describe("prompt binding", () => {
 		const event = agentStartEvent();
 		await s.beforeAgentStart(event, ctxFor(cwd, { sessionManager }));
 
-		expect(event.systemPromptOptions.customPrompt).toContain("Spawned scout body.");
+		expect(event.systemPromptOptions.sections.preamble).toContain("Spawned scout body.");
 	});
 
 	it("lets the workspace persona win over a spawned agent definition, visibly", async () => {
@@ -203,8 +256,8 @@ describe("prompt binding", () => {
 			| { message?: { customType?: string; content?: unknown; details?: { condition?: string } } }
 			| undefined;
 
-		expect(event.systemPromptOptions.customPrompt).toContain(WORKSPACE_BODY);
-		expect(event.systemPromptOptions.customPrompt).not.toContain("Spawned scout body.");
+		expect(event.systemPromptOptions.sections.preamble).toContain(WORKSPACE_BODY);
+		expect(event.systemPromptOptions.sections.preamble).not.toContain("Spawned scout body.");
 		expect(result?.message?.customType).toBe("persona-notice");
 		expect(result?.message?.details?.condition).toBe("override");
 		expect(String(result?.message?.content)).toContain("workspace-lead");
@@ -223,7 +276,7 @@ describe("override notices", () => {
 		const result = await s.beforeAgentStart(event, ctxFor(cwd, { sessionManager: transcript.sessionManager }));
 
 		expect(result).toBeUndefined();
-		expect(event.systemPromptOptions.customPrompt).toContain(WORKSPACE_BODY);
+		expect(event.systemPromptOptions.sections.preamble).toContain(WORKSPACE_BODY);
 	});
 
 	it("emits the override notice at most once per session instance", async () => {
@@ -273,7 +326,7 @@ describe("override notices", () => {
 		const result = await s.beforeAgentStart(event, ctx);
 
 		expect(result).toBeUndefined();
-		expect(event.systemPromptOptions.customPrompt).toContain(WORKSPACE_BODY);
+		expect(event.systemPromptOptions.sections.preamble).toContain(WORKSPACE_BODY);
 	});
 });
 
@@ -345,8 +398,8 @@ describe("front-matter binding at session start", () => {
 	it("resolves a tier name through the model-tiers config", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "persona-agentdir-"));
 		writeFileSync(join(agentDir, "model-tiers.json"), JSON.stringify({ smart: "work-model" }));
-		agentDirState.dir = agentDir;
 		const s = setup();
+		hostPathState.agentDir = agentDir;
 		const cwd = workspaceWith(
 			["kind: persona", "name: workspace-lead", "model: smart"],
 			WORKSPACE_BODY,

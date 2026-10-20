@@ -3,12 +3,21 @@
  *
  * Makes a persona workspace (an AGENTS.md with `kind: persona` front matter in
  * the session's cwd) initialize the session as that specialist, and makes
- * specialist definitions replace pi's persona instead of stacking under it.
+ * specialist definitions replace pi's default identity — the persona IS the
+ * personality, not an addendum.
  *
  * Two handlers:
- * - `before_agent_start` — prompt binding (persona body replaces the preamble
- *   via `systemPromptOptions.customPrompt`), skills filter, the override
- *   notice.
+ * - `before_agent_start` — prompt binding, skills filter, the override notice.
+ *   The persona body displaces pi's default identity through
+ *   `systemPromptOptions.sections.preamble`; pi's own tool declarations,
+ *   rules, docs, project context, and skills all stay, in pi's default
+ *   order. The workspace's own AGENTS.md is filtered from `contextFiles` so
+ *   pi cannot append it twice; ancestor AGENTS.md files and
+ *   `AGENTS.<model>.md` overlays are untouched. A declared `skills` list
+ *   filters the per-run skills view, while root sessions keep unlisted
+ *   skills' slash commands loaded — extensions can add skills at discovery
+ *   but not subtract. An explicit launch `--system-prompt` outranks the
+ *   ambient persona and touches nothing.
  * - `session_start` — front-matter binding (model/tools) at every session
  *   start: the persona is persistent session config and authoritative at
  *   every session boundary, so fresh starts and continuations (`resume` and
@@ -19,20 +28,27 @@
  * from Subagents' child-session registry (`../subagents/child-session-marker.ts`)
  * via `ctx.sessionManager`.
  *
+ * The preamble override needs a patched host: unpatched pi throws on a
+ * section named `preamble`. `host-patch.ts` self-heals the host at extension
+ * activation (once per process per runtime directory; restart to activate).
+ * Until it activates — first session after a pi/pimote update, or an
+ * incompatible runtime — the persona stacks as a plain `<persona>` custom
+ * section on top of pi's preamble instead.
+ *
  * One active persona per session, all or nothing: a workspace declaration wins
  * wholesale over a spawn-declared payload, and the losing definition's fields
  * never bind. Subagent children get their capability fields at construction
  * (Subagents owns that path), so this extension never re-binds model/tools in
  * a child — prompt binding and notices are its whole child-side surface.
  *
- * Notes for implementers (from the plan): do NOT set `sections.preamble` — pi
- * throws on custom sections named `preamble`; `customPrompt` is the preamble
- * knob. An explicit `--system-prompt` reaches the handler as a pre-populated
- * `customPrompt` and outranks the ambient persona.
+ * Prompt composition: every prompt contribution in this package goes through
+ * the structured prompt options (`sections`) — Subagents contributes a
+ * `subagents` section and Model Prompt Overlays a `model-overlays` section —
+ * so extension load order carries no correctness weight.
  */
 
 import * as path from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, getPackageDir } from "@earendil-works/pi-coding-agent";
 import type {
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
@@ -43,6 +59,8 @@ import type {
 import { Box, Text } from "@earendil-works/pi-tui";
 import { loadWorkspacePersona } from "./declaration.ts";
 import type { PersonaDeclaration } from "./declaration.ts";
+import { ensurePreamblePatch } from "./host-patch.ts";
+import type { PreamblePatchStatus } from "./host-patch.ts";
 import { getSubagentPersona, isSubagentChildSession } from "../subagents/child-session-marker.ts";
 import type { PersonaPayload } from "../subagents/child-session-marker.ts";
 import { resolveChildToolPolicy } from "../subagents/child-tool-policy.ts";
@@ -55,6 +73,17 @@ import {
 
 /** Custom message type for takeover notices; rendered for clean TUI display. */
 export const PERSONA_NOTICE_TYPE = "persona-notice";
+
+/**
+ * How the persona body reaches the prompt. `override` (patched host): the
+ * body is the preamble itself. `stacked` (unpatched or incompatible host):
+ * the body rides as a plain custom section on top of pi's preamble until the
+ * self-healing patch activates at the next session start.
+ */
+export type PreambleMode = "override" | "stacked";
+
+/** The custom section name the stacked fallback binds the persona body under. */
+export const STACKED_PERSONA_SECTION = "persona";
 
 /**
  * The `session_start` reasons that re-open an existing conversation and can
@@ -91,13 +120,69 @@ type PersonaNotice = {
 	details: PersonaNoticeDetails;
 };
 
-/** What one run must do: bind the preamble and optionally announce the takeover. */
+/** What one run must do: bind the persona body and optionally announce the takeover. */
 type RunPlan = {
-	customPrompt: string;
+	body: string;
 	dropContextPath?: string;
 	declaredSkillNames?: string[];
 	notice?: PersonaNotice;
 };
+
+/** The binding tier decided at activation, plus whether the user was told. */
+type HostPatch = {
+	mode: PreambleMode;
+	status: PreamblePatchStatus;
+	warned: boolean;
+};
+
+/** Activation result per host runtime directory; one patch attempt per dir. */
+const hostPatches = new Map<string, HostPatch>();
+
+/**
+ * Ensure the host runtime carries the preamble override, once per directory.
+ * Extension runtimes can be constructed repeatedly per process (child
+ * sessions), so the attempt is memoized; the resulting tier is stable for the
+ * process lifetime — the in-memory module only changes across sessions.
+ */
+function hostPatchFor(piPackageDir: string): HostPatch {
+	const existing = hostPatches.get(piPackageDir);
+	if (existing) return existing;
+	const status = ensurePreamblePatch(piPackageDir);
+	const hostPatch: HostPatch = {
+		mode: status.kind === "already-patched" || status.kind === "patched" ? "override" : "stacked",
+		status,
+		warned: false,
+	};
+	hostPatches.set(piPackageDir, hostPatch);
+	return hostPatch;
+}
+
+/** The tier the current host will bind with. Exported for /sysprompt's projection. */
+export function personaBindingMode(): PreambleMode {
+	return hostPatchFor(getPackageDir()).mode;
+}
+
+/**
+ * Tell the user about the host patch exactly once: a restart hint when the
+ * patch just landed, a warning when the host is incompatible or unwritable.
+ * Both need a `ctx`, so this runs inside the first persona-bound request.
+ */
+function warnOnceAboutHostPatch(hostPatch: HostPatch, ctx: ExtensionContext): void {
+	if (hostPatch.warned) return;
+	if (hostPatch.status.kind === "patched") {
+		hostPatch.warned = true;
+		ctx.ui.notify("Patched pi preamble override; restart pi to activate it in this session.", "info");
+		return;
+	}
+	if (hostPatch.status.kind === "incompatible" || hostPatch.status.kind === "failed") {
+		hostPatch.warned = true;
+		ctx.ui.notify(
+			`Persona preamble override unavailable (${hostPatch.status.reason}); ` +
+				`stacking the persona as a section until pi is patched.`,
+			"warning",
+		);
+	}
+}
 
 /**
  * The only lifecycle state this extension keeps: the latest `session_start`
@@ -153,7 +238,9 @@ export default function personaWorkspaces(pi: ExtensionAPI) {
 			transcript: transcriptEntries(ctx.sessionManager),
 		});
 		if (!plan) return undefined;
-		applyRunPlan(event.systemPromptOptions, plan);
+		const hostPatch = hostPatchFor(getPackageDir());
+		warnOnceAboutHostPatch(hostPatch, ctx);
+		applyRunPlan(event.systemPromptOptions, plan, hostPatch.mode);
 		if (!plan.notice) return undefined;
 		return { message: noticeMessage(plan.notice) };
 	});
@@ -178,7 +265,7 @@ export function planRunBinding(input: {
 	if (!persona) return undefined;
 	if (input.explicitCustomPrompt) return undefined;
 	return {
-		customPrompt: persona.body,
+		body: persona.body,
 		dropContextPath: input.workspace?.sourcePath,
 		declaredSkillNames: input.workspace?.skills,
 		notice: planNotice(input),
@@ -237,8 +324,14 @@ function composeNotice(
 function applyRunPlan(
 	options: BeforeAgentStartEvent["systemPromptOptions"],
 	plan: RunPlan,
+	mode: PreambleMode,
 ): void {
-	options.customPrompt = plan.customPrompt;
+	// Patched pi renders `sections.preamble` as the head identity section —
+	// the persona IS the personality, at pi's first slot, with pi's own
+	// tools/rules/docs untouched below it. An unpatched runtime cannot accept
+	// that key, so the persona stacks as a plain custom section on top of the
+	// preamble until the self-healing patch activates (next session start).
+	options.sections[mode === "override" ? "preamble" : STACKED_PERSONA_SECTION] = plan.body;
 	if (plan.dropContextPath !== undefined) {
 		// Only the workspace's own declaration file, so pi cannot append it twice.
 		options.contextFiles = options.contextFiles.filter((file) => file.path !== plan.dropContextPath);

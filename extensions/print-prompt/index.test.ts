@@ -1,4 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+
+// personaBindingMode patches/detects the host at first use; point it at a
+// throwaway runtime dir instead of the real pi install.
+const hostDirState = vi.hoisted(() => ({ dir: "" }));
+
+vi.mock("@earendil-works/pi-coding-agent", () => ({
+	getAgentDir: () => hostDirState.dir,
+	getPackageDir: () => hostDirState.dir,
+}));
 
 vi.mock("@earendil-works/pi-tui", () => ({
 	Box: class Box {},
@@ -23,6 +35,13 @@ vi.mock("../persona-workspaces/declaration.js", async (importOriginal) => {
 });
 
 const { default: printPrompt } = await import("./index.js");
+
+beforeAll(() => {
+	const dir = mkdtempSync(join(tmpdir(), "print-prompt-host-"));
+	mkdirSync(join(dir, "dist", "core"), { recursive: true });
+	writeFileSync(join(dir, "dist", "core", "system-prompt.js"), "customSections.preamble ??\n");
+	hostDirState.dir = dir;
+});
 
 type Handler = (...args: any[]) => unknown;
 
@@ -113,6 +132,21 @@ describe("/sysprompt", () => {
 		const entry = pi.appendEntry.mock.calls.at(-1)?.[1] as { text: string };
 		expect(entry.text).toContain("Read-only search specialist.");
 		expect(entry.text).not.toContain("generic preamble");
+	});
+
+	it("projects the persona as a stacked section on an unpatched host", async () => {
+		hostDirState.dir = mkdtempSync(join(tmpdir(), "print-prompt-host-plain-"));
+		const { command, pi } = setup();
+		await command.handler("", commandCtx({
+			getSystemPrompt: () => "You are an expert coding assistant.\n\n<tools>\n- read\n</tools>",
+			getSystemPromptOptions: () => ({}),
+			cwd: "/repo/pm-workspace",
+		}));
+
+		const entry = pi.appendEntry.mock.calls.at(-1)?.[1] as { text: string };
+		expect(entry.text).toContain("<persona>\nyou are the product manager");
+		expect(entry.text).toContain("expert coding assistant");
+		expect(entry.text).not.toContain("[projected");
 	});
 
 	it("leaves the base prompt alone when an explicit --system-prompt outranks the persona", async () => {
