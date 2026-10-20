@@ -1,13 +1,13 @@
 # alenna-pi
 
-A personal [pi](https://github.com/badlogic/pi-mono) coding agent package — skills, extensions, agent definitions, prompt templates, and themes for my own workflow. Published as a pi package so others can install it or fork it as a starting point.
+A personal [pi](https://github.com/badlogic/pi-mono) coding agent package. It adds a development workflow pipeline, subagent orchestration, standalone skills, extensions, prompt templates, and agent definitions to pi.
 
-> **Security:** pi packages run with full system access. Extensions execute arbitrary code and skills can instruct the model to do anything on your machine. Read the source before installing.
+> **Security:** pi packages run with full system access. Extensions execute arbitrary code. Skills can instruct the model to do anything on your machine. Read the source before installing.
 
 ## Prerequisites
 
 - [pi](https://github.com/badlogic/pi-mono) installed and on your `PATH`
-- Node.js (for `npm install` of the package's own dependencies, which pi runs automatically on install)
+- Node.js
 
 ## Install
 
@@ -17,113 +17,121 @@ Global install (writes to `~/.pi/agent/settings.json`):
 pi install git:github.com/alennartz/my-pi
 ```
 
-Project-local install (writes to `.pi/settings.json` — shareable with a team):
+Project-local install (writes to `.pi/settings.json`, shareable with a team). Pi loads it only after you grant project trust:
 
 ```bash
 pi install -l git:github.com/alennartz/my-pi
 ```
 
-Pin to a ref:
+Pin to a tag or commit:
 
 ```bash
 pi install git:github.com/alennartz/my-pi@<tag-or-sha>
 ```
 
-Try without installing (temporary, current run only):
+Try it for the current run only, without installing:
 
 ```bash
 pi -e git:github.com/alennartz/my-pi
 ```
 
-From a local clone:
+From a local clone. Pi installs dependencies automatically for git sources but not for local ones, so run `npm install` yourself:
 
 ```bash
 git clone https://github.com/alennartz/my-pi.git
+cd my-pi
+npm install
+cd ..
 pi install ./my-pi
 ```
 
 Manage:
 
 ```bash
-pi list                              # show installed packages
-pi update                            # update non-pinned packages
+pi list                                  # show configured packages
+pi update --extensions                   # update all installed packages
 pi remove git:github.com/alennartz/my-pi
 ```
 
-See pi's [packages docs](https://github.com/badlogic/pi-mono) for the full install/enable/disable surface.
+Pinned refs stay pinned across updates. See pi's [documentation](https://github.com/badlogic/pi-mono) for the full package surface.
 
 ## What's Inside
 
 ### Workflow pipeline
 
-A ten-phase development pipeline driven by the `/autoflow` command and a set of skills that hand off via artifacts in `docs/`:
+A ten-phase development pipeline driven by the `/skill:autoflow` command:
 
 `brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle-review → manual-test → cleanup`
 
-Brainstorm and architect are interactive; the remaining phases run autonomously via subagents, with the primary agent orchestrating transitions and validating artifacts between phases.
+```bash
+/skill:autoflow <description of what you want to build or change>
+```
 
-Invoke with `/skill:autoflow <description of what you want to build or change>`. To have every new session start in autoflow, opt in via `~/.pi/agent/autoflow.json`:
+Brainstorm and architect run interactively with you. The remaining phases run autonomously in subagents. Each phase writes an artifact under `docs/`, and the next phase consumes it.
+
+To have every new session start in autoflow, opt in via `~/.pi/agent/autoflow.json`:
 
 ```json
 { "autoStart": true }
 ```
 
-The first message of a new session is then sent as an autoflow invocation with that message appended — exactly as if you had invoked it yourself in one send. Set `"command"` in the same file to use a different invocation (default `"/skill:autoflow"`).
+Pi then delivers your first message in a new session as an autoflow invocation with that message appended, exactly as if you had invoked it yourself. Set `"command"` in the same file to use a different invocation (default `"/skill:autoflow"`).
 
 ### Subagents
 
-Long-lived in-process subagent orchestration — run child pi SDK sessions (optionally pinned to per-agent working directories), communicate over parent-local channels, fork sessions, await with interrupts. Each child owns a fresh Pi model runtime backed by the standard persisted Pi configuration, keeping live child state isolated. Ships with `orchestrating-agents` and `specialist-design` skills and a starter `scout` agent definition.
+The `subagents` extension provides long-lived subagent orchestration. Its tools spawn child pi sessions (optionally in their own working directories), communicate over channels, fork and resurrect sessions, and await with interrupts. A dashboard shows their status.
 
-### Standalone skills
+Subagent calls and agent definitions accept model tier names (`cheap`, `medium`, `smart`, `frontier`). Map tiers to model IDs in `~/.pi/agent/model-tiers.json`, or `.pi/model-tiers.json` for a single project.
 
-- `codemap` — generate/refresh a living map of the codebase
+Two agent definitions ship with the package:
+
+- `scout` — read-only codebase search
+- `comment-sicko` — a reviewer that savors deleting comments and condemns workaround code
+
+### Skills
+
+Invoke any skill with `/skill:<name>`. The standalone skills:
+
+- `codemap` — generate or refresh a living map of the codebase
 - `debugging` — structured root-cause investigation
-- `decision-records` — write, number, and supersede DRs
+- `decision-records` — write, number, and supersede decision records
+- `codebase-design` — design doctrine for modules and functions
+- `domain-modeling` — build and sharpen a project's domain language
+- `improve-code` — scan a codebase for deepening opportunities and work through them
+- `orchestrating-agents` — patterns for delegating work to subagents
+- `skill-writing` — guidance for writing and editing skills
+- `specialist-design` — guidance for creating agent definitions
+
+The pipeline phase skills are hidden from the model. Only autoflow drives them.
 
 ### Extensions
 
-- **subagents** — subagent lifecycle, channel messaging, TUI dashboard; spawned personas replace the child preamble
-- **persona-workspaces** — an `AGENTS.md` with `kind: persona` makes the working directory's root session that specialist, with model, tool, and skill bindings
-- **web-tools** — `web_search` (Brave) and `web_fetch` (bounded retrieval, Readability extraction, disk page cache, offset + findText access)
-- **quota-providers** — generic provider framework with pro-rated soft-cap enforcement, in-memory agent-tree-scoped bypass, `/quota` command, footer indicator, and built-in Azure Foundry and DevPass implementations. Config at `~/.pi/agent/quota-providers.json`.
+- **subagents** — subagent lifecycle, channel messaging, TUI dashboard
+- **persona-workspaces** — an `AGENTS.md` with `kind: persona` turns the working directory into a named specialist, with model, tool, and skill bindings
+- **web-tools** — `web_search` (Brave; requires `BRAVE_API_KEY`) and `web_fetch`
+- **quota-providers** — quota-aware model providers with a `/quota` command and a status footer. Built-in Azure Foundry and DevPass providers. Config at `~/.pi/agent/quota-providers.json`.
 - **worktree** — `/worktree` command for git worktree-based branch sessions
 - **session-resume** — detects interrupted sessions and injects resume markers
-- **autoflow-autostart** — opt-in autoflow invocation on the first message of a new session. Config at `~/.pi/agent/autoflow.json`.
-- **session-name** — `set_session_name` tool so the model can name the current session (shown in session lists and resume pickers)
+- **autoflow-autostart** — opt-in autoflow invocation on the first message of a new session (see above)
+- **session-name** — `set_session_name` tool so the model can name the current session
 - **model-prompt-overlays** — appends `AGENTS.<model>.md` overlays to the system prompt based on the active model
 - **toolscript** — runs [toolscript](https://github.com/badlogic/toolscript) as an MCP child and exposes its tools
 - **user-edit** — `user_edit` tool that opens a file in pi's built-in editor
-- **numbered-select** — TUI helper for numbered selection
+- **numbered-select** — `ask_user` tool for numbered multiple-choice questions
+- **print-prompt** — `/sysprompt` command to inspect the last rendered system prompt
 - **my-pi-docs** — injects a system-prompt pointer to the extension configuration reference
-
-The full extension and configuration reference is [`docs/extensions.md`](./docs/extensions.md).
 
 ### Prompts
 
-- `onboard` — initialize this package on a new machine, configure it's extensions etc.
-- `tidy` — clean up working state
+Prompt templates run as slash commands:
 
-## Layout
+- `/tidy` — commit and push the checked-out branch
+- `/experiment` — run a goal-driven single-variable experiment campaign
+- `/resolve-conflicts` — resolve a git merge or rebase conflict by intent
 
-```
-agents/        agent definitions (subagent personas)
-extensions/    TypeScript extensions, loaded at runtime (no build step)
-prompts/       prompt templates
-skills/        Markdown skills (YAML frontmatter + body)
-themes/        pi themes
-lib/           shared TS helpers used by extensions
-docs/          brainstorms, plans, reviews, manual tests, decision records
-codemap.md     full module map (read this for the deeper tour)
-```
+## Configuration
 
-See [codemap.md](./codemap.md) for module responsibilities, dependencies, and file ownership.
-
-## Notes for Contributors / Forkers
-
-- Extensions are **raw TypeScript** loaded by pi at runtime — no build, no `tsc`, no bundler. Edit `.ts` files directly.
-- Skills are Markdown with YAML frontmatter following pi's skill format.
-- Agent definitions are Markdown with YAML frontmatter (`name`, `description`, `tools`, `model`) plus a system prompt body.
-- Subagents are a **local extension** (`extensions/subagents/`), not a built-in pi feature.
+Each extension owns its configuration files and environment variables. The full reference is [`docs/extensions.md`](./docs/extensions.md). It documents every config file, front-matter field, default, and environment variable.
 
 ## License
 
