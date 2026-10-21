@@ -18,7 +18,6 @@ export default function (pi: ExtensionAPI) {
 		promptGuidelines: [
 			'Call set_session_name with a short descriptive phrase (for example "fix webhook retry backoff"). Keep names 12 characters or fewer, prefixed with a two-letter code for the working directory.',
 			"Once you have used set_session_name, use a much higher bar for changing it again: the session's goal must have drastically shifted.",
-			"Pass an empty string only when the session should have no name.",
 		],
 		parameters: Type.Object({
 			name: Type.String({
