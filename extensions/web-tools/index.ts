@@ -23,7 +23,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			"Search the web via Brave and return compact result cards (title, URL, snippet, age). Use web_fetch to read the content of a result.",
+			"Search the web through Brave. Returns result cards with sourceId, url, title, snippet, and age, plus a responseId for follow-up.",
 		promptSnippet: "Discover sources; returns links and snippets, not page content.",
 		parameters: webSearchParameters,
 		outputSchema: webSearchOutput,
@@ -44,7 +44,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_fetch",
 		label: "Web Fetch",
 		description:
-			"Fetch one or more URLs (max 8) as markdown via Readability. Full content is stored on disk — explore with findText first to pull the passages relevant to your goal, then use offset to read around or past a hit.",
+			"Fetch 1 to 8 URLs as markdown through Readability. Full pages are stored on disk. Use offset to continue a page and findText to search it.",
 		promptSnippet: "Fetch URLs you already know, from web_search or the user, as markdown for targeted reading.",
 		parameters: webFetchParameters,
 		outputSchema: webFetchOutput,

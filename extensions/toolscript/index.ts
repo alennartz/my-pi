@@ -3,6 +3,13 @@ import type { TSchema } from "typebox";
 import { truncateForModel } from "../../lib/truncate.ts";
 import { ToolscriptClient, wrapResultSchema, type CallToolBlock } from "./client.ts";
 
+/** First sentence of an upstream description, capped at 15 words. Falls back to the registered tool name when empty. */
+function snippetFor(toolName: string, description: string): string {
+	const firstSentence = description.trim().split(/(?<=[.!?])\s/)[0] ?? "";
+	const capped = firstSentence.split(/\s+/).slice(0, 15).join(" ");
+	return capped || toolName;
+}
+
 export default function (pi: ExtensionAPI) {
 	let client: ToolscriptClient | null = null;
 	let startPromise: Promise<void> | null = null;
@@ -58,7 +65,7 @@ export default function (pi: ExtensionAPI) {
 					name: toolName,
 					label: "Toolscript: " + mcpTool.name,
 					description: mcpTool.description,
-					promptSnippet: mcpTool.description,
+					promptSnippet: snippetFor(toolName, mcpTool.description),
 					parameters: mcpTool.inputSchema as TSchema,
 					outputSchema: wrapResultSchema(mcpTool.outputSchema),
 					async execute(_toolCallId, params) {

@@ -135,6 +135,26 @@ describe("toolscript instructions section", () => {
 		expect(definition.promptSnippet).toBe("Search things");
 		expect(definition).not.toHaveProperty("promptGuidelines");
 	});
+
+	it("snippets the first sentence of the upstream description", async () => {
+		const { handlers, pi } = setup();
+		await bootSession(handlers, Promise.resolve(makeStartResult({
+			tools: [{ name: "search", description: "Search things. Extra detail follows.", inputSchema: {} }],
+		})));
+
+		const definition = pi.registerTool.mock.calls[0][0] as Record<string, unknown>;
+		expect(definition.promptSnippet).toBe("Search things.");
+		expect(definition.description).toBe("Search things. Extra detail follows.");
+	});
+
+	it("falls back to the registered name when the upstream description is empty", async () => {
+		const { handlers, pi } = setup();
+		await bootSession(handlers, Promise.resolve(makeStartResult({
+			tools: [{ name: "search", description: "", inputSchema: {} }],
+		})));
+
+		const definition = pi.registerTool.mock.calls[0][0] as Record<string, unknown>;
+		expect(definition.promptSnippet).toBe("toolscript_search");
 });
 
 describe("toolscript tool results", () => {

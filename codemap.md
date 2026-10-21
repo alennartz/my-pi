@@ -225,7 +225,7 @@ Model-facing result/truncation helpers shared by every local tool.
 
 ### Numbered Select
 
-Extension providing the root-session `ask_user`/`numbered_select` LLM tool and reusable `showNumberedSelect` TUI helper — a keyboard-driven selection dialog with inline annotation support; child sessions are prevented from invoking it by Subagents' normalized SDK tool policy.
+Extension providing the root-session `ask_user` LLM tool and reusable `showNumberedSelect` TUI helper — a keyboard-driven selection dialog with inline annotation support; child sessions are prevented from invoking it by Subagents' normalized SDK tool policy.
 
 **Responsibilities:** ask_user tool registration for root sessions, interactive numbered-list TUI component, selection and annotation flow, result `details` ({label, index, annotation} or {cancelled}) for rendering; no `outputSchema` — model-only exposure means codemode scripts can never call it
 

@@ -12,7 +12,7 @@ export default function (pi: ExtensionAPI) {
 		// contexts (codemode scripts, ctx.executeTool), per the model-only contract.
 		exposure: "model-only",
 		description:
-			"Open a file in the built-in editor for the user to edit manually. The user can modify the content and save, or cancel. Returns whether the file was saved or the edit was cancelled.",
+			"Open a file in the built-in editor for the user to edit manually. The user can modify the content and save, or cancel. Returns whether the file was saved or the edit was cancelled. Creates the file on save if it does not exist.",
 		promptSnippet: "Open a file in the built-in editor for the user to edit, save, or cancel.",
 		parameters: Type.Object({
 			path: Type.String({ description: "File path to open for editing, resolved relative to the working directory" }),

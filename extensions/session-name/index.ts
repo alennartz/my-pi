@@ -13,10 +13,10 @@ export default function (pi: ExtensionAPI) {
 		name: "set_session_name",
 		label: "Set Session Name",
 		description:
-			"Set name of the current session once the task is clear. Keep the name short, <= 12 characters. Prefix with a two-letter code that represents the current working directory.",
+			"Set or clear the current session name. An empty string clears it. Returns the effective name and the previous name.",
 		promptSnippet: "Name the session once the task is clear",
 		promptGuidelines: [
-			'Call set_session_name once the task is clear, with a short descriptive phrase (for example "fix webhook retry backoff").',
+			'Call set_session_name with a short descriptive phrase (for example "fix webhook retry backoff"). Keep names 12 characters or fewer, prefixed with a two-letter code for the working directory.',
 			"Call it again only when the task meaningfully changes; pass an empty string to clear the name.",
 		],
 		parameters: Type.Object({
