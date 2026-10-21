@@ -155,6 +155,7 @@ describe("toolscript instructions section", () => {
 
 		const definition = pi.registerTool.mock.calls[0][0] as Record<string, unknown>;
 		expect(definition.promptSnippet).toBe("toolscript_search");
+	});
 });
 
 describe("toolscript tool results", () => {
