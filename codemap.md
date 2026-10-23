@@ -66,7 +66,7 @@ The ten workflow skills and the autoflow orchestration skill that drives them. A
 
 Standalone utility skills not tied to the workflow pipeline.
 
-**Responsibilities:** codemap generation and maintenance, structured debugging, decision record management (format, numbering, supersession), skill authoring guidance (invocation axis, information hierarchy, pruning, leading words), domain language maintenance (glossary.md convention, active term-sharpening discipline), code design doctrine (deep modules/seams at module level, function-level principles in FUNCTIONS.md — referenced by the pipeline skills), periodic architecture review (user-invoked deepening scan with HTML report)
+**Responsibilities:** codemap generation and maintenance, structured debugging, decision record management (format, numbering, supersession), skill authoring guidance (invocation axis, information hierarchy, pruning, leading words), domain language maintenance (glossary.md convention, active term-sharpening discipline), code design doctrine (deep modules/seams at module level, function-level principles in FUNCTIONS.md — referenced by the pipeline skills), periodic architecture review (user-invoked deepening scan with HTML report), tool prompt design (which field holds which fact: snippet for the planner, guidelines for cross-tool routing, description for the caller)
 
 **Dependencies:** none
 
@@ -83,6 +83,7 @@ Standalone utility skills not tied to the workflow pipeline.
 - `skills/codebase-design/DEEPENING.md`
 - `skills/codebase-design/DESIGN-IT-TWICE.md`
 - `skills/improve-code/SKILL.md`
+- `skills/tool-design/SKILL.md`
 - `docs/decisions/**`
 
 ### Web Tools
