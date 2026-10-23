@@ -51,6 +51,24 @@ function useUnpatchedHost(): string {
 	return dir;
 }
 
+/** A host runtime whose unpatched source can be transformed by host-patch.ts. */
+function usePatchableUnpatchedHost(): string {
+	const dir = mkdtempSync(join(tmpdir(), "persona-host-patchable-"));
+	mkdirSync(join(dir, "dist", "core"), { recursive: true });
+	writeFileSync(
+		join(dir, "dist", "core", "system-prompt.js"),
+		[
+			'if (!SYSTEM_PROMPT_SECTION_NAME.test(name) || name === "preamble") {',
+			`        promptSections.preamble =
+            "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";`,
+			`        if (content)
+            promptSections[name] = content;`,
+		].join("\n"),
+	);
+	hostPathState.packageDir = dir;
+	return dir;
+}
+
 function setup() {
 	hostPathState.agentDir = "";
 	usePatchedHost();
@@ -152,6 +170,24 @@ describe("prompt binding", () => {
 		expect(ctx.ui.notify).toHaveBeenCalledWith(
 			expect.stringContaining("stacking the persona as a section"),
 			"warning",
+		);
+	});
+
+	it("stacks on the first run that writes the host patch", async () => {
+		const s = setup();
+		const cwd = personaWorkspace();
+		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		usePatchableUnpatchedHost();
+
+		const event = agentStartEvent();
+		const ctx = ctxFor(cwd);
+		await s.beforeAgentStart(event, ctx);
+
+		expect(event.systemPromptOptions.sections.persona).toContain(WORKSPACE_BODY);
+		expect(event.systemPromptOptions.sections.preamble).toBeUndefined();
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			"Patched pi preamble override; restart pi to activate it in this session.",
+			"info",
 		);
 	});
 

@@ -149,7 +149,7 @@ function hostPatchFor(piPackageDir: string): HostPatch {
 	if (existing) return existing;
 	const status = ensurePreamblePatch(piPackageDir);
 	const hostPatch: HostPatch = {
-		mode: status.kind === "already-patched" || status.kind === "patched" ? "override" : "stacked",
+		mode: status.kind === "already-patched" ? "override" : "stacked",
 		status,
 		warned: false,
 	};
