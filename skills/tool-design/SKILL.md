@@ -66,43 +66,51 @@ A sentence repeated across two fields is a defect even when both copies are accu
 
 Codemode is a built-in tool. It runs a JavaScript script that calls other tools. The script can call several tools at once. Only the script's output reaches the model.
 
+The **codemode catalog** is the list of callable-tool declarations that Pi inserts into the `codemode` tool's own description. It helps the model write a script. It is not the set of tools a script can call. A callable tool can be absent from the catalog and still be callable. When codemode is active in mode `on`, direct tools are omitted from the catalog because their normal declarations carry a codemode call note. Scripts can still call those tools and can discover them with `ALL_TOOLS`, `searchTools()`, and `describeTool()`.
+
 What a tool must do so that scripts can use it:
 
-- Declare `outputSchema` when scripts need structured data. A script then receives `structuredContent`. Without `outputSchema`, a script receives the text content.
+- Exposure controls whether a script can call the tool. A `direct` tool is callable from codemode while it is active.
+- Declare `outputSchema` when scripts need structured data. A script then receives `structuredContent`. Without `outputSchema`, a script receives the text content. `outputSchema` controls the result shape, not callability.
 - Put the full payload in the field the schema declares. The model still receives `content`.
 - To report a failure that still carries data, return `isError: true`. Do not throw. The model sees the error, and the script still receives `structuredContent`.
 - Make the tool `model-only` when it asks the user or orchestrates other tools. A script cannot answer a UI prompt. The Exposure section defines what each value allows.
 
 Settings (`codemode.mode`):
 
-- `on` (default): declared tools get a note in their description. Codemode lists only tools that are not declared.
-- `only`: codemode lists every tool. Active tools are hidden from the model.
+- `on` (default): active direct tools remain in the model's normal tool list, and their descriptions explain the `tools.<name>(args)` call. The codemode catalog lists only callable tools that are not direct. This omits direct tools from the catalog, not from codemode access.
+- `only`: the codemode catalog lists every callable tool. Pi hides active direct-tool declarations from the model's normal tool list, but scripts can still call those tools.
 
 Restricted sessions:
 
-- A restricted tool list pins the exact tool set. Codemode runs only when the list names it.
+- A restricted tool list pins the exact tool set. Include `codemode` and every tool a script must call. Codemode cannot call a tool outside that set.
 - Granting codemode also grants the `models` global. That global spends credentials on classifier and image models.
 - A child agent can run with fewer tools than its parent. Check the child's list when a tool must not run there.
 
 ## Exposure
 
-Exposure sets how a tool reaches the model and codemode scripts. Set it on every tool. Verified against pi 1.4.0 docs and type declarations.
+Exposure separates the model's normal tool list from codemode script access. Catalog inclusion is a separate presentation choice controlled by `codemode.mode`. Set exposure on every tool. Verified against pi 1.4.0 docs and type declarations.
 
-Two terms:
+Three terms:
 
-- **Declared:** the model sees the tool in its tool list while the tool is active.
-- **Callable:** a codemode script can call the tool.
+- **Declared:** the model sees the tool in its normal tool list while the tool is active.
+- **Callable:** a codemode script can call the tool as `tools.<name>(args)`.
+- **Catalog-listed:** the tool's declaration appears in the codemode catalog. A tool can be callable without being catalog-listed.
 
-| Exposure | Declared | Callable | Listed by codemode | Active on registration |
-|---|---|---|---|---|
-| `direct` (default) | Yes | Yes | No in mode `on` | Yes |
-| `model-only` | Yes | No | No | Yes |
-| `codemode` | No, unless activated | Yes | Yes | No |
-| `deferred` | No, until `tool_search` loads it | Yes | No | No |
-| `hidden` | No | No | No | No |
+All rows are subject to the session's tool allowlist.
 
+| Exposure | Declared to model | Callable from codemode | Catalog in mode `on` | Catalog in mode `only` | Active on registration |
+|---|---|---|---|---|---|
+| `direct` (default) | Yes, while active | Yes, while active | No. Its normal declaration carries the codemode call note. | Yes, while active | Yes |
+| `model-only` | Yes, while active | No | No | No | Yes |
+| `codemode` | No, unless activated | Yes, whenever registered | Yes | Yes | No |
+| `deferred` | No, until `tool_search` loads it | Yes, whenever registered | No. `tool_search` can find it. | No. `tool_search` can find it. | No |
+| `hidden` | No | No | No | No | No |
+
+- Use `direct` for a tool that the normal LLM interface and codemode scripts must both use. In mode `on`, its absence from the codemode catalog is intentional and does not block calls.
 - `model-only` tools are declared but never callable. They ask the user or orchestrate other tools.
-- `deferred` tools are callable but not listed by codemode. `tool_search` loads a match, so the model can declare the tool for its next call.
+- `codemode` tools are callable and catalog-listed, but the model sees them only after activation.
+- `deferred` tools are callable but not catalog-listed. `tool_search` can find and activate a match, so the model can declare the tool for its next call.
 - `hidden` tools cannot be reached at all. Tools cannot be unregistered, so re-register a tool with `hidden` to withdraw it.
 
 Other meta fields:
