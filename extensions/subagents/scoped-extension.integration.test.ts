@@ -1089,6 +1089,76 @@ describe("root orchestration integration", () => {
 		expect(created.child.abort).toHaveBeenCalledTimes(1);
 	});
 
+	it("returns teardown usage in pi's nested-tool usage shape", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "inspect", channels: [] }],
+		}, ctx);
+		const worker = managed.created[0];
+		worker.hooks.onEvent({
+			type: "message_end",
+			message: {
+				role: "assistant",
+				model: "provider/model",
+				usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 0, cost: { total: 0.01 } },
+				content: [{ type: "text", text: "finished" }],
+			},
+		});
+		// A child teardown carries the grandchild's usage as a tool result. The
+		// parent must retain it until its own teardown returns the subtree total.
+		worker.hooks.onEvent({
+			type: "tool_execution_end",
+			toolCallId: "nested-call",
+			parentToolCallId: "outer-call",
+			toolName: "classify",
+			result: {
+				content: [{ type: "text", text: "nested" }],
+				usage: {
+					input: 100,
+					output: 100,
+					cacheRead: 100,
+					cacheWrite: 100,
+					totalTokens: 400,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 1 },
+				},
+			},
+			isError: false,
+		});
+		worker.hooks.onEvent({
+			type: "tool_execution_end",
+			toolCallId: "teardown-call",
+			toolName: "teardown",
+			result: {
+				content: [{ type: "text", text: "removed" }],
+				usage: {
+					input: 3,
+					output: 1,
+					cacheRead: 4,
+					cacheWrite: 0,
+					totalTokens: 8,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.02 },
+				},
+			},
+			isError: false,
+		});
+
+		const result = await execute(tools, "teardown", { agent: "worker" }, ctx);
+		expect(result.usage).toEqual({
+			input: 13,
+			output: 5,
+			cacheRead: 6,
+			cacheWrite: 0,
+			totalTokens: 24,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.03 },
+		});
+	});
+
 	it("repairs a stale errored state when assistant usage proves the run continued", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
@@ -1361,6 +1431,74 @@ describe("root orchestration integration", () => {
 		expect(managed.created[1].config).toMatchObject({
 			path: ["worker-restored"],
 			target: { kind: "resume", sessionFile: first.child.sessionFile },
+		});
+	});
+
+	it("resets the usage baseline on resurrection before the next teardown", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "inspect", channels: [] }],
+		}, ctx);
+		const first = managed.created[0];
+		fs.mkdirSync(path.dirname(first.child.sessionFile), { recursive: true });
+		// The resumed session contains the usage already reported by the first
+		// teardown. Resurrection must not replay it as new work.
+		fs.writeFileSync(first.child.sessionFile, JSON.stringify({
+			type: "message",
+			message: {
+				role: "assistant",
+				usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 0, cost: { total: 0.01 } },
+				content: [{ type: "text", text: "old result" }],
+			},
+		}) + "\n");
+		first.hooks.onEvent({
+			type: "message_end",
+			message: {
+				role: "assistant",
+				usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 0, cost: { total: 0.01 } },
+				content: [{ type: "text", text: "old result" }],
+			},
+		});
+		const firstTeardown = await execute(tools, "teardown", { agent: "worker" }, ctx);
+		expect(firstTeardown.usage.cost.total).toBeCloseTo(0.01);
+
+		await execute(tools, "resurrect", {
+			agents: [{
+				id: "worker-restored",
+				sessionId: first.child.sessionId,
+				channels: [],
+				task: "continue",
+			}],
+		}, ctx);
+		const restored = managed.created[1];
+		expect(restored.config.scope.registry.getSnapshot(["worker-restored"]).operational.usage).toEqual({
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			cost: 0,
+			turns: 0,
+		});
+		restored.hooks.onEvent({
+			type: "message_end",
+			message: {
+				role: "assistant",
+				usage: { input: 5, output: 2, cacheRead: 1, cacheWrite: 0, cost: { total: 0.02 } },
+				content: [{ type: "text", text: "new result" }],
+			},
+		});
+		const secondTeardown = await execute(tools, "teardown", { agent: "worker-restored" }, ctx);
+		expect(secondTeardown.usage).toMatchObject({
+			input: 5,
+			output: 2,
+			cacheRead: 1,
+			cost: { total: 0.02 },
 		});
 	});
 

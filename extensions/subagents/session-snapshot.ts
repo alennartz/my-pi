@@ -14,8 +14,16 @@ import * as fs from "node:fs";
  * lifecycle log.
  */
 
+interface RawUsage {
+	input?: number;
+	output?: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+	cost?: { total?: number };
+}
+
 export interface SessionSnapshot {
-	/** Cumulative usage summed over every assistant message in the session. */
+	/** Cumulative usage from assistant and usage-bearing tool/session entries. */
 	usage: {
 		input: number; // sum of usage.input
 		output: number; // sum of usage.output
@@ -32,6 +40,18 @@ export interface SessionSnapshot {
 	lastTurnInput: number;
 }
 
+function addUsage(
+	target: SessionSnapshot["usage"],
+	usage: RawUsage | undefined,
+): void {
+	if (!usage) return;
+	target.input += usage.input ?? 0;
+	target.output += usage.output ?? 0;
+	target.cacheRead += usage.cacheRead ?? 0;
+	target.cacheWrite += usage.cacheWrite ?? 0;
+	target.cost += usage.cost?.total ?? 0;
+}
+
 /**
  * Parse a pi session JSONL file into a status snapshot via a single forward pass.
  *
@@ -40,15 +60,16 @@ export interface SessionSnapshot {
  *   ({ usage: all-zero, turns: 0, lastTurnInput: 0 }, no model/lastOutput) — never throws.
  * - Malformed (non-JSON) lines are skipped individually; a single bad line does
  *   not abort the parse.
- * - Only assistant messages contribute to usage. usage.turns equals the number of
- *   assistant messages seen.
+ * - Assistant messages, usage-bearing tool results, and pi usage entries
+ *   contribute to usage. usage.turns equals the number of assistant messages.
  * - model and lastOutput reflect the LAST assistant message in file order. If the
  *   last assistant message has no text part, lastOutput is left at the previous
  *   value (or undefined if none). model is taken from that same last assistant message.
  * - lastTurnInput is derived from the last assistant message's usage as
  *   (input ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0).
- * - Lines that cannot be an assistant message (cheap substring check fails) are
- *   skipped without JSON parsing, so large toolResult/image lines cost ~nothing.
+ * - Lines without an assistant message or usage-bearing entry (cheap substring
+ *   check fails) are skipped without JSON parsing, so large toolResult/image
+ *   lines cost ~nothing.
  */
 export function parseSessionSnapshot(sessionFile: string): SessionSnapshot {
 	const snapshot: SessionSnapshot = {
@@ -67,9 +88,15 @@ export function parseSessionSnapshot(sessionFile: string): SessionSnapshot {
 	for (const rawLine of contents.split("\n")) {
 		const line = rawLine.trim();
 		if (line.length === 0) continue;
-		// Cheap substring pre-filter: only lines that can be an assistant
-		// message are parsed. Session fixtures use compact JSON (no spaces).
-		if (!line.includes('"role":"assistant"')) continue;
+		// Cheap substring pre-filter: skip ordinary user/tool-result/image lines.
+		// A tool result is parsed only when it carries usage, while an assistant
+		// line is parsed even without usage so it still counts as a turn.
+		const isAssistant = line.includes('"role":"assistant"');
+		const isToolResultWithUsage = line.includes('"role":"toolResult"') && line.includes('"usage"');
+		const isUsageEntry = line.includes('"type":"usage"') && line.includes('"usage"');
+		const isSummaryWithUsage = (line.includes('"type":"compaction"') || line.includes('"type":"branch_summary"'))
+			&& line.includes('"usage"');
+		if (!isAssistant && !isToolResultWithUsage && !isUsageEntry && !isSummaryWithUsage) continue;
 
 		let parsed: unknown;
 		try {
@@ -85,56 +112,56 @@ export function parseSessionSnapshot(sessionFile: string): SessionSnapshot {
 				role?: unknown;
 				model?: unknown;
 				content?: unknown;
-				usage?: {
-					input?: number;
-					output?: number;
-					cacheRead?: number;
-					cacheWrite?: number;
-					cost?: { total?: number };
-				};
+				usage?: RawUsage;
 			};
+			usage?: RawUsage;
 		};
 
 		// The substring check is a fast reject, not proof — confirm shape.
-		if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
-		const message = entry.message;
+		if (entry.type === "message" && entry.message?.role === "assistant") {
+			const message = entry.message;
+			snapshot.usage.turns += 1;
+			addUsage(snapshot.usage, message.usage);
 
-		snapshot.usage.turns += 1;
+			// Last assistant message in file order wins for model/lastOutput/lastTurnInput.
+			if (typeof message.model === "string") {
+				snapshot.model = message.model;
+			} else {
+				snapshot.model = undefined;
+			}
 
-		const usage = message.usage;
-		const input = usage?.input ?? 0;
-		const cacheRead = usage?.cacheRead ?? 0;
-		const cacheWrite = usage?.cacheWrite ?? 0;
-		snapshot.usage.input += input;
-		snapshot.usage.output += usage?.output ?? 0;
-		snapshot.usage.cacheRead += cacheRead;
-		snapshot.usage.cacheWrite += cacheWrite;
-		snapshot.usage.cost += usage?.cost?.total ?? 0;
+			const usage = message.usage;
+			const input = usage?.input ?? 0;
+			const cacheRead = usage?.cacheRead ?? 0;
+			const cacheWrite = usage?.cacheWrite ?? 0;
+			snapshot.lastTurnInput = usage ? input + cacheRead + cacheWrite : 0;
 
-		// Last assistant message in file order wins for model/lastOutput/lastTurnInput.
-		if (typeof message.model === "string") {
-			snapshot.model = message.model;
-		} else {
-			snapshot.model = undefined;
+			if (Array.isArray(message.content)) {
+				let lastText: string | undefined;
+				for (const part of message.content) {
+					if (
+						part &&
+						typeof part === "object" &&
+						(part as { type?: unknown }).type === "text" &&
+						typeof (part as { text?: unknown }).text === "string"
+					) {
+						lastText = (part as { text: string }).text;
+					}
+				}
+				// Only overwrite lastOutput if this message had a text part;
+				// otherwise keep the previous value.
+				if (lastText !== undefined) snapshot.lastOutput = lastText;
+			}
+			continue;
 		}
 
-		snapshot.lastTurnInput = usage ? input + cacheRead + cacheWrite : 0;
+		if (entry.type === "message" && entry.message?.role === "toolResult") {
+			addUsage(snapshot.usage, entry.message.usage);
+			continue;
+		}
 
-		if (Array.isArray(message.content)) {
-			let lastText: string | undefined;
-			for (const part of message.content) {
-				if (
-					part &&
-					typeof part === "object" &&
-					(part as { type?: unknown }).type === "text" &&
-					typeof (part as { text?: unknown }).text === "string"
-				) {
-					lastText = (part as { text: string }).text;
-				}
-			}
-			// Only overwrite lastOutput if this message had a text part;
-			// otherwise keep the previous value.
-			if (lastText !== undefined) snapshot.lastOutput = lastText;
+		if (entry.type === "usage" || entry.type === "compaction" || entry.type === "branch_summary") {
+			addUsage(snapshot.usage, entry.usage);
 		}
 	}
 

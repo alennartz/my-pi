@@ -115,6 +115,7 @@ export class AgentSessionRegistry {
 	private readonly root: ExternalRootNode;
 	private rootSnapshot: AgentNodeSnapshot & { ownership: "external"; path: [] };
 	private readonly nodes = new Map<string, InternalNode>();
+	private readonly usageBaselines = new Map<string, AgentUsage>();
 	private readonly stagedSnapshots = new Map<string, AgentNodeSnapshot>();
 	private readonly reservations = new Map<string, Reservation>();
 	private readonly liveWaiters = new Map<string, Set<(isLive: boolean) => void>>();
@@ -147,6 +148,12 @@ export class AgentSessionRegistry {
 
 	getSnapshot(path: AgentPath): AgentNodeSnapshot | undefined {
 		return this.get(path)?.snapshot;
+	}
+
+	/** Usage captured when a live node entered this registry. */
+	getUsageBaseline(path: AgentPath): AgentUsage | undefined {
+		const baseline = this.usageBaselines.get(key(path));
+		return baseline ? { ...baseline } : undefined;
 	}
 
 	listChildren(parent: AgentPath): AgentNodeSnapshot[] {
@@ -309,9 +316,11 @@ export class AgentSessionRegistry {
 			if (this.disposed || this.isPathRemoving(parent) || paths.some((path) => this.isPathRemoving(path))) {
 				throw new Error("Cannot commit child sessions beneath a removed registry subtree");
 			}
-			for (const path of paths) {
+			for (let index = 0; index < paths.length; index++) {
+				const path = paths[index];
 				const pathKey = key(path);
 				this.nodes.set(pathKey, staged.get(pathKey)!);
+				this.usageBaselines.set(pathKey, { ...requests[index].initialOperational.usage });
 			}
 			for (const path of paths) {
 				const pathKey = key(path);
@@ -468,6 +477,7 @@ export class AgentSessionRegistry {
 				await this.disposeNode(node);
 				if (this.nodes.get(nodeKey) !== node) continue;
 				this.nodes.delete(nodeKey);
+				this.usageBaselines.delete(nodeKey);
 				this.stagedSnapshots.delete(nodeKey);
 				this.emit({ type: "node_removed", node: node.snapshot });
 			}

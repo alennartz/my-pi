@@ -8,6 +8,7 @@
  */
 
 import { Type } from "typebox";
+import type { Usage } from "@earendil-works/pi-ai";
 import { formatTokenCount } from "./format.js";
 import type { AgentStatus, AgentUsage } from "./agent-set.js";
 import type { AgentCompleteData } from "./messages.js";
@@ -128,7 +129,7 @@ export interface TeardownAgentData {
 	id: string;
 	status: LifecycleStatus;
 	sessionId?: string;
-	/** Usage since the agent was spawned, resurrected, or reattached. */
+	/** Usage since the agent was spawned, resurrected, or reattached, including its live subtree. */
 	usage: AgentUsage;
 	/** Baseline the delta was measured from; present only when non-zero (parent-session restore). */
 	usageBaseline?: AgentUsage;
@@ -136,6 +137,44 @@ export interface TeardownAgentData {
 
 export interface TeardownResultData {
 	agents: TeardownAgentData[];
+}
+
+/** Sum the usage summaries that a teardown result reports for its subtree. */
+export function sumAgentUsage(usages: readonly AgentUsage[]): AgentUsage {
+	return usages.reduce(
+		(total, usage) => ({
+			input: total.input + usage.input,
+			output: total.output + usage.output,
+			cacheRead: total.cacheRead + usage.cacheRead,
+			cacheWrite: total.cacheWrite + usage.cacheWrite,
+			cost: total.cost + usage.cost,
+			turns: total.turns + usage.turns,
+		}),
+		{ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
+	);
+}
+
+/**
+ * Adapt the local cumulative summary to pi's ToolResultMessage usage contract.
+ * Pi accounts the top-level token fields and `cost.total`; the local summary
+ * does not retain a cost split, so the split stays zero while the total stays
+ * exact.
+ */
+export function toPiUsage(usage: AgentUsage): Usage {
+	return {
+		input: usage.input,
+		output: usage.output,
+		cacheRead: usage.cacheRead,
+		cacheWrite: usage.cacheWrite,
+		totalTokens: usage.input + usage.output + usage.cacheRead + usage.cacheWrite,
+		cost: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			total: usage.cost,
+		},
+	};
 }
 
 export const TeardownResultSchema = Type.Object({

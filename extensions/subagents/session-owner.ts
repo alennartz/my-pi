@@ -55,6 +55,8 @@ import {
 	isZeroUsage,
 	lifecycleStatus,
 	statusData,
+	sumAgentUsage,
+	toPiUsage,
 	type InterruptResultData,
 	type ModelsResultData,
 	type ResurrectResultData,
@@ -1654,7 +1656,10 @@ class SubagentSessionOwner {
 		const usageLine = single ? `\n\n${formatUsageLine(single.usage, single.usageBaseline)}` : "";
 		const bounded = await truncateForModel(`${label}\n\n${report}${usageLine}`);
 		const data: TeardownResultData = { agents: reports };
-		return { content: [{ type: "text", text: bounded.text }], details: data, structuredContent: data };
+		// `usage` is pi's ToolResultMessage accounting seam. `details` is only
+		// tool-specific data and does not contribute to the root session total.
+		const usage = toPiUsage(sumAgentUsage(reports.map((agent) => agent.usage)));
+		return { content: [{ type: "text", text: bounded.text }], details: data, structuredContent: data, usage };
 	}
 
 	private teardownAgentData(manager: SubagentManager, id: string): TeardownAgentData | undefined {

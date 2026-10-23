@@ -273,17 +273,26 @@ export class SubagentManager {
 			.find((candidate) => candidate.localId === agentId)?.sessionId;
 	}
 
-	/** Usage consumed since the entry was created (spawn, resurrect, or parent-session restore), plus the baseline it was measured from. */
+	/** Usage consumed since the entry was created, including its live subtree. */
 	getUsageDelta(agentId: string): { delta: AgentUsage; baseline: AgentUsage } | undefined {
 		const entry = this.findEntry(agentId);
-		const snapshot = this.opts.registry
-			.listChildren(this.opts.ownerPath)
-			.find((candidate) => candidate.localId === agentId);
-		if (!entry || !snapshot) return undefined;
-		return {
-			delta: subtractUsage(snapshot.operational.usage, entry.usageBaseline),
-			baseline: { ...entry.usageBaseline },
-		};
+		const targetPath = childAgentPath(this.opts.ownerPath, agentId);
+		const target = this.opts.registry.getSnapshot(targetPath);
+		if (!entry || !target) return undefined;
+
+		const descendants = typeof this.opts.registry.listDescendants === "function"
+			? this.opts.registry.listDescendants(targetPath)
+			: [];
+		let delta = zeroUsage();
+		let baseline = zeroUsage();
+		for (const snapshot of [target, ...descendants]) {
+			const nodeBaseline = samePath(snapshot.path, targetPath)
+			? entry.usageBaseline
+			: this.opts.registry.getUsageBaseline?.(snapshot.path) ?? zeroUsage();
+			delta = addUsage(delta, subtractUsage(snapshot.operational.usage, nodeBaseline));
+			baseline = addUsage(baseline, nodeBaseline);
+		}
+		return { delta, baseline };
 	}
 
 	hasAgents(): boolean {
@@ -757,6 +766,21 @@ export class SubagentManager {
 			return;
 		}
 
+		if (event.type === "entry_appended" && event.entry?.type === "usage") {
+			// Cache warming and other model-attributed session entries are not
+			// assistant messages, but pi still includes their usage in session cost.
+			this.recordToolUsage(entry, event.entry.usage);
+			return;
+		}
+
+		if (event.type === "tool_execution_end") {
+			// Pi places nested model work on the direct tool result's `usage`.
+			// Nested execution events carry a parent id, while the enclosing result
+			// already contains their combined usage, so count only that outer result.
+			if (!event.parentToolCallId) this.recordToolUsage(entry, event.result?.usage);
+			return;
+		}
+
 		if (event.type === "message_end" && event.message?.role === "assistant") {
 			this.recordAssistantMessage(entry, event.message);
 			return;
@@ -786,6 +810,21 @@ export class SubagentManager {
 		if (event.type === "agent_settled") {
 			this.settleAtBoundary(entry);
 		}
+	}
+
+	private recordToolUsage(entry: AgentEntry, usage: any): void {
+		if (!usage || typeof usage !== "object") return;
+		const current = this.operationalFor(entry);
+		this.replaceOperational(entry, operationalWith(current, {
+			usage: {
+				input: current.usage.input + (usage.input || 0),
+				output: current.usage.output + (usage.output || 0),
+				cacheRead: current.usage.cacheRead + (usage.cacheRead || 0),
+				cacheWrite: current.usage.cacheWrite + (usage.cacheWrite || 0),
+				cost: current.usage.cost + (usage.cost?.total || 0),
+				turns: current.usage.turns,
+			},
+		}));
 	}
 
 	private recordAssistantMessage(entry: AgentEntry, message: any): void {
@@ -1087,12 +1126,12 @@ export class SubagentManager {
 		let input = 0;
 		let output = 0;
 		let cost = 0;
-		for (const snapshot of this.opts.registry.listChildren(this.opts.ownerPath)) {
-			input += snapshot.operational.usage.input
-				+ snapshot.operational.usage.cacheRead
-				+ snapshot.operational.usage.cacheWrite;
-			output += snapshot.operational.usage.output;
-			cost += snapshot.operational.usage.cost;
+		for (const entry of this.entries) {
+			const usage = this.getUsageDelta(entry.id)?.delta;
+			if (!usage) continue;
+			input += usage.input + usage.cacheRead + usage.cacheWrite;
+			output += usage.output;
+			cost += usage.cost;
 		}
 		return { input, output, cost };
 	}
@@ -1252,6 +1291,21 @@ function projectStatus(snapshot: AgentNodeSnapshot): AgentStatus {
 
 function zeroUsage(): AgentOperationalSnapshot["usage"] {
 	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
+}
+
+function addUsage(first: AgentUsage, second: AgentUsage): AgentUsage {
+	return {
+		input: first.input + second.input,
+		output: first.output + second.output,
+		cacheRead: first.cacheRead + second.cacheRead,
+		cacheWrite: first.cacheWrite + second.cacheWrite,
+		cost: first.cost + second.cost,
+		turns: first.turns + second.turns,
+	};
+}
+
+function samePath(first: AgentPath, second: AgentPath): boolean {
+	return first.length === second.length && first.every((part, index) => part === second[index]);
 }
 
 function subtractUsage(current: AgentUsage, baseline: AgentUsage): AgentUsage {

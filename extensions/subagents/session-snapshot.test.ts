@@ -141,6 +141,39 @@ describe("parseSessionSnapshot — cumulative usage", () => {
 		expect(snap.usage.turns).toBe(1);
 	});
 
+	it("includes usage from tool results and pi usage entries", () => {
+		const file = writeSession([
+			assistantLine({ model: "m1", text: "a", usage: { input: 2, output: 3, cost: 0.01 } }),
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					content: [{ type: "text", text: "nested" }],
+					usage: {
+						input: 4,
+						output: 5,
+						cacheRead: 6,
+						cacheWrite: 7,
+						cost: { total: 0.02 },
+					},
+				},
+			},
+			{
+				type: "usage",
+				usage: { input: 8, output: 9, cost: { total: 0.03 } },
+			},
+		]);
+		const snap = parseSessionSnapshot(file);
+		expect(snap.usage).toEqual({
+			input: 14,
+			output: 17,
+			cacheRead: 6,
+			cacheWrite: 7,
+			cost: 0.06,
+			turns: 1,
+		});
+	});
+
 	it("counts an assistant message with no usage block as a turn with zero contribution", () => {
 		const file = writeSession([
 			assistantLine({ model: "m1", text: "a" }),

@@ -171,6 +171,30 @@ describe("registry-backed manager status projection", () => {
 		expect(manager.getAgentStatuses()).toEqual([]);
 		expect(registry.listChildren).toHaveBeenCalledWith(["researcher"]);
 	});
+
+	it("includes live descendant usage in a parent teardown delta", () => {
+		const worker = snapshot("worker", ["researcher", "worker"], {
+			operational: operational({ usage: usage({ input: 10, output: 4, cost: 0.03, turns: 1 }) }),
+		});
+		const scout = snapshot("scout", ["researcher", "worker", "scout"], {
+			operational: operational({ usage: usage({ input: 5, output: 2, cost: 0.02, turns: 1 }) }),
+		});
+		const registry = makeRegistry([worker, scout]);
+		registry.getUsageBaseline = vi.fn((path: AgentPath) =>
+			JSON.stringify(path) === JSON.stringify(["researcher", "worker", "scout"])
+				? usage({ input: 1, output: 1, cost: 0.01, turns: 1 })
+				: undefined);
+		const { manager } = createManager(registry, ["researcher"]);
+		(manager as any).entries.push({
+			id: "worker",
+			usageBaseline: usage({ input: 2, output: 1, cost: 0.01, turns: 1 }),
+		});
+
+		expect(manager.getUsageDelta("worker")).toEqual({
+			delta: usage({ input: 12, output: 4, cost: 0.03, turns: 0 }),
+			baseline: usage({ input: 3, output: 2, cost: 0.02, turns: 2 }),
+		});
+	});
 });
 
 describe("registry-backed manager interruption", () => {
