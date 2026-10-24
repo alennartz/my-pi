@@ -382,6 +382,83 @@ describe("AgentSessionRegistry removal, attachment, and lifecycle", () => {
 		expect(reused.snapshot.path).toEqual(["worker"]);
 	});
 
+	it.each(["remove", "dispose"] as const)("completes %s when nested shutdown removes already-disposed children", async (operation) => {
+		const paths = [["worker"], ["worker", "scout"], ["worker", "scout", "leaf"]];
+		const disposalOrder: string[][] = [];
+		const createSession = vi.fn(async (config: any) => {
+			const session = fakeSession(config.path.join("/"));
+			const children = paths.filter((path) => path.length === config.path.length + 1
+				&& config.path.every((part: string, index: number) => part === path[index]));
+			session.dispose = vi.fn(async () => {
+				await Promise.all(children.map((path) => registry.remove(path)));
+				disposalOrder.push(config.path);
+			});
+			return session;
+		});
+		const { registry } = createRegistry(createSession as any);
+		const sessions = [];
+		for (const path of paths) {
+			const [node] = await registry.createChildren(path.slice(0, -1), [request(path.at(-1)!)]);
+			sessions.push(node.session);
+		}
+
+		if (operation === "remove") await registry.remove(["worker"]);
+		else await registry.dispose();
+
+		expect(disposalOrder).toEqual([...paths].reverse());
+		expect(registry.listDescendants([])).toEqual([]);
+		for (const session of sessions) expect(session.dispose).toHaveBeenCalledTimes(1);
+	}, 1000);
+
+	it("keeps overlapping removals pending while the requested node is still live", async () => {
+		const { registry } = createRegistry();
+		await registry.createChildren([], [request("worker")]);
+		const [child] = await registry.createChildren(["worker"], [request("scout")]);
+		let startDisposal!: () => void;
+		let finishDisposal!: () => void;
+		const started = new Promise<void>((resolve) => { startDisposal = resolve; });
+		const finished = new Promise<void>((resolve) => { finishDisposal = resolve; });
+		(child.session as any).dispose = vi.fn(async () => {
+			startDisposal();
+			await finished;
+		});
+		const removal = registry.remove(["worker"]);
+		await started;
+		const overlappingRemoval = registry.remove(["worker", "scout"]);
+		let overlappingSettled = false;
+		void overlappingRemoval.then(() => { overlappingSettled = true; });
+		await Promise.resolve();
+		expect(overlappingSettled).toBe(false);
+		expect(registry.getSnapshot(["worker", "scout"])).toBeDefined();
+
+		finishDisposal();
+		await Promise.all([removal, overlappingRemoval]);
+		expect(registry.listDescendants([])).toEqual([]);
+		expect(child.session.dispose).toHaveBeenCalledTimes(1);
+	});
+
+	it("waits for a reserved node and rejects its commit during removal", async () => {
+		let finishCreation!: () => void;
+		const creating = new Promise<void>((resolve) => { finishCreation = resolve; });
+		const session = fakeSession("worker");
+		const { registry } = createRegistry(vi.fn(async () => {
+			await creating;
+			return session;
+		}) as any);
+		const creation = registry.createChildren([], [request("worker")]);
+		const rejectedCreation = expect(creation).rejects.toThrow(/removed registry subtree/);
+		const removal = registry.remove(["worker"]);
+		let removalSettled = false;
+		void removal.then(() => { removalSettled = true; });
+		await Promise.resolve();
+		expect(removalSettled).toBe(false);
+
+		finishCreation();
+		await Promise.all([removal, rejectedCreation]);
+		expect(session.dispose).toHaveBeenCalledTimes(1);
+		expect(registry.getSnapshot(["worker"])).toBeUndefined();
+	});
+
 	it("attaches presentation only to registry-owned descendants and returns the delegate detach token", async () => {
 		const { registry } = createRegistry();
 		const [child] = await registry.createChildren([], [request("worker")]);

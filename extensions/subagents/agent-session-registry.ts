@@ -440,6 +440,7 @@ export class AgentSessionRegistry {
 		const pathKey = key(path);
 		const exact = this.removals.get(pathKey);
 		if (exact) return exact;
+		if (!this.nodes.has(pathKey) && !this.reservations.has(pathKey)) return Promise.resolve();
 		for (const [removingKey, operation] of this.removals) {
 			const removingPath = JSON.parse(removingKey) as AgentPath;
 			if (!isPrefix(removingPath, path)) continue;
