@@ -36,6 +36,8 @@ import {
 	type PersonaCapabilities,
 } from "./agent-set.js";
 import {
+	addCostBreakdown,
+	costBreakdownFromUsage,
 	AgentSessionRegistry,
 	type AgentOperationalSnapshot,
 	type RegistryEvent,
@@ -985,6 +987,10 @@ class SubagentSessionOwner {
 		const usage = message.usage;
 		const operational = registry.getSnapshot([])!.operational;
 		const prior = operational.usage;
+		const costBreakdown = addCostBreakdown(
+			prior.costBreakdown,
+			costBreakdownFromUsage(usage),
+		);
 		const nextUsage = {
 			input: prior.input + (usage?.input || 0),
 			output: prior.output + (usage?.output || 0),
@@ -992,6 +998,7 @@ class SubagentSessionOwner {
 			cacheWrite: prior.cacheWrite + (usage?.cacheWrite || 0),
 			cost: prior.cost + (usage?.cost?.total || 0),
 			turns: prior.turns + 1,
+			...(costBreakdown !== undefined ? { costBreakdown } : {}),
 		};
 		let lastOutput = operational.lastOutput;
 		for (const part of message.content ?? []) {

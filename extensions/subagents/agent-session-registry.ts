@@ -13,7 +13,67 @@ import { createSessionTreeStore } from "./scoped-store.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
 
 export type NodeOwnership = "external" | "registry";
-export type AgentUsage = Readonly<{ input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number }>;
+export type AgentCostBreakdown = Readonly<{
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+}>;
+export type AgentUsage = Readonly<{
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cost: number;
+	costBreakdown?: AgentCostBreakdown;
+	turns: number;
+}>;
+
+/** Read the per-category costs when the source recorded them. */
+export function costBreakdownFromUsage(usage: unknown): AgentCostBreakdown | undefined {
+	if (!usage || typeof usage !== "object") return undefined;
+	const cost = (usage as { cost?: unknown }).cost;
+	if (!cost || typeof cost !== "object") return undefined;
+	const raw = cost as Record<string, unknown>;
+	const hasBreakdown = ["input", "output", "cacheRead", "cacheWrite"]
+		.some((field) => typeof raw[field] === "number");
+	if (!hasBreakdown) return undefined;
+	return {
+		input: typeof raw.input === "number" ? raw.input : 0,
+		output: typeof raw.output === "number" ? raw.output : 0,
+		cacheRead: typeof raw.cacheRead === "number" ? raw.cacheRead : 0,
+		cacheWrite: typeof raw.cacheWrite === "number" ? raw.cacheWrite : 0,
+	};
+}
+
+/** Add category costs while retaining the distinction between absent and zero. */
+export function addCostBreakdown(
+	first: AgentCostBreakdown | undefined,
+	second: AgentCostBreakdown | undefined,
+): AgentCostBreakdown | undefined {
+	if (first === undefined && second === undefined) return undefined;
+	return {
+		input: (first?.input ?? 0) + (second?.input ?? 0),
+		output: (first?.output ?? 0) + (second?.output ?? 0),
+		cacheRead: (first?.cacheRead ?? 0) + (second?.cacheRead ?? 0),
+		cacheWrite: (first?.cacheWrite ?? 0) + (second?.cacheWrite ?? 0),
+	};
+}
+
+/** Subtract category costs while retaining the distinction between absent and zero. */
+export function subtractCostBreakdown(
+	current: AgentCostBreakdown | undefined,
+	baseline: AgentCostBreakdown | undefined,
+): AgentCostBreakdown | undefined {
+	if (current === undefined && baseline === undefined) return undefined;
+	return {
+		input: (current?.input ?? 0) - (baseline?.input ?? 0),
+		output: (current?.output ?? 0) - (baseline?.output ?? 0),
+		cacheRead: (current?.cacheRead ?? 0) - (baseline?.cacheRead ?? 0),
+		cacheWrite: (current?.cacheWrite ?? 0) - (baseline?.cacheWrite ?? 0),
+	};
+}
+
 export type AgentOperationalSnapshot = Readonly<{
 	state: "running" | "idle" | "waiting" | "errored" | "dead";
 	usage: AgentUsage;
@@ -153,7 +213,11 @@ export class AgentSessionRegistry {
 	/** Usage captured when a live node entered this registry. */
 	getUsageBaseline(path: AgentPath): AgentUsage | undefined {
 		const baseline = this.usageBaselines.get(key(path));
-		return baseline ? { ...baseline } : undefined;
+		if (!baseline) return undefined;
+		return {
+			...baseline,
+			...(baseline.costBreakdown ? { costBreakdown: { ...baseline.costBreakdown } } : {}),
+		};
 	}
 
 	listChildren(parent: AgentPath): AgentNodeSnapshot[] {

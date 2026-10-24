@@ -18,9 +18,13 @@ import {
 } from "./agents.js";
 import { childAgentPath, qualifiedAgentId, type AgentPath } from "./agent-path.js";
 import {
+	addCostBreakdown,
+	costBreakdownFromUsage,
+	subtractCostBreakdown,
 	type AgentNodeSnapshot,
 	type AgentOperationalSnapshot,
 	type AgentSessionRegistry,
+	type AgentUsage as RegistryAgentUsage,
 	type CreateAgentNodeRequest,
 } from "./agent-session-registry.js";
 import { resolveChildToolPolicy } from "./child-tool-policy.js";
@@ -153,7 +157,7 @@ async function boundedSettle(
 }
 
 /** Cumulative token/cost accounting for one agent. */
-export type AgentUsage = AgentStatus["usage"];
+export type AgentUsage = RegistryAgentUsage;
 
 export interface AgentStatus {
 	id: string;
@@ -162,7 +166,7 @@ export interface AgentStatus {
 	task: string;
 	channels: string[];
 	lastActivity?: string;
-	usage: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number };
+	usage: AgentUsage;
 	model?: string;
 	lastOutput?: string;
 	/** Error from the last errored run, surfaced in idle notifications. */
@@ -815,6 +819,10 @@ export class SubagentManager {
 	private recordToolUsage(entry: AgentEntry, usage: any): void {
 		if (!usage || typeof usage !== "object") return;
 		const current = this.operationalFor(entry);
+		const costBreakdown = addCostBreakdown(
+			current.usage.costBreakdown,
+			costBreakdownFromUsage(usage),
+		);
 		this.replaceOperational(entry, operationalWith(current, {
 			usage: {
 				input: current.usage.input + (usage.input || 0),
@@ -823,6 +831,7 @@ export class SubagentManager {
 				cacheWrite: current.usage.cacheWrite + (usage.cacheWrite || 0),
 				cost: current.usage.cost + (usage.cost?.total || 0),
 				turns: current.usage.turns,
+				...(costBreakdown !== undefined ? { costBreakdown } : {}),
 			},
 		}));
 	}
@@ -846,6 +855,10 @@ export class SubagentManager {
 		const lifecycle = current.state === "dead"
 			? {}
 			: { state: "running" as const, lastError: undefined };
+		const costBreakdown = addCostBreakdown(
+			current.usage.costBreakdown,
+			costBreakdownFromUsage(usage),
+		);
 		this.replaceOperational(entry, operationalWith(current, {
 			...lifecycle,
 			usage: {
@@ -855,6 +868,7 @@ export class SubagentManager {
 				cacheWrite: current.usage.cacheWrite + cacheWrite,
 				cost: current.usage.cost + (usage?.cost?.total || 0),
 				turns: current.usage.turns + 1,
+				...(costBreakdown !== undefined ? { costBreakdown } : {}),
 			},
 			model: messageModel ?? current.model,
 			lastOutput,
@@ -1277,7 +1291,12 @@ function projectStatus(snapshot: AgentNodeSnapshot): AgentStatus {
 		task: snapshot.task ?? "",
 		channels: [...snapshot.channels],
 		lastActivity: operational.lastActivity,
-		usage: { ...operational.usage },
+		usage: {
+			...operational.usage,
+			...(operational.usage.costBreakdown
+				? { costBreakdown: { ...operational.usage.costBreakdown } }
+				: {}),
+		},
 		model: operational.model,
 		lastOutput: operational.lastOutput,
 		lastError: operational.lastError,
@@ -1294,6 +1313,7 @@ function zeroUsage(): AgentOperationalSnapshot["usage"] {
 }
 
 function addUsage(first: AgentUsage, second: AgentUsage): AgentUsage {
+	const costBreakdown = addCostBreakdown(first.costBreakdown, second.costBreakdown);
 	return {
 		input: first.input + second.input,
 		output: first.output + second.output,
@@ -1301,6 +1321,7 @@ function addUsage(first: AgentUsage, second: AgentUsage): AgentUsage {
 		cacheWrite: first.cacheWrite + second.cacheWrite,
 		cost: first.cost + second.cost,
 		turns: first.turns + second.turns,
+		...(costBreakdown !== undefined ? { costBreakdown } : {}),
 	};
 }
 
@@ -1309,6 +1330,7 @@ function samePath(first: AgentPath, second: AgentPath): boolean {
 }
 
 function subtractUsage(current: AgentUsage, baseline: AgentUsage): AgentUsage {
+	const costBreakdown = subtractCostBreakdown(current.costBreakdown, baseline.costBreakdown);
 	return {
 		input: current.input - baseline.input,
 		output: current.output - baseline.output,
@@ -1316,6 +1338,7 @@ function subtractUsage(current: AgentUsage, baseline: AgentUsage): AgentUsage {
 		cacheWrite: current.cacheWrite - baseline.cacheWrite,
 		cost: current.cost - baseline.cost,
 		turns: current.turns - baseline.turns,
+		...(costBreakdown !== undefined ? { costBreakdown } : {}),
 	};
 }
 

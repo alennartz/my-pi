@@ -141,6 +141,37 @@ describe("parseSessionSnapshot — cumulative usage", () => {
 		expect(snap.usage.turns).toBe(1);
 	});
 
+	it("restores the per-category cost breakdown when persisted usage stores it", () => {
+		const file = writeSession([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "a" }],
+					usage: {
+						input: 2,
+						output: 3,
+						cacheRead: 4,
+						cacheWrite: 5,
+						cost: { input: 0.01, output: 0.02, cacheRead: 0.03, cacheWrite: 0.04, total: 0.1 },
+					},
+				},
+			},
+			{
+				type: "usage",
+				usage: {
+					cost: { input: 0.005, output: 0.006, cacheRead: 0.007, cacheWrite: 0.008, total: 0.026 },
+				},
+			},
+		]);
+		const snap = parseSessionSnapshot(file);
+		expect(snap.usage.cost).toBeCloseTo(0.126, 10);
+		expect(snap.usage.costBreakdown?.input).toBeCloseTo(0.015, 12);
+		expect(snap.usage.costBreakdown?.output).toBeCloseTo(0.026, 12);
+		expect(snap.usage.costBreakdown?.cacheRead).toBeCloseTo(0.037, 12);
+		expect(snap.usage.costBreakdown?.cacheWrite).toBeCloseTo(0.048, 12);
+	});
+
 	it("includes usage from tool results and pi usage entries", () => {
 		const file = writeSession([
 			assistantLine({ model: "m1", text: "a", usage: { input: 2, output: 3, cost: 0.01 } }),

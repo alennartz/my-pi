@@ -1,4 +1,9 @@
 import * as fs from "node:fs";
+import {
+	addCostBreakdown,
+	costBreakdownFromUsage,
+	type AgentCostBreakdown,
+} from "./agent-session-registry.js";
 
 /**
  * Reconstruct the runtime-status fields of an agent from its persisted pi
@@ -19,7 +24,13 @@ interface RawUsage {
 	output?: number;
 	cacheRead?: number;
 	cacheWrite?: number;
-	cost?: { total?: number };
+	cost?: {
+		input?: number;
+		output?: number;
+		cacheRead?: number;
+		cacheWrite?: number;
+		total?: number;
+	};
 }
 
 export interface SessionSnapshot {
@@ -30,6 +41,7 @@ export interface SessionSnapshot {
 		cacheRead: number; // sum of usage.cacheRead
 		cacheWrite: number; // sum of usage.cacheWrite
 		cost: number; // sum of usage.cost.total
+		costBreakdown?: AgentCostBreakdown; // sum of usage.cost categories when stored
 		turns: number; // count of assistant messages
 	};
 	/** Model id of the last assistant message, if any. */
@@ -50,6 +62,11 @@ function addUsage(
 	target.cacheRead += usage.cacheRead ?? 0;
 	target.cacheWrite += usage.cacheWrite ?? 0;
 	target.cost += usage.cost?.total ?? 0;
+	const costBreakdown = addCostBreakdown(
+		target.costBreakdown,
+		costBreakdownFromUsage(usage),
+	);
+	if (costBreakdown !== undefined) target.costBreakdown = costBreakdown;
 }
 
 /**

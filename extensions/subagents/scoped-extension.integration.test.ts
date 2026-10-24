@@ -1106,7 +1106,13 @@ describe("root orchestration integration", () => {
 			message: {
 				role: "assistant",
 				model: "provider/model",
-				usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 0, cost: { total: 0.01 } },
+				usage: {
+					input: 10,
+					output: 4,
+					cacheRead: 2,
+					cacheWrite: 0,
+					cost: { input: 0.001, output: 0.002, cacheRead: 0.003, cacheWrite: 0.004, total: 0.01 },
+				},
 				content: [{ type: "text", text: "finished" }],
 			},
 		});
@@ -1125,7 +1131,7 @@ describe("root orchestration integration", () => {
 					cacheRead: 100,
 					cacheWrite: 100,
 					totalTokens: 400,
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 1 },
+					cost: { input: 0.1, output: 0.2, cacheRead: 0.3, cacheWrite: 0.4, total: 1 },
 				},
 			},
 			isError: false,
@@ -1142,7 +1148,7 @@ describe("root orchestration integration", () => {
 					cacheRead: 4,
 					cacheWrite: 0,
 					totalTokens: 8,
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.02 },
+					cost: { input: 0.005, output: 0.006, cacheRead: 0.007, cacheWrite: 0.008, total: 0.02 },
 				},
 			},
 			isError: false,
@@ -1155,7 +1161,7 @@ describe("root orchestration integration", () => {
 			cacheRead: 6,
 			cacheWrite: 0,
 			totalTokens: 24,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.03 },
+			cost: { input: 0.006, output: 0.008, cacheRead: 0.01, cacheWrite: 0.012, total: 0.03 },
 		});
 	});
 

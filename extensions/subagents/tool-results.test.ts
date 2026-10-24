@@ -8,6 +8,8 @@ import {
 	lifecycleStatus,
 	outputPreview,
 	statusData,
+	sumAgentUsage,
+	toPiUsage,
 	type ManagerLookup,
 } from "./tool-results.js";
 
@@ -52,6 +54,50 @@ describe("isZeroUsage", () => {
 		expect(isZeroUsage({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 })).toBe(true);
 		expect(isZeroUsage({ input: 1, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 })).toBe(false);
 		expect(isZeroUsage({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0.0001, turns: 0 })).toBe(false);
+	});
+});
+
+describe("sumAgentUsage and toPiUsage", () => {
+	it("preserves category costs and maps them into pi usage", () => {
+		const usage = sumAgentUsage([
+			{
+				input: 100,
+				output: 20,
+				cacheRead: 10,
+				cacheWrite: 5,
+				cost: 0.01,
+				costBreakdown: { input: 0.002, output: 0.003, cacheRead: 0.004, cacheWrite: 0.001 },
+				turns: 1,
+			},
+			{
+				input: 4,
+				output: 2,
+				cacheRead: 1,
+				cacheWrite: 0,
+				cost: 0.005,
+				costBreakdown: { input: 0.001, output: 0.001, cacheRead: 0.002, cacheWrite: 0 },
+				turns: 1,
+			},
+		]);
+		expect(usage.costBreakdown).toEqual({ input: 0.003, output: 0.004, cacheRead: 0.006, cacheWrite: 0.001 });
+		expect(toPiUsage(usage)).toEqual({
+			input: 104,
+			output: 22,
+			cacheRead: 11,
+			cacheWrite: 5,
+			totalTokens: 142,
+			cost: { input: 0.003, output: 0.004, cacheRead: 0.006, cacheWrite: 0.001, total: 0.015 },
+		});
+	});
+
+	it("keeps the old zero category fallback for scalar-only summaries", () => {
+		expect(toPiUsage({ input: 1, output: 2, cacheRead: 3, cacheWrite: 4, cost: 0.5, turns: 1 }).cost).toEqual({
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			total: 0.5,
+		});
 	});
 });
 

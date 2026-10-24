@@ -10,11 +10,19 @@
 import { Type } from "typebox";
 import type { Usage } from "@earendil-works/pi-ai";
 import { formatTokenCount } from "./format.js";
+import { addCostBreakdown, type AgentCostBreakdown } from "./agent-session-registry.js";
 import type { AgentStatus, AgentUsage } from "./agent-set.js";
 import type { AgentCompleteData } from "./messages.js";
 
 /** Status vocabulary of <agent_idle> and <agent_torn_down> reports. */
 export type LifecycleStatus = AgentCompleteData["status"];
+
+const CostBreakdownSchema = Type.Object({
+	input: Type.Number({ description: "Input-token cost in USD" }),
+	output: Type.Number({ description: "Output-token cost in USD" }),
+	cacheRead: Type.Number({ description: "Cache-read cost in USD" }),
+	cacheWrite: Type.Number({ description: "Cache-write cost in USD" }),
+});
 
 const UsageSchema = Type.Object({
 	input: Type.Number({ description: "Input tokens, excluding cache reads and writes" }),
@@ -22,6 +30,7 @@ const UsageSchema = Type.Object({
 	cacheRead: Type.Number(),
 	cacheWrite: Type.Number(),
 	cost: Type.Number({ description: "Cost in USD" }),
+	costBreakdown: Type.Optional(CostBreakdownSchema),
 	turns: Type.Number(),
 });
 
@@ -141,26 +150,31 @@ export interface TeardownResultData {
 
 /** Sum the usage summaries that a teardown result reports for its subtree. */
 export function sumAgentUsage(usages: readonly AgentUsage[]): AgentUsage {
-	return usages.reduce(
-		(total, usage) => ({
-			input: total.input + usage.input,
-			output: total.output + usage.output,
-			cacheRead: total.cacheRead + usage.cacheRead,
-			cacheWrite: total.cacheWrite + usage.cacheWrite,
-			cost: total.cost + usage.cost,
-			turns: total.turns + usage.turns,
-		}),
+	return usages.reduce<AgentUsage>(
+		(total, usage) => {
+			const costBreakdown = addCostBreakdown(total.costBreakdown, usage.costBreakdown);
+			return {
+				input: total.input + usage.input,
+				output: total.output + usage.output,
+				cacheRead: total.cacheRead + usage.cacheRead,
+				cacheWrite: total.cacheWrite + usage.cacheWrite,
+				cost: total.cost + usage.cost,
+				turns: total.turns + usage.turns,
+				...(costBreakdown !== undefined ? { costBreakdown } : {}),
+			};
+		},
 		{ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
 	);
 }
 
-/**
- * Adapt the local cumulative summary to pi's ToolResultMessage usage contract.
- * Pi accounts the top-level token fields and `cost.total`; the local summary
- * does not retain a cost split, so the split stays zero while the total stays
- * exact.
- */
+/** Adapt the local cumulative summary to pi's ToolResultMessage usage contract. */
 export function toPiUsage(usage: AgentUsage): Usage {
+	const costBreakdown: AgentCostBreakdown = usage.costBreakdown ?? {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+	};
 	return {
 		input: usage.input,
 		output: usage.output,
@@ -168,10 +182,10 @@ export function toPiUsage(usage: AgentUsage): Usage {
 		cacheWrite: usage.cacheWrite,
 		totalTokens: usage.input + usage.output + usage.cacheRead + usage.cacheWrite,
 		cost: {
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
+			input: costBreakdown.input,
+			output: costBreakdown.output,
+			cacheRead: costBreakdown.cacheRead,
+			cacheWrite: costBreakdown.cacheWrite,
 			total: usage.cost,
 		},
 	};
@@ -248,7 +262,12 @@ export function statusData(status: AgentStatus): StatusAgentData {
 		contextWindow: status.contextWindow,
 		hasSubgroup: status.hasSubgroup,
 		waitingFor: [...status.waitingFor],
-		usage: { ...status.usage },
+		usage: {
+			...status.usage,
+			...(status.usage.costBreakdown
+				? { costBreakdown: { ...status.usage.costBreakdown } }
+				: {}),
+		},
 	};
 }
 
@@ -260,7 +279,10 @@ export function outputPreview(text: string | undefined): string | undefined {
 
 export function isZeroUsage(usage: AgentUsage): boolean {
 	return usage.input === 0 && usage.output === 0 && usage.cacheRead === 0
-		&& usage.cacheWrite === 0 && usage.cost === 0 && usage.turns === 0;
+		&& usage.cacheWrite === 0 && usage.cost === 0 && usage.turns === 0
+		&& (usage.costBreakdown === undefined
+			|| (usage.costBreakdown.input === 0 && usage.costBreakdown.output === 0
+				&& usage.costBreakdown.cacheRead === 0 && usage.costBreakdown.cacheWrite === 0));
 }
 
 /** One-line usage report for tool result text, noting the excluded baseline when non-zero. */
