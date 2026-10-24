@@ -1,261 +1,70 @@
 ---
 name: orchestrating-agents
-description: "Delegate work to subagents to preserve primary agent context, parallelize independent tasks, or coordinate specialists. Use when the work ahead is context-heavy (many file reads, large implementations, multi-step investigations), naturally parallelizable, benefits from specialist coordination, or the user asks for agent-based execution. Covers task decomposition, orchestration patterns, topology design, communication modes, and specialist coordination."
+description: "Plan and coordinate subagent work when a task is context-heavy, parallelizable, specialist-driven, or explicitly delegated. Covers delegation decisions, task briefs, topology, communication, and child-session lifecycle."
 ---
 
 # Orchestrating Agents
 
-## Overview
+Delegate to preserve context, parallelize independent work, or use specialist focus. A child absorbs heavy tool work and returns a compact result. Child sessions persist with the parent session. `teardown` has semantic effect, so treat children as managed sessions rather than disposable processes.
 
-Subagents let you delegate work to separate agent processes, each with its own context window. The primary benefit is **context efficiency** — a subagent absorbs all the heavy tool use (file reads, edits, test runs, investigations) and returns a compact result. Your context stays clean, letting you handle more total work across a session.
+## 1. Decide whether to delegate
 
-Beyond context management, subagents enable parallel execution, specialist coordination, and rich inter-agent communication. Child agent sessions are persisted per parent session and reconstructed from append-only lifecycle logs rather than treated as disposable temp processes, so explicit `teardown` matters semantically. This skill covers the thinking that happens *before* you call `subagent` — task decomposition, pattern selection, topology design. Once agents are running, the tool descriptions, notifications (`<agent_idle>`, `<agent_message>`), and communication tools carry you from there.
+Delegate when the work:
 
-## Choosing a Model Tier
+- involves many files, a large implementation, or a complex investigation;
+- contains independent tasks that can run in parallel;
+- benefits from a focused specialist or a separate tool scope; or
+- is explicitly delegated by the user.
 
-Tier names are configurable aliases. Leave `agents[].model` unspecified by default; an omitted model inherits the current session model.
+Work directly when the work is small, sequential with heavy shared context, or needs the parent conversation in full.
 
-Prefer a matching specialist persona when one is listed. Pass its name in `persona`; a persona's model pin wins over an explicit model field. Use a default general-purpose agent when no listed specialist matches.
+**Complete when:** the choice has a concrete reason.
 
-When a deliberate model choice is useful, choose a tier by task shape rather than assumptions about a specific provider or model:
+## 2. Frame each task
 
-- **`cheap`** — optional lower-cost or lower-latency choice for straightforward tasks.
-- **`medium`** — optional balanced choice for routine tasks.
-- **`smart`** — optional stronger-reasoning choice for difficult tasks.
-- **`frontier`** — optional highest-capability choice for unusually difficult tasks.
+Give each agent one coherent, independently verifiable deliverable. For a default agent, the task string is its full brief. Include:
 
-Apply these adjustments when an explicit model choice is useful:
+- **Identity** — the role or expertise required.
+- **Mission** — the work to perform.
+- **Scope** — files, artifacts, and boundaries.
+- **Output** — the result format and completion evidence.
 
-- Architecture and implementation planning is interactive and human-led. Start at `medium`; use `smart` for broader scope. Do not use `frontier` only because the task is planning.
-- Factual documentation updates start at `cheap`; escalate to `medium` for explanation or synthesis, and to `smart` for design trade-offs.
-- Conflicting review feedback is an escalator situation. Keep the human as adjudicator and escalate the agent only when the human decides that more reasoning is needed.
+Point at an existing plan, specification, or review instead of copying it into the task string. Choose a unit large enough to require multiple tool calls and small enough to verify without another agent's full reasoning. Do not give one agent unrelated deliverables.
 
-## When to Use Subagents
+**Complete when:** every task brief names its identity, mission, scope, and output.
 
-### Context preservation — the primary reason
+## 3. Select the smallest topology
 
-Every tool call you make (reading files, running commands, editing code) adds to your context. Large tasks — implementing a feature across several files, investigating a complex bug, processing many files — can consume most of your context window, leaving little room for the user's next request. Subagents solve this: delegate the heavy work, get a summary back, and continue with a clean context.
+Match the dependency shape to one pattern:
 
-**Think about subagents when:**
-- The task involves reading or editing many files
-- An implementation will require dozens of tool calls
-- You're partway through a session and need to preserve remaining context for future work
-- The work is investigative — exploring, diagnosing, gathering information — and the intermediate steps matter less than the conclusion
+| Work shape | Pattern |
+| --- | --- |
+| Independent tasks | Fan-out / fan-in |
+| Ordered handoff | Pipeline |
+| Lateral consultation | Collaborative team |
+| Simultaneous opinions from idle agents | Scatter-gather |
+| Repeated requests to the same specialists | Persistent specialists |
+| Produce, review, revise | Iterative refinement |
+| Opposing positions | Adversarial debate |
 
-### Parallelizable independent tasks
+After selecting a shape, read only that shape's section in [PATTERNS.md](PATTERNS.md) before spawning.
 
-Multiple pieces of work that don't depend on each other's intermediate results. File-per-file migrations, independent test suites, parallel investigations. Each agent works in isolation and reports back.
+**Complete when:** one pattern explains every dependency between the agents.
 
-### Specialist coordination
+## 4. Design the group
 
-Tasks that benefit from focused roles, tool sets, and inter-agent communication. A reviewer and implementer working together via channels. A research agent gathering context while a coding agent builds. When specialist agent definitions are available, they bring domain-specific system prompts and tool scoping that generic agents lack.
+Start with the smallest topology. The parent is always available, so declare peer channels only for real lateral communication.
 
-### User request
+Leave `agents[].model` unset unless a deliberate model choice helps. Read [MODEL-SELECTION.md](MODEL-SELECTION.md) before choosing an explicit model or persona. Read [ADVANCED.md](ADVANCED.md) before setting `cwd`, retaining agents across turns, tearing down or resurrecting them, or letting a child spawn descendants.
 
-The user explicitly asks for parallel execution, delegation, or agent-based workflows.
+**Complete when:** the pattern, channels, model choices, cwd choices, and lifecycle plan are explicit.
 
-### When not to use subagents
+## 5. Coordinate without cycles
 
-- **Sequential work with heavy shared context.** If step 2 depends on step 1's full reasoning — not just its output — do it yourself. Agents can pass messages, but they can't share conversation history.
-- **Simple tasks.** If the work takes fewer than a few tool calls, the overhead of spawning a process, connecting to a broker, and tearing down isn't worth it.
-- **Work that needs your conversation history.** Agents start with a task string, not your full context. If the task requires deep understanding of an ongoing conversation, keep it in-process.
+Fire-and-forget messaging is the default. Use a blocking send only when the sender cannot continue without the reply. Keep blocking dependencies acyclic. An agent completes by returning its final response and going idle; do not send a duplicate completion report.
 
-## Task Decomposition
+Before adding peer channels, using a blocking send, waiting for completion, or interpreting idle notifications, read [COORDINATION.md](COORDINATION.md).
 
-Each agent should produce a **coherent, independently verifiable deliverable**. That's the unit of decomposition — not "as small as possible" and not "everything in one agent."
+**Complete when:** every result is collected without a blocking cycle and the parent can synthesize the deliverables.
 
-**Writing effective task strings.** For default agents (no agent definition), the task string is the *only* instruction they receive. It must carry both identity and mission:
-
-- **Identity:** "You are a TypeScript migration specialist working on…"
-- **Mission:** "Convert all files in `src/legacy/` from CommonJS to ESM. For each file, update imports, change `module.exports` to `export`, verify the file parses, and report what you changed."
-- **Scope boundaries:** "Do not modify files outside `src/legacy/`. Do not change any public API signatures."
-- **Output expectations:** "When finished, report the list of converted files and any files you skipped with reasons."
-
-**Leverage existing artifacts.** When a shared document already describes the work — a plan file, a spec, a review — don't restate it in the task string. Point the agent at the file, tell them which parts are theirs, and give them peer context for coordination. The agent can read the file and get full context (including parts you'd omit from a summary). Reserve detailed inline task strings for ad-hoc work where no artifact exists.
-
-**Granularity.** Too coarse wastes parallelism — one agent doing everything is just you with extra overhead. Too fine creates coordination overhead — ten agents that each change one line need more orchestration than the work itself. A good agent-sized task takes multiple tool calls, produces a meaningful result, and can be verified without understanding the other agents' work.
-
-## Orchestration Patterns
-
-### Fan-out / Fan-in
-
-Independent parallel tasks. No peer communication needed. Parent spawns agents, waits for `<agent_idle>` notifications, gathers results.
-
-```
-agents: [a, b, c]  — no channels
-parent ← a, b, c (via <agent_idle>)
-```
-
-**When to use:** Embarrassingly parallel work. Each agent's task is self-contained. Examples: migrating independent files, running separate analyses, generating documentation for unrelated modules.
-
-### Pipeline
-
-Linear chain where each stage feeds the next. Each agent has a channel to the next agent in the sequence.
-
-```
-agents: [a → b → c]
-a.channels: [b]
-b.channels: [c]
-```
-
-Agent `a` does its work, sends output to `b` via `send`, and finishes. Agent `b` receives via `<agent_message>`, does its work, sends to `c`. The parent gets `<agent_idle>` as each stage finishes.
-
-**When to use:** Sequential transformations where each stage has a distinct role. Examples: generate → review → polish; extract → transform → load.
-
-### Collaborative Team
-
-Independent work with selective peer channels for lateral consultation. The most general and powerful pattern.
-
-```
-agents: [frontend, backend, reviewer]
-frontend.channels: [reviewer]
-backend.channels: [reviewer]
-reviewer.channels: [frontend, backend]
-```
-
-Each agent works on its own task. Peers can send messages for mid-task consultation and coordination — fire-and-forget for FYI updates, blocking sends for questions that gate progress. The parent gets the agent's final output through `<agent_idle>` as each agent finishes.
-
-**When to use:** Loosely coupled work where agents occasionally need each other's input. Examples: coordinated feature development across modules, parallel implementation with a shared reviewer.
-
-### Scatter-Gather
-
-Parent queries multiple agents via blocking sends in the same turn, then synthesizes responses. Requires a long-lived active set (agents must be idle but not torn down).
-
-```
-agents: [expert-a, expert-b, expert-c]  — no peer channels
-parent sends: send(to="expert-a", expectResponse=true)
-              send(to="expert-b", expectResponse=true)
-              send(to="expert-c", expectResponse=true)
-(all three in the same turn — they execute concurrently)
-```
-
-**When to use:** Gathering perspectives, votes, or analyses from multiple specialists. Examples: getting security, performance, and API-design reviews of the same diff; polling multiple domain experts for a recommendation.
-
-### Persistent Specialists
-
-Long-lived active set tapped on demand. Parent sends new work to idle agents as needs arise; the set stays alive across multiple exchanges. Agents don't finish after one task — they idle and wait for more messages.
-
-```
-agents: [researcher, coder]  — no peer channels (or selective ones)
-parent sends work → agent works → agent reports → agent idles
-parent sends more work later → same agent picks up
-```
-
-**When to use:** Ongoing sessions where the same specialist capabilities are needed repeatedly. Examples: a research assistant the user queries throughout a session; a pair of agents (coder + reviewer) that handle multiple rounds of work.
-
-### Iterative Refinement
-
-Produce-review-revise loop. Can be parent-driven (parent mediates each round) or peer-driven (producer and reviewer have mutual channels).
-
-**Parent-driven:**
-```
-agents: [writer, reviewer]  — no peer channels
-parent sends work to writer → writer produces → parent sends to reviewer
-→ reviewer critiques → parent sends feedback to writer → repeat
-```
-
-**Peer-driven:**
-```
-agents: [writer, reviewer]
-writer.channels: [reviewer]
-reviewer.channels: [writer]
-```
-
-Writer produces and sends intermediate work to reviewer. Reviewer critiques and sends back. They iterate until satisfied, then finish; the parent's completion report comes from the agent's final output via `<agent_idle>`, not a final `send`.
-
-**When to use:** Work that benefits from multiple revision passes. Examples: document drafting with editorial review, code generation with correctness checking.
-
-### Adversarial Debate
-
-Two or more agents take opposing positions on a question and argue until one convinces the other or they agree to disagree. The parent gets each agent's final position and makes the call.
-
-**Two agents (typical):**
-```
-agents: [pro, con]
-pro.channels: [con]
-con.channels: [pro]
-```
-
-Pro and con exchange arguments via fire-and-forget sends. Each round, an agent reads the other's argument and responds. When one concedes or both declare impasse, each sends a final summary to parent and finishes.
-
-**More than two agents:**
-```
-agents: [position-a, position-b, position-c]
-position-a.channels: [position-b, position-c]
-position-b.channels: [position-a, position-c]
-position-c.channels: [position-a, position-b]
-```
-
-Full mesh — every agent can address every other. Communication gets noisier with more participants; three is practical, beyond that consider whether some positions can be consolidated.
-
-**When to use:** Decisions where the best choice isn't obvious and you want all angles genuinely explored before committing. Examples: architectural tradeoffs (monolith vs. microservices), API design alternatives, migration strategy choices. The adversarial framing forces each side to steel-man its position and engage with counterarguments rather than settling on the first plausible option.
-
-**Task string guidance:** Each agent's task should include the question, the position they're assigned to defend, and instructions to: argue genuinely for their side, engage with the other's points, and end by either conceding (with reasoning) or declaring impasse (with a summary of where disagreement remains). The parent synthesizes the final positions — agents don't need to reach consensus.
-
-## Communication and Topology Design
-
-### Topology
-
-Start minimal. Only declare peer channels where agents genuinely need lateral communication. Parent is always available — it's auto-injected into every agent's channel list (you never need to declare it).
-
-- **Fan-out** needs no peer channels.
-- **Pipeline** needs a linear chain: `a→b→c`.
-- **Collaborative team** needs selective connections based on expertise overlap. Don't mesh everything — only connect agents that actually consult each other.
-- **More channels = more noise.** An agent that can talk to everyone will be tempted to. Constrain topology to the communication you actually want.
-
-All channel references are validated at spawn time — referencing a non-existent agent id in `channels` is an error.
-
-### Fire-and-Forget (Default)
-
-The default `send` mode. The message is delivered and the sender continues immediately. The target receives it as an `<agent_message>` block with `response_expected="false"`.
-
-Use for: mid-task status updates, heads-ups, sharing intermediate findings, and coordination or handoffs. Any time the sender doesn't need to wait for a reply. Do not use it to report a completed task to the parent or to duplicate the final output.
-
-### Completion reporting
-
-A subagent completes a task by writing its final text response and going idle. That final output is delivered to the parent automatically in `<agent_idle>`. `send` is not a completion signal: use it only for clarification or coordination while work is in progress. In particular, never send a completed-task summary to the parent and then repeat it in the final response.
-
-### Blocking Sends
-
-Set `expectResponse=true`. The sender's `send` tool call stays open until the target calls `respond` with the matching `correlationId`. The response is delivered as the tool call's return value.
-
-Use for: questions that gate progress, scatter-gather queries, any synchronous coordination where the sender genuinely cannot continue without a response.
-
-For scatter-gather, call multiple `send(expectResponse=true)` in the same turn. They execute concurrently — each unblocks independently when its target responds.
-
-### Deadlock Awareness
-
-The broker detects cycles in blocking sends via directed-graph DFS and rejects sends that would create a deadlock. The rejected send returns an error immediately.
-
-Avoid designs where agents form blocking rings. If A blocks on B, B must not block on A (or on anyone who transitively blocks on A). Common safe patterns:
-
-- **Unidirectional blocking:** A blocks on B, B never blocks on A. Works for pipeline and scatter-gather.
-- **Parent as mediator:** Agents only block on parent. Parent blocks on agents. No peer blocking. Simplest deadlock-free design.
-- **Mixed:** Fire-and-forget for peer communication, blocking only toward parent. Keeps the dependency graph acyclic.
-
-## Per-Agent Working Directory
-
-Each agent in a `subagent` call can take an optional `cwd` — the directory the child pi process boots in. Relative paths resolve against the parent's cwd; absolute paths are used as-is. Defaults to the parent's cwd. The agent's `AGENTS.md`, project agents, and project skills are discovered relative to its cwd, so it boots as if pi were freshly launched there.
-
-Validation is batch-atomic: if any agent's `cwd` doesn't exist or isn't a directory, the whole `subagent` call fails before any child is spawned.
-
-`fork` and `resurrect` do not accept `cwd`. Forks inherit the parent's cwd; resurrections reuse the cwd from the persisted session. If a persisted cwd has since been deleted, that agent is pruned at restore time with an `agent_removed` event rather than failing the whole restore.
-
-**When to use:** monorepos where workers should be scoped to a single package, worktree-based parallel branches where each agent operates in its own checkout, or any case where the agent's project context (AGENTS.md, skills, conventions) differs from the parent's.
-
-## Recursive Subagents
-
-Any agent — including a child agent — can spawn its own subagents using the same `subagent` tool. The child has the full tool suite (`subagent`, `fork`, `send`, `respond`, `check_status`, `teardown`, `resurrect`, `await_agents`).
-
-Normally, the primary agent (with the TUI) is the lead — it decomposes work and spawns workers directly. But if a worker's task is large enough to warrant further decomposition, that worker can spawn its own subagents. The primary sees only the worker; the worker's subagents are invisible above it. This enables hierarchical decomposition without the primary managing every leaf agent.
-
-## Key Principles
-
-- **Design before spawning** — think through decomposition, pattern, and topology before calling `subagent`. You can add agents incrementally, but thoughtful upfront design is still cheaper than ad-hoc restructuring.
-- **Task strings are the whole brief** — for default agents, the task string is all they get. But "complete" means the agent can start working, not that you duplicate existing artifacts. When a shared document already covers the mission (a plan file, a spec, a review), point the agent at it with just enough context to orient: which file, which sections are theirs, who their peers are. Save inline detail for tasks where no artifact exists.
-- **Minimal topology** — only connect agents that need to talk. Parent is always there; peer channels are for lateral communication only.
-- **Default to fire-and-forget** — use blocking sends only when the sender genuinely can't continue without a response.
-- **Incremental growth** — agents can be added to the running set by calling `subagent` again. Individual agents can be removed with `teardown(agent)`, or all agents torn down at once with `teardown()`. A torn-down agent can be brought back later with `resurrect`, using the `session_id` surfaced in its `<agent_idle>` / `<group_complete>` teardown report — persona, model, tools, and prior conversation are inherited from the persisted session.
-- **Let notifications drive you** — `<agent_idle>` arrives automatically when each agent finishes. Don't poll with `check_status` unless you have a specific reason. Use `await_agents` when you need results before your next step — it blocks until the specified agents complete, with any parent-bound message interrupting the wait.
-
-For creating persistent, reusable agent definitions (the `.md` files referenced by the `persona` field), see the **specialist-design** skill.
+For reusable agent definitions, read [specialist-design](../specialist-design/SKILL.md).

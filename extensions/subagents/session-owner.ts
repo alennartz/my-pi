@@ -1207,6 +1207,7 @@ class SubagentSessionOwner {
 			description: "Spawn child agents that run in separate context windows. Children inherit the parent model and cwd unless an agent sets them. When await is true, the call blocks until the agents complete. Otherwise results arrive later as notifications.",
 			promptSnippet: "Delegate work to child agents with separate context windows.",
 			promptGuidelines: [
+				"Before calling subagent, confirm a concrete delegation case: context relief from a long investigation, two or more independent deliverables, a distinct specialist or tool scope, or an explicit user request, and complete short, single-threaded work directly when no case applies.",
 				"Leave model unset unless the task or the user needs a specific model.",
 				"Call subagent again to add agents to a running set. New agents join the running infrastructure.",
 				"After a non-awaited subagent call, do not repeat the delegated work.",
