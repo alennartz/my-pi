@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { showNumberedSelect } from "./numbered-select.ts";
+import { showAskUser } from "./ask-user.ts";
 
 function makeCtx(overrides: Partial<{ custom: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> }> = {}) {
 	return {
@@ -13,12 +13,12 @@ function makeCtx(overrides: Partial<{ custom: ReturnType<typeof vi.fn>; select: 
 
 const options = [{ label: "alpha" }, { label: "beta", description: "second" }];
 
-describe("showNumberedSelect", () => {
+describe("showAskUser", () => {
 	it("shows the dialog as a full-width bottom-anchored overlay", async () => {
 		const custom = vi.fn().mockResolvedValue({ index: 0, label: "alpha" });
 		const ctx = makeCtx({ custom });
 
-		await showNumberedSelect(ctx, "pick one", options);
+		await showAskUser(ctx, "pick one", options);
 
 		expect(custom).toHaveBeenCalledTimes(1);
 		const [factory, opts] = custom.mock.calls[0]!;
@@ -39,7 +39,7 @@ describe("showNumberedSelect", () => {
 		const ctx = makeCtx({ custom });
 		const select = vi.fn();
 
-		const result = await showNumberedSelect(ctx, "pick one", options);
+		const result = await showAskUser(ctx, "pick one", options);
 
 		expect(result).toEqual({ index: 1, label: "beta", annotation: "note" });
 		expect(select).not.toHaveBeenCalled();
@@ -50,7 +50,7 @@ describe("showNumberedSelect", () => {
 		const ctx = makeCtx({ custom });
 		const select = vi.fn();
 
-		const result = await showNumberedSelect(ctx, "pick one", options);
+		const result = await showAskUser(ctx, "pick one", options);
 
 		expect(result).toBeUndefined();
 		expect(select).not.toHaveBeenCalled();
@@ -61,7 +61,7 @@ describe("showNumberedSelect", () => {
 		const select = vi.fn().mockResolvedValue("2. beta — second");
 		const ctx = makeCtx({ custom, select });
 
-		const result = await showNumberedSelect(ctx, "pick one", options);
+		const result = await showAskUser(ctx, "pick one", options);
 
 		expect(select).toHaveBeenCalledWith("pick one", ["1. alpha", "2. beta — second"]);
 		expect(result).toEqual({ index: 1, label: "beta" });
@@ -72,7 +72,7 @@ describe("showNumberedSelect", () => {
 		const select = vi.fn().mockResolvedValue(undefined);
 		const ctx = makeCtx({ custom, select });
 
-		const result = await showNumberedSelect(ctx, "pick one", options);
+		const result = await showAskUser(ctx, "pick one", options);
 
 		expect(result).toBeUndefined();
 	});
@@ -80,8 +80,8 @@ describe("showNumberedSelect", () => {
 	it("rejects empty and oversized option lists", async () => {
 		const ctx = makeCtx();
 
-		await expect(showNumberedSelect(ctx, "pick one", [])).rejects.toThrow(/must not be empty/);
+		await expect(showAskUser(ctx, "pick one", [])).rejects.toThrow(/must not be empty/);
 		const tooMany = Array.from({ length: 10 }, (_, i) => ({ label: `o${i}` }));
-		await expect(showNumberedSelect(ctx, "pick one", tooMany)).rejects.toThrow(/9 or fewer/);
+		await expect(showAskUser(ctx, "pick one", tooMany)).rejects.toThrow(/9 or fewer/);
 	});
 });

@@ -117,7 +117,7 @@ The pipeline phase skills are hidden from the model. Only autoflow drives them.
 - **model-prompt-overlays** — appends `AGENTS.<model>.md` overlays to the system prompt based on the active model
 - **toolscript** — runs [toolscript](https://github.com/badlogic/toolscript) as an MCP child and exposes its tools
 - **user-edit** — `user_edit` tool that opens a file in pi's built-in editor
-- **numbered-select** — `ask_user` tool for numbered multiple-choice questions
+- **ask-user** — `ask_user` tool for single-choice questions
 - **print-prompt** — `/sysprompt` command to inspect the last rendered system prompt
 - **my-pi-docs** — injects a system-prompt pointer to the extension configuration reference
 

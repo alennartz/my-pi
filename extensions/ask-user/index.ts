@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { registerLooseTool } from "../../lib/tool-args.ts";
-import { showNumberedSelect } from "../../lib/components/numbered-select.ts";
+import { showAskUser } from "../../lib/components/ask-user.ts";
 
 export default function (pi: ExtensionAPI) {
 	registerLooseTool(pi, {
@@ -13,7 +13,7 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Show a single-select list of 1 to 9 options, each with an optional description. Returns the chosen label, its option number, and any annotation. Returns a cancelled result if the user dismisses the list. Title must be 160 characters or less.",
 		promptSnippet: "Ask the user to choose one option from up to 9.",
-		promptGuidelines: ["Use ask_user when the user must choose between discrete alternatives. For multi-select, ask in plain text."],
+		promptGuidelines: ["Always prefer ask_user over asking a question in plain prose."],
 		parameters: Type.Object({
 			title: Type.String({ description: "The prompt or question to display" }),
 			options: Type.Array(
@@ -35,7 +35,7 @@ export default function (pi: ExtensionAPI) {
 				);
 			}
 
-			const result = await showNumberedSelect(ctx, params.title, params.options);
+			const result = await showAskUser(ctx, params.title, params.options);
 
 			if (result === undefined) {
 				return {

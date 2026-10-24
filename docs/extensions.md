@@ -38,7 +38,7 @@ extension says so.
 
 The remaining extensions have no configuration file. They expose behavior or
 commands: `worktree`, `session-resume`, `session-name`, `print-prompt`,
-`numbered-select`, `user-edit`, and the core `subagents` orchestration tools.
+`ask-user`, `user-edit`, and the core `subagents` orchestration tools.
 
 ## Autoflow autostart
 
@@ -313,7 +313,7 @@ than files:
 - `session-name`: use `set_session_name`; names are trimmed, line breaks become
   spaces, and names are limited to 200 characters.
 - `print-prompt`: use `/sysprompt` to inspect the last rendered system prompt.
-- `numbered-select`: root sessions use `ask_user`.
+- `ask-user`: root sessions use `ask_user`.
 - `user-edit`: use `user_edit` to open the built-in editor.
 
 ## Downstream code customization

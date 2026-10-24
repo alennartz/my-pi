@@ -224,17 +224,17 @@ Model-facing result/truncation helpers shared by every local tool.
 - `lib/truncate.ts`
 - `lib/truncate.test.ts`
 
-### Numbered Select
+### Ask User
 
-Extension providing the root-session `ask_user` LLM tool and reusable `showNumberedSelect` TUI helper — a keyboard-driven selection dialog with inline annotation support; child sessions are prevented from invoking it by Subagents' normalized SDK tool policy.
+Extension providing the root-session `ask_user` LLM tool and reusable `showAskUser` TUI helper — a keyboard-driven single-choice dialog with inline annotation support; child sessions are prevented from invoking it by Subagents' normalized SDK tool policy.
 
-**Responsibilities:** ask_user tool registration for root sessions, interactive numbered-list TUI component, selection and annotation flow, result `details` ({label, index, annotation} or {cancelled}) for rendering; no `outputSchema` — model-only exposure means codemode scripts can never call it
+**Responsibilities:** ask_user tool registration for root sessions, interactive option-list TUI component, selection and annotation flow, result `details` ({label, index, annotation} or {cancelled}) for rendering; no `outputSchema` — model-only exposure means codemode scripts can never call it
 
 **Dependencies:** Subagents (child tool policy excludes `ask_user`; root sessions register it normally)
 
 **Files:**
-- `extensions/numbered-select/**`
-- `lib/components/numbered-select.ts`
+- `extensions/ask-user/**`
+- `lib/components/ask-user.ts`
 
 ### User Edit
 

@@ -18,12 +18,12 @@ function wrapWithIndent(prefix: string, content: string, width: number, prefixWi
 
 // Public types
 
-export interface NumberedSelectOption {
+export interface AskUserOption {
 	label: string;
 	description?: string;
 }
 
-export interface NumberedSelectResult {
+export interface AskUserResult {
 	index: number;
 	label: string;
 	annotation?: string;
@@ -33,16 +33,16 @@ export interface NumberedSelectResult {
 
 type Mode = "navigation" | "text";
 
-class NumberedSelectComponent implements Component, Focusable {
+class AskUserComponent implements Component, Focusable {
 	private mode: Mode = "navigation";
 	private highlight = 0;
 	private input: Input;
 	private tui: TUI;
 	private theme: Theme;
-	private options: NumberedSelectOption[];
+	private options: AskUserOption[];
 	private title: string;
 	/** Resolves the custom-UI promise: a result on selection, null on cancel. */
-	private done: (result: NumberedSelectResult | null) => void;
+	private done: (result: AskUserResult | null) => void;
 
 	// Focusable
 	private _focused = false;
@@ -58,8 +58,8 @@ class NumberedSelectComponent implements Component, Focusable {
 		tui: TUI,
 		theme: Theme,
 		title: string,
-		options: NumberedSelectOption[],
-		done: (result: NumberedSelectResult | null) => void,
+		options: AskUserOption[],
+		done: (result: AskUserResult | null) => void,
 	) {
 		this.tui = tui;
 		this.theme = theme;
@@ -237,16 +237,16 @@ class NumberedSelectComponent implements Component, Focusable {
 
 // Public API
 
-export async function showNumberedSelect(
+export async function showAskUser(
 	ctx: ExtensionContext,
 	title: string,
-	options: NumberedSelectOption[],
-): Promise<NumberedSelectResult | undefined> {
+	options: AskUserOption[],
+): Promise<AskUserResult | undefined> {
 	if (options.length === 0) {
-		throw new Error("showNumberedSelect: options must not be empty");
+		throw new Error("showAskUser: options must not be empty");
 	}
 	if (options.length > 9) {
-		throw new Error("showNumberedSelect: options must have 9 or fewer items");
+		throw new Error("showAskUser: options must have 9 or fewer items");
 	}
 
 	// Try the custom TUI component first. Three outcomes:
@@ -265,9 +265,9 @@ export async function showNumberedSelect(
 	// clipped (from the bottom — the title and options survive), but only
 	// beyond 80% of the terminal — the dialog is bounded to ≤9 options and a
 	// ≤160-char title.
-	const customResult = await ctx.ui.custom<NumberedSelectResult | null | undefined>(
+	const customResult = await ctx.ui.custom<AskUserResult | null | undefined>(
 		(tui, theme, _kb, done) => {
-			const component = new NumberedSelectComponent(tui, theme, title, options, done);
+			const component = new AskUserComponent(tui, theme, title, options, done);
 			return component;
 		},
 		{
