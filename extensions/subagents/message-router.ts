@@ -54,7 +54,7 @@ export interface MessagePort {
 }
 
 export interface MessageRouterOptions {
-	/** Injectable for deterministic tests; production IDs use a per-router UUID namespace. */
+	/** Injectable for deterministic tests; production IDs use a per-router UUID suffix namespace. */
 	correlationIdFactory?: () => string;
 	onBlockingSendStart?: (from: string, to: string, correlationId: string) => void;
 	onBlockingSendEnd?: (from: string, correlationId: string) => void;
@@ -101,7 +101,7 @@ export class MessageRouter {
 		this.topology = buildTopology([]);
 		this.onBlockingSendStart = options.onBlockingSendStart;
 		this.onBlockingSendEnd = options.onBlockingSendEnd;
-		const namespace = randomUUID();
+		const namespace = randomUUID().split("-").pop()!;
 		this.correlationIdFactory = options.correlationIdFactory ?? (() => {
 			this.nextCorrelationSequence += 1;
 			return `corr-${namespace}-${this.nextCorrelationSequence}`;
