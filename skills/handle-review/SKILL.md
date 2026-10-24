@@ -20,7 +20,7 @@ This is not a planning skill. Review findings are small and surgical — add mis
 
 2. **Read `docs/reviews/<topic>.md`** — the review file. If it doesn't exist, tell the user and stop. Suggest running the code-review skill first to produce a review file.
 
-3. **Read `docs/plans/<topic>.md`** — the plan that produced the reviewed code. This gives you the original intent behind each finding.
+3. **Read `docs/plans/<topic>.md`** — the plan that produced the reviewed code. If it contains `### Interaction Mocks`, read every listed HTML file. Preserve each approved mock's flows, states, and affordances when fixing findings. This gives you the original intent behind each finding.
 
 4. **Read the relevant code.** For each finding, read the file and surrounding context at the location specified. You need to understand the code to judge confidence and make fixes.
 
@@ -73,7 +73,7 @@ Leave the rest of the finding intact. The review file is a record — don't dele
 
 ## Key Principles
 
-- **Minimal fixes** — the smallest change that works. Prefer a fix that deletes code over one that adds it. Never add layers, frameworks, or config the problem does not need.
+- **Minimal fixes** — the smallest change that works. Prefer a fix that deletes code over one that adds it. Never add layers, frameworks, or config the problem does not need. Do not trade away behavior settled by an approved interaction mock.
 - **Confidence in both diagnosis and fix** — both must be high for autonomous action. If either is uncertain, escalate.
 - **When in doubt, escalate** — a wrong fix is worse than asking. Hesitation is a signal.
 - **Direct fixes, no plans** — review findings are surgical. If something is big enough to need a plan, escalate it as such.

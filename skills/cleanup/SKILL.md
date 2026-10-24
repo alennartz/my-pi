@@ -28,6 +28,8 @@ This skill always runs in a clean context with no conversational history from pr
 
 6. **Read `docs/manual-tests/<topic>.md`** — the manual-testing artifact. Pay attention to its *Tools* section (new or improved tools under `tools/manual-test/` that the codemap refresh must cover), its *Plan Updates* section (changes to the persistent `tools/manual-test/PLAN.md`), and its *Results* / *Open Issues* sections (fix notes and unresolved items that may warrant decision records or user attention). If it doesn't exist, skip it — manual-test may have been legitimately skipped by the orchestrator.
 
+7. **Read linked interaction mocks** — if the plan contains `### Interaction Mocks`, read every listed HTML file before extracting decisions or deleting the mock directory. Confirm that the plan, tests, implementation, or a lasting decision record preserve the approved flows and states; do not let the HTML be the only record of a settled interaction.
+
 ### 1. Spawn Background Agents
 
 Before starting DR extraction, spawn two subagents as a fan-out on the `cheap` model tier (both tasks are mechanical: diff-scoped summarization and doc sweeping) — no inter-agent channels needed:
@@ -46,7 +48,7 @@ Before extracting new DRs, check the plan for a `### DR Supersessions` section u
 
 #### Extract New Records
 
-Scan the working artifacts (brainstorm, plan, review, test review, manual-test) for decisions worth preserving. The manual-test artifact in particular may contain inline fixes or generalization notes that are worth capturing. Follow the decision-records skill for quality criteria, format, file conventions, and proposal flow.
+Scan the working artifacts (brainstorm, plan, review, test review, manual-test, and any linked interaction mocks) for decisions worth preserving. The manual-test artifact in particular may contain inline fixes or generalization notes that are worth capturing. Follow the decision-records skill for quality criteria, format, file conventions, and proposal flow.
 
 ### 3. Wait for Background Agents
 

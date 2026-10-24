@@ -13,10 +13,12 @@
  *
  * Phases covered: test-write, test-review, impl-plan, implement, review,
  *                 handle-review, manual-test, cleanup.
- * brainstorm and architect are interactive and have no check.
+ * brainstorm and architect are interactive and have no check. Plans that list
+ * Interaction Mocks also require every linked HTML file to exist during
+ * downstream phases, and cleanup rejects a leftover topic mock directory.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -25,11 +27,100 @@ interface Result {
 	detail: string;
 }
 
+const mockCheckedPhases = new Set([
+	"test-write",
+	"test-review",
+	"impl-plan",
+	"implement",
+	"review",
+	"handle-review",
+	"manual-test",
+]);
+
+function interactionMockPaths(content: string, topic: string): string[] | string | null {
+	const heading = /^### Interaction Mocks\s*$/m.exec(content);
+	if (!heading || heading.index === undefined) return null;
+
+	const sectionStart = heading.index + heading[0].length;
+	const remainder = content.slice(sectionStart);
+	const nextHeading = remainder.match(/\n#{1,3}\s/);
+	const section = nextHeading?.index !== undefined ? remainder.slice(0, nextHeading.index) : remainder;
+	const bulletLines = section.split(/\r?\n/).filter((line) => /^\s*-\s+/.test(line));
+
+	if (bulletLines.length === 0) {
+		return "the section must contain one backticked repository-relative HTML path per approved mock";
+	}
+
+	const paths: string[] = [];
+	for (const line of bulletLines) {
+		const entry = /^\s*-\s+`([^`]+)`(?:\s+—.*)?\s*$/.exec(line);
+		if (!entry) {
+			return "every entry must start with a backticked repository-relative HTML path";
+		}
+		paths.push(entry[1]);
+	}
+
+	const expectedPrefix = `docs/mocks/${topic}/`;
+	for (const path of paths) {
+		const segments = path.split("/");
+		if (
+			!path.startsWith(expectedPrefix) ||
+			path === expectedPrefix ||
+			!path.endsWith(".html") ||
+			path.includes("\\") ||
+			segments.some((segment) => segment === "" || segment === "." || segment === "..")
+		) {
+			return `mock path must be a unique canonical HTML path under ${expectedPrefix}`;
+		}
+	}
+
+	if (new Set(paths).size !== paths.length) {
+		return "each approved mock path must appear only once";
+	}
+
+	return paths;
+}
+
+function checkInteractionMocks(planPath: string, topic: string, cwd: string): Result | null {
+	if (!existsSync(planPath)) return null;
+
+	const parsed = interactionMockPaths(readFileSync(planPath, "utf-8"), topic);
+	if (parsed === null) return null;
+	if (typeof parsed === "string") {
+		return {
+			passed: false,
+			detail: `Interaction Mocks section is invalid: ${parsed}.`,
+		};
+	}
+
+	const missing = parsed.filter((mockPath) => {
+		const absolutePath = join(cwd, mockPath);
+		try {
+			return !statSync(absolutePath).isFile();
+		} catch {
+			return true;
+		}
+	});
+	if (missing.length > 0) {
+		return {
+			passed: false,
+			detail: `Linked interaction mock file(s) do not exist: ${missing.join(", ")}`,
+		};
+	}
+
+	return null;
+}
+
 export function checkTransitionArtifact(phase: string, topic: string, cwd: string): Result | null {
 	const planPath = join(cwd, "docs/plans", `${topic}.md`);
 	const reviewPath = join(cwd, "docs/reviews", `${topic}.md`);
 	const testReviewPath = join(cwd, "docs/reviews", `${topic}-tests.md`);
 	const manualTestPath = join(cwd, "docs/manual-tests", `${topic}.md`);
+
+	if (mockCheckedPhases.has(phase)) {
+		const mockCheck = checkInteractionMocks(planPath, topic, cwd);
+		if (mockCheck) return mockCheck;
+	}
 
 	switch (phase) {
 		case "test-write": {
@@ -139,6 +230,7 @@ export function checkTransitionArtifact(phase: string, topic: string, cwd: strin
 			if (existsSync(reviewPath)) remaining.push(`docs/reviews/${topic}.md`);
 			if (existsSync(testReviewPath)) remaining.push(`docs/reviews/${topic}-tests.md`);
 			if (existsSync(manualTestPath)) remaining.push(`docs/manual-tests/${topic}.md`);
+			if (existsSync(join(cwd, "docs/mocks", topic))) remaining.push(`docs/mocks/${topic}/`);
 			if (remaining.length === 0) {
 				return { passed: true, detail: `All working artifacts have been cleaned up.` };
 			}

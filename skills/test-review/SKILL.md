@@ -18,7 +18,7 @@ The output is a review artifact (`docs/reviews/<topic>-tests.md`) and a review s
 
 1. **Read the brainstorm** — `docs/brainstorms/<topic>.md`. This is the intent source. Key decisions and the chosen direction define what the tests should cover. If no brainstorm exists, the architecture alone defines intent — note this and proceed.
 
-2. **Read the plan** — `docs/plans/<topic>.md`, focusing on the Architecture section (especially Interfaces) and the Tests section (interface files, test files, behaviors covered). If the Tests section doesn't exist, tell the user and stop — suggest running the test-writing skill first.
+2. **Read the plan** — `docs/plans/<topic>.md`, focusing on the Architecture section (especially Interfaces) and the Tests section (interface files, test files, behaviors covered). If the plan contains `### Interaction Mocks`, read every listed HTML file. Use the approved mocks as the interaction oracle when checking that tests cover flows, states, and affordances. If the Tests section doesn't exist, tell the user and stop — suggest running the test-writing skill first.
 
 3. **Read the actual test files** listed in the plan's Tests section. Read the interface files too — these are what the tests exercise.
 
@@ -26,7 +26,7 @@ The output is a review artifact (`docs/reviews/<topic>-tests.md`) and a review s
 
 Check the tests against these criteria:
 
-- **Brainstorm intent coverage.** Every key decision and behavioral expectation from the brainstorm should have corresponding test coverage. Map brainstorm intent to test behaviors — identify gaps where intent has no test and tests that cover something the brainstorm didn't ask for.
+- **Brainstorm and mock intent coverage.** Every key decision and behavioral expectation from the brainstorm should have corresponding test coverage. When the plan lists Interaction Mocks, map every mock flow and state to test behaviors — identify gaps where approved interaction intent has no test and tests that cover something neither source asked for.
 
 - **Abstraction level.** Tests should be at component boundaries — public surface in, observable result out. Flag any test that reaches into internals, tests private functions, or depends on implementation details that don't exist yet.
 

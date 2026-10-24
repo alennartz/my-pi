@@ -18,7 +18,7 @@ The output is a findings file — not a conversation, not a fix. The review runs
 
 1. **Read `codemap.md`** at the repo root. If it doesn't exist, proceed without it — the plan and diff are the primary inputs.
 
-2. **Read `docs/plans/<topic>.md`** — the full plan: architecture, tests, steps, and status fields. If the plan doesn't exist, tell the user and stop. Suggest running the earlier pipeline phases first to establish the plan this review checks against. The plan should have a `pre-test-write-commit` field (in the Tests section) — this is the diff baseline, scoping the review back through test writing. If it's missing, fall back to `pre-implementation-commit` (in the Steps section). If neither exists, ask the user for a commit hash or ref to diff from.
+2. **Read `docs/plans/<topic>.md`** — the full plan: architecture, tests, steps, and status fields. If the plan contains `### Interaction Mocks`, read every listed HTML file before reviewing. Use each approved mock as the UI interaction oracle. If the plan doesn't exist, tell the user and stop. Suggest running the earlier pipeline phases first to establish the plan this review checks against. The plan should have a `pre-test-write-commit` field (in the Tests section) — this is the diff baseline, scoping the review back through test writing. If it's missing, fall back to `pre-implementation-commit` (in the Steps section). If neither exists, ask the user for a commit hash or ref to diff from.
 
 3. **Determine the diff range.** Use the `pre-test-write-commit` field from the plan (or `pre-implementation-commit` as fallback) to form `<commit>..HEAD`. This is the scope of review — everything that changed from test writing through implementation. Do **not** run the diff or read source files yourself — the pass subagents do their own reading.
 
@@ -39,6 +39,8 @@ Compare the plan against the diff. For each step in the plan, check:
 Also check the reverse:
 
 - **Was anything done that wasn't planned?** Changes in the diff that don't trace back to any step. Unplanned work isn't automatically wrong, but it should be noted.
+
+For a plan with Interaction Mocks, compare the implemented UI behavior with every linked mock. Check each settled flow, state, and affordance for drift, not only whether the files and components exist.
 
 **Check test immutability.** If the plan has both `pre-test-write-commit` and `pre-implementation-commit` fields, diff the test files listed in the `## Tests` section between `pre-implementation-commit` and HEAD. Test files are immutable during implementation — any modifications are a critical finding. Interface files from the Tests section should also be checked but are less likely to be problematic (implementation may legitimately add to files that contain interfaces).
 
@@ -116,7 +118,7 @@ Commit with message: `review: <topic>`
 
 ## Key Principles
 
-- **The plan is the spec** — plan adherence is measured against what the plan said, not what you think it should have said.
+- **The plan and approved mocks are the spec** — plan adherence is measured against what the plan and every linked interaction mock say, not what you think they should have said.
 - **Judgment over pedantry** — flag what matters, skip what doesn't. Reasonable adaptations during implementation are expected, not defects.
 - **Every finding is a real risk** — if you can't articulate why a finding matters, drop it.
 - **No fixes, no implementation** — the review proposes the smallest fix per finding and applies nothing. Don't edit code, don't propose rewrites, don't open PRs.

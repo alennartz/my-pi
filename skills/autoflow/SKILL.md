@@ -140,6 +140,8 @@ The script prints `PASS [<phase>] <detail>` or `FAIL [<phase>] <detail>` and exi
 
 It covers these phases: `test-write`, `test-review`, `impl-plan`, `implement`, `review`, `handle-review`, `manual-test`, `cleanup`. (brainstorm and architect are interactive and have no check.) For the full predicate list, see `skills/autoflow/check-transition.ts`.
 
+When the plan contains `### Interaction Mocks`, the transition check validates every listed HTML path before accepting downstream phases. The cleanup check also rejects a leftover `docs/mocks/<topic>/` directory. Plans without that section have no mock requirement.
+
 **If validation passes:** tear down the subagent and proceed to the next phase.
 
 **If validation fails:** the subagent stopped before finishing. Its last output will be visible to you — read it to understand why it stopped early. Then use `send(to='<agent-id>')` to instruct it to continue working until the phase is complete, and call `await_agents` again. Do **not** tear down and relaunch — the subagent still holds its full context and is better positioned to resume than a fresh agent starting from scratch.

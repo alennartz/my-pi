@@ -20,7 +20,7 @@ Do NOT make new architectural decisions. The architecture is the ceiling — thi
 
 Before anything else:
 
-1. **Read `docs/plans/<topic>.md`** — the architecture section written by the architecting skill. This is your scope. If the plan file doesn't exist or has no architecture section, stop and tell the user. Suggest running the architecting skill first to establish the architectural decisions this skill builds on.
+1. **Read `docs/plans/<topic>.md`** — the architecture section written by the architecting skill. This is your scope. If the plan contains `### Interaction Mocks`, read every listed HTML file before writing steps. Treat each approved mock as the interaction oracle, and name its required flows and states in the relevant implementation steps. If the plan file doesn't exist or has no architecture section, stop and tell the user. Suggest running the architecting skill first to establish the architectural decisions this skill builds on.
 
 2. **Read `codemap.md`** at the repo root. If it doesn't exist, suggest the user create one using the codemap skill. If they decline, fall back to exploring the codebase directly.
 
@@ -93,7 +93,7 @@ The steps are appended below the existing architecture section:
 
 - **Grounded in code** — steps reference real files, real interfaces, real types found during investigation. Not assumptions.
 - **Respect the seams** — read the **codebase-design** skill; steps build behind the architecture's interfaces, and step-level interface decisions follow its doctrine (deep modules, no hypothetical seams).
-- **Adds detail, not scope** — the architecture decides what to build. This skill decides the sequence and the specifics. Don't expand beyond the architecture.
+- **Adds detail, not scope** — the architecture and any linked interaction mocks decide what to build. This skill decides the sequence and the specifics. Don't expand beyond the architecture or omit behavior settled by an approved mock.
 - **Generate, don't negotiate** — present the full plan, don't walk through it conversationally. Only surface questions when the architecture doesn't match the code.
 - **Get the order right** — earlier steps should lay foundations for later steps. This is good authoring practice and gives the implementer a natural build sequence, but it's not a strict concurrency constraint — the implementer may parallelize steps that touch independent modules.
 - **The plan is a living document** — status fields turn it into a progress tracker during implementation. One artifact from architecture through completion.

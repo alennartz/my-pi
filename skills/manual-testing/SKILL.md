@@ -42,7 +42,7 @@ If you need clarification or encounter ambiguity, use `send(to='parent', expectR
 ### 0. Gather Context
 
 1. **Read `codemap.md`** at the repo root. If it doesn't exist, proceed without it.
-2. **Read `docs/plans/<topic>.md`** — the plan (architecture + steps). If it doesn't exist, tell the user and stop.
+2. **Read `docs/plans/<topic>.md`** — the plan (architecture + steps). If the plan contains `### Interaction Mocks`, read every listed HTML file. Use the approved mocks as the interaction oracle for the flows and states you exercise. If it doesn't exist, tell the user and stop.
 3. **Read `docs/brainstorms/<topic>.md`** if it exists — original intent and user-facing scenarios.
 4. **Read `docs/reviews/<topic>.md`** and `docs/reviews/<topic>-tests.md` if they exist — findings that shape what to test or deliberately avoid.
 5. **Read `tools/manual-test/PLAN.md` and `tools/manual-test/README.md`** if they exist. Everything you need to know about this repo's primary user journeys and existing tooling is there.
@@ -149,6 +149,8 @@ For each journey in the Smoke Suite and each Topic-Specific Test:
 
 ### 5. Execute Tests
 
+When the plan lists Interaction Mocks, exercise every settled flow and state from the linked mocks. Add those checks to the topic-specific tests when the persistent smoke suite does not already cover them.
+
 Run the Smoke Suite first, then Topic-Specific Tests. For each, record in *Results*:
 
 - What was run (tool/skill, invocation).
@@ -157,7 +159,7 @@ Run the Smoke Suite first, then Topic-Specific Tests. For each, record in *Resul
 
 #### Coherence Pass
 
-Structural checks (element exists, label matches, status code is 200, trace contains expected event) confirm conformance, not coherence. After the structural checks for any UI-bearing or user-facing journey, do a coherence pass: look at the produced artifact as a whole — screenshot, terminal session, response body, rendered output — and judge it against the user-facing intent in the brainstorm and plan, not against the element list.
+Structural checks (element exists, label matches, status code is 200, trace contains expected event) confirm conformance, not coherence. After the structural checks for any UI-bearing or user-facing journey, do a coherence pass: look at the produced artifact as a whole — screenshot, terminal session, response body, rendered output — and judge it against the user-facing intent in the brainstorm and plan, and against every linked approved mock when one exists. Confirm the settled flows, states, and affordances remain coherent, not only that the elements exist.
 
 Record a one-line verdict per journey: **looks coherent** or **looks off because…**. A coherent-looking off-note is a finding — fix inline if obvious, log in *Open Issues* otherwise. This is a sanity check, not a re-test; don't re-run the journey, just look.
 

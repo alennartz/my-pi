@@ -84,6 +84,74 @@ describe("test-write transition check", () => {
 	});
 });
 
+// ─── Interaction Mocks: linked HTML artifacts ──────────────────────────────
+
+describe("Interaction Mocks transition checks", () => {
+	function writePlanWithMock(mockPath: string) {
+		writeFileSync(
+			join(testDir, "docs/plans/my-topic.md"),
+			[
+				"# Plan: my-topic",
+				"",
+				"## Architecture",
+				"",
+				"### Interaction Mocks",
+				"",
+				`- \`${mockPath}\` — approved interaction contract for the primary flow`,
+				"",
+				"## Tests",
+				"",
+				"Test details.",
+				"",
+			].join("\n"),
+		);
+	}
+
+	it("passes when every linked mock file exists", () => {
+		setupDirs();
+		mkdirSync(join(testDir, "docs/mocks/my-topic"), { recursive: true });
+		writeFileSync(join(testDir, "docs/mocks/my-topic/primary.html"), "<button>Next</button>");
+		writePlanWithMock("docs/mocks/my-topic/primary.html");
+
+		const result = checkTransitionArtifact("test-write", "my-topic", testDir);
+		expect(result).not.toBeNull();
+		expect(result!.passed).toBe(true);
+	});
+
+	it("fails when a linked mock file is missing", () => {
+		setupDirs();
+		writePlanWithMock("docs/mocks/my-topic/primary.html");
+
+		const result = checkTransitionArtifact("test-write", "my-topic", testDir);
+		expect(result).not.toBeNull();
+		expect(result!.passed).toBe(false);
+		expect(result!.detail).toContain("docs/mocks/my-topic/primary.html");
+	});
+
+	it("fails when the Interaction Mocks section has no entries", () => {
+		setupDirs();
+		writeFileSync(
+			join(testDir, "docs/plans/my-topic.md"),
+			"# Plan: my-topic\n\n## Architecture\n\n### Interaction Mocks\n\n## Tests\n",
+		);
+
+		const result = checkTransitionArtifact("impl-plan", "my-topic", testDir);
+		expect(result).not.toBeNull();
+		expect(result!.passed).toBe(false);
+		expect(result!.detail).toContain("Interaction Mocks section is invalid");
+	});
+
+	it("fails when a linked path is outside the topic mock directory", () => {
+		setupDirs();
+		writePlanWithMock("docs/mocks/other-topic/primary.html");
+
+		const result = checkTransitionArtifact("impl-plan", "my-topic", testDir);
+		expect(result).not.toBeNull();
+		expect(result!.passed).toBe(false);
+		expect(result!.detail).toContain("Interaction Mocks section is invalid");
+	});
+});
+
 // ─── test-review: test review file exists ───────────────────────────────────
 
 describe("test-review transition check", () => {
@@ -349,6 +417,15 @@ describe("cleanup transition check", () => {
 		const result = checkTransitionArtifact("cleanup", "my-topic", testDir);
 		expect(result).not.toBeNull();
 		expect(result!.passed).toBe(false);
+	});
+
+	it("fails when the topic mock directory still exists", () => {
+		setupDirs();
+		mkdirSync(join(testDir, "docs/mocks/my-topic"), { recursive: true });
+		const result = checkTransitionArtifact("cleanup", "my-topic", testDir);
+		expect(result).not.toBeNull();
+		expect(result!.passed).toBe(false);
+		expect(result!.detail).toContain("docs/mocks/my-topic/");
 	});
 });
 
