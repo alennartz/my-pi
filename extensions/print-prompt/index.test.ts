@@ -39,7 +39,17 @@ const { default: printPrompt } = await import("./index.js");
 beforeAll(() => {
 	const dir = mkdtempSync(join(tmpdir(), "print-prompt-host-"));
 	mkdirSync(join(dir, "dist", "core"), { recursive: true });
-	writeFileSync(join(dir, "dist", "core", "system-prompt.js"), "customSections.preamble ??\n");
+	writeFileSync(
+		join(dir, "dist", "core", "system-prompt.js"),
+		[
+			'if (!SYSTEM_PROMPT_SECTION_NAME.test(name)) {',
+			`        promptSections.preamble =
+            customSections.preamble ??
+            "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";`,
+			`        if (content && name !== "preamble")
+            promptSections[name] = content;`,
+		].join("\n"),
+	);
 	hostDirState.dir = dir;
 });
 

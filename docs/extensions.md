@@ -207,9 +207,11 @@ Supported front matter fields:
 
 The body replaces pi's default identity — the persona IS the personality.
 The mechanism is a self-healing host patch: at extension activation,
-persona-workspaces rewrites the running pi's prompt builder to accept
-`sections.preamble` as an override of the default identity sentence (an
-explicit `--system-prompt` still outranks it). On a patched host the body is
+persona-workspaces rewrites the host's prompt builders to accept
+`sections.preamble` as an override of the default identity sentence. It
+patches both the unbundled SDK module and the minified CLI bundle when both
+are present (an explicit `--system-prompt` still outranks it). On a patched
+host the body is
 the preamble — pi's first slot — with pi's own tool declarations, rules,
 docs, project context, skills, and working directory untouched below it, and
 a body edit records as a small preamble-only delta. The running process keeps

@@ -39,7 +39,17 @@ function plainDirectory(): string {
 function usePatchedHost(): string {
 	const dir = mkdtempSync(join(tmpdir(), "persona-host-patched-"));
 	mkdirSync(join(dir, "dist", "core"), { recursive: true });
-	writeFileSync(join(dir, "dist", "core", "system-prompt.js"), "customSections.preamble ??\n");
+	writeFileSync(
+		join(dir, "dist", "core", "system-prompt.js"),
+		[
+			'if (!SYSTEM_PROMPT_SECTION_NAME.test(name)) {',
+			`        promptSections.preamble =
+            customSections.preamble ??
+            "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";`,
+			`        if (content && name !== "preamble")
+            promptSections[name] = content;`,
+		].join("\n"),
+	);
 	hostPathState.packageDir = dir;
 	return dir;
 }

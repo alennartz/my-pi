@@ -47,14 +47,15 @@ packages).
 ## Decision
 Patch the host runtime, self-healing, at extension activation.
 
-`host-patch.ts` applies three exact-string touches to the host's
-`dist/core/system-prompt.js`: drop the `preamble` rejection from
-section-name validation; let `sections.preamble` override the default
-sentence when `customPrompt` is unset; keep the merge loop from
-re-assigning `preamble`, so an explicit `--system-prompt` always outranks
-it. The write is atomic (temp file + rename), idempotent, and all-or-nothing
-with per-snippet verification — an incompatible pi is reported, never
-half-patched.
+`host-patch.ts` applies three exact-string touches to each host prompt
+builder: the unbundled `dist/core/system-prompt.js` module and, for the
+standard CLI, the matching minified module under `dist/bundle/chunks/`. The
+touches drop the `preamble` rejection from section-name validation, let
+`sections.preamble` override the default sentence when `customPrompt` is
+unset, and keep the merge loop from re-assigning `preamble`, so an explicit
+`--system-prompt` always outranks it. The writes are atomic (temp file +
+rename), idempotent, and all-or-nothing with per-snippet verification — an
+incompatible pi is reported, never half-patched.
 
 Tiering, decided once per host runtime directory at activation:
 
@@ -82,20 +83,20 @@ module loader (covers even the first session, at the cost of mutating the
 launch environment for every node process).
 
 ## Consequences
-- The transform is snippet-coupled to pi 1.3.0's dist output. A reshaped
-  builder reports "incompatible" and the persona runs stacked with a warning
-  — degraded granularity, never a broken file or a silent no-op.
-  Re-alignment is a string update in `host-patch.ts`. Watch-item: if
-  upstream ever accepts `sections.preamble` natively, the detection must be
-  re-aligned (or the patch dropped for a version gate) — the marker check
-  would otherwise misreport a capable runtime as incompatible.
+- The transform is snippet-coupled to pi's unbundled and minified bundle
+  output. A reshaped builder reports "incompatible" and the persona runs
+  stacked with a warning — degraded granularity, never a broken file or a
+  silent no-op. Re-alignment is a string update in `host-patch.ts`. Watch item:
+  if upstream ever accepts `sections.preamble` natively, the exact transforms
+  must be re-aligned (or the patch dropped for a version gate).
 - One fallback-tier session per pi/pimote update: the session that applies
   the patch runs in-memory unpatched code. Every later session is
   override-tier. The stacked tier keeps the persona working in that window.
-- The patch writes into a release tree we do not own. Confined to one dist
-  file, reversible, exact-string; pimote releases wipe it and the next load
-  re-applies. The pimote bundle and the CLI install heal independently —
-  each runtime is patched by the processes that load the extension on it.
+- The patch writes into a release tree we do not own. Confined to the host's
+  prompt-builder artifacts, reversible, exact-string; pimote releases wipe
+  them and the next load re-applies. The pimote bundle and the CLI install
+  heal independently — each runtime is patched by the processes that load the
+  extension on it.
 - Cache behavior is axiom-forced, not design-chosen: the persona lives at
   the head, so a mid-session body edit invalidates the provider prefix
   cache in every compliant design. Body edits are rare human actions, and
