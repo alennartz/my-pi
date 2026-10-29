@@ -146,6 +146,8 @@ describe("completionDataFor", () => {
 describe("statusData", () => {
 	it("projects a status with a bounded output preview and copied arrays", () => {
 		const status = statusOf({
+			model: "provider/model",
+			thinkingLevel: "high",
 			lastOutput: "x".repeat(300),
 			channels: ["parent"],
 			pendingCorrelations: ["c1"],
@@ -153,6 +155,7 @@ describe("statusData", () => {
 		});
 		const data = statusData(status);
 		expect(data.id).toBe("a");
+		expect(data.model).toBe("provider/model:high");
 		expect(data.lastOutputPreview).toHaveLength(203);
 		expect(data.channels).toEqual(["parent"]);
 		expect(data.pendingCorrelations).toEqual(["c1"]);

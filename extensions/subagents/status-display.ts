@@ -3,13 +3,14 @@
  * dashboard widget (widget.ts) and the pimote panel cards (panel-cards.ts).
  *
  * One home for how an agent state is named, described, and colored, so the
- * two surfaces cannot drift apart. Surface concerns — glyphs, layout, width
- * truncation — stay in the surfaces. Everything here is pure.
+ * two surfaces cannot drift apart. The TUI palette lives here; panel cards
+ * adapt the semantic states to their own palette. Surface concerns — glyphs,
+ * layout, width truncation — stay in the surfaces. Everything here is pure.
  */
 
 import type { AgentState, AgentStatus } from "./agent-set.js";
 
-/** Semantic state colors, valid for the TUI theme and the panel card palette. */
+/** Semantic state colors used by the terminal dashboard. */
 export type StateColor = "accent" | "success" | "warning" | "error";
 
 /** Display order of the states, e.g. for aggregate counts. */
@@ -24,7 +25,7 @@ export const STATE_LABELS: Record<AgentState, string> = {
 	dead: "dead",
 };
 
-/** Framing color for a state: the TUI card border, the panel card accent bar. */
+/** Framing color for a state in the terminal dashboard. */
 export const STATE_COLORS: Record<AgentState, StateColor> = {
 	running: "accent",
 	idle: "success",
@@ -44,6 +45,13 @@ export const STATE_DETAIL_COLORS: Record<AgentState, StateColor | "muted"> = {
 
 /** Longest error text carried in a state detail before truncation. */
 const MAX_DETAIL_LENGTH = 200;
+
+/** Display a model reference with the effort level used for its requests. */
+export function modelDisplayName(model: string | undefined, thinkingLevel: string | undefined): string {
+	if (!model) return "—";
+	if (!thinkingLevel || model.endsWith(`:${thinkingLevel}`)) return model;
+	return `${model}:${thinkingLevel}`;
+}
 
 /** One line describing what the agent is doing right now. */
 export function stateDetail(status: AgentStatus): string {

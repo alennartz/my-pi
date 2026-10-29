@@ -78,6 +78,8 @@ export type AgentOperationalSnapshot = Readonly<{
 	state: "running" | "idle" | "waiting" | "errored" | "dead";
 	usage: AgentUsage;
 	model?: string;
+	/** Pi thinking level used for the current model. */
+	thinkingLevel?: string;
 	lastActivity?: string;
 	lastOutput?: string;
 	lastError?: string;

@@ -9,9 +9,17 @@
  */
 
 import type { Card } from "@pimote/sdk/panels";
-import type { AgentStatus } from "./agent-set.js";
+import type { AgentState, AgentStatus } from "./agent-set.js";
 import { formatTokenCount } from "./format.js";
-import { STATE_COLORS, STATE_LABELS, stateDetail } from "./status-display.js";
+import { modelDisplayName, STATE_LABELS, stateDetail } from "./status-display.js";
+
+const PANEL_STATE_COLORS: Record<AgentState, NonNullable<Card["color"]>> = {
+	running: "active",
+	idle: "muted",
+	waiting: "warning",
+	errored: "error",
+	dead: "error",
+};
 
 /** State badge: label, turn count, and a plain-text subgroup marker. */
 function stateTag(status: AgentStatus): string {
@@ -38,7 +46,7 @@ export function statusesToCards(statuses: AgentStatus[]): Card[] {
 	return statuses.map((s) => {
 		const body: NonNullable<Card["body"]> = [];
 		const defName = s.agentDef || "default";
-		const modelName = s.model || "—";
+		const modelName = modelDisplayName(s.model, s.thinkingLevel);
 		body.push({ content: `${defName} · ${modelName}`, style: "secondary" });
 		body.push({ content: stateDetail(s), style: "text" });
 		if (s.channels.length > 0) {
@@ -47,7 +55,7 @@ export function statusesToCards(statuses: AgentStatus[]): Card[] {
 
 		return {
 			id: s.id,
-			color: STATE_COLORS[s.state],
+			color: PANEL_STATE_COLORS[s.state],
 			header: {
 				title: s.id,
 				tag: stateTag(s),

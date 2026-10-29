@@ -194,6 +194,9 @@ export class ManagedChildSession {
 			// Subscribe before binding so session_start work cannot outrun status hooks.
 			this.unsubscribeSession = session.subscribe(this.hooks.onEvent);
 			await session.bindExtensions(this.createExtensionBindings(session));
+			if (typeof session.thinkingLevel === "string") {
+				this.hooks.onEvent({ type: "thinking_level_changed", level: session.thinkingLevel });
+			}
 		} catch (error) {
 			this.unsubscribeSession?.();
 			this.unsubscribeSession = undefined;

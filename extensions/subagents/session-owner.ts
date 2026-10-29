@@ -49,6 +49,7 @@ import { hasLiveBackgroundWork } from "./activity.js";
 import { createStopSequenceManager, type StopSequenceManager } from "./stop-sequences.js";
 import { NotificationQueue } from "./notification-queue.js";
 import { statusesToCards } from "./panel-cards.js";
+import { modelDisplayName } from "./status-display.js";
 import { formatOverrideNote, formatSpawnToolResult } from "./tool-result.js";
 import { truncateForModel } from "../../lib/truncate.ts";
 import {
@@ -1827,7 +1828,7 @@ function formatAgentStatusDetail(status: AgentStatus): string {
 		`Channels: ${status.channels.join(", ")}`,
 	];
 	if (status.agentDef) lines.push(`Agent definition: ${status.agentDef}`);
-	if (status.model) lines.push(`Model: ${status.model}`);
+	if (status.model) lines.push(`Model: ${modelDisplayName(status.model, status.thinkingLevel)}`);
 	if (status.lastActivity) lines.push(`Last activity: ${status.lastActivity}`);
 	if (status.lastOutput) {
 		const preview = status.lastOutput.length > 200 ? status.lastOutput.slice(0, 200) + "..." : status.lastOutput;

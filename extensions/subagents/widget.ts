@@ -11,6 +11,7 @@ import type { AgentStatus, AgentState } from "./agent-set.js";
 import { formatTokenCount } from "./format.js";
 import {
 	AGENT_STATES,
+	modelDisplayName,
 	STATE_COLORS,
 	STATE_DETAIL_COLORS,
 	STATE_LABELS,
@@ -176,7 +177,7 @@ export class SubagentDashboard implements Component {
 
 		// ── Line 1: identity ──
 		const defName = s.agentDef || "default";
-		const modelName = s.model || "—";
+		const modelName = modelDisplayName(s.model, s.thinkingLevel);
 		const identityRaw = `${defName} • ${modelName}`;
 		const identityColor = dimmed ? "dim" : "muted";
 		const line1 = this.interiorLine(t.fg(identityColor, truncateToWidth(identityRaw, innerWidth)), innerWidth, bc, failed);

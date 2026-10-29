@@ -36,8 +36,8 @@ describe("statusesToCards", () => {
 
 	it("maps every state to a color and a plain-text tag", () => {
 		const cases = [
-			{ state: "running", color: "accent", tag: "running (2)" },
-			{ state: "idle", color: "success", tag: "idle (2)" },
+			{ state: "running", color: "active", tag: "running (2)" },
+			{ state: "idle", color: "muted", tag: "idle (2)" },
 			{ state: "waiting", color: "warning", tag: "waiting (2)" },
 			{ state: "errored", color: "error", tag: "errored (2)" },
 			{ state: "dead", color: "error", tag: "dead (2)" },
@@ -47,6 +47,16 @@ describe("statusesToCards", () => {
 			expect(card.color).toBe(color);
 			expect(card.header.tag).toBe(tag);
 		}
+	});
+
+	it("includes the effort suffix in the model line", () => {
+		const [card] = statusesToCards([status({ model: "provider/model", thinkingLevel: "xhigh" })]);
+		expect(card.body?.[0]).toEqual({ content: "default · provider/model:xhigh", style: "secondary" });
+	});
+
+	it("does not duplicate an effort suffix already present in the model", () => {
+		const [card] = statusesToCards([status({ model: "provider/model:xhigh", thinkingLevel: "xhigh" })]);
+		expect(card.body?.[0]).toEqual({ content: "default · provider/model:xhigh", style: "secondary" });
 	});
 
 	it("omits the turn count when the agent has not run a turn yet", () => {

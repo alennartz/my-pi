@@ -49,6 +49,7 @@ import {
 } from "./message-router.js";
 import { parseSessionSnapshot } from "./session-snapshot.js";
 import { formatTokenCount } from "./format.js";
+import { stripThinkingSuffix } from "./model-tiers.js";
 import {
 	serializeAgentMessage,
 	serializeAgentTorndown,
@@ -168,6 +169,8 @@ export interface AgentStatus {
 	lastActivity?: string;
 	usage: AgentUsage;
 	model?: string;
+	/** Pi thinking level used for the current model. */
+	thinkingLevel?: string;
 	lastOutput?: string;
 	/** Error from the last errored run, surfaced in idle notifications. */
 	lastError?: string;
@@ -703,21 +706,26 @@ export class SubagentManager {
 	private initialOperational(spec: AgentSpec): AgentOperationalSnapshot {
 		if (this.restoring && spec.resumeSessionFile) {
 			const snapshot = parseSessionSnapshot(spec.resumeSessionFile);
+			const parsedModel = snapshot.model ? stripThinkingSuffix(snapshot.model) : undefined;
 			return {
 				state: "idle",
 				usage: { ...snapshot.usage },
-				model: snapshot.model,
+				model: parsedModel?.model,
+				thinkingLevel: parsedModel?.thinking,
 				lastOutput: snapshot.lastOutput,
 				lastTurnInput: snapshot.lastTurnInput,
-				contextWindow: snapshot.model ? this.opts.resolveContextWindow(snapshot.model) : undefined,
+				contextWindow: parsedModel?.model ? this.opts.resolveContextWindow(parsedModel.model) : undefined,
 				hasSubgroup: this.childHasLiveSubagents(spec.resumeSessionFile),
 				pendingCorrelations: [],
 				waitingFor: [],
 			};
 		}
+		const parsedModel = spec.model ? stripThinkingSuffix(spec.model) : undefined;
 		return {
 			state: "running",
 			usage: zeroUsage(),
+			model: parsedModel?.model,
+			thinkingLevel: spec.kind === "fork" ? spec.thinkingLevel : parsedModel?.thinking,
 			lastTurnInput: 0,
 			hasSubgroup: false,
 			pendingCorrelations: [],
@@ -790,6 +798,14 @@ export class SubagentManager {
 			return;
 		}
 
+		if (event.type === "thinking_level_changed") {
+			if (typeof event.level !== "string") return;
+			this.replaceOperational(entry, operationalWith(this.operationalFor(entry), {
+				thinkingLevel: event.level,
+			}));
+			return;
+		}
+
 		if (event.type === "agent_start") {
 			const current = this.operationalFor(entry);
 			// A run starting on an errored agent is its revival: clear the recorded
@@ -845,6 +861,7 @@ export class SubagentManager {
 		const current = this.operationalFor(entry);
 		const usage = message.usage;
 		const messageModel = typeof message.model === "string" ? message.model : undefined;
+		const messageThinkingLevel = typeof message.thinkingLevel === "string" ? message.thinkingLevel : undefined;
 		let lastOutput = current.lastOutput;
 		for (const part of message.content ?? []) {
 			if (part?.type === "text" && typeof part.text === "string") lastOutput = part.text;
@@ -871,6 +888,7 @@ export class SubagentManager {
 				...(costBreakdown !== undefined ? { costBreakdown } : {}),
 			},
 			model: messageModel ?? current.model,
+			thinkingLevel: messageThinkingLevel ?? current.thinkingLevel,
 			lastOutput,
 			lastTurnInput: input + cacheRead + cacheWrite,
 			contextWindow: current.contextWindow ?? (messageModel
@@ -1298,6 +1316,7 @@ function projectStatus(snapshot: AgentNodeSnapshot): AgentStatus {
 				: {}),
 		},
 		model: operational.model,
+		thinkingLevel: operational.thinkingLevel,
 		lastOutput: operational.lastOutput,
 		lastError: operational.lastError,
 		pendingCorrelations: [...operational.pendingCorrelations],

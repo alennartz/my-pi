@@ -1046,6 +1046,7 @@ describe("root orchestration integration", () => {
 			message: {
 				role: "assistant",
 				model: "provider/model",
+				thinkingLevel: "high",
 				usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 0, cost: { total: 0.01 } },
 				content: [{ type: "text", text: "finished" }],
 			},
@@ -1062,6 +1063,7 @@ describe("root orchestration integration", () => {
 		const status = await execute(tools, "check_status", { agent: "worker" }, ctx);
 		expect(status.content[0].text).toContain("worker");
 		expect(status.content[0].text).toMatch(/idle/i);
+		expect(status.content[0].text).toContain("Model: provider/model:high");
 		expect(status.content[0].text).toContain("finished");
 		expect(pi.sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({

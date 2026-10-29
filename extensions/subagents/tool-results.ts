@@ -12,6 +12,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import { formatTokenCount } from "./format.js";
 import { addCostBreakdown, type AgentCostBreakdown } from "./agent-session-registry.js";
 import type { AgentStatus, AgentUsage } from "./agent-set.js";
+import { modelDisplayName } from "./status-display.js";
 import type { AgentCompleteData } from "./messages.js";
 
 /** Status vocabulary of <agent_idle> and <agent_torn_down> reports. */
@@ -254,7 +255,7 @@ export function statusData(status: AgentStatus): StatusAgentData {
 		task: status.task,
 		channels: [...status.channels],
 		agentDef: status.agentDef,
-		model: status.model,
+		model: status.model ? modelDisplayName(status.model, status.thinkingLevel) : undefined,
 		lastActivity: status.lastActivity,
 		lastOutputPreview: outputPreview(status.lastOutput),
 		pendingCorrelations: [...status.pendingCorrelations],
