@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	buildCleanupCompletionNotice,
 	buildCleanupMergePrompt,
 	getWorktreeArgumentCompletions,
 	isWorktreePath,
@@ -125,6 +126,30 @@ describe("/worktree command surface", () => {
 		expect(prompt).toContain("/repo/main");
 		expect(prompt).toContain("git -C /repo/main");
 		expect(prompt).toContain("bash tool calls");
+		expect(prompt).toContain("replace this session with one rooted in the main worktree");
+		expect(prompt).toContain("delete this merged branch");
+	});
+
+	it("describes the cleanup result and branch deletion outcome to the resumed session", () => {
+		expect(buildCleanupCompletionNotice({
+			branchName: "feature/worktree",
+			mergeTarget: "release/1.2",
+			currentWorktreePath: "/home/test/.git-worktrees/my-pi/feature/worktree",
+			mainWorktreePath: "/repo/main",
+			branchDeleted: true,
+		})).toContain(
+			"Worktree cleanup completed. The worktree at `/home/test/.git-worktrees/my-pi/feature/worktree` was removed. " +
+				"Branch `feature/worktree` was merged into `release/1.2` and deleted automatically. " +
+				"This session now runs in the main worktree at `/repo/main`.",
+		);
+
+		expect(buildCleanupCompletionNotice({
+			branchName: "feature/worktree",
+			mergeTarget: "release/1.2",
+			currentWorktreePath: "/home/test/.git-worktrees/my-pi/feature/worktree",
+			mainWorktreePath: "/repo/main",
+			branchDeleted: false,
+		})).toContain("automatic branch deletion failed. Branch `feature/worktree` may still exist");
 	});
 
 	describe("isWorktreePath", () => {

@@ -90,10 +90,18 @@ export interface WorktreeGitClient {
 	detectDefaultBranch(cwd: string): Promise<string | undefined>;
 }
 
+export interface WorktreeForkOptions {
+	/**
+	 * Model-visible notice appended after the copied transcript. When omitted,
+	 * the gateway uses the ordinary cwd-transition notice.
+	 */
+	transitionMessage?: string;
+}
+
 export interface WorktreeSessionGateway {
 	continueRecent(cwd: string): Promise<string | undefined>;
 	create(cwd: string): Promise<string>;
-	forkFrom(sourceSessionFile: string, targetCwd: string): Promise<string>;
+	forkFrom(sourceSessionFile: string, targetCwd: string, options?: WorktreeForkOptions): Promise<string>;
 	/**
 	 * Delete a session file from disk. Used by cleanup to drop the source
 	 * session after forking — the fork copies all entries into the new file,

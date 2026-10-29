@@ -53,8 +53,30 @@ export function buildCleanupMergePrompt(
 		`The merge must happen in the main worktree at \`${mainWorktreePath}\` (the current worktree has \`${branchName}\` checked out, so it cannot also have \`${mergeTarget}\` checked out).`,
 		`Run git from there using \`git -C ${mainWorktreePath} ...\` (e.g. \`git -C ${mainWorktreePath} checkout ${mergeTarget} && git -C ${mainWorktreePath} merge --no-ff ${branchName}\`).`,
 		"Use bash tool calls to perform the merge. If conflicts appear, resolve them naturally in the session before finishing.",
-		"Do not delete the worktree or branch — the /worktree cleanup command will do that after verifying the merge landed.",
+		"Do not delete the worktree or branch yourself. After this turn ends, /worktree cleanup will verify the merge. If verification succeeds, it will remove this worktree, delete this merged branch, and replace this session with one rooted in the main worktree. You will not continue working in this worktree.",
 	].join("\n");
+}
+
+export interface CleanupCompletionNoticeInput {
+	branchName: string;
+	mergeTarget: string;
+	currentWorktreePath: string;
+	mainWorktreePath: string;
+	branchDeleted: boolean;
+}
+
+export function buildCleanupCompletionNotice(input: CleanupCompletionNoticeInput): string {
+	const branchStatus = input.branchDeleted
+		? `Branch \`${input.branchName}\` was merged into \`${input.mergeTarget}\` and deleted automatically.`
+		: `Branch \`${input.branchName}\` was merged into \`${input.mergeTarget}\`, but automatic branch deletion failed. Branch \`${input.branchName}\` may still exist.`;
+
+	return [
+		"Worktree cleanup completed.",
+		`The worktree at \`${input.currentWorktreePath}\` was removed.`,
+		branchStatus,
+		`This session now runs in the main worktree at \`${input.mainWorktreePath}\`.`,
+		"Do not try to return to the removed worktree. Continue with relative paths from the main worktree.",
+	].join(" ");
 }
 
 export function parseWorktreeCommand(args: string): ParsedWorktreeCommand {

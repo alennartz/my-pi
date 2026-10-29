@@ -1,4 +1,8 @@
-import { buildCleanupMergePrompt, resolveWorktreePath } from "./command-surface.ts";
+import {
+	buildCleanupCompletionNotice,
+	buildCleanupMergePrompt,
+	resolveWorktreePath,
+} from "./command-surface.ts";
 import {
 	DEFAULT_MERGE_TARGET_FALLBACK,
 	type WorktreeController,
@@ -204,6 +208,7 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 				});
 			}
 
+			let branchDeleted = false;
 			try {
 				// We've verified the branch is fully merged into mergeTarget, so
 				// -D is safe here. -d would refuse if mergeTarget isn't HEAD or
@@ -213,6 +218,7 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 					branchName: currentWorktree.branch,
 					force: true,
 				});
+				branchDeleted = true;
 			} catch {
 				runtime.notify(
 					`Worktree removed but branch '${currentWorktree.branch}' could not be deleted. Its commits are merged into '${mergeTarget}'; run \`git branch -D ${currentWorktree.branch}\` to finish.`,
@@ -221,7 +227,15 @@ export function createWorktreeController(dependencies: WorktreeDependencies): Wo
 			}
 			// No API to change a session's cwd; fork into the target path and
 			// drop the source duplicate.
-			const sessionFile = await sessions.forkFrom(sourceSessionFile, mainWorktree.path);
+			const sessionFile = await sessions.forkFrom(sourceSessionFile, mainWorktree.path, {
+				transitionMessage: buildCleanupCompletionNotice({
+					branchName: currentWorktree.branch,
+					mergeTarget,
+					currentWorktreePath: currentWorktree.path,
+					mainWorktreePath: mainWorktree.path,
+					branchDeleted,
+				}),
+			});
 			const switchResult = await runtime.switchSession(sessionFile);
 			if (switchResult.cancelled) {
 				// The switch was declined, so the runtime stays on the source

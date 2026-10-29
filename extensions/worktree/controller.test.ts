@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { WorktreeDependencies, WorktreeInfo } from "./contracts.ts";
-import { buildCleanupMergePrompt, resolveWorktreePath } from "./command-surface.ts";
+import {
+	buildCleanupCompletionNotice,
+	buildCleanupMergePrompt,
+	resolveWorktreePath,
+} from "./command-surface.ts";
 import { createWorktreeController } from "./controller.ts";
 
 function createDependencies() {
@@ -294,6 +298,15 @@ describe("Worktree controller", () => {
 			expect(dependencies.sessions.forkFrom).toHaveBeenCalledWith(
 				"/sessions/current.jsonl",
 				mainRepo.path,
+				{
+					transitionMessage: buildCleanupCompletionNotice({
+						branchName: currentWorktree.branch,
+						mergeTarget: "release/1.2",
+						currentWorktreePath: currentWorktree.path,
+						mainWorktreePath: mainRepo.path,
+						branchDeleted: true,
+					}),
+				},
 			);
 			expect(dependencies.sessions.create).not.toHaveBeenCalled();
 			expect(dependencies.runtime.switchSession).toHaveBeenCalledWith("/sessions/back-in-main.jsonl");

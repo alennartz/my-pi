@@ -50,4 +50,31 @@ describe("worktree session gateway", () => {
 
 		expect(await gateway.continueRecent(worktreeCwd)).toBe(created);
 	});
+
+	it("records a cleanup-specific transition notice in the forked session", async () => {
+		const { sessionDir, worktreeCwd } = makeTempDirs();
+		const targetCwd = mkdtempSync(join(tmpdir(), "worktree-target-cwd-"));
+		const source = SessionManager.create(worktreeCwd, sessionDir);
+		source.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "finish the work" }],
+			timestamp: Date.now(),
+		});
+		const sourceFile = source.getSessionFile()!;
+		const gateway = createSessionGateway(sessionDir);
+		const notice = "Worktree cleanup completed. The source branch was deleted.";
+
+		const forkedFile = await gateway.forkFrom(sourceFile, targetCwd, { transitionMessage: notice });
+		const entries = readFileSync(forkedFile, "utf8")
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+
+		expect(entries).toContainEqual(expect.objectContaining({
+			type: "custom_message",
+			customType: "worktree:moved",
+			content: notice,
+			display: true,
+		}));
+	});
 });

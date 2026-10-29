@@ -15,6 +15,7 @@ import { getWorktreeArgumentCompletions, isWorktreePath, parseWorktreeCommand } 
 import type {
 	PendingChangesChoice,
 	WorktreeDependencies,
+	WorktreeForkOptions,
 	WorktreeInfo,
 } from "./contracts.ts";
 import { createWorktreeController } from "./controller.ts";
@@ -250,19 +251,17 @@ export function createSessionGateway(sessionDir: string | undefined): WorktreeDe
 			writeFileSync(sessionFile, `${JSON.stringify(header)}\n`, { flag: "wx" });
 			return sessionFile;
 		},
-		async forkFrom(sourceSessionPath: string, targetCwd: string) {
+		async forkFrom(sourceSessionPath: string, targetCwd: string, options?: WorktreeForkOptions) {
 			const manager = SessionManager.forkFrom(sourceSessionPath, targetCwd, sessionDir);
 			// The forked history is saturated with absolute paths from the old
 			// checkout; without an explicit notice, the agent tends to keep using
 			// them and operates on the wrong worktree. Appending this message as
 			// the newest context entry counteracts that.
-			manager.appendCustomMessageEntry(
-				"worktree:moved",
+			const transitionMessage = options?.transitionMessage ??
 				`This session has been moved into a different git worktree. Your working directory is now ${targetCwd}. ` +
 					"The bash tool's default working directory has been switched accordingly — commands run there without any `cd`, so omit `cd` and use relative paths. " +
-					"Absolute paths mentioned earlier in this conversation refer to a different checkout — do not use them and do not `cd` to them.",
-				true,
-			);
+					"Absolute paths mentioned earlier in this conversation refer to a different checkout — do not use them and do not `cd` to them.";
+			manager.appendCustomMessageEntry("worktree:moved", transitionMessage, true);
 			const sessionFile = manager.getSessionFile();
 			if (!sessionFile) {
 				throw new Error(`Failed to fork a persisted session into ${targetCwd}`);
