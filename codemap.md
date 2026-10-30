@@ -279,11 +279,12 @@ Extension configuration reference and the prompt pointer that makes it discovera
 
 Slash-command prompts distributed with the package.
 
-**Responsibilities:** `tidy` runs repo tidying; `resolve-conflicts` works an in-progress merge/rebase conflict by intent; `experiment` runs a goal-driven experiment campaign (candidate queue, single-variable A/B trials with baseline and keep-or-revert, living experiment log).
+**Responsibilities:** `goal` pursues a user-stated outcome by inferring an evidence-backed operating contract, asking only blocking questions, and iterating until complete or blocked; `tidy` runs repo tidying; `resolve-conflicts` works an in-progress merge/rebase conflict by intent; `experiment` runs a goal-driven experiment campaign (candidate queue, single-variable A/B trials with baseline and keep-or-revert, living experiment log).
 
 **Dependencies:** none.
 
 **Files:**
+- `prompts/goal.md`
 - `prompts/tidy.md`
 - `prompts/resolve-conflicts.md`
 - `prompts/experiment.md`
