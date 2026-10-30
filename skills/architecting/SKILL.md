@@ -64,15 +64,17 @@ For other decisions, lead with your recommendation based on what you found in th
 
 **Capture the reasoning.** When the user makes a decision — about technology, interfaces, module boundaries, or anything else — make sure the *why* is captured, not just the *what*. If the reasoning isn't obvious and the user doesn't explain it, ask.
 
-### 4. Mock the Interactions (UI Work Only)
+### 4. Build High-Fidelity UI Mocks (UI Work Only)
 
-If the work involves UI, settle the interaction design before you capture the plan. Build a **low-fidelity interaction mock**: a static HTML page with vanilla JavaScript. No build step, no dependencies, no framework.
+If the work involves UI, settle the interaction and visual design before you capture the plan. Build a **high-fidelity visual and interaction mock**: a static HTML page with vanilla JavaScript and CSS. No build step, dependencies, or framework.
 
-**In scope:** high-level interactions and affordances — what each control does, which states exist, how the user moves between them. Make it interactive enough to try.
+**In scope:** representative content, real layout, spacing, typography, colors, borders, states, responsive behavior, and all relevant interactions. Make the mock close enough to the intended UI that a reviewer can judge both behavior and appearance. Avoid bare boxes, placeholder styling, and wireframes.
 
-**Out of scope:** colors, spacing, typography, theming, and any visual polish. Placeholder styling is enough. A lo-fi mock, not a comp.
+When altering an existing UI, inspect the current implementation or rendered UI first. Match it very closely in structure, dimensions, spacing, typography, colors, controls, and states. Keep unchanged areas visually consistent and make only the requested differences obvious.
 
-Put mocks in `docs/mocks/<topic>/`. Walk the user through each one and go back and forth — revise until the interactions and affordances feel right. The approved mock is the interaction contract for the design. It is throwaway and never becomes production code.
+Reuse existing product styles when the mock can load them reliably. Otherwise write CSS in the mock. When multiple mocks share a visual language, consider keeping a reusable stylesheet such as `docs/mocks/shared.css`; link future mocks to it instead of duplicating rules. Keep shared mock CSS separate from production code.
+
+Put topic-specific mocks in `docs/mocks/<topic>/`. Walk the user through each one and revise until the interactions, affordances, and visual treatment feel right. The approved mock is the visual and interaction contract for the design. The HTML remains throwaway and never becomes production code; a reusable mock stylesheet can persist for future mocks.
 
 The plan's `### Interaction Mocks` section is the handoff manifest. Add one entry for every approved HTML mock, using its exact repository-relative path in backticks. Omit the section when no mock exists. Do not leave an empty section.
 
@@ -117,7 +119,7 @@ Commit with message: `architect: <topic>`
 
 ### Interaction Mocks
 
-- `docs/mocks/<topic>/<name>.html` — approved interaction contract for [flow and states]
+- `docs/mocks/<topic>/<name>.html` — approved visual and interaction contract for [flow, states, and visual treatment]
 
 ### Technology Choices
 
@@ -134,7 +136,7 @@ Commit with message: `architect: <topic>`
 - **Impacted Modules** — use the codemap's module names. Focus on what changes about each module's responsibilities and dependencies, not file-level details.
 - **New Modules** — same level of detail as a codemap module entry: purpose, responsibilities, dependencies, approximate location. Not exact files.
 - **Interfaces** — component boundary contracts for interfaces affected by the changes. Describe what data flows across each boundary, what operations each side exposes, and what shapes are expected. Be specific enough that a test writer can materialize these as real code (types, function signatures, behavioral expectations) without making design decisions. Pseudocode and type signatures encouraged when they add precision; prose alone is fine when the contract is simple.
-- **Interaction Mocks** — only present when approved HTML mocks exist. One line per mock: its exact repository-relative path under `docs/mocks/<topic>/` in backticks and the flow and states it settles. This section is the machine-readable handoff manifest. Every later phase reads every listed mock and uses it as the interaction oracle; cleanup deletes the topic directory.
+- **Interaction Mocks** — only present when approved HTML mocks exist. One line per mock: its exact repository-relative path under `docs/mocks/<topic>/` in backticks and the flow, states, and visual treatment it settles. This section is the machine-readable handoff manifest. Every later phase reads every listed mock and uses it as the visual and interaction oracle; cleanup deletes the topic directory.
 - **Technology Choices** — only present when new tech is introduced or existing tech is replaced. Include what was considered and why the choice was made. Omit this section if no technology decisions were needed.
 - **DR Supersessions** — only present when the architecture supersedes one or more existing decision records. List each superseded DR with its number, title, reason for supersession, and a summary of the replacement decision. Cleanup uses this section to delete old DRs and write replacements with provenance.
 - **Omit empty sections.** If there are no new modules, no technology choices, or no DR supersessions, leave those sections out entirely.
