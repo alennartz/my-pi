@@ -282,7 +282,7 @@ Definitions can come from:
 - package resources declared by `pi.agents`
 
 More-local definitions with the same `name` replace less-local definitions.
-This package contributes `agents/scout.md` and `agents/comment-sicko.md`.
+This package contributes `agents/scout.md`, `agents/comment-sicko.md`, `agents/spaghetti-sicko.md`, and `agents/test-sicko.md`.
 
 ## Web tools
 
