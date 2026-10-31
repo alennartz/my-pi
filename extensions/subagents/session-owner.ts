@@ -905,7 +905,7 @@ class SubagentSessionOwner {
 			case "session_info_changed":
 				return this.handleSessionInfoChanged(event);
 			case "tool_call":
-				return this.handleToolCall(event);
+				return this.handleToolCall(event, ctx);
 			case "tool_execution_start":
 				return this.handleToolExecutionStart(event, ctx);
 			case "tool_execution_end":
@@ -1025,11 +1025,11 @@ class SubagentSessionOwner {
 		(await this.waitForActiveSession()).presentation.setSessionName(event.name);
 	}
 
-	private handleToolCall(event: any): { block: true; reason: string } | undefined {
-		if (this.scope.kind !== "child") return undefined;
+	private handleToolCall(event: any, ctx: ExtensionContext): { block: true; reason: string } | undefined {
+		if (ctx.hasUI) return undefined;
 		const tool = this.pi.getAllTools().find((candidate) => candidate.name === event?.toolName);
 		if (tool?.exposure !== "model-only") return undefined;
-		return { block: true, reason: "Subagents cannot call model-only tools." };
+		return { block: true, reason: "Model-only tools are unavailable in sessions without UI." };
 	}
 
 	private async handleToolExecutionStart(event: any, ctx: ExtensionContext): Promise<void> {
@@ -1062,7 +1062,7 @@ class SubagentSessionOwner {
 
 	private async handleBeforeAgentStart(event: any, ctx: ExtensionContext): Promise<undefined> {
 		const session = await this.waitForActiveSession();
-		if (this.scope.kind === "child") {
+		if (!ctx.hasUI) {
 			const activeTools = this.pi.getActiveTools();
 			const childTools = excludeModelOnlyTools(activeTools, this.pi.getAllTools());
 			if (childTools.length !== activeTools.length) this.pi.setActiveTools(childTools);
@@ -1204,6 +1204,7 @@ class SubagentSessionOwner {
 		this.pi.registerTool({
 			name: "list_models",
 			label: "List Models",
+			exposure: "direct",
 			annotations: { readOnlyHint: true },
 			outputSchema: ModelsResultSchema,
 			description: "Return each available model ref with its context window, and its input, output, and cache-read cost per million tokens.",
@@ -1220,6 +1221,7 @@ class SubagentSessionOwner {
 		this.pi.registerTool({
 			name: "subagent",
 			label: "Subagents",
+			exposure: "direct",
 			outputSchema: SpawnResultSchema,
 			description: "Spawn child agents that run in separate context windows. Children inherit the parent model and cwd unless an agent sets them. When await is true, the call blocks until the agents complete. Otherwise results arrive later as notifications.",
 			promptSnippet: "Delegate work to child agents with separate context windows.",
@@ -1243,6 +1245,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "fork",
 			label: "Fork",
+			exposure: "direct",
 			outputSchema: SpawnResultSchema,
 			description: "Start a child agent from a copy of this conversation. The child inherits the model and cwd. Returns the same result shape as subagent.",
 			promptSnippet: "Fork a child agent that keeps your full conversation history.",
@@ -1258,6 +1261,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "send",
 			label: "Send Message",
+			exposure: "direct",
 			outputSchema: SendResultSchema,
 			description: "Deliver a message to a named agent or to parent. When expectResponse is true, the call blocks until the target replies.",
 			promptSnippet: "Send a mid-task message to another active agent; fire-and-forget by default, use expectResponse=true to block for a response.",
@@ -1276,6 +1280,7 @@ class SubagentSessionOwner {
 		this.pi.registerTool({
 			name: "respond",
 			label: "Respond",
+			exposure: "direct",
 			description: "Reply to one agent_message by correlationId. Required when response_expected is true.",
 			promptSnippet: "Answer an agent_message that needs a reply.",
 			parameters: Type.Object({
@@ -1288,6 +1293,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "check_status",
 			label: "Check Status",
+			exposure: "direct",
 			annotations: { readOnlyHint: true },
 			outputSchema: StatusResultSchema,
 			description: "Query agent status. Omit agent for summary of all active agents.",
@@ -1299,6 +1305,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "teardown",
 			label: "Teardown",
+			exposure: "direct",
 			outputSchema: TeardownResultSchema,
 			description: "Remove an agent or tear down all agents. Returns a completion report.",
 			promptSnippet: "Remove agents no longer needed; idle or errored agents stay usable, so send new messages to restart or continue work.",
@@ -1309,6 +1316,7 @@ class SubagentSessionOwner {
 		this.pi.registerTool({
 			name: "resurrect",
 			label: "Resurrect",
+			exposure: "direct",
 			outputSchema: ResurrectResultSchema,
 			description: "Revive a torn-down subagent from its session file. Persona, model, and tools are inherited and fixed. Re-declare only id, channels, and task.",
 			promptSnippet: "Revive a torn-down agent from its session_id.",
@@ -1323,6 +1331,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "await_agents",
 			label: "Await Agents",
+			exposure: "direct",
 			outputSchema: SpawnResultSchema,
 			description: "Returns the final output of a completed agent, or the first message sent to you. Use agents to narrow the wait.",
 			promptSnippet: "Wait for named agents to finish or send a message. Omit agents to wait on all.",
@@ -1336,6 +1345,7 @@ class SubagentSessionOwner {
 		registerLooseTool(this.pi, {
 			name: "interrupt",
 			label: "Interrupt",
+			exposure: "direct",
 			outputSchema: InterruptResultSchema,
 			description: "Halt a subagent immediately without tearing it down. Interrupts any in-flight tool call. Returns interrupted, pending, and failed agent lists. pending means the abort was delivered but has not settled.",
 			promptSnippet: "Halt an agent immediately without tearing it down; prefer send unless the agent must stop now.",

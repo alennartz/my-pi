@@ -22,6 +22,7 @@ export default function (pi: ExtensionAPI) {
 	registerLooseTool(pi, {
 		name: "web_search",
 		label: "Web Search",
+		exposure: "direct",
 		description:
 			"Search the web through Brave. Returns result cards with sourceId, url, title, snippet, and age, plus a responseId for follow-up.",
 		promptSnippet: "Discover sources; returns links and snippets, not page content.",
@@ -43,6 +44,7 @@ export default function (pi: ExtensionAPI) {
 	registerLooseTool(pi, {
 		name: "web_fetch",
 		label: "Web Fetch",
+		exposure: "direct",
 		description:
 			"Fetch 1 to 8 URLs as markdown through Readability. Full pages are stored on disk. Use offset to continue a page and findText to search it.",
 		promptSnippet: "Fetch URLs you already know, from web_search or the user, as markdown for targeted reading.",

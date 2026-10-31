@@ -14,7 +14,7 @@ export type ToolExposureInfo = {
 	exposure?: ToolExposure;
 };
 
-/** Subagents receive no model-only tools, including tools marked for user interaction. */
+/** No-UI sessions hide model-only tools, including tools marked for user interaction. */
 export function excludeModelOnlyTools(
 	activeTools: readonly string[],
 	registeredTools: readonly ToolExposureInfo[],

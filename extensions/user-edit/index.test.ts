@@ -19,6 +19,7 @@ import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 type ToolDef = {
 	name: string;
+	exposure?: string;
 	execute: (toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) => Promise<any>;
 };
 
@@ -52,11 +53,17 @@ beforeEach(async () => {
 // No UI
 
 describe("user_edit — no UI", () => {
+	it("marks itself model-only", () => {
+		expect(tool.exposure).toBe("model-only");
+	});
+
 	it("throws when hasUI is false", async () => {
 		const ctx = mockCtx({ hasUI: false });
 		await expect(tool.execute("1", { path: "foo.ts" }, undefined, undefined, ctx)).rejects.toThrow(
 			"user_edit requires an interactive terminal.",
 		);
+		expect(readFile).not.toHaveBeenCalled();
+		expect(ctx.ui.editor).not.toHaveBeenCalled();
 	});
 });
 

@@ -7,7 +7,7 @@ export default function (pi: ExtensionAPI) {
 	registerLooseTool(pi, {
 		name: "ask_user",
 		label: "Ask User",
-		// Interactive tool — subagent loadouts exclude model-only tools, and the
+		// Interactive tool — no-UI loadouts exclude model-only tools, and the
 		// exposure blocks nested calls through codemode and ctx.executeTool.
 		exposure: "model-only",
 		description:

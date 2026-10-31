@@ -12,6 +12,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "set_session_name",
 		label: "Set Session Name",
+		exposure: "direct",
 		description:
 			"Set or clear the current session name. An empty string clears it. Returns the effective name and the previous name.",
 		promptSnippet: "Name the session once the task is clear",

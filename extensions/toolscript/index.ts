@@ -64,6 +64,7 @@ export default function (pi: ExtensionAPI) {
 				pi.registerTool({
 					name: toolName,
 					label: "Toolscript: " + mcpTool.name,
+					exposure: "direct",
 					description: mcpTool.description,
 					promptSnippet: snippetFor(toolName, mcpTool.description),
 					parameters: mcpTool.inputSchema as TSchema,

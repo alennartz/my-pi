@@ -464,7 +464,7 @@ describe("child-scoped extension routing", () => {
 		})(pi as any);
 		const parentSessionFile = path.join(tmpRoot!, "child.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
-		const ctx = makeContext(parentSessionFile);
+		const ctx = makeContext(parentSessionFile, { mode: "print", hasUI: false });
 		await startSession(handlers, ctx);
 		await handlers.get("before_agent_start")?.({ systemPromptOptions: { sections: {} } }, ctx);
 
@@ -472,8 +472,29 @@ describe("child-scoped extension routing", () => {
 		expect(pi.getActiveTools()).toEqual(["read", "subagent", "respond"]);
 		await expect(handlers.get("tool_call")?.({ toolName: "user_edit" }, ctx)).resolves.toEqual({
 			block: true,
-			reason: "Subagents cannot call model-only tools.",
+			reason: "Model-only tools are unavailable in sessions without UI.",
 		});
+	});
+
+	it("keeps model-only tools available when the session has UI", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, handlers } = makePi({
+			activeTools: ["ask_user", "user_edit", "subagent"],
+			registeredTools: [
+				{ name: "ask_user", exposure: "model-only" },
+				{ name: "user_edit", exposure: "model-only" },
+				{ name: "subagent", exposure: "direct" },
+			],
+		});
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+		await handlers.get("before_agent_start")?.({ systemPromptOptions: { sections: {} } }, ctx);
+
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
+		expect(pi.getActiveTools()).toEqual(["ask_user", "user_edit", "subagent"]);
+		expect(await handlers.get("tool_call")?.({ toolName: "ask_user" }, ctx)).toBeUndefined();
 	});
 
 	it("starts a turn when an idle child receives a routed message", async () => {
