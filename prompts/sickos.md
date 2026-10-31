@@ -1,6 +1,6 @@
 ---
-description: Run all three Sicko reviewers concurrently on one scope
-argument-hint: "[scope override]"
+description: Unlessh all the sickos against your target
+argument-hint: "[victim]"
 ---
 Run all the Sickos concurrently as independent reviewers.
 
