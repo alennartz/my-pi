@@ -47,6 +47,20 @@ describe("DelegatingExtensionUI", () => {
 		expect(ui.context).toBe(context);
 	});
 
+	it("preserves UI methods when an extension runtime copies the context", () => {
+		const headless = makeTarget("headless");
+		const attached = makeTarget("attached");
+		const ui = new DelegatingExtensionUI({ headless });
+		const extensionContext = { ...ui.context };
+
+		ui.attach(attached);
+		extensionContext.notify("child resource error", "error");
+		extensionContext.setStatus("child", "running");
+
+		expect(attached.notify).toHaveBeenCalledWith("child resource error", "error");
+		expect(attached.setStatus).toHaveBeenCalledWith("child", "running");
+	});
+
 	it("attaches a presentation target without replacing the bound context", async () => {
 		const headless = makeTarget("headless");
 		const attached = makeTarget("attached");

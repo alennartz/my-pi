@@ -21,8 +21,20 @@ export class DelegatingExtensionUI {
 		this.context = new Proxy({} as ExtensionUIContext, {
 			get(_unused, property) {
 				const value = (owner.target as any)[property];
-				if (typeof value === "function") return value.bind(owner.target);
+				if (typeof value === "function") {
+					return (...args: unknown[]) => {
+						const target = owner.target as any;
+						return Reflect.apply(target[property], target, args);
+					};
+				}
 				return value;
+			},
+			ownKeys() {
+				return Reflect.ownKeys(owner.target);
+			},
+			getOwnPropertyDescriptor(_unused, property) {
+				const descriptor = Reflect.getOwnPropertyDescriptor(owner.target, property);
+				return descriptor ? { configurable: true, enumerable: descriptor.enumerable } : undefined;
 			},
 			set(_unused, property, value) {
 				(owner.target as any)[property] = value;
