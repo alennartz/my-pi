@@ -309,6 +309,9 @@ than files:
 
 - `subagents`: use `subagent`, `fork`, `await_agents`, `interrupt`, `resurrect`,
   and related tools. Agent definitions and model tiers are documented above.
+  Child sessions bind extensions in print mode without a UI context, so
+  `ctx.hasUI` is false and Pi supplies no-op UI methods. Subagents do not expose
+  tools with `model-only` exposure; attempted calls are blocked.
 - `worktree`: use `/worktree` with `create`, `resume`, or `cleanup` arguments.
 - `session-resume`: detects interrupted sessions automatically. It has a
   developer debug script at `scripts/pi-resume-debug.ts`.

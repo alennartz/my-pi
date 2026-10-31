@@ -43,6 +43,7 @@ import {
 	type RegistryEvent,
 } from "./agent-session-registry.js";
 import type { AgentPath } from "./agent-path.js";
+import { excludeModelOnlyTools } from "./child-tool-policy.js";
 import { getPersistencePaths } from "./persistence.js";
 import { serializeAgentComplete, serializeAgentMessage, type AgentCompleteData } from "./messages.js";
 import { hasLiveBackgroundWork } from "./activity.js";
@@ -903,6 +904,8 @@ class SubagentSessionOwner {
 				return this.handleMessageEnd(event, ctx);
 			case "session_info_changed":
 				return this.handleSessionInfoChanged(event);
+			case "tool_call":
+				return this.handleToolCall(event);
 			case "tool_execution_start":
 				return this.handleToolExecutionStart(event, ctx);
 			case "tool_execution_end":
@@ -1022,6 +1025,13 @@ class SubagentSessionOwner {
 		(await this.waitForActiveSession()).presentation.setSessionName(event.name);
 	}
 
+	private handleToolCall(event: any): { block: true; reason: string } | undefined {
+		if (this.scope.kind !== "child") return undefined;
+		const tool = this.pi.getAllTools().find((candidate) => candidate.name === event?.toolName);
+		if (tool?.exposure !== "model-only") return undefined;
+		return { block: true, reason: "Subagents cannot call model-only tools." };
+	}
+
 	private async handleToolExecutionStart(event: any, ctx: ExtensionContext): Promise<void> {
 		const session = await this.waitForActiveSession();
 		session.turns.trackToolStart(event.toolCallId);
@@ -1052,6 +1062,11 @@ class SubagentSessionOwner {
 
 	private async handleBeforeAgentStart(event: any, ctx: ExtensionContext): Promise<undefined> {
 		const session = await this.waitForActiveSession();
+		if (this.scope.kind === "child") {
+			const activeTools = this.pi.getActiveTools();
+			const childTools = excludeModelOnlyTools(activeTools, this.pi.getAllTools());
+			if (childTools.length !== activeTools.length) this.pi.setActiveTools(childTools);
+		}
 		if (!this.pi.getActiveTools().includes("subagent")) return undefined;
 		const agents = session.environment.discoverAgents(ctx.cwd).agents;
 		const lines = [""];
@@ -1102,6 +1117,7 @@ class SubagentSessionOwner {
 			"agent_settled",
 			"message_end",
 			"session_info_changed",
+			"tool_call",
 			"tool_execution_start",
 			"tool_execution_end",
 			"session_start",

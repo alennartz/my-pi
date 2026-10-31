@@ -82,7 +82,6 @@ describe("ManagedChildSession lifecycle and legacy compatibility", () => {
 			{ agentDir },
 			{
 				onEvent: () => {},
-				onUiNotify: () => {},
 				onSessionChanged: () => {},
 				onShutdownRequested: () => {},
 			},
@@ -92,6 +91,11 @@ describe("ManagedChildSession lifecycle and legacy compatibility", () => {
 			expect(child.sessionFile).toBe(sessionFile);
 			expect(child.sessionId).toBe(sessionId);
 			expect(child.session.sessionManager.getCwd()).toBe(cwd);
+			const extensionContext = child.session.extensionRunner.createContext();
+			expect(extensionContext.mode).toBe("print");
+			expect(extensionContext.hasUI).toBe(false);
+			expect(typeof extensionContext.ui.notify).toBe("function");
+			expect(() => extensionContext.ui.notify("no UI", "info")).not.toThrow();
 			expect(child.session.sessionManager.getHeader()).toEqual(originalHeader);
 			expect(child.session.sessionManager.getSessionName()).toBe(formatAgentPath(agentPath));
 		} finally {
@@ -145,7 +149,6 @@ describe("ManagedChildSession lifecycle and legacy compatibility", () => {
 				onEvent: (event) => {
 					if (event.type === "agent_settled") settled();
 				},
-				onUiNotify: () => {},
 				onDiagnostic: (message) => diagnostics.push(message),
 				onSessionChanged: () => {},
 				onShutdownRequested: () => {},

@@ -52,7 +52,7 @@ function dependencies(): ManagedChildSessionDependencies {
 function makeHooks(): ChildSessionHooks {
 	return {
 		onEvent: vi.fn(),
-		onUiNotify: vi.fn(),
+		onDiagnostic: vi.fn(),
 		onSessionChanged: vi.fn(),
 		onShutdownRequested: vi.fn(),
 	};
@@ -64,7 +64,6 @@ function fakeSession(sessionId: string): any {
 		sessionFile: `/sessions/${sessionId}.jsonl`,
 		runtime: { dispose: vi.fn(async () => {}) },
 		dispose: vi.fn(async () => {}),
-		presentation: { attach: vi.fn(() => () => {}), reset: vi.fn() },
 	};
 }
 
@@ -285,7 +284,7 @@ describe("AgentSessionRegistry atomic creation and snapshots", () => {
 		expect(current.operational.usage.input).toBe(0);
 	});
 
-	it("updates session metadata before forwarding onSessionChanged while forwarding other hooks", async () => {
+	it("updates session metadata while forwarding child events, diagnostics, and lifecycle hooks", async () => {
 		const decoratedHooks: any[] = [];
 		const managerHooks = makeHooks();
 		const createSession = vi.fn(async (config: any, _deps: any, childHooks: any) => {
@@ -307,12 +306,12 @@ describe("AgentSessionRegistry atomic creation and snapshots", () => {
 
 		const event = { type: "agent_start" } as any;
 		decoratedHooks[0].onEvent(event);
-		decoratedHooks[0].onUiNotify("child warning", "warning");
+		decoratedHooks[0].onDiagnostic("child warning", "warning");
 		decoratedHooks[0].onShutdownRequested();
 		decoratedHooks[0].onSessionChanged(replacement);
 
 		expect(managerHooks.onEvent).toHaveBeenCalledWith(event);
-		expect(managerHooks.onUiNotify).toHaveBeenCalledWith("child warning", "warning");
+		expect(managerHooks.onDiagnostic).toHaveBeenCalledWith("child warning", "warning");
 		expect(managerHooks.onShutdownRequested).toHaveBeenCalledTimes(1);
 		expect(managerHooks.onSessionChanged).toHaveBeenCalledWith(replacement);
 		expect(registry.getSnapshot(["worker"])).toMatchObject({
@@ -457,20 +456,6 @@ describe("AgentSessionRegistry removal, attachment, and lifecycle", () => {
 		await Promise.all([removal, rejectedCreation]);
 		expect(session.dispose).toHaveBeenCalledTimes(1);
 		expect(registry.getSnapshot(["worker"])).toBeUndefined();
-	});
-
-	it("attaches presentation only to registry-owned descendants and returns the delegate detach token", async () => {
-		const { registry } = createRegistry();
-		const [child] = await registry.createChildren([], [request("worker")]);
-		const target: any = { notify: vi.fn() };
-		const delegateDetach = vi.fn();
-		(child.presentation as any).attach.mockReturnValueOnce(delegateDetach);
-
-		const detach = registry.attachPresentation(["worker"], target);
-		expect((child.presentation as any).attach).toHaveBeenCalledWith(target);
-		detach();
-		expect(delegateDetach).toHaveBeenCalledTimes(1);
-		expect(() => registry.attachPresentation([], target)).toThrow(/root|presentation|external/i);
 	});
 
 	it("disposes live descendants bottom-up while leaving the external root host-owned", async () => {

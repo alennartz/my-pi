@@ -254,7 +254,6 @@ function makeDependencies(): ManagedChildSessionDependencies {
 function makeHooks(): ChildSessionHooks {
 	return {
 		onEvent: vi.fn(),
-		onUiNotify: vi.fn(),
 		onDiagnostic: vi.fn(),
 		onSessionChanged: vi.fn(),
 		onShutdownRequested: vi.fn(),
@@ -516,7 +515,7 @@ describe("ManagedChildSession prompt, event, and shutdown behavior", () => {
 		resolveRun();
 	});
 
-	it("subscribes before binding headless extensions and forwards their hooks", async () => {
+	it("binds child extensions in print mode without a UI context", async () => {
 		sdk.state.eventDuringBind = { type: "session_start", reason: "startup" };
 		const hooks = makeHooks();
 		await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" }, {}, hooks);
@@ -524,15 +523,12 @@ describe("ManagedChildSession prompt, event, and shutdown behavior", () => {
 		expect(hooks.onEvent).toHaveBeenCalledWith(sdk.state.eventDuringBind);
 		const bindings = sdk.state.bindings[0].bindings;
 		expect(bindings).toMatchObject({
-			mode: "rpc",
-			uiContext: expect.any(Object),
+			mode: "print",
 			abortHandler: expect.any(Function),
 			shutdownHandler: expect.any(Function),
 			onError: expect.any(Function),
 		});
-
-		bindings.uiContext.notify("blocked before agent_start", "error");
-		expect(hooks.onUiNotify).toHaveBeenCalledWith("blocked before agent_start", "error");
+		expect(bindings).not.toHaveProperty("uiContext");
 		await bindings.shutdownHandler();
 		expect(hooks.onShutdownRequested).toHaveBeenCalledTimes(1);
 	});
@@ -549,16 +545,13 @@ describe("ManagedChildSession prompt, event, and shutdown behavior", () => {
 		});
 
 		expect(hooks.onDiagnostic).toHaveBeenCalledWith("ctx.ui.setStatus is not a function", "error");
-		expect(hooks.onUiNotify).not.toHaveBeenCalledWith("ctx.ui.setStatus is not a function", "error");
 	});
 
-	it("rebinds the same wrapper and presentation delegate after session replacement", async () => {
+	it("rebinds child extensions in print mode after session replacement", async () => {
 		const hooks = makeHooks();
 		const { child } = await createChild({ kind: "new", cwd: "/repo", sessionDir: "/sessions" }, {}, hooks);
 		const oldSession = child.session as any;
-		const initialContext = sdk.state.bindings[0].bindings.uiContext;
 		const initialModelRuntime = (child.runtime as any).services.modelRuntime;
-		expect(child.presentation).toBeDefined();
 
 		await child.runtime.newSession();
 
@@ -582,7 +575,10 @@ describe("ManagedChildSession prompt, event, and shutdown behavior", () => {
 			modelRuntime: replacementModelRuntime,
 		}));
 		expect(sdk.state.bindings).toHaveLength(2);
-		expect(sdk.state.bindings[1].bindings.uiContext).toBe(initialContext);
+		expect(sdk.state.bindings[0].bindings.mode).toBe("print");
+		expect(sdk.state.bindings[1].bindings.mode).toBe("print");
+		expect(sdk.state.bindings[0].bindings).not.toHaveProperty("uiContext");
+		expect(sdk.state.bindings[1].bindings).not.toHaveProperty("uiContext");
 
 		oldSession.emit({ type: "agent_start" });
 		expect(hooks.onEvent).not.toHaveBeenCalledWith({ type: "agent_start" });

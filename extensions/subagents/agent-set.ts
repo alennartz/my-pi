@@ -201,7 +201,6 @@ interface AgentEntry {
 	/** Usage at entry creation: zero for spawns and resurrects, replayed usage for parent-session restores. Teardown deltas subtract it. */
 	readonly usageBaseline: AgentUsage;
 	completionNotified: boolean;
-	agentStartedSinceLastPrompt: boolean;
 	pendingTerminalError?: string;
 	completionPending: boolean;
 	committed: boolean;
@@ -566,7 +565,6 @@ export class SubagentManager {
 			seenAssistantMessages: new WeakSet<object>(),
 			usageBaseline: { ...initialOperational.usage },
 			completionNotified: false,
-			agentStartedSinceLastPrompt: false,
 			completionPending: false,
 			committed: false,
 			provisionalOperational: initialOperational,
@@ -628,7 +626,6 @@ export class SubagentManager {
 			},
 			hooks: {
 				onEvent: (event) => this.applyChildEvent(entry, event),
-				onUiNotify: (message, type) => this.applyChildNotification(entry, message, type),
 				onDiagnostic: (message, type) => this.applyChildDiagnostic(entry, message, type),
 				onSessionChanged: () => this.persistReplacement(entry),
 				onShutdownRequested: () => this.markRuntimeDead(entry, "Child runtime became unavailable"),
@@ -739,9 +736,8 @@ export class SubagentManager {
 		// Every child can have a startup continuation in flight when its session
 		// binds (for example, session-resume's automatic continuation). Queue the
 		// task behind that turn instead of treating the expected busy preflight as
-		// a runtime failure. Do not reset the started marker: the earlier turn may
-		// already be active, and a later error notification must not misclassify it
-		// as a pre-agent-start block.
+		// a runtime failure. The child's lifecycle events remain authoritative for
+		// status while that continuation runs.
 		const streamingBehavior = "followUp" as const;
 		entry.pendingTerminalError = undefined;
 		const submission = node.session.submit(`Task: ${entry.task}`, streamingBehavior);
@@ -771,10 +767,7 @@ export class SubagentManager {
 						: current.hasSubgroup,
 			});
 			this.replaceOperational(entry, next);
-			if (current.state !== "dead") {
-				entry.agentStartedSinceLastPrompt = true;
-				entry.pendingTerminalError = undefined;
-			}
+			if (current.state !== "dead") entry.pendingTerminalError = undefined;
 			return;
 		}
 
@@ -811,7 +804,6 @@ export class SubagentManager {
 			// A run starting on an errored agent is its revival: clear the recorded
 			// error. Only a dead runtime can never start again.
 			if (current.state !== "dead") {
-				entry.agentStartedSinceLastPrompt = true;
 				entry.pendingTerminalError = undefined;
 				this.replaceOperational(entry, operationalWith(current, {
 					state: "running",
@@ -895,14 +887,9 @@ export class SubagentManager {
 				? this.opts.resolveContextWindow(messageModel)
 				: undefined),
 		}));
-		// An assistant message is authoritative evidence that a live run made it
-		// past preflight. It repairs a stale pre-start error classification even
-		// when the corresponding agent_start was delivered out of order or was
-		// consumed by a queued follow-up run. A dead runtime remains terminal.
-		if (current.state !== "dead") {
-			entry.agentStartedSinceLastPrompt = true;
-			entry.pendingTerminalError = undefined;
-		}
+		// An assistant message proves the child reached a live model run. Clear a
+		// pending terminal error if event delivery left one behind. Dead stays terminal.
+		if (current.state !== "dead") entry.pendingTerminalError = undefined;
 	}
 
 	private applyChildDiagnostic(
@@ -919,20 +906,6 @@ export class SubagentManager {
 		);
 	}
 
-	private applyChildNotification(
-		entry: AgentEntry,
-		message: string,
-		type?: "info" | "warning" | "error",
-	): void {
-		if (type !== "error" || !this.isActiveEntry(entry)) return;
-		const current = this.operationalFor(entry);
-		if (current.state === "running" && !entry.agentStartedSinceLastPrompt) {
-			this.settleErrored(entry, message || "Child input was rejected");
-			return;
-		}
-		if (current.state !== "running") this.router.agentIdle(entry.id);
-	}
-
 	private settleAtBoundary(entry: AgentEntry): void {
 		const current = this.operationalFor(entry);
 		if (isSettledState(current.state)) return;
@@ -940,7 +913,6 @@ export class SubagentManager {
 			this.settleErrored(entry, entry.pendingTerminalError);
 			return;
 		}
-		entry.agentStartedSinceLastPrompt = false;
 		this.replaceOperational(entry, operationalWith(current, {
 			state: "idle",
 			lastActivity: undefined,
@@ -958,7 +930,6 @@ export class SubagentManager {
 	private settleErrored(entry: AgentEntry, error: string): void {
 		const current = this.operationalFor(entry);
 		if (current.state === "errored" || current.state === "dead") return;
-		entry.agentStartedSinceLastPrompt = false;
 		entry.pendingTerminalError = undefined;
 		this.replaceOperational(entry, operationalWith(current, {
 			state: "errored",
@@ -979,7 +950,6 @@ export class SubagentManager {
 		const current = this.operationalFor(entry);
 		if (current.state === "dead") return;
 		const failure = error || "Child runtime became unavailable";
-		entry.agentStartedSinceLastPrompt = false;
 		entry.pendingTerminalError = undefined;
 		this.replaceOperational(entry, operationalWith(current, {
 			state: "dead",

@@ -7,8 +7,8 @@ export default function (pi: ExtensionAPI) {
 	registerLooseTool(pi, {
 		name: "ask_user",
 		label: "Ask User",
-		// Interactive tool — declared to the model but unreachable from nested
-		// contexts (codemode scripts, ctx.executeTool), per the model-only contract.
+		// Interactive tool — subagent loadouts exclude model-only tools, and the
+		// exposure blocks nested calls through codemode and ctx.executeTool.
 		exposure: "model-only",
 		description:
 			"Show a single-select list of 1 to 9 options, each with an optional description. Returns the chosen label, its option number, and any annotation. Returns a cancelled result if the user dismisses the list. Title must be 160 characters or less.",

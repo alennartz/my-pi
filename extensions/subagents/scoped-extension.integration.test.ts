@@ -22,7 +22,6 @@ const managed = vi.hoisted(() => {
 		const child: any = {
 			runtime: { session },
 			eventBus: {},
-			presentation: { context: {}, attach: vi.fn(() => () => {}), reset: vi.fn() },
 			session,
 			sessionId,
 			sessionFile,
@@ -130,7 +129,6 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 			nodes.set(key(pathAtDepth), {
 				snapshot,
 				session: { dispose: vi.fn(async () => {}) },
-				presentation: { attach: vi.fn(() => () => {}), reset: vi.fn() },
 			});
 			livePaths.add(key(pathAtDepth));
 		}
@@ -167,7 +165,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 				let node: any;
 				const childHooks = {
 					onEvent: (event: any) => request.hooks.onEvent(event),
-					onUiNotify: (message: string, type?: "info" | "warning" | "error") => request.hooks.onUiNotify(message, type),
+					onDiagnostic: (message: string, type?: "info" | "warning" | "error") => request.hooks.onDiagnostic(message, type),
 					onSessionChanged: (metadata: any) => {
 						if (node) {
 							const previous = node.snapshot;
@@ -208,11 +206,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 					channels: request.channels,
 					operational: request.initialOperational,
 				};
-				node = {
-					snapshot,
-					session,
-					presentation: session.presentation ?? { attach: vi.fn(() => () => {}), reset: vi.fn() },
-				};
+				node = { snapshot, session };
 				nodes.set(key(childPath), node);
 				livePaths.add(key(childPath));
 				createdNodes.push(node);
@@ -236,10 +230,6 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 					publish({ type: "node_removed", node: node.snapshot });
 				}
 			}
-		}),
-		attachPresentation: vi.fn((agentPath: AgentPath, target: any) => {
-			const node = nodes.get(key(agentPath));
-			return node?.presentation.attach(target) ?? (() => {});
 		}),
 		subscribe: vi.fn((listener: (event: RegistryEvent) => void) => {
 			listeners.add(listener);
@@ -285,19 +275,23 @@ function makePort(id: string): MessagePort & { emit(message: RoutedMessage): voi
 	return port;
 }
 
-function makePi() {
+function makePi(options: { activeTools?: string[]; registeredTools?: any[] } = {}) {
 	const tools = new Map<string, RegisteredTool>();
 	const handlers = new Map<string, (...args: any[]) => any>();
 	const commands = new Map<string, any>();
+	let activeTools = options.activeTools ?? [
+		"list_models", "subagent", "fork", "send", "respond", "check_status",
+		"teardown", "resurrect", "await_agents", "interrupt",
+	];
+	const registeredTools = options.registeredTools ?? [];
 	const pi = {
 		registerTool: vi.fn((tool: RegisteredTool) => tools.set(tool.name, tool)),
 		registerCommand: vi.fn((name: string, command: any) => commands.set(name, command)),
 		on: vi.fn((event: string, handler: (...args: any[]) => any) => handlers.set(event, handler)),
 		getCommands: vi.fn(() => []),
-		getActiveTools: vi.fn(() => [
-			"list_models", "subagent", "fork", "send", "respond", "check_status",
-			"teardown", "resurrect", "await_agents", "interrupt",
-		]),
+		getActiveTools: vi.fn(() => activeTools),
+		getAllTools: vi.fn(() => registeredTools),
+		setActiveTools: vi.fn((names: string[]) => { activeTools = names; }),
 		getThinkingLevel: vi.fn(() => "medium"),
 		sendMessage: vi.fn(),
 	};
@@ -449,6 +443,39 @@ describe("child-scoped extension routing", () => {
 		);
 	});
 
+	it("removes model-only tools from a child before its model request", async () => {
+		const uplink = makePort("child");
+		const { pi, handlers } = makePi({
+			activeTools: ["read", "ask_user", "user_edit", "subagent", "respond"],
+			registeredTools: [
+				{ name: "read", exposure: "direct" },
+				{ name: "ask_user", exposure: "model-only" },
+				{ name: "user_edit", exposure: "model-only" },
+				{ name: "subagent", exposure: "direct" },
+				{ name: "respond", exposure: "direct" },
+			],
+		});
+		await createSubagentsExtension({
+			kind: "child",
+			registry,
+			path: ["child"],
+			identity: { id: "child", task: "work", channels: ["parent"] },
+			uplink,
+		})(pi as any);
+		const parentSessionFile = path.join(tmpRoot!, "child.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const ctx = makeContext(parentSessionFile);
+		await startSession(handlers, ctx);
+		await handlers.get("before_agent_start")?.({ systemPromptOptions: { sections: {} } }, ctx);
+
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "subagent", "respond"]);
+		expect(pi.getActiveTools()).toEqual(["read", "subagent", "respond"]);
+		await expect(handlers.get("tool_call")?.({ toolName: "user_edit" }, ctx)).resolves.toEqual({
+			block: true,
+			reason: "Subagents cannot call model-only tools.",
+		});
+	});
+
 	it("starts a turn when an idle child receives a routed message", async () => {
 		const uplink = makePort("child");
 		const { pi, handlers } = makePi();
@@ -536,7 +563,7 @@ describe("child-scoped extension routing", () => {
 				task: "inspect",
 				hooks: expect.objectContaining({
 					onEvent: expect.any(Function),
-					onUiNotify: expect.any(Function),
+					onDiagnostic: expect.any(Function),
 					onSessionChanged: expect.any(Function),
 					onShutdownRequested: expect.any(Function),
 				}),
@@ -1037,7 +1064,6 @@ describe("root orchestration integration", () => {
 		expect(ctx.ui.setWidget).toHaveBeenCalled();
 
 		created.hooks.onEvent({ type: "agent_start" });
-		created.hooks.onUiNotify("nonfatal mid-run notification", "error");
 		const runningStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
 		expect(runningStatus.content[0].text).toMatch(/running/i);
 		expect(runningStatus.content[0].text).not.toMatch(/failed/i);
@@ -1180,8 +1206,12 @@ describe("root orchestration integration", () => {
 		}, ctx);
 		const worker = managed.created[0];
 
-		// A pre-start error can be recorded before the SDK exposes the run boundary.
-		worker.hooks.onUiNotify("stale setup error", "error");
+		worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [{
+			role: "assistant",
+			stopReason: "error",
+			errorMessage: "stale setup error",
+		}] });
+		worker.hooks.onEvent({ type: "agent_settled" });
 		expect(worker.config.scope.registry.getSnapshot(["worker"]).operational.state).toBe("errored");
 
 		// A tool event is already authoritative evidence that the child is active,
@@ -1227,8 +1257,6 @@ describe("root orchestration integration", () => {
 
 		await execute(tools, "fork", { id: "clone", task: "continue the source work" }, ctx);
 		const fork = managed.created[0];
-		fork.hooks.onUiNotify("nonfatal extension error", "error");
-
 		const status = await execute(tools, "check_status", { agent: "clone" }, ctx);
 		expect(status.content[0].text).toMatch(/State: running/i);
 	});
@@ -1400,7 +1428,7 @@ describe("root orchestration integration", () => {
 		expect(managed.created[0].child.submit).toHaveBeenCalledWith("Task: explore another path", "followUp");
 	});
 
-	it("settles pre-agent-start headless errors and restores a torn-down session without RPC", async () => {
+	it("restores a torn-down child without RPC", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
 		const { pi, tools, handlers } = makePi();
@@ -1414,16 +1442,6 @@ describe("root orchestration integration", () => {
 		const first = managed.created[0];
 		fs.mkdirSync(path.dirname(first.child.sessionFile), { recursive: true });
 		fs.writeFileSync(first.child.sessionFile, "");
-		first.hooks.onUiNotify("input blocked", "error");
-
-		const erroredStatus = await execute(tools, "check_status", { agent: "worker" }, ctx);
-		expect(erroredStatus.content[0].text).toMatch(/errored|input blocked/i);
-		expect(pi.sendMessage).toHaveBeenCalledWith(
-			expect.objectContaining({
-				content: expect.stringContaining("status=\"errored\""),
-			}),
-			{ triggerTurn: true },
-		);
 
 		await execute(tools, "teardown", { agent: "worker" }, ctx);
 		expect(first.child.dispose).toHaveBeenCalledTimes(1);

@@ -14,14 +14,12 @@ import {
 	type EventBusController,
 	type ExtensionCommandContextActions,
 	type ExtensionError,
-	type ExtensionUIContext,
 	type LoadExtensionsResult,
 	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import { formatAgentPath, type AgentPath } from "./agent-path.js";
 import type { ChildToolPolicy } from "./child-tool-policy.js";
 import { markSubagentChildSession, type PersonaPayload } from "./child-session-marker.js";
-import { DelegatingExtensionUI } from "./delegating-extension-ui.js";
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import { registerSessionTreeStore } from "./scoped-store.js";
 
@@ -57,7 +55,6 @@ export type ChildSessionConfig = {
 
 export type ChildSessionHooks = {
 	onEvent(event: AgentSessionEvent): void;
-	onUiNotify(message: string, type?: "info" | "warning" | "error"): void;
 	/** Non-fatal setup diagnostics must not be mistaken for prompt failures. */
 	onDiagnostic?(message: string, type?: "info" | "warning" | "error"): void;
 	onSessionChanged(metadata: {
@@ -74,7 +71,6 @@ export type ManagedChildSessionDependencies = {
 
 type SessionBinding = {
 	eventBus: EventBusController;
-	uiContext: ExtensionUIContext;
 };
 
 type RuntimeFactoryOptions = {
@@ -87,7 +83,6 @@ type RuntimeFactoryOptions = {
 /** Owns one SDK-native child runtime and its scoped extension lifecycle. */
 export class ManagedChildSession {
 	readonly runtime: AgentSessionRuntime;
-	readonly presentation: DelegatingExtensionUI;
 
 	private activeEventBus: EventBusController;
 	private unsubscribeSession?: () => void;
@@ -98,12 +93,10 @@ export class ManagedChildSession {
 	constructor(
 		runtime: AgentSessionRuntime,
 		bindingsBySession: WeakMap<AgentSession, SessionBinding>,
-		presentation: DelegatingExtensionUI,
 		hooks: ChildSessionHooks,
 	) {
 		this.runtime = runtime;
 		this.bindingsBySession = bindingsBySession;
-		this.presentation = presentation;
 		this.hooks = hooks;
 		const binding = bindingsBySession.get(runtime.session);
 		if (!binding) throw new Error("Managed child session is missing runtime bindings");
@@ -222,8 +215,7 @@ export class ManagedChildSession {
 			reload: () => session.reload(),
 		};
 		return {
-			mode: "rpc" as const,
-			uiContext: this.presentation.context,
+			mode: "print" as const,
 			commandContextActions,
 			abortHandler: () => {
 				void session.abort().catch(() => {});
@@ -236,52 +228,17 @@ export class ManagedChildSession {
 				this.hooks.onShutdownRequested();
 			},
 			// ExtensionRunner catches handler exceptions and continues the SDK
-			// lifecycle. They are diagnostics, not proof that the child prompt was
-			// rejected, so do not route them through the lifecycle error-notify path.
+			// lifecycle. Report them as diagnostics; prompt errors come from the
+			// child's own lifecycle events.
 			onError: (error: ExtensionError) => notifyDiagnostic(this.hooks, error.error, "error"),
 		};
 	}
 
 	private reportRuntimeFailure(error: unknown): void {
 		const message = error instanceof Error ? error.message : String(error);
-		this.hooks.onUiNotify(message, "error");
+		notifyDiagnostic(this.hooks, message, "error");
 		this.hooks.onShutdownRequested();
 	}
-}
-
-function createHeadlessUi(onUiNotify: ChildSessionHooks["onUiNotify"]): ExtensionUIContext {
-	return {
-		select: async () => undefined,
-		confirm: async () => false,
-		input: async () => undefined,
-		notify: (message, type) => onUiNotify(message, type),
-		onTerminalInput: () => () => {},
-		setStatus: () => {},
-		setWorkingMessage: () => {},
-		setWorkingVisible: () => {},
-		setWorkingIndicator: () => {},
-		setHiddenThinkingLabel: () => {},
-		setWidget: () => {},
-		setFooter: () => {},
-		setHeader: () => {},
-		setTitle: () => {},
-		custom: async () => undefined as never,
-		pasteToEditor: () => {},
-		setEditorText: () => {},
-		getEditorText: () => "",
-		editor: async () => undefined,
-		addAutocompleteProvider: () => {},
-		setEditorComponent: () => {},
-		getEditorComponent: () => undefined,
-		get theme() {
-			return undefined as never;
-		},
-		getAllThemes: () => [],
-		getTheme: () => undefined,
-		setTheme: () => ({ success: false, error: "UI not available" }),
-		getToolsExpanded: () => false,
-		setToolsExpanded: () => {},
-	};
 }
 
 const ROOT_SUBAGENTS_EXTENSION_PATH = normalizePath(fileURLToPath(new URL("./index.ts", import.meta.url)));
@@ -294,13 +251,7 @@ function notifyDiagnostic(
 	message: string,
 	type: "info" | "warning" | "error" = "warning",
 ): void {
-	if (hooks.onDiagnostic) {
-		hooks.onDiagnostic(message, type);
-		return;
-	}
-	// Older manager hooks only expose UI notifications. Surface setup failures
-	// as warnings there: they are diagnostics, not prompt preflight failures.
-	hooks.onUiNotify(message, type === "error" ? "warning" : type);
+	hooks.onDiagnostic?.(message, type);
 }
 
 function reportRuntimeDiagnostics(
@@ -386,8 +337,6 @@ export async function createManagedChildSession(
 	const appendSystemPrompt = [...config.appendSystemPrompt];
 	const initial = initialTarget(config.target);
 	const pathName = formatAgentPath(config.path);
-	const headless = createHeadlessUi(hooks.onUiNotify);
-	const presentation = new DelegatingExtensionUI({ headless });
 	const bindingsBySession = new WeakMap<AgentSession, SessionBinding>();
 	let live = false;
 	let managed: ManagedChildSession | undefined;
@@ -449,12 +398,12 @@ export async function createManagedChildSession(
 				registerSessionTreeStore(options.sessionManager, treeStore);
 			}
 			reportExtensionDiagnostics(sessionResult.extensionsResult?.errors, hooks);
-			bindingsBySession.set(sessionResult.session, { eventBus, uiContext: presentation.context });
+			bindingsBySession.set(sessionResult.session, { eventBus });
 			return { ...sessionResult, services, diagnostics: services.diagnostics };
 		} catch (error) {
 			if (live) {
 				const message = error instanceof Error ? error.message : String(error);
-				hooks.onUiNotify(message, "error");
+				notifyDiagnostic(hooks, message, "error");
 				hooks.onShutdownRequested();
 			}
 			throw error;
@@ -469,7 +418,7 @@ export async function createManagedChildSession(
 			sessionManager: initial.sessionManager,
 			sessionStartEvent: { type: "session_start", reason: initial.reason },
 		});
-		managed = new ManagedChildSession(runtime, bindingsBySession, presentation, hooks);
+		managed = new ManagedChildSession(runtime, bindingsBySession, hooks);
 		runtime.setRebindSession((session) => managed!.bindSession(session, true));
 		await managed.bindSession(runtime.session, false);
 		live = true;

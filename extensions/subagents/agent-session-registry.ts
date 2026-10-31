@@ -1,4 +1,3 @@
-import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { childAgentPath, type AgentPath } from "./agent-path.js";
 import {
 	createManagedChildSession,
@@ -7,7 +6,6 @@ import {
 	type ManagedChildSession,
 	type ManagedChildSessionDependencies,
 } from "./managed-child-session.js";
-import type { DelegatingExtensionUI } from "./delegating-extension-ui.js";
 import type { MessagePort } from "./message-router.js";
 import { createSessionTreeStore } from "./scoped-store.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
@@ -110,7 +108,6 @@ export type ExternalRootNode = { readonly snapshot: AgentNodeSnapshot & { owners
 export type RegisteredAgentNode = {
 	readonly snapshot: AgentNodeSnapshot & { ownership: "registry" };
 	readonly session: ManagedChildSession;
-	readonly presentation: DelegatingExtensionUI;
 };
 export type AgentRegistryNode = ExternalRootNode | RegisteredAgentNode;
 export type CreateAgentNodeRequest = {
@@ -137,7 +134,6 @@ export type AgentSessionRegistryOptions = {
 type InternalNode = {
 	snapshot: AgentNodeSnapshot;
 	session: ManagedChildSession;
-	presentation: DelegatingExtensionUI;
 	disposing?: Promise<void>;
 };
 
@@ -318,7 +314,6 @@ export class AgentSessionRegistry {
 				this.stagedSnapshots.set(pathKey, structuralSnapshot);
 				const decoratedHooks: ChildSessionHooks = {
 					onEvent: request.hooks.onEvent,
-					onUiNotify: request.hooks.onUiNotify,
 					onDiagnostic: request.hooks.onDiagnostic,
 					onShutdownRequested: request.hooks.onShutdownRequested,
 					onSessionChanged: (metadata) => {
@@ -370,8 +365,7 @@ export class AgentSessionRegistry {
 					cwd,
 				}) as AgentNodeSnapshot;
 				this.stagedSnapshots.set(pathKey, finalSnapshot);
-				const presentation = (managed as any).presentation as DelegatingExtensionUI;
-				const node: InternalNode = { snapshot: finalSnapshot, session: managed, presentation };
+				const node: InternalNode = { snapshot: finalSnapshot, session: managed };
 				staged.set(pathKey, node);
 				created.push(node);
 			}
@@ -458,12 +452,6 @@ export class AgentSessionRegistry {
 		const operation = this.removeSubtree(path, pathKey);
 		this.removals.set(pathKey, operation);
 		return operation;
-	}
-
-	attachPresentation(path: AgentPath, target: ExtensionUIContext): () => void {
-		const node = this.nodes.get(key(path));
-		if (!node) throw new Error("Presentation attachment requires a live registry-owned descendant");
-		return node.presentation.attach(target);
 	}
 
 	subscribe(listener: (event: RegistryEvent) => void): () => void {
@@ -567,7 +555,6 @@ export class AgentSessionRegistry {
 		return {
 			get snapshot() { return node.snapshot as RegisteredAgentNode["snapshot"]; },
 			session: node.session,
-			presentation: node.presentation,
 		};
 	}
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveChildToolPolicy, type ChildToolPolicyInput } from "./child-tool-policy.js";
+import {
+	excludeModelOnlyTools,
+	resolveChildToolPolicy,
+	type ChildToolPolicyInput,
+} from "./child-tool-policy.js";
 
 function expectExactStableAllowlist(input: ChildToolPolicyInput, expected: string[]) {
 	const first = resolveChildToolPolicy(input);
@@ -11,6 +15,20 @@ function expectExactStableAllowlist(input: ChildToolPolicyInput, expected: strin
 	expect(first.allowedTools!).toHaveLength(expected.length);
 	expect(second).toEqual(first);
 }
+
+describe("excludeModelOnlyTools", () => {
+	it("removes only model-only tools from the active child loadout", () => {
+		expect(excludeModelOnlyTools(
+			["read", "ask_user", "user_edit", "respond"],
+			[
+				{ name: "read", exposure: "direct" },
+				{ name: "ask_user", exposure: "model-only" },
+				{ name: "user_edit", exposure: "model-only" },
+				{ name: "respond", exposure: "direct" },
+			],
+		)).toEqual(["read", "respond"]);
+	});
+});
 
 describe("resolveChildToolPolicy", () => {
 	it("gives a default child no allowlist while excluding direct-user prompting", () => {
