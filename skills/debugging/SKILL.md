@@ -19,7 +19,10 @@ The goal is to understand what's happening and why. Do not propose fixes during 
 
 **Read the error carefully.** Stack traces, error messages, and warnings contain more information than most people extract from them. Read them completely. Note file paths, line numbers, error codes. Don't skim past warnings on the way to the error — they often explain it.
 
-**Reproduce the problem.** Can you trigger it reliably? What are the exact conditions? If it's intermittent, gather more data rather than guessing. A bug you can't reproduce is a bug you can't confirm you've fixed.
+**Attempt reproduction.**
+Can you trigger it reliably? Document exact steps, inputs, and environment.
+* If reproducible → you have a fast feedback loop. Proceed as normal.
+* If intermittent / non-reproducible → enter Evidence Gathering Mode: collect logs, stack traces, telemetry, dumps, request IDs and timestamps; identify invariants that are always violated; establish preconditions/correlates; build a minimal proxy reproduction that exercises the same code path if possible. Non-reproducible bugs require ≥2 independent evidence sources pointing to the same root cause before you can proceed with confidence.
 
 **Check what changed.** Look at recent commits, dependency updates, config changes, environmental differences. Most bugs are caused by something that changed — find what.
 
@@ -51,6 +54,16 @@ Before touching any code, decide whether you should fix autonomously or present 
 - There is only one reasonable way to fix it
 - The fix does not change intended behavior, APIs, or semantics
 - You fully understand the code you're changing
+
+**Fast Track for Trivial Defects** — a narrow exception to the full ceremony for low-risk, obvious issues. Eligible only if ALL of the following hold:
+- Locality: defect is in one function/file, ~20 lines or less, no cross-module impact
+- Mechanical: typo, wrong variable, missing null/empty check, inverted boolean, copy-paste error, etc. No design or intent ambiguity
+- No semantic change: fix restores intended behavior, does not change API or semantics
+- Direct evidence: error/stack trace/failing test points directly to the exact line/symbol with ≤1 inference step
+- Testability: existing test covers the path, or a 3-line reproduction can be written in <2 min
+- Reversible: change is trivially revertible and low blast radius
+
+When Fast Track is used, still state the hypothesis explicitly before editing, make one change only, verify immediately, and provide the recap.
 
 **Stop and consult the user first** if any of these are true:
 - Multiple plausible root causes — you're not sure which one is right
