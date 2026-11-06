@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import impl, { buildModelEntries } from "./devpass.js";
+import { buildProviderModelConfigs } from "./catalog.js";
 
-describe("buildModelEntries", () => {
+describe("buildProviderModelConfigs", () => {
 	it("keeps canonical model ids with streaming+tools support and per-field median prices", () => {
-		const entries = buildModelEntries([
+		const entries = buildProviderModelConfigs([
 			{
 				id: "coding-model",
 				display_name: "Coding Model",
@@ -66,9 +66,7 @@ describe("buildModelEntries", () => {
 		expect(entries[0]).toMatchObject({
 			id: "coding-model",
 			name: "Coding Model",
-			modelName: "coding-model",
 			api: "openai-completions",
-			authHeader: true,
 			reasoning: true,
 			input: ["text", "image"],
 			inputLimits: {
@@ -88,7 +86,7 @@ describe("buildModelEntries", () => {
 	});
 
 	it("uses model id when display_name is absent and skips malformed or unsupported entries", () => {
-		const entries = buildModelEntries([
+		const entries = buildProviderModelConfigs([
 			null,
 			{ id: "missing-providers" },
 			{ id: "no-eligible", providers: [{ streaming: true, tools: false, pricing: { prompt: "1e-6" } }] },
@@ -115,7 +113,7 @@ describe("buildModelEntries", () => {
 	});
 
 	it("uses the smallest declared output cap across the model and eligible providers", () => {
-		const entries = buildModelEntries([{
+		const entries = buildProviderModelConfigs([{
 			id: "routed-model",
 			max_output: 64_000,
 			providers: [
@@ -143,8 +141,8 @@ describe("buildModelEntries", () => {
 		expect(entries[0].maxTokens).toBe(8_192);
 	});
 
-	it("derives the output cap from providers and leaves it unset when unknown", () => {
-		const entries = buildModelEntries([
+	it("derives the output cap from providers and uses pi's default when unknown", () => {
+		const entries = buildProviderModelConfigs([
 			{
 				id: "provider-capped",
 				providers: [
@@ -173,7 +171,7 @@ describe("buildModelEntries", () => {
 		]);
 
 		expect(entries[0].maxTokens).toBe(8_000);
-		expect(entries[1]).not.toHaveProperty("maxTokens");
+		expect(entries[1].maxTokens).toBe(16_384);
 	});
 
 	describe("thinkingLevelMap", () => {
@@ -185,7 +183,7 @@ describe("buildModelEntries", () => {
 			pricing: { prompt: "1e-6", completion: "2e-6" },
 		});
 		const mapFor = (providers: unknown[]) => {
-			const entries = buildModelEntries([{
+			const entries = buildProviderModelConfigs([{
 				id: "m",
 				supported_parameters: ["stream", "tools", "reasoning"],
 				providers,
@@ -243,29 +241,12 @@ describe("buildModelEntries", () => {
 	});
 
 	it("does not register a model when all eligible providers have malformed prices", () => {
-		const entries = buildModelEntries([
+		const entries = buildProviderModelConfigs([
 			{
 				id: "bad-prices",
 				providers: [{ streaming: true, tools: true, pricing: { prompt: "invalid", completion: "-1" } }],
 			},
 		]);
 		expect(entries).toHaveLength(0);
-	});
-});
-
-describe("impl.isRetryableError", () => {
-	const isRetryableError = impl.isRetryableError!.bind(impl);
-
-	it("flags the gateway's encrypted-content key-rotation error as retryable", () => {
-		expect(isRetryableError(
-			"The encrypted content for item rs_0b31ee8690deca7f016ac0f77053bc81 could not be verified. " +
-			"Reason: Encrypted content could not be decrypted or parsed.",
-		)).toBe(true);
-	});
-
-	it("leaves unrelated errors alone", () => {
-		expect(isRetryableError("quota exceeded")).toBe(false);
-		expect(isRetryableError("Provider stopped with: error")).toBe(false);
-		expect(isRetryableError("")).toBe(false);
 	});
 });

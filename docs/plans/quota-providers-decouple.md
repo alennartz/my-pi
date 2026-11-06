@@ -139,7 +139,7 @@ Keep `cachePaths` in `lib/config.ts` for usage and ledger paths. Remove its mode
 
 ### Step 2: Persist usage and membership together
 
-**Status:** in progress
+**Status:** done
 
 Implement `readUsageCache` in `extensions/quota-providers/lib/usage-cache.ts`. Validate the timestamp, every snapshot, and the model-to-limit-ID map as one record. Return `null` for missing, malformed, or incomplete files. Reuse snapshot validation from `lib/snapshot.ts` where practical, and remove the old snapshot-only reader after its callers move to the new interface.
 
@@ -157,9 +157,11 @@ Implement `extensions/quota-providers/impls/devpass-quota.ts` as a `QuotaSource`
 Move gateway catalog conversion and its supporting price, modality, reasoning-effort, and output-limit logic from `impls/devpass.ts` to `extensions/llm-gateway/`. Produce `ProviderModelConfig` values with pi's required defaults. Preserve eligible-provider filtering, median costs, image limits, reasoning maps, and minimum output caps. Remove quota membership from the provider model data. Move the catalog behavior coverage in `impls/devpass.test.ts` to the provider extension, adapting assertions to its provider model interface. Remove the encrypted-content retry cases.
 
 **Verify:** `npx vitest run extensions/quota-providers/impls/devpass-quota.test.ts` passes. Catalog coverage passes after the provider refresh in Step 4.
-**Status:** in progress
+**Status:** done
 
 ### Step 4: Register LLM Gateway
+
+**Status:** in progress
 
 Implement `extensions/llm-gateway/index.ts` and retain its extension manifest. Register `llmgateway` with the name, base URL, API, env-backed key, and auth header specified in the architecture. Do not register a custom stream.
 

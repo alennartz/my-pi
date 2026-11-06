@@ -8,15 +8,15 @@ export interface UsageSnapshotFile {
   snapshot?: UsageSnapshot;
 }
 
-function isUsageSnapshot(value: unknown): value is UsageSnapshot {
+export function isUsageSnapshot(value: unknown): value is UsageSnapshot {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const snapshot = value as Record<string, unknown>;
   return (
-    typeof snapshot.spend === "number" &&
-    typeof snapshot.quota === "number" &&
-    typeof snapshot.windowStart === "number" &&
-    typeof snapshot.windowEnd === "number" &&
-    typeof snapshot.asOf === "number" &&
+    typeof snapshot.spend === "number" && Number.isFinite(snapshot.spend) &&
+    typeof snapshot.quota === "number" && Number.isFinite(snapshot.quota) &&
+    typeof snapshot.windowStart === "number" && Number.isFinite(snapshot.windowStart) &&
+    typeof snapshot.windowEnd === "number" && Number.isFinite(snapshot.windowEnd) &&
+    typeof snapshot.asOf === "number" && Number.isFinite(snapshot.asOf) &&
     (snapshot.limitId === undefined || typeof snapshot.limitId === "string") &&
     (snapshot.label === undefined || typeof snapshot.label === "string")
   );

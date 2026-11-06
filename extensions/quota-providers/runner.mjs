@@ -1,494 +1,275 @@
 #!/usr/bin/env node
 /**
- * Quota-providers out-of-band runner — invoked by the quota-providers extension.
+ * Run a quota source outside pi's extension process.
  *
- * Four responsibilities, all kept off pi's synchronous extension-factory path:
- *
- *   token --module <implPath> --impl <implId> --config <configPath> --cache <cacheFilePath>
- *     Print a valid access token to stdout. Self-caching with soft/hard margins.
- *
- *   refresh-token --module <implPath> --impl <implId> --config <configPath> --cache <cacheFilePath>
- *     Background refresh subcommand — no stdout. Used by detached self-spawns.
- *
- *   discover --module <implPath> --impl <implId> --config <configPath> --cache <cacheFilePath>
- *     Discover models via the impl and write { writtenAt, models } to --cache.
- *
- *   usage --module <implPath> --impl <implId> --config <configPath> --cache <cacheFilePath>
- *          --max-poll-seconds <n> --ledger <ledgerPath>
- *     Fetch usage snapshot, write to --cache, prune the ledger. Lock-protected.
- *
- * Plain Node ESM, self-contained — no imports from lib/*.ts.
- * Ports token mechanics from extensions/azure-foundry/foundry-helper.mjs.
+ * The runner polls usage, atomically stores snapshots with model membership,
+ * and prunes entries that the returned snapshots now cover.
  */
 
-import { closeSync, openSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync, statSync } from "node:fs";
+import {
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	renameSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
-import { spawn } from "node:child_process";
 
-// ---------------------------------------------------------------------------
-// Token margin constants — same as foundry-helper.mjs
-// ---------------------------------------------------------------------------
-
-const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000; // refresh 5 min before expiry
-const TOKEN_HARD_MARGIN_MS = 30 * 1000;         // never use a token within 30 s of expiry
-
-// ---------------------------------------------------------------------------
-// Policy keys — duplicated from lib/config.ts (runner can't import TS).
-// Keep in sync with POLICY_KEYS in extensions/quota-providers/lib/config.ts.
-// ---------------------------------------------------------------------------
-
-const POLICY_KEYS = [
+const LOCK_STALE_MS = 60_000;
+const POLICY_KEYS = new Set([
 	"module",
 	"enabled",
 	"bypassAllowed",
 	"lookaheadHours",
 	"maxPollSeconds",
 	"enforceHardCap",
-];
+]);
 
-// ---------------------------------------------------------------------------
-// Lock helper — O_EXCL acquire with stale-steal and spin-retry.
-// Used for both the usage stampede lock and the short-lived ledger lock.
-// Returns an object with a release() method.
-// ---------------------------------------------------------------------------
-
-function acquireLockSync(lockPath) {
-	const deadline = Date.now() + 10_000;
-	while (Date.now() < deadline) {
-		let fd;
-		try {
-			fd = openSync(lockPath, "wx");
-		} catch (err) {
-			if (err?.code !== "EEXIST") {
-				// Unexpected error — proceed without lock.
-				return { release: () => {} };
-			}
-			// Lock exists — check staleness.
-			let mtime;
-			try {
-				mtime = statSync(lockPath).mtimeMs;
-			} catch {
-				continue; // lock vanished between EEXIST and stat — retry
-			}
-			if (Date.now() - mtime >= LOCK_STALE_MS) {
-				try { unlinkSync(lockPath); } catch { /* already gone */ }
-				continue;
-			}
-			// Fresh lock — spin up to 5 ms, then retry.
-			const spinEnd = Date.now() + 5;
-			while (Date.now() < spinEnd) { /* busy spin */ }
-			continue;
-		}
-		// Acquired — write pid and close the fd.
-		try { writeFileSync(fd, String(process.pid), "utf-8"); } catch { /* non-fatal */ }
-		try { closeSync(fd); } catch { /* non-fatal */ }
-		return { release: () => { try { unlinkSync(lockPath); } catch { /* already gone */ } } };
-	}
-	// Timed out — proceed without lock (better than blocking indefinitely).
-	return { release: () => {} };
-}
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
-function fail(msg) {
-	process.stderr.write(`quota-providers-runner: ${msg}\n`);
+function fail(message) {
+	process.stderr.write(`quota-providers-runner: ${message}\n`);
 	process.exit(1);
 }
 
 function parseArgs(argv) {
-	const out = {};
-	for (let i = 0; i < argv.length; i++) {
-		const arg = argv[i];
-		if (arg === "--module")           out.module           = argv[++i];
-		else if (arg === "--impl")        out.impl             = argv[++i];
-		else if (arg === "--config")      out.config           = argv[++i];
-		else if (arg === "--cache")       out.cache            = argv[++i];
-		else if (arg === "--max-poll-seconds") out.maxPollSeconds = Number(argv[++i]);
-		else if (arg === "--ledger")      out.ledger           = argv[++i];
+	const flags = {};
+	for (let index = 0; index < argv.length; index += 1) {
+		const arg = argv[index];
+		if (arg === "--module") flags.module = argv[++index];
+		else if (arg === "--impl") flags.impl = argv[++index];
+		else if (arg === "--config") flags.config = argv[++index];
+		else if (arg === "--cache") flags.cache = argv[++index];
+		else if (arg === "--max-poll-seconds") flags.maxPollSeconds = Number(argv[++index]);
+		else if (arg === "--ledger") flags.ledger = argv[++index];
 	}
-	return out;
+	return flags;
 }
 
-/** Atomic replace: write to a unique temp in the same dir, then rename. */
+function isRecord(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isFiniteNumber(value) {
+	return typeof value === "number" && Number.isFinite(value);
+}
+
+function isUsageSnapshot(value) {
+	if (!isRecord(value)) return false;
+	return (
+		isFiniteNumber(value.spend) &&
+		isFiniteNumber(value.quota) &&
+		isFiniteNumber(value.windowStart) &&
+		isFiniteNumber(value.windowEnd) &&
+		isFiniteNumber(value.asOf) &&
+		(value.limitId === undefined || typeof value.limitId === "string") &&
+		(value.label === undefined || typeof value.label === "string")
+	);
+}
+
+function isModelLimitIds(value) {
+	return isRecord(value) && Object.values(value).every(
+		(limitIds) => Array.isArray(limitIds) && limitIds.every((limitId) => typeof limitId === "string"),
+	);
+}
+
+function isQuotaSourceResult(value) {
+	return (
+		isRecord(value) &&
+		Array.isArray(value.snapshots) &&
+		value.snapshots.every(isUsageSnapshot) &&
+		isModelLimitIds(value.modelLimitIds)
+	);
+}
+
+function parseUsageCache(raw) {
+	try {
+		const parsed = JSON.parse(raw);
+		if (!isRecord(parsed)) return null;
+		if (!isFiniteNumber(parsed.writtenAt)) return null;
+		if (!Array.isArray(parsed.snapshots) || !parsed.snapshots.every(isUsageSnapshot)) return null;
+		if (!isModelLimitIds(parsed.modelLimitIds)) return null;
+		return parsed;
+	} catch {
+		return null;
+	}
+}
+
+function readUsageCache(path) {
+	if (!existsSync(path)) return null;
+	try {
+		return parseUsageCache(readFileSync(path, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
+/** Atomically replace a file with data written in the same directory. */
 function writeAtomic(path, data) {
 	mkdirSync(dirname(path), { recursive: true });
-	const tmp = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-	writeFileSync(tmp, data, "utf-8");
-	renameSync(tmp, path);
+	const temporaryPath = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+	writeFileSync(temporaryPath, data, "utf8");
+	renameSync(temporaryPath, path);
 }
 
-// ---------------------------------------------------------------------------
-// Impl loading
-// ---------------------------------------------------------------------------
+/**
+ * Acquire an exclusive lock. A stale lock is safe to steal after one minute.
+ * Contention times out so a caller never waits indefinitely.
+ */
+function acquireLockSync(path) {
+	const deadline = Date.now() + 10_000;
+	while (Date.now() < deadline) {
+		let fd;
+		try {
+			fd = openSync(path, "wx");
+			try {
+				writeFileSync(fd, String(process.pid), "utf8");
+			} finally {
+				closeSync(fd);
+			}
+			return {
+				acquired: true,
+				release: () => {
+					try { unlinkSync(path); } catch { /* already gone */ }
+				},
+			};
+		} catch (error) {
+			if (fd !== undefined) {
+				try { closeSync(fd); } catch { /* non-fatal */ }
+			}
+			if (error?.code !== "EEXIST") {
+				return { acquired: false, release: () => {} };
+			}
 
-async function loadImpl(modulePath) {
+			let modifiedAt;
+			try {
+				modifiedAt = statSync(path).mtimeMs;
+			} catch {
+				continue;
+			}
+			if (Date.now() - modifiedAt >= LOCK_STALE_MS) {
+				try { unlinkSync(path); } catch { /* another process removed it */ }
+				continue;
+			}
+
+			const spinEnd = Date.now() + 5;
+			while (Date.now() < spinEnd) { /* short contention spin */ }
+		}
+	}
+	return { acquired: false, release: () => {} };
+}
+
+async function loadQuotaSource(modulePath) {
 	const { createJiti } = await import("jiti");
 	const jiti = createJiti(import.meta.url, { interopDefault: true });
-	return jiti.import(modulePath);
+	const loaded = await jiti.import(modulePath);
+	if (loaded && typeof loaded.getUsage === "function") return loaded;
+	if (loaded?.default && typeof loaded.default.getUsage === "function") return loaded.default;
+	return loaded;
 }
 
-function buildSettings(configPath, implId) {
+function buildSettings(configPath, providerId) {
 	if (!configPath || !existsSync(configPath)) return {};
 	let parsed;
 	try {
-		parsed = JSON.parse(readFileSync(configPath, "utf-8"));
+		parsed = JSON.parse(readFileSync(configPath, "utf8"));
 	} catch {
 		return {};
 	}
-	const block = parsed?.providers?.[implId];
-	if (typeof block !== "object" || block === null || Array.isArray(block)) return {};
-	const policyKeySet = new Set(POLICY_KEYS);
+	const block = parsed?.providers?.[providerId];
+	if (!isRecord(block)) return {};
 	const settings = {};
-	for (const [k, v] of Object.entries(block)) {
-		if (!policyKeySet.has(k)) settings[k] = v;
+	for (const [key, value] of Object.entries(block)) {
+		if (!POLICY_KEYS.has(key)) settings[key] = value;
 	}
 	return settings;
 }
 
-// ---------------------------------------------------------------------------
-// Token caching — ported from foundry-helper.mjs
-// Cache shape: { accessToken, softExpiresAt, hardExpiresAt }
-// ---------------------------------------------------------------------------
-
-function readCachedToken(cachePath) {
-	if (!cachePath || !existsSync(cachePath)) return null;
-	try {
-		const parsed = JSON.parse(readFileSync(cachePath, "utf-8"));
-		if (
-			typeof parsed?.accessToken === "string" &&
-			typeof parsed?.softExpiresAt === "number" &&
-			typeof parsed?.hardExpiresAt === "number"
-		) {
-			return parsed;
-		}
-	} catch {
-		// torn/garbage cache — treat as miss
-	}
-	return null;
-}
-
-async function refreshTokenSync(cachePath, prior, impl, ctx) {
-	let result;
-	try {
-		result = await impl.getToken(ctx);
-	} catch (err) {
-		if (prior) return prior.accessToken;
-		fail(`token: impl.getToken failed: ${err instanceof Error ? err.message : String(err)}`);
-	}
-
-	if (result == null) {
-		if (prior) return prior.accessToken;
-		fail("token: impl.getToken returned null/undefined");
-	}
-
-	const { token, expiresAt } = result;
-	if (!token) fail("token: impl.getToken returned no token");
-	if (typeof expiresAt !== "number" || Number.isNaN(expiresAt)) {
-		fail(`token: impl.getToken returned invalid expiresAt: ${expiresAt}`);
-	}
-
-	const softExpiresAt = expiresAt - TOKEN_REFRESH_MARGIN_MS;
-	const hardExpiresAt = expiresAt - TOKEN_HARD_MARGIN_MS;
-
-	try {
-		writeAtomic(cachePath, JSON.stringify({ accessToken: token, softExpiresAt, hardExpiresAt }));
-	} catch {
-		// Non-fatal: still return the token even if the cache write failed.
-	}
-	return token;
-}
-
-/** Fire-and-forget self-spawn that re-runs this helper as `refresh-token` and detaches. */
-function spawnRefreshDetached(args) {
-	try {
-		const child = spawn(
-			process.execPath,
-			[process.argv[1], "refresh-token", ...args],
-			{ detached: true, stdio: "ignore" },
-		);
-		child.unref();
-	} catch {
-		// best-effort
-	}
-}
-
-async function cmdToken(flags, impl, ctx) {
-	const { cache } = flags;
-	if (!cache) fail("token: --cache <path> is required");
-
+function cacheIsFresh(path, maxPollSeconds) {
+	const cached = readUsageCache(path);
+	if (!cached) return false;
 	const now = Date.now();
-	const cached = readCachedToken(cache);
-
-	if (cached && now < cached.hardExpiresAt) {
-		// Cached token still safe — return immediately.
-		process.stdout.write(cached.accessToken);
-		// Past soft margin? Kick a background refresh for next request.
-		if (now >= cached.softExpiresAt) {
-			spawnRefreshDetached(buildPassthroughArgs(flags));
-		}
-		return;
-	}
-
-	// Hard-expired or missing — must block.
-	const token = await refreshTokenSync(cache, cached, impl, ctx);
-	process.stdout.write(token);
+	if (cached.snapshots.some((snapshot) => now >= snapshot.windowEnd)) return false;
+	return (now - cached.writtenAt) / 1000 < maxPollSeconds;
 }
 
-async function cmdRefreshToken(flags, impl, ctx) {
-	const { cache } = flags;
-	if (!cache) fail("refresh-token: --cache <path> is required");
-	const cached = readCachedToken(cache);
-	await refreshTokenSync(cache, cached, impl, ctx);
-}
-
-/** Reconstruct passthrough args for the detached refresh-token self-spawn. */
-function buildPassthroughArgs(flags) {
-	const args = [];
-	if (flags.module)  args.push("--module",  flags.module);
-	if (flags.impl)    args.push("--impl",    flags.impl);
-	if (flags.config)  args.push("--config",  flags.config);
-	if (flags.cache)   args.push("--cache",   flags.cache);
-	return args;
-}
-
-// ---------------------------------------------------------------------------
-// discover
-// ---------------------------------------------------------------------------
-
-async function cmdDiscover(flags, impl, ctx) {
-	const { cache } = flags;
-	if (!cache) fail("discover: --cache <path> is required");
-	if (typeof impl.discoverModels !== "function") {
-		fail("discover: impl does not export discoverModels");
-	}
-
-	let models;
+function pruneLedger(path, asOf) {
+	if (!existsSync(path)) return;
+	const lock = acquireLockSync(`${path}.lock`);
 	try {
-		models = await impl.discoverModels(ctx);
-	} catch (err) {
-		fail(`discover: impl.discoverModels failed: ${err instanceof Error ? err.message : String(err)}`);
-	}
-
-	if (!Array.isArray(models)) {
-		fail("discover: impl.discoverModels did not return an array");
-	}
-
-	writeAtomic(cache, JSON.stringify({ writtenAt: Date.now(), models }));
-}
-
-// ---------------------------------------------------------------------------
-// usage
-// ---------------------------------------------------------------------------
-
-async function cmdUsage(flags, impl, ctx) {
-	const { cache, ledger } = flags;
-	const maxPollSeconds = typeof flags.maxPollSeconds === "number" ? flags.maxPollSeconds : 300;
-
-	if (!cache)  fail("usage: --cache <path> is required");
-	if (!ledger) fail("usage: --ledger <path> is required");
-
-	if (typeof impl.getUsage !== "function") {
-		fail("usage: impl does not export getUsage — no quota enforcement for this provider");
-	}
-
-	const lockPath = `${cache}.lock`;
-	const LOCK_STALE_MS = 60_000;
-
-	// Acquire lock with O_EXCL — only one process writes at a time.
-	let lockFd = null;
-	let lockAcquired = false;
-
-	// Release the lock and mark it released. Idempotent — safe to call from
-	// both the finally block and inline before fail() calls inside the try.
-	const releaseLock = () => {
-		if (!lockAcquired) return;
-		try { unlinkSync(lockPath); } catch { /* already gone */ }
-		lockAcquired = false;
-	};
-
-	const tryAcquireLock = () => {
-		try {
-			lockFd = openSync(lockPath, "wx");
-			lockAcquired = true;
-		} catch (err) {
-			if (err.code !== "EEXIST") throw err;
-
-			// Lock exists — check if stale.
-			let mtime;
-			try {
-				mtime = statSync(lockPath).mtimeMs;
-			} catch {
-				// Lock vanished between our check and stat — retry once.
+		const kept = readFileSync(path, "utf8")
+			.split("\n")
+			.filter((line) => {
+				if (!line.trim()) return false;
 				try {
-					lockFd = openSync(lockPath, "wx");
-					lockAcquired = true;
+					const entry = JSON.parse(line);
+					return typeof entry.timestamp !== "number" || entry.timestamp > asOf;
 				} catch {
-					// Another process beat us — not stale.
-					return false;
+					return true;
 				}
-				return true;
-			}
-
-			if (Date.now() - mtime < LOCK_STALE_MS) {
-				// Fresh lock — another process is handling it.
-				return false;
-			}
-
-			// Stale lock — steal it.
-			try {
-				unlinkSync(lockPath);
-			} catch {
-				// Already gone — retry.
-			}
-			try {
-				lockFd = openSync(lockPath, "wx");
-				lockAcquired = true;
-			} catch {
-				// Lost the race after stealing — another process is now handling it.
-				return false;
-			}
-		}
-		return true;
-	};
-
-	if (!tryAcquireLock()) {
-		// Another live process is already handling usage refresh.
-		return;
-	}
-
-	// Write pid to lock file so others can check staleness.
-	try {
-		writeFileSync(lockFd, String(process.pid), "utf-8");
+			})
+			.join("\n");
+		writeAtomic(path, kept ? `${kept}\n` : "");
 	} catch {
-		// Non-fatal.
-	}
-
-	try {
-		// Stampede guard: re-check freshness of the usage cache now that we hold the lock.
-		if (existsSync(cache)) {
-			try {
-				const cached = JSON.parse(readFileSync(cache, "utf-8"));
-				if (typeof cached?.writtenAt === "number") {
-					const ageSeconds = (Date.now() - cached.writtenAt) / 1000;
-					if (ageSeconds < maxPollSeconds) {
-						// Cache is still fresh — return so the finally releases the lock.
-						return;
-					}
-				}
-			} catch {
-				// Corrupt cache — fall through and refresh.
-			}
-		}
-
-		// Fetch one or more nested usage limits.
-		let usageResult;
-		try {
-			usageResult = await impl.getUsage(ctx);
-		} catch (err) {
-			releaseLock();
-			fail(`usage: impl.getUsage failed: ${err instanceof Error ? err.message : String(err)}`);
-		}
-		const snapshots = Array.isArray(usageResult) ? usageResult : [usageResult];
-
-		// A malformed result would produce a "fresh" cache that index.ts rejects,
-		// silently disabling enforcement until the next poll.
-		const valid = snapshots.every((snapshot) =>
-			snapshot !== null &&
-			typeof snapshot === "object" &&
-			typeof snapshot.spend === "number" &&
-			typeof snapshot.quota === "number" &&
-			typeof snapshot.windowStart === "number" &&
-			typeof snapshot.windowEnd === "number" &&
-			typeof snapshot.asOf === "number" &&
-			(snapshot.limitId === undefined || typeof snapshot.limitId === "string") &&
-			(snapshot.label === undefined || typeof snapshot.label === "string")
-		);
-		if (!Array.isArray(snapshots) || !valid) {
-			releaseLock();
-			fail("usage: impl.getUsage returned invalid limits — expected numeric spend, quota, windowStart, windowEnd, asOf");
-		}
-
-		const cacheFile = {
-			writtenAt: Date.now(),
-			snapshots,
-			...(snapshots.length === 1 ? { snapshot: snapshots[0] } : {}),
-		};
-		writeAtomic(cache, JSON.stringify(cacheFile));
-
-		// Prune ledger under a short-lived ledger lock so appendLedgerEntry
-		// (in index.ts, on pi's main thread) cannot race the read→filter→rename.
-		// The ledger lock is held only here — NOT around the getUsage call above.
-		// Prune only entries authoritative in every returned limit. An empty result
-		// has no authoritative timestamp, so leave the ledger untouched.
-		const asOf = snapshots.length > 0
-			? Math.min(...snapshots.map((snapshot) => snapshot.asOf))
-			: undefined;
-		if (asOf === undefined) return;
-		const ledgerLock = acquireLockSync(`${ledger}.lock`);
-		try {
-			if (existsSync(ledger)) {
-				const raw = readFileSync(ledger, "utf-8");
-				const kept = raw
-					.split("\n")
-					.filter((line) => {
-						if (!line.trim()) return false;
-						try {
-							const entry = JSON.parse(line);
-							return typeof entry.timestamp !== "number" || entry.timestamp > asOf;
-						} catch {
-							// Malformed line — keep it (don't silently drop data).
-							return true;
-						}
-					})
-					.join("\n");
-				writeAtomic(ledger, kept ? kept + "\n" : "");
-			}
-		} catch {
-			// Non-fatal: best-effort ledger prune.
-		} finally {
-			ledgerLock.release();
-		}
+		// Ledger pruning is best effort. Usage remains authoritative in the cache.
 	} finally {
-		releaseLock();
+		lock.release();
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Entry point
-// ---------------------------------------------------------------------------
+async function runUsage(flags, source, context) {
+	const cachePath = flags.cache;
+	const ledgerPath = flags.ledger;
+	const maxPollSeconds = Number.isFinite(flags.maxPollSeconds) ? flags.maxPollSeconds : 300;
+	if (!cachePath) fail("usage: --cache <path> is required");
+	if (!ledgerPath) fail("usage: --ledger <path> is required");
+	if (!source || typeof source.getUsage !== "function") {
+		fail("usage: source does not export getUsage");
+	}
 
-const [cmd, ...rest] = process.argv.slice(2);
+	mkdirSync(dirname(cachePath), { recursive: true });
+	const usageLock = acquireLockSync(`${cachePath}.lock`);
+	if (!usageLock.acquired) return;
+	try {
+		if (cacheIsFresh(cachePath, maxPollSeconds)) return;
+
+		let result;
+		try {
+			result = await source.getUsage(context);
+		} catch (error) {
+			usageLock.release();
+			fail(`usage: source.getUsage failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		if (!isQuotaSourceResult(result)) {
+			usageLock.release();
+			fail("usage: source.getUsage returned invalid result — expected snapshots and modelLimitIds");
+		}
+
+		writeAtomic(cachePath, JSON.stringify({
+			writtenAt: Date.now(),
+			snapshots: result.snapshots,
+			modelLimitIds: result.modelLimitIds,
+		}));
+
+		if (result.snapshots.length === 0) return;
+		const asOf = Math.min(...result.snapshots.map((snapshot) => snapshot.asOf));
+		pruneLedger(ledgerPath, asOf);
+	} finally {
+		usageLock.release();
+	}
+}
+
+const [command, ...rest] = process.argv.slice(2);
 const flags = parseArgs(rest);
-
-const modulePath = flags.module;
-const implId    = flags.impl;
-
-if (!modulePath) fail(`${cmd ?? "?"}: --module <implPath> is required`);
-if (!implId)     fail(`${cmd ?? "?"}: --impl <implId> is required`);
-
-const impl = await loadImpl(modulePath);
-if (!impl || typeof impl !== "object") {
-	fail(`could not load impl from "${modulePath}" — default export must be an object`);
+if (command !== "usage") {
+	fail(`unknown command "${command ?? ""}" (expected: usage)`);
 }
+if (!flags.module) fail("usage: --module <implPath> is required");
+if (!flags.impl) fail("usage: --impl <implId> is required");
 
-const settings = buildSettings(flags.config, implId);
-const ctx = { settings };
-
-switch (cmd) {
-	case "token":
-		await cmdToken(flags, impl, ctx);
-		break;
-	case "refresh-token":
-		await cmdRefreshToken(flags, impl, ctx);
-		break;
-	case "discover":
-		await cmdDiscover(flags, impl, ctx);
-		break;
-	case "usage":
-		await cmdUsage(flags, impl, ctx);
-		break;
-	default:
-		fail(`unknown command "${cmd ?? ""}" (expected: token | refresh-token | discover | usage)`);
-}
+const source = await loadQuotaSource(flags.module);
+if (!isRecord(source)) fail(`could not load source from "${flags.module}"`);
+const context = { settings: buildSettings(flags.config, flags.impl) };
+await runUsage(flags, source, context);
