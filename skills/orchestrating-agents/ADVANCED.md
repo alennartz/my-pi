@@ -21,4 +21,6 @@ Child sessions persist per parent session and are reconstructed from append-only
 - Use incremental growth when new work appears. Add agents to the running set rather than rebuilding the group.
 - Use `teardown` when an agent should leave the active set. Teardown has semantic effect.
 - Use `resurrect` to revive a torn-down agent from its persisted session file. Pass the `session_id` from the teardown or completion report.
+
+`resurrect` accepts `model`, resolved by the same precedence as `subagent`: the persona `model` pin wins, then the explicit value, then the model the session last ran on. Omit it to keep the persisted model.
 - Keep persistent specialists alive when more work is expected. Tear them down when the repeated work ends.

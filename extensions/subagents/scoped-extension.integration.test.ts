@@ -1478,6 +1478,9 @@ describe("root orchestration integration", () => {
 		expect(managed.created[1].config).toMatchObject({
 			path: ["worker-restored"],
 			target: { kind: "resume", sessionFile: first.child.sessionFile },
+			// Nothing declared a model, so no override reaches construction and the
+			// resumed session keeps the model it last ran on.
+			modelRef: undefined,
 		});
 	});
 
@@ -1547,6 +1550,95 @@ describe("root orchestration integration", () => {
 			cacheRead: 1,
 			cost: { total: 0.02 },
 		});
+	});
+
+	it("resurrects onto an explicit model over the persisted one", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile, {
+			modelRegistry: {
+				getAvailable: () => [
+					{ provider: "provider", id: "model" },
+					{ provider: "provider", id: "other" },
+				],
+			},
+		});
+		await startSession(handlers, ctx);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", task: "inspect", channels: [] }],
+		}, ctx);
+		const first = managed.created[0];
+		fs.mkdirSync(path.dirname(first.child.sessionFile), { recursive: true });
+		fs.writeFileSync(first.child.sessionFile, "");
+		await execute(tools, "teardown", { agent: "worker" }, ctx);
+
+		await execute(tools, "resurrect", {
+			agents: [{
+				id: "worker-restored",
+				sessionId: first.child.sessionId,
+				channels: [],
+				task: "continue",
+				model: "provider/other",
+			},
+			],
+		}, ctx);
+
+		expect(managed.created[1].config).toMatchObject({
+			target: { kind: "resume", sessionFile: first.child.sessionFile },
+			modelRef: "provider/other",
+		});
+	});
+
+	it("resurrects onto the persona model pin over an explicit model", async () => {
+		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const agentsDir = path.join(tmpRoot!, ".pi", "agents");
+		fs.mkdirSync(agentsDir, { recursive: true });
+		fs.writeFileSync(path.join(agentsDir, "pinned.md"), [
+			"---",
+			"name: pinned",
+			"description: A persona with its own model pin.",
+			"model: provider/pinned",
+			"---",
+			"",
+			"You work as the pinned persona.",
+		].join("\n"));
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension({ kind: "root" })(pi as any);
+		const ctx = makeContext(parentSessionFile, {
+			modelRegistry: {
+				getAvailable: () => [
+					{ provider: "provider", id: "model" },
+					{ provider: "provider", id: "pinned" },
+					{ provider: "provider", id: "other" },
+				],
+			},
+		});
+		await startSession(handlers, ctx);
+
+		await execute(tools, "subagent", {
+			agents: [{ id: "worker", persona: "pinned", task: "inspect", channels: [] }],
+		}, ctx);
+		const first = managed.created[0];
+		fs.mkdirSync(path.dirname(first.child.sessionFile), { recursive: true });
+		fs.writeFileSync(first.child.sessionFile, "");
+		await execute(tools, "teardown", { agent: "worker" }, ctx);
+
+		await execute(tools, "resurrect", {
+			agents: [{
+				id: "worker-restored",
+				sessionId: first.child.sessionId,
+				channels: [],
+				task: "continue",
+				model: "provider/other",
+			},
+			],
+		}, ctx);
+
+		expect(managed.created[1].config.modelRef).toBe("provider/pinned");
 	});
 
 	it("revives an errored child on a later send but keeps a dead runtime unreachable", async () => {

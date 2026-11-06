@@ -1197,6 +1197,7 @@ class SubagentSessionOwner {
 		const ResurrectItem = Type.Object({
 			id: Type.String({ description: "Unique identifier for the resurrected agent among the parent's active agents" }),
 			sessionId: Type.String({ description: "session_id surfaced by a prior teardown report" }),
+			model: Type.Optional(Type.String({ description: "Tier (cheap, medium, smart, frontier) or concrete model id. Omit to keep the model the session last ran on. A persona model pin outranks this value." })),
 			channels: Type.Array(Type.String(), { description: "Peer agent ids this agent can send to (re-declared fresh; siblings resurrected in the same batch are valid targets). Parent is always allowed." }),
 			task: Type.String({ description: "Directive the agent runs on resurrection" }),
 		});
@@ -1318,7 +1319,7 @@ class SubagentSessionOwner {
 			label: "Resurrect",
 			exposure: "direct",
 			outputSchema: ResurrectResultSchema,
-			description: "Revive a torn-down subagent from its session file. Persona, model, and tools are inherited and fixed. Re-declare only id, channels, and task.",
+			description: "Revive a torn-down subagent from its session file. Persona and tools are inherited and fixed. Model precedence matches spawning: a persona model pin wins, then an explicit model, then the model the session last ran on. Re-declare id, channels, and task.",
 			promptSnippet: "Revive a torn-down agent from its session_id.",
 			promptGuidelines: [
 				"To resurrect a mesh of agents that talked to each other, resurrect them in a single call: each agent may declare channels to its siblings, since they come online together.",
@@ -1734,12 +1735,23 @@ class SubagentSessionOwner {
 			}
 			// Capability gates re-resolve from the active persona file at the
 			// opened session's persisted cwd (workspace declaration first, else
-			// the persisted persona name per DR-033). Model/thinking stay as
-			// persisted (DR-038): a resurrected spec carries no model override.
+			// the persisted persona name per DR-033). The model follows spawn
+			// precedence (DR-061): the persona pin wins, then the explicit item
+			// `model`, then the persisted session model, which the target
+			// resumes untouched because no override reaches construction.
 			const record = manager.findPersistedAgentRecord(agent.sessionId);
 			const persona = record?.agent;
 			const config = persona ? discovery.agents.find((candidate) => candidate.name === persona) : undefined;
 			const active = loadActivePersona(record?.cwd ?? ctx.cwd, config);
+			const resolvedModel = resolveChildModelRef({
+				pin: active?.model,
+				explicit: agent.model,
+				inherited: undefined,
+				agentId: agent.id,
+				tiers: this.loadTiers(record?.cwd ?? ctx.cwd),
+				availableModels: ctx.modelRegistry.getAvailable(),
+			});
+			for (const warning of resolvedModel.warnings) session.turns.notifyTierIssueOnce(ctx, warning);
 			let skillPaths: readonly string[] = [];
 			if (active?.skills) {
 				try {
@@ -1757,6 +1769,7 @@ class SubagentSessionOwner {
 				task: agent.task,
 				channels: agent.channels,
 				resumeSessionFile: resolved,
+				model: resolvedModel.model,
 				cwd: record?.cwd,
 				skillPaths,
 				noSkills: active?.skills ? true : undefined,

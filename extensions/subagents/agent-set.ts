@@ -613,8 +613,9 @@ export class SubagentManager {
 			session: {
 				target,
 				// Fresh specs already carry the resolved winning model (persona pin
-				// first, explicit argument as gap-fill). Resumed specs intentionally
-				// omit it so the persisted session keeps its concrete model.
+				// first, explicit argument as gap-fill). A resumed spec carries one only
+				// when resurrection resolved an override; otherwise it stays absent so
+				// the persisted session keeps its concrete model.
 				modelRef: spec.model,
 				thinkingLevel: spec.kind === "fork" ? spec.thinkingLevel as any : undefined,
 				toolPolicy,
@@ -703,7 +704,10 @@ export class SubagentManager {
 	private initialOperational(spec: AgentSpec): AgentOperationalSnapshot {
 		if (this.restoring && spec.resumeSessionFile) {
 			const snapshot = parseSessionSnapshot(spec.resumeSessionFile);
-			const parsedModel = snapshot.model ? stripThinkingSuffix(snapshot.model) : undefined;
+			// A resurrected spec may carry a model that outranks the persisted one,
+			// so the seeded status names the model the child now runs on.
+			const modelRef = spec.model ?? snapshot.model;
+			const parsedModel = modelRef ? stripThinkingSuffix(modelRef) : undefined;
 			return {
 				state: "idle",
 				usage: { ...snapshot.usage },
