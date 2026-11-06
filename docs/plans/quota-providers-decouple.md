@@ -62,3 +62,55 @@ Do not register a partial `{ streamSimple }` overlay over a complete native prov
 ### DR Supersessions
 
 None. DR-045's tree-scoped bypass and DR-057's provider-stream blocking behavior remain in force. DR-043's jiti loading remains for TypeScript quota-source modules.
+
+## Tests
+
+**Pre-test-write commit:** `dabfef3cfb7ed243143112d3919e5e5a546f3d7a`
+
+### Interface Files
+
+- `extensions/quota-providers/lib/types.ts` — quota-source result and source contracts.
+- `extensions/quota-providers/lib/attachments.ts` — quota attachment configuration types and parser seam.
+- `extensions/quota-providers/lib/provider-wrapper.ts` — complete-provider quota wrapper seam.
+- `extensions/quota-providers/lib/usage-cache.ts` — atomic usage snapshot and model-limit cache shape.
+- `extensions/quota-providers/impls/devpass-quota.ts` — DevPass quota-source adapter contract.
+- `extensions/llm-gateway/index.ts` — LLM Gateway provider extension registration seam.
+- `extensions/llm-gateway/package.json` — extension manifest for the provider integration.
+
+### Test Files
+
+- `extensions/quota-providers/lib/attachments.test.ts` — provider-ID keyed configuration and settings passthrough.
+- `extensions/quota-providers/lib/provider-wrapper.test.ts` — blocking and complete-provider preservation across provider origins.
+- `extensions/quota-providers/lib/usage-cache.test.ts` — atomic snapshot and model-limit map parsing.
+- `extensions/quota-providers/impls/devpass-quota.test.ts` — DevPass monthly and premium-weekly source behavior and premium model mapping.
+- `extensions/quota-providers/runner-usage.test.ts` — runner persistence of snapshots with model-limit membership.
+- `extensions/quota-providers/test/fake-quota-source.ts` — deterministic quota-source fixture for runner tests.
+- `extensions/llm-gateway/index.test.ts` — provider registration, refresh caching, offline restore, forced refresh, and model mapping.
+
+### Behaviors Covered
+
+#### Quota attachment configuration
+
+- A quota attachment targets an existing pi provider ID and carries quota-source configuration only.
+- Policy fields resolve independently from module-specific settings, which pass through unchanged.
+- Disabled and malformed attachments resolve predictably with warnings.
+
+#### Provider blocking wrapper
+
+- A quota decision blocks every provider stream before transport execution, including built-in, `models.json`, legacy extension, and native extension providers.
+- The wrapper preserves provider identity, authentication, model listing, refresh, filtering, streaming, deferred, image, and classifier operations.
+- Reapplying the wrapper in one provider runtime does not stack quota guards.
+
+#### Usage source and cache
+
+- Usage polling stores all snapshots and the opaque model-to-limit map in one cache record.
+- DevPass returns an unscoped monthly snapshot plus an independently resetting premium-weekly snapshot.
+- Premium model membership uses catalog prices or eligible-provider medians at the established input/output thresholds.
+- The runner writes snapshots and model-limit membership atomically for the quota core.
+
+#### LLM Gateway provider
+
+- The provider registers as `llmgateway` with OpenAI Completions, environment-backed authentication, and no custom stream implementation.
+- Fresh stored catalogs and offline runtimes avoid network access.
+- Stale catalogs refresh with the supplied abort signal, while a forced refresh bypasses freshness checks.
+- Refreshed catalogs publish through pi's provider-cache contract and retain only models with streaming and tool support.

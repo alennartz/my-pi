@@ -120,6 +120,24 @@ export interface UsageSnapshot {
   asOf: number;
 }
 
+/**
+ * One provider-wide usage poll. Limit IDs stay opaque to the quota core; the
+ * source owns the association between model IDs and any scoped budgets.
+ */
+export interface QuotaSourceResult {
+  snapshots: UsageSnapshot[];
+  modelLimitIds: Record<string, string[]>;
+}
+
+/**
+ * Provider-specific usage adapter loaded by the quota-providers extension.
+ * Unlike the retired provider implementation seam, a quota source does not
+ * discover models, obtain API tokens, or register a pi provider.
+ */
+export interface QuotaSource {
+  getUsage(context: ImplContext): Promise<QuotaSourceResult>;
+}
+
 export interface ImplContext {
   /** The implementation's config block (impl-specific settings pass through untouched). */
   settings: Record<string, unknown>;
