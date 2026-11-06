@@ -28,6 +28,7 @@ describe("quota runner usage source contract", () => {
 		const config = join(root, "quota-providers.json");
 		const cache = join(root, "usage.json");
 		const ledger = join(root, "ledger.jsonl");
+		writeFileSync(ledger, `${JSON.stringify({ timestamp: 8000, cost: 1 })}\n${JSON.stringify({ timestamp: 9500, cost: 2 })}\n`, "utf8");
 		writeFileSync(config, JSON.stringify({
 			providers: {
 				llmgateway: { module: SOURCE_PATH, enabled: true },
@@ -50,6 +51,9 @@ describe("quota runner usage source contract", () => {
 				snapshots: [{ limitId: "monthly", spend: 12, quota: 100 }],
 				modelLimitIds: { "premium-model": ["monthly", "premium-weekly"] },
 			});
+			expect(readFileSync(ledger, "utf8").trim().split("\n").map((line) => JSON.parse(line))).toEqual([
+				{ timestamp: 9500, cost: 2 },
+			]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

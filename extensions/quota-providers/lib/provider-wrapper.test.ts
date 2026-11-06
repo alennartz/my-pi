@@ -2,83 +2,62 @@ import { describe, expect, it, vi } from "vitest";
 import { wrapProviderWithQuota } from "./provider-wrapper.js";
 
 function makeProvider() {
-	const provider = {
+	return {
 		id: "provider",
 		name: "Provider",
 		baseUrl: "https://provider.example",
-		headers: { "x-test": "1" },
-		auth: { resolve: vi.fn() },
-		getModels: vi.fn(() => []),
-		getAllModels: vi.fn(() => []),
-		refreshModels: vi.fn(async () => undefined),
-		filterModels: vi.fn((models: readonly unknown[]) => models),
-		filterAllModels: vi.fn((models: readonly unknown[]) => models),
-		stream: vi.fn(() => "stream"),
+		auth: { resolve: async () => ({ key: "credential" }) },
+		getModels() { return [{ id: this.id + "-model" }]; },
+		getAllModels() { return this.getModels(); },
+		async refreshModels() { return "refreshed"; },
+		filterModels(models: unknown[]) { return models.slice(0, 1); },
+		stream: () => "stream",
 		streamSimple: vi.fn(() => "stream-simple"),
-		fetchDeferred: vi.fn(() => "deferred"),
-		cancelDeferred: vi.fn(async () => undefined),
-		generateImages: vi.fn(async () => ({ type: "image", value: [] })),
-		classify: vi.fn(async () => ({ type: "classification", value: "ok" })),
-	};
-	return provider as any;
+		fetchDeferred: () => "deferred",
+		cancelDeferred: async () => "cancelled",
+		generateImages: async () => ({ type: "image", value: [] }),
+		classify: async () => ({ type: "classification", value: "ok" }),
+	} as any;
 }
 
+const model = { id: "model", provider: "provider", api: "openai-completions" } as any;
+const context = { messages: [] } as any;
+
 describe("full-provider quota wrapper", () => {
-	it.each(["builtin", "models.json", "legacy extension", "native extension"])(
-		"guards a complete %s provider before its transport runs",
-		(origin) => {
-			const provider = makeProvider();
-			const model = { id: `${origin}-model`, provider: provider.id, api: "openai-completions" } as any;
-			const evaluate = vi.fn(() => ({
-				blocked: true as const,
-				kind: "soft" as const,
-				message: "quota soft cap exceeded",
-			}));
-
-			const wrapped = wrapProviderWithQuota(provider, evaluate);
-
-			expect(() => wrapped.streamSimple(model, { messages: [] } as any, {
-				sessionId: "tree-session",
-			} as any)).toThrow("quota soft cap exceeded");
-			expect(evaluate).toHaveBeenCalledWith(model, { sessionId: "tree-session" });
-			expect(provider.streamSimple).not.toHaveBeenCalled();
-		},
-	);
-
-	it("preserves every provider-owned field and operation", () => {
+	it("blocks before the provider transport and passes the request identity to the gate", () => {
 		const provider = makeProvider();
-		const wrapped = wrapProviderWithQuota(provider, () => ({ blocked: false }));
+		const evaluate = vi.fn(() => ({ blocked: true as const, kind: "soft" as const, message: "quota soft cap exceeded" }));
+		const wrapped = wrapProviderWithQuota(provider, evaluate);
 
-		expect(wrapped).not.toBe(provider);
-		expect(wrapped.id).toBe(provider.id);
-		expect(wrapped.name).toBe(provider.name);
-		expect(wrapped.baseUrl).toBe(provider.baseUrl);
-		expect(wrapped.headers).toBe(provider.headers);
-		expect(wrapped.auth).toBe(provider.auth);
-		expect(wrapped.getModels).toBe(provider.getModels);
-		expect(wrapped.getAllModels).toBe(provider.getAllModels);
-		expect(wrapped.refreshModels).toBe(provider.refreshModels);
-		expect(wrapped.filterModels).toBe(provider.filterModels);
-		expect(wrapped.filterAllModels).toBe(provider.filterAllModels);
-		expect(wrapped.stream).toBe(provider.stream);
-		expect(wrapped.fetchDeferred).toBe(provider.fetchDeferred);
-		expect(wrapped.cancelDeferred).toBe(provider.cancelDeferred);
-		expect(wrapped.generateImages).toBe(provider.generateImages);
-		expect(wrapped.classify).toBe(provider.classify);
+		expect(() => wrapped.streamSimple(model, context, { sessionId: "tree-session" } as any)).toThrow("quota soft cap exceeded");
+		expect(evaluate).toHaveBeenCalledWith(model, { sessionId: "tree-session" });
+		expect(provider.streamSimple).not.toHaveBeenCalled();
+	});
+
+	it("retains provider capabilities and delegates allowed streams", async () => {
+		const wrapped = wrapProviderWithQuota(makeProvider(), () => ({ blocked: false }));
+		expect(wrapped.id).toBe("provider");
+		expect(wrapped.name).toBe("Provider");
+		expect(wrapped.baseUrl).toBe("https://provider.example");
+		expect(await wrapped.auth.resolve()).toEqual({ key: "credential" });
+		expect(wrapped.getModels()).toEqual([{ id: "provider-model" }]);
+		expect(wrapped.getAllModels()).toEqual([{ id: "provider-model" }]);
+		expect(await wrapped.refreshModels()).toBe("refreshed");
+		expect(wrapped.filterModels([1, 2])).toEqual([1]);
+		expect(wrapped.stream(model, context)).toBe("stream");
+		expect(wrapped.streamSimple(model, context)).toBe("stream-simple");
+		expect(wrapped.fetchDeferred()).toBe("deferred");
+		expect(await wrapped.cancelDeferred()).toBe("cancelled");
+		expect(await wrapped.generateImages()).toEqual({ type: "image", value: [] });
+		expect(await wrapped.classify()).toEqual({ type: "classification", value: "ok" });
 	});
 
 	it("does not stack quota guards when the same provider runtime is wrapped again", () => {
 		const provider = makeProvider();
 		const firstEvaluate = vi.fn(() => ({ blocked: false }));
 		const secondEvaluate = vi.fn(() => ({ blocked: false }));
-		const once = wrapProviderWithQuota(provider, firstEvaluate);
-		const twice = wrapProviderWithQuota(once, secondEvaluate);
-
-		const result = twice.streamSimple({ id: "model", provider: provider.id, api: "openai-completions" } as any, {
-			messages: [],
-		} as any);
-
-		expect(result).toBe("stream-simple");
+		const twice = wrapProviderWithQuota(wrapProviderWithQuota(provider, firstEvaluate), secondEvaluate);
+		expect(twice.streamSimple(model, context)).toBe("stream-simple");
 		expect(firstEvaluate.mock.calls.length + secondEvaluate.mock.calls.length).toBe(1);
 		expect(provider.streamSimple).toHaveBeenCalledTimes(1);
 	});

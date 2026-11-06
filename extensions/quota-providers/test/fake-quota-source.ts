@@ -13,8 +13,8 @@ const source: QuotaSource = {
 				asOf: 9_000,
 			}],
 			modelLimitIds: {
-			"premium-model": ["monthly", "premium-weekly"],
-		},
+				"premium-model": ["monthly", "premium-weekly"],
+			},
 		};
 	},
 };

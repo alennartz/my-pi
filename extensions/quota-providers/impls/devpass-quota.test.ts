@@ -7,7 +7,7 @@ const MONTHLY_KEY = {
 	devPlanCreditsLimit: "100",
 	devPlanPremiumWeeklyLimit: "50",
 	devPlanPremiumCreditsUsed: "7",
-	devPlanPremiumWeekResetsAt: "2099-01-08T00:00:00.000Z",
+	devPlanPremiumWeekResetsAt: "2026-04-18T00:00:00.000Z",
 };
 
 const CATALOG = {
@@ -45,7 +45,9 @@ function response(body: unknown): Response {
 
 describe("DevPass quota source", () => {
 	beforeEach(() => {
-		process.env.LLMGATEWAY_API_KEY = "test-key";
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-15T12:00:00.000Z"));
+		vi.stubEnv("LLMGATEWAY_API_KEY", "test-key");
 		vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
 			const url = String(input);
 			return url.endsWith("/key") ? response({ data: MONTHLY_KEY }) : response(CATALOG);
@@ -53,7 +55,8 @@ describe("DevPass quota source", () => {
 	});
 
 	afterEach(() => {
-		delete process.env.LLMGATEWAY_API_KEY;
+		vi.useRealTimers();
+		vi.unstubAllEnvs();
 		vi.unstubAllGlobals();
 	});
 
@@ -68,12 +71,19 @@ describe("DevPass quota source", () => {
 			spend: 12,
 			quota: 100,
 		});
+		expect(result.snapshots[0]).toMatchObject({
+			windowStart: Date.parse("2026-04-15T00:00:00Z"),
+			windowEnd: Date.parse("2026-05-15T00:00:00Z"),
+			asOf: Date.parse("2026-04-15T12:00:00Z"),
+		});
 		expect(result.snapshots[0].limitId).toBeUndefined();
 		expect(result.snapshots[1]).toMatchObject({
 			label: "Premium",
 			limitId: "premium-weekly",
 			spend: 7,
 			quota: 50,
+			windowStart: Date.parse("2026-04-11T00:00:00Z"),
+			windowEnd: Date.parse("2026-04-18T00:00:00Z"),
 		});
 		expect(result.modelLimitIds).toEqual({
 			"premium-by-input": ["premium-weekly"],
@@ -86,7 +96,7 @@ describe("DevPass quota source", () => {
 		const fetchMock = vi.mocked(fetch);
 		fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
 			const url = String(input);
-			if (url.endsWith("/key")) return response(MONTHLY_KEY);
+			if (url.endsWith("/key")) return response({ data: MONTHLY_KEY });
 			return response({
 				data: [{
 					id: "median-premium",
@@ -104,6 +114,24 @@ describe("DevPass quota source", () => {
 		});
 
 		expect(result.modelLimitIds).toEqual({ "median-premium": ["premium-weekly"] });
+	});
+
+	it("omits the weekly snapshot when the premium pool is absent", async () => {
+		vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => String(input).endsWith("/key")
+			? response({ data: { ...MONTHLY_KEY, devPlanPremiumWeeklyLimit: "0" } })
+			: response(CATALOG));
+		const result = await source.getUsage({ settings: { billingCycleAnchor: "2025-01-15T00:00:00Z" } });
+		expect(result.snapshots).toHaveLength(1);
+		expect(result.snapshots[0].limitId).toBeUndefined();
+	});
+
+	it("rejects an invalid usage response and a failed upstream request", async () => {
+		await expect(source.getUsage({ settings: { billingCycleAnchor: "2025-01-15T00:00:00Z" } })).resolves.toBeDefined();
+		vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => String(input).endsWith("/key")
+			? response({ data: { ...MONTHLY_KEY, devPlanCreditsUsed: "invalid" } }) : response(CATALOG));
+		await expect(source.getUsage({ settings: { billingCycleAnchor: "2025-01-15T00:00:00Z" } })).rejects.toThrow();
+		vi.mocked(fetch).mockResolvedValue(new Response("unavailable", { status: 503 }));
+		await expect(source.getUsage({ settings: { billingCycleAnchor: "2025-01-15T00:00:00Z" } })).rejects.toThrow();
 	});
 
 	it("is a quota-only source and does not expose model or token provisioning seams", async () => {

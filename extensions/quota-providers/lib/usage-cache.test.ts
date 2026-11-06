@@ -1,4 +1,4 @@
-import { unlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -6,7 +6,8 @@ import { readUsageCache } from "./usage-cache.js";
 
 describe("usage snapshot cache", () => {
 	it("reads snapshots and their model-to-limit map as one cache record", () => {
-		const path = join(tmpdir(), `quota-usage-${process.pid}.json`);
+		const dir = mkdtempSync(join(tmpdir(), "quota-usage-"));
+		const path = join(dir, "usage.json");
 		writeFileSync(path, JSON.stringify({
 			writtenAt: 123,
 			snapshots: [{
@@ -33,15 +34,13 @@ describe("usage snapshot cache", () => {
 				modelLimitIds: { "premium-model": ["premium-weekly"] },
 			});
 		} finally {
-			try {
-				unlinkSync(path);
-			} catch {
-			}
+			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
 	it("rejects a cache that does not carry the model map with its snapshots", () => {
-		const path = join(tmpdir(), `quota-usage-incomplete-${process.pid}.json`);
+		const dir = mkdtempSync(join(tmpdir(), "quota-usage-incomplete-"));
+		const path = join(dir, "usage.json");
 		writeFileSync(path, JSON.stringify({
 			writtenAt: 123,
 			snapshots: [],
@@ -50,10 +49,7 @@ describe("usage snapshot cache", () => {
 		try {
 			expect(readUsageCache(path)).toBeNull();
 		} finally {
-			try {
-				unlinkSync(path);
-			} catch {
-			}
+			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 });
