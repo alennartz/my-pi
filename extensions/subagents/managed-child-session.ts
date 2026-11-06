@@ -20,6 +20,7 @@ import {
 import { formatAgentPath, type AgentPath } from "./agent-path.js";
 import type { ChildToolPolicy } from "./child-tool-policy.js";
 import { markSubagentChildSession, type PersonaPayload } from "./child-session-marker.js";
+import { stripThinkingSuffix } from "./model-tiers.js";
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import { registerSessionTreeStore } from "./scoped-store.js";
 
@@ -382,13 +383,16 @@ export async function createManagedChildSession(
 				? undefined
 				: resolveCliModel({ cliModel: effectiveModelRef, modelRuntime: services.modelRuntime });
 			if (modelResult?.error) throw new Error(modelResult.error);
+			// A forced model is authoritative: when the operator's `/fmodel` value
+			// carries a thinking level, that level outranks every level the
+			// construction resolved (a fork's inherited level, a persona pin's).
+			const forcedThinking = typeof forced === "string" ? stripThinkingSuffix(forced).thinking : undefined;
+			const thinkingLevel = forcedThinking ?? config.thinkingLevel ?? modelResult?.thinkingLevel;
 			const sessionResult = await createAgentSessionFromServices({
 				services,
 				sessionManager: options.sessionManager,
 				...(modelResult?.model ? { model: modelResult.model } : {}),
-				...(config.thinkingLevel !== undefined || modelResult?.thinkingLevel !== undefined
-					? { thinkingLevel: config.thinkingLevel ?? modelResult?.thinkingLevel }
-					: {}),
+				...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
 				...(config.toolPolicy.allowedTools !== undefined
 					? { tools: config.toolPolicy.allowedTools }
 					: { excludeTools: config.toolPolicy.excludeTools }),

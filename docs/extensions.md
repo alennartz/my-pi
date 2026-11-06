@@ -92,6 +92,12 @@ fields. A concrete model ID passes through unchanged. Resurrect also accepts a
 wins, then the explicit value, then the model the session last ran on. A
 resurrected agent that declares nothing keeps its persisted concrete model.
 
+`/fmodel <model>` in a root session forces every subagent in that session tree
+onto one model, ahead of persona pins and explicit arguments. A `:<level>`
+suffix carries effort and outranks the level a fork or pin would otherwise
+bind. The force lasts for the session and is never persisted. Run `/fmodel`
+with no argument to clear it.
+
 ## Quota providers
 
 Create `~/.pi/agent/quota-providers.json` to load out-of-repository provider

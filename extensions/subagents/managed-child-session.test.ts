@@ -379,6 +379,36 @@ describe("createManagedChildSession construction", () => {
 		expect(sdk.state.servicesArgs[2].resourceLoaderOptions.additionalSkillPaths).toBeUndefined();
 	});
 
+	it("lets a forced model's thinking level outrank the construction's own level", async () => {
+		const store = new Map<string, unknown>();
+		const scope = {
+			...makeConfig({ kind: "new", cwd: "/repo", sessionDir: "/sessions" }).scope,
+			registry: { getScopedStore: () => store },
+		};
+		store.set("forced-model", "provider/forced:low");
+
+		await createChild(
+			{ kind: "new", cwd: "/repo", sessionDir: "/sessions" },
+			{ scope, modelRef: "provider/model:xhigh", thinkingLevel: "xhigh" },
+		);
+
+		expect(sdk.state.sessionArgs[0]).toMatchObject({
+			model: { provider: "provider", id: "forced" },
+			thinkingLevel: "low",
+		});
+
+		// A forced model without a level leaves the construction's level in place.
+		store.set("forced-model", "provider/forced");
+		await createChild(
+			{ kind: "new", cwd: "/repo", sessionDir: "/sessions" },
+			{ scope, modelRef: "provider/model:xhigh", thinkingLevel: "xhigh" },
+		);
+		expect(sdk.state.sessionArgs[1]).toMatchObject({
+			model: { provider: "provider", id: "forced" },
+			thinkingLevel: "xhigh",
+		});
+	});
+
 	it("pins zero skills for a declared-but-stale list that resolved empty", async () => {
 		// `noSkills` marks `skillPaths` as the complete persona-declared set: an
 		// empty resolved list degrades to zero skills, never to full discovery.
