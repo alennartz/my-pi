@@ -50,9 +50,11 @@ export function loadOverlayFiles(dir: string): {
 			diagnostics.push({ path: filePath, message: `Malformed frontmatter in overlay file: ${filePath}` });
 			continue;
 		}
+		// A file without front matter is not an overlay; ignore it silently.
+		if (Object.keys(frontmatter).length === 0) continue;
+
 		const rawModels = frontmatter.models;
 
-		// Validate models field
 		if (rawModels === undefined || rawModels === null) {
 			diagnostics.push({ path: filePath, message: `Missing 'models' field in frontmatter: ${filePath}` });
 			continue;

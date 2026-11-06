@@ -60,6 +60,15 @@ describe("loadOverlayFiles", () => {
 		expect(diagnostics[0].message).toContain("Missing 'models'");
 	});
 
+	it("ignores a pattern-matching file without front matter, silently", () => {
+		const dir = createTemp();
+		writeFileSync(join(dir, "AGENTS.notes.md"), "Just notes, no front matter");
+
+		const { overlays, diagnostics } = loadOverlayFiles(dir);
+		expect(overlays.length).toBe(0);
+		expect(diagnostics).toEqual([]);
+	});
+
 	it("reports diagnostic for empty models array", () => {
 		const dir = createTemp();
 		writeFileSync(join(dir, "AGENTS.empty.md"), "---\nmodels: []\n---\nBody");

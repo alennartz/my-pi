@@ -255,8 +255,9 @@ Use the repository's review checklist for this model.
 ```
 
 `models` is required and must be a non-empty string or string array. Values are
-simple `*` globs matched against the active model ID. The body is added to the
-system prompt as a `model-overlays` section when a pattern matches.
+simple `*` globs matched against the active model ID. A pattern-matching file
+without front matter is not an overlay and is ignored silently. The body is
+added to the system prompt as a `model-overlays` section when a pattern matches.
 
 The global agent directory always participates. Project ancestors participate
 only when pi marks the project trusted. Overlays apply from broad to narrow,
