@@ -126,6 +126,8 @@ None. DR-045's tree-scoped bypass and DR-057's provider-stream blocking behavior
 
 ## Steps
 
+**Pre-implementation commit:** `c2b5dbb0bcc379a61d4b1b08bf41e0895f081680`
+
 ### Step 1: Resolve quota attachments
 
 Implement `parseQuotaAttachments` and `loadQuotaAttachments` in `extensions/quota-providers/lib/attachments.ts`. Reuse the policy defaults, reserved keys, home expansion, warnings, and agent-directory resolution in `lib/config.ts`. Return `providerId` from each key in `providers`. Preserve disabled entries and pass non-policy settings through unchanged.
@@ -133,9 +135,11 @@ Implement `parseQuotaAttachments` and `loadQuotaAttachments` in `extensions/quot
 Keep `cachePaths` in `lib/config.ts` for usage and ledger paths. Remove its model and token paths. Retire the old provider-implementation types from `lib/types.ts`, leaving `QuotaSource`, `QuotaSourceResult`, `ImplContext`, snapshots, policy, and ledger types. Update `lib/config.test.ts` to exercise the attachment interface and retained paths. Do not change the tests listed in `## Tests`.
 
 **Verify:** `npx vitest run extensions/quota-providers/lib/attachments.test.ts extensions/quota-providers/lib/config.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 2: Persist usage and membership together
+
+**Status:** in progress
 
 Implement `readUsageCache` in `extensions/quota-providers/lib/usage-cache.ts`. Validate the timestamp, every snapshot, and the model-to-limit-ID map as one record. Return `null` for missing, malformed, or incomplete files. Reuse snapshot validation from `lib/snapshot.ts` where practical, and remove the old snapshot-only reader after its callers move to the new interface.
 
@@ -153,7 +157,7 @@ Implement `extensions/quota-providers/impls/devpass-quota.ts` as a `QuotaSource`
 Move gateway catalog conversion and its supporting price, modality, reasoning-effort, and output-limit logic from `impls/devpass.ts` to `extensions/llm-gateway/`. Produce `ProviderModelConfig` values with pi's required defaults. Preserve eligible-provider filtering, median costs, image limits, reasoning maps, and minimum output caps. Remove quota membership from the provider model data. Move the catalog behavior coverage in `impls/devpass.test.ts` to the provider extension, adapting assertions to its provider model interface. Remove the encrypted-content retry cases.
 
 **Verify:** `npx vitest run extensions/quota-providers/impls/devpass-quota.test.ts` passes. Catalog coverage passes after the provider refresh in Step 4.
-**Status:** not started
+**Status:** in progress
 
 ### Step 4: Register LLM Gateway
 
@@ -169,7 +173,7 @@ Implement `refreshModels` using the catalog conversion from Step 3. Restore stor
 Implement `wrapProviderWithQuota` in `extensions/quota-providers/lib/provider-wrapper.ts`. Evaluate the model and request options before `streamSimple`; throw the decision's non-retryable quota message on a block. Delegate allowed streams and preserve every other field and operation of the effective provider, including methods that depend on their receiver. Rewrapping a provider in one runtime must leave exactly one quota guard.
 
 **Verify:** `npx vitest run extensions/quota-providers/lib/provider-wrapper.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 6: Attach quotas at session start
 
