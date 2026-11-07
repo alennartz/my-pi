@@ -15,6 +15,10 @@ graph LR
   SessionName
   Worktree
   ModelPromptOverlays
+  QuotaProviders["Quota Providers"] --> Subagents
+  QuotaProviders --> QuotaProviderImplementations["Quota Provider Implementations"]
+  LLMGatewayProvider["LLM Gateway Provider"]
+  MyPiDocumentation["My-pi Documentation"]
   UserEdit
   PromptTemplateCreator
 ```
@@ -60,7 +64,7 @@ The ten workflow skills and the autoflow orchestration skill that drives them. A
 - `docs/plans/**`
 - `docs/reviews/**`
 - `docs/manual-tests/**` — topic-specific manual-test reports, including persona-workspaces checks T1–T13/R1–R7/D1–D2 and their results
-- `tools/manual-test/**` — permanent live-pi harnesses and journey plan: `persona-workspaces/run.mjs` (+ README) covers root takeover, spawned identity/override, binding, resume/reload, restore and fork; `model-tiers/run.mjs` is provider/model-parameterized with provider-agnostic prompt extraction and LLM Gateway plus DevPass quota-source support; `resume-restore/README.md` documents `PI_CODING_AGENT_DIR` passthrough; `PLAN.md` includes journeys J8/J9 and updated J1/J2
+- `tools/manual-test/**` — permanent live-pi harnesses and journey plan: `persona-workspaces/run.mjs` (+ README) covers root takeover, spawned identity/override, binding, resume/reload, restore and fork; `model-tiers/run.mjs` is provider/model-parameterized with provider-agnostic prompt extraction and LLM Gateway plus DevPass quota-source support; the corrected persona-workspaces and model-tiers harnesses have deterministic helper tests beside them; `quota-providers/run.mjs` exercises provider-ID attachment, blocking, bypass, quota status, and usage-cache persistence with a deterministic local provider/source, plus an optional live Gateway probe; `resume-restore/README.md` documents `PI_CODING_AGENT_DIR` passthrough; `PLAN.md` includes journeys J8/J9 and updated J1/J2
 
 ### Skills
 
@@ -187,7 +191,8 @@ Extension that manages git worktree–based branch sessions — create a worktre
 Normal pi provider extension for the LLM Gateway DevPass service. It registers
 provider ID `llmgateway`, uses the OpenAI Completions API, authenticates with
 `LLMGATEWAY_API_KEY`, and refreshes the `/v1/models` catalog through pi's
-provider-cache contract. It owns model metadata and streaming, not quota policy.
+provider-cache contract. Pi supplies the OpenAI Completions streaming
+implementation. This extension owns model metadata, not quota policy.
 
 **Responsibilities:** provider registration, catalog refresh and one-hour
 stored-catalog reuse, offline catalog restore, model metadata conversion, and
@@ -295,7 +300,7 @@ Extension that discovers AGENTS.*.md overlay files, matches them against the act
 
 ### My-pi Documentation
 
-Extension configuration reference and the prompt pointer that makes it discoverable to agents.
+Canonical extension and configuration reference, including LLM Gateway provider setup, quota attachment configuration, and provider-ID migration; a prompt pointer makes the reference discoverable to agents.
 
 **Responsibilities:** maintain the canonical extension/configuration reference; inject its absolute path into a small `before_agent_start` system-prompt section without copying the full document into every turn
 
