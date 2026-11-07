@@ -34,10 +34,11 @@ extension says so.
 | Model prompt overlays | `AGENTS.<model>.md` files | `models` front matter and Markdown body |
 | Subagent definitions | `~/.pi/agent/agents`, `.pi/agents`, package `pi.agents` | `name`, `description`, `tools`, `model`, `skills`, body |
 | Web tools | Environment and cache location | `BRAVE_API_KEY`, `PI_CODING_AGENT_DIR` |
+| Prompt template creator | `/nprompt <name>` | Project-local `.pi/prompts/<name>.md` |
 
 The remaining extensions have no configuration file. They expose behavior or
 commands: `worktree`, `session-resume`, `session-name`, `print-prompt`,
-`ask-user`, `user-edit`, and the core `subagents` orchestration tools.
+`ask-user`, `user-edit`, `new-prompt`, and the core `subagents` orchestration tools.
 
 ## Autoflow autostart
 
@@ -346,6 +347,7 @@ than files:
 - `print-prompt`: use `/sysprompt` to inspect the last rendered system prompt.
 - `ask-user`: root sessions use `ask_user`.
 - `user-edit`: use `user_edit` to open the built-in editor.
+- `new-prompt`: use `/nprompt <name>` to create or edit `.pi/prompts/<name>.md` in the built-in editor. New files open with a compact scaffold that demonstrates prompt-template front matter and argument substitutions. Save, then run `/reload` to load the template as `/<name>`.
 
 ## Downstream code customization
 

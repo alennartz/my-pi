@@ -17,6 +17,7 @@ graph LR
   ModelPromptOverlays
   ToolscriptExtension
   UserEdit
+  PromptTemplateCreator
 ```
 
 ### Key Flows
@@ -281,6 +282,17 @@ Extension that provides a `user_edit` LLM tool — opens a file in pi's built-in
 
 **Files:**
 - `extensions/user-edit/**`
+
+### Prompt Template Creator
+
+Extension that creates project-local Pi prompt templates through the built-in editor.
+
+**Responsibilities:** `/nprompt <name>` command registration, safe project `.pi/prompts/<name>.md` path resolution, compact prompt-template learning scaffold, existing-template prefill, cancellation-safe writes, reload guidance
+
+**Dependencies:** none beyond Pi's extension command, editor, and file-mutation APIs
+
+**Files:**
+- `extensions/new-prompt/**`
 
 ### Model Prompt Overlays
 
