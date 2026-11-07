@@ -15,7 +15,7 @@ The implementation covers the planned split, and the approved tests remain uncha
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/quota-providers/index.ts:243,258-275`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Track the effective-provider identity and reapply the wrapper whenever the model registry replaces that provider.
 
 The attachment guard keys only on provider ID. A `models.json` provider replacement can therefore install a new effective provider without the quota wrapper. Subsequent streams skip the hard-cap check even though the attachment remains enabled.
@@ -25,7 +25,7 @@ The attachment guard keys only on provider ID. A `models.json` provider replacem
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/quota-providers/lib/provider-wrapper.ts:18-32`; `extensions/quota-providers/index.ts:252-273`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Use a stable wrapper marker and reuse or unwrap an existing guard before wrapping a recomposed provider.
 
 The wrapper marker is a module-local `Symbol`, so a reload does not recognize a wrapper created by the previous module instance. The `models.json` recomposition path can also wrap an already wrapped provider. This stacks evaluators and can preserve stale quota policy across reloads.
@@ -35,7 +35,7 @@ The wrapper marker is a module-local `Symbol`, so a reload does not recognize a 
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/quota-providers/lib/provider-wrapper.ts:18-32`; `extensions/quota-providers/index.ts:291-302`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Preserve each original provider and restore it when the attachment is disabled or the extension shuts down.
 
 The lifecycle cleanup does not remove registered wrappers. A reload that disables hard-cap enforcement, or disables the attachment, can still execute the prior wrapper and block requests under the old policy.
@@ -45,7 +45,7 @@ The lifecycle cleanup does not remove registered wrappers. A reload that disable
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/quota-providers/runner.mjs:198-219`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Return from `pruneLedger` when the ledger lock was not acquired.
 
 `pruneLedger` ignores the lock result and reads and rewrites the ledger after a timeout or acquisition error. A concurrent append can then be overwritten, losing local spend records and corrupting quota accounting.
@@ -55,7 +55,7 @@ The lifecycle cleanup does not remove registered wrappers. A reload that disable
 - **Category:** plan deviation
 - **Severity:** warning
 - **Location:** `extensions/llm-gateway/catalog.ts:3-5,82-93,239-260`; `extensions/quota-providers/impls/devpass-quota.ts:2,208`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Move premium classification and limit mapping into the DevPass quota source, leaving the Gateway catalog to convert provider models.
 
 The plan assigns premium thresholds and the `premium-weekly` model mapping to the quota source. `llm-gateway/catalog.ts` currently owns those rules and exports them to `devpass-quota.ts`, so the provider extension still contains quota policy and the intended ownership seam is not real.
@@ -65,7 +65,7 @@ The plan assigns premium thresholds and the `premium-weekly` model mapping to th
 - **Category:** plan deviation
 - **Severity:** warning
 - **Location:** `extensions/quota-providers/lib/stream-guard.ts:1-31`; `extensions/quota-providers/lib/stream-guard.test.ts:1-49`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Delete the unused stream-guard module and its test.
 
 Step 6 removes custom API streaming in favor of the complete-provider wrapper. These files still expose and test the obsolete stream-guard seam, although no active code imports them. Keeping them leaves a misleading implementation path for future changes.
@@ -75,7 +75,7 @@ Step 6 removes custom API streaming in favor of the complete-provider wrapper. T
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/quota-providers/index.ts:246-251`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Refresh the attachment record with `maybeRefreshUsage` before evaluating each provider request.
 
 The old stream guard refreshed usage before every request. The new evaluator only checks the cached record, while some trigger-turn and tool-loop requests do not emit the events that refresh it. Those requests can therefore use stale snapshots and miss a window reset or newly reached cap.
@@ -85,7 +85,7 @@ The old stream guard refreshed usage before every request. The new evaluator onl
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/quota-providers/impls/devpass-quota.ts:193-208`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Capture the usage timestamp before fetching the catalog and use that timestamp for `asOf` and window bounds.
 
 The source reads usage, then performs a second network request for the catalog, and assigns `asOf` afterward. A slow catalog request can advance snapshot authority, causing ledger pruning to delete spend absent from the earlier usage response or assign a renewal's spend to the wrong window.
@@ -95,7 +95,7 @@ The source reads usage, then performs a second network request for the catalog, 
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/quota-providers/index.ts:56-58,111,315`; `extensions/llm-gateway/catalog.ts:243-256`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Build null-prototype membership maps and require own-property checks during lookup.
 
 Membership lookup reads inherited properties. A model named `constructor` can make `limitIds.includes` fail, while `__proto__` can mutate the map prototype instead of becoming a serialized model entry. Model IDs are external catalog data, so these names must remain ordinary unmapped or mapped keys.

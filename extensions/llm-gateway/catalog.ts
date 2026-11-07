@@ -1,8 +1,6 @@
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 
 const PER_TOKEN_TO_PER_MILLION = 1_000_000;
-const PREMIUM_INPUT_USD_PER_MILLION = 5;
-const PREMIUM_OUTPUT_USD_PER_MILLION = 15;
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 16_384;
 
@@ -77,19 +75,6 @@ function providerPrices(providers: GatewayProvider[]): ProviderPrice[] {
 	return providers
 		.map((provider) => asRecord(provider.pricing) as ProviderPrice | undefined)
 		.filter((price): price is ProviderPrice => price !== undefined);
-}
-
-/** Gateway fair-use classification: premium at $5/M input or $15/M output. */
-export function isPremiumModel(modelPricing: unknown, eligiblePrices: ProviderPrice[]): boolean {
-	const catalogPrice = asRecord(modelPricing) as ProviderPrice | undefined;
-	const input = perMillion(
-		parsePrice(catalogPrice?.prompt) ?? medianRate(eligiblePrices, "prompt"),
-	);
-	const output = perMillion(
-		parsePrice(catalogPrice?.completion) ?? medianRate(eligiblePrices, "completion"),
-	);
-	return (input !== undefined && input >= PREMIUM_INPUT_USD_PER_MILLION) ||
-		(output !== undefined && output >= PREMIUM_OUTPUT_USD_PER_MILLION);
 }
 
 function modelInput(model: GatewayModel): ("text" | "image")[] {
@@ -234,29 +219,6 @@ export function buildThinkingLevelMap(eligibleProviders: GatewayProvider[]): Thi
 			slot >= 0 ? slotValues[slot] : slotValues[slotValues.length - 1];
 	}
 	return map;
-}
-
-/**
- * Return model IDs whose catalog pricing makes them premium. Invalid records
- * and models without a streaming+tools provider are ignored.
- */
-export function findPremiumModelIds(records: unknown[]): Record<string, string[]> {
-	const modelLimitIds: Record<string, string[]> = {};
-	for (const raw of records) {
-		const model = asRecord(raw) as GatewayModel | undefined;
-		if (!model || typeof model.id !== "string" || model.id.length === 0) continue;
-		if (!Array.isArray(model.providers)) continue;
-		const eligibleProviders = model.providers
-			.map(asProvider)
-			.filter((provider): provider is GatewayProvider =>
-				provider !== undefined && provider.streaming === true && provider.tools === true,
-			);
-		if (eligibleProviders.length === 0) continue;
-		if (isPremiumModel(model.pricing, providerPrices(eligibleProviders))) {
-			modelLimitIds[model.id] = ["premium-weekly"];
-		}
-	}
-	return modelLimitIds;
 }
 
 /**

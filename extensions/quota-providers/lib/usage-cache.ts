@@ -31,6 +31,23 @@ function isModelLimitIds(value: unknown): value is Record<string, string[]> {
 	);
 }
 
+function copyModelLimitIds(value: Record<string, string[]>): Record<string, string[]> {
+	const copy = Object.create(null) as Record<string, string[]>;
+	for (const [modelId, limitIds] of Object.entries(value)) copy[modelId] = limitIds;
+	return copy;
+}
+
+/** Return the limit memberships for a model, if the cache owns that model ID. */
+export function modelLimitIdsFor(
+	modelLimitIds: Record<string, string[]>,
+	modelId: string | undefined,
+): string[] | undefined {
+	if (modelId === undefined || !Object.prototype.hasOwnProperty.call(modelLimitIds, modelId)) {
+		return undefined;
+	}
+	return modelLimitIds[modelId];
+}
+
 /** Read one complete snapshot-plus-model-map cache record. */
 export function readUsageCache(path: string): UsageCacheFile | null {
 	if (!existsSync(path)) return null;
@@ -44,7 +61,7 @@ export function readUsageCache(path: string): UsageCacheFile | null {
 		return {
 			writtenAt: parsed.writtenAt,
 			snapshots: parsed.snapshots,
-			modelLimitIds: parsed.modelLimitIds,
+			modelLimitIds: copyModelLimitIds(parsed.modelLimitIds),
 		};
 	} catch {
 		return null;

@@ -1,10 +1,24 @@
 import type { QuotaSource, ImplContext, UsageSnapshot } from "../lib/types.js";
-import { findPremiumModelIds } from "../../llm-gateway/catalog.js";
 
 const API_BASE_URL = "https://api.llmgateway.io/v1";
 const API_KEY_ENV = "LLMGATEWAY_API_KEY";
 const REQUEST_TIMEOUT_MS = 30_000;
 const PREMIUM_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const PER_TOKEN_TO_PER_MILLION = 1_000_000;
+const PREMIUM_INPUT_USD_PER_MILLION = 5;
+const PREMIUM_OUTPUT_USD_PER_MILLION = 15;
+
+interface DevPassProvider {
+	streaming?: unknown;
+	tools?: unknown;
+	pricing?: unknown;
+}
+
+interface DevPassModel {
+	id?: unknown;
+	pricing?: unknown;
+	providers?: unknown;
+}
 
 function ensureNotAborted(context: ImplContext): void {
 	if (context.signal?.aborted) {
@@ -51,6 +65,60 @@ function parseNumber(value: unknown): number | undefined {
 	if (typeof value === "string" && value.trim() === "") return undefined;
 	const parsed = Number(value);
 	return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function median(values: number[]): number | undefined {
+	if (values.length === 0) return undefined;
+	const sorted = [...values].sort((a, b) => a - b);
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 1
+		? sorted[middle]
+		: (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function providerPrices(providers: DevPassProvider[]): Record<string, unknown>[] {
+	return providers
+		.map((provider) => asRecord(provider.pricing))
+		.filter((price): price is Record<string, unknown> => price !== undefined);
+}
+
+function medianPrice(prices: Record<string, unknown>[], field: string): number | undefined {
+	return median(
+		prices
+			.map((price) => parseNumber(price[field]))
+			.filter((price): price is number => price !== undefined),
+	);
+}
+
+function perMillion(rate: number | undefined): number | undefined {
+	return rate === undefined ? undefined : rate * PER_TOKEN_TO_PER_MILLION;
+}
+
+function isPremiumModel(modelPricing: unknown, eligiblePrices: Record<string, unknown>[]): boolean {
+	const catalogPrice = asRecord(modelPricing);
+	const input = perMillion(parseNumber(catalogPrice?.prompt) ?? medianPrice(eligiblePrices, "prompt"));
+	const output = perMillion(parseNumber(catalogPrice?.completion) ?? medianPrice(eligiblePrices, "completion"));
+	return (input !== undefined && input >= PREMIUM_INPUT_USD_PER_MILLION) ||
+		(output !== undefined && output >= PREMIUM_OUTPUT_USD_PER_MILLION);
+}
+
+function findPremiumModelIds(records: unknown[]): Record<string, string[]> {
+	const modelLimitIds = Object.create(null) as Record<string, string[]>;
+	for (const raw of records) {
+		const model = asRecord(raw) as DevPassModel | undefined;
+		if (!model || typeof model.id !== "string" || model.id.length === 0) continue;
+		if (!Array.isArray(model.providers)) continue;
+		const eligibleProviders = model.providers
+			.map((value) => asRecord(value) as DevPassProvider | undefined)
+			.filter((provider): provider is DevPassProvider =>
+				provider !== undefined && provider.streaming === true && provider.tools === true,
+			);
+		if (eligibleProviders.length === 0) continue;
+		if (isPremiumModel(model.pricing, providerPrices(eligibleProviders))) {
+			modelLimitIds[model.id] = ["premium-weekly"];
+		}
+	}
+	return modelLimitIds;
 }
 
 function usageAmount(data: Record<string, unknown>, field: string): number {
@@ -196,15 +264,15 @@ async function readUsage(context: ImplContext) {
 		throw new Error("devpass quota: /v1/key response did not contain a data object");
 	}
 
+	const asOf = Date.now();
 	ensureNotAborted(context);
 	const catalogPayload = asRecord(await fetchGatewayJson("/models", context.signal));
 	if (!catalogPayload || !Array.isArray(catalogPayload.data)) {
 		throw new Error("devpass quota: /v1/models response did not contain a data array");
 	}
 
-	const now = Date.now();
 	return {
-		snapshots: buildUsageSnapshots(keyData, context.settings, now),
+		snapshots: buildUsageSnapshots(keyData, context.settings, asOf),
 		modelLimitIds: findPremiumModelIds(catalogPayload.data),
 	};
 }

@@ -198,6 +198,7 @@ function cacheIsFresh(path, maxPollSeconds) {
 function pruneLedger(path, asOf) {
 	if (!existsSync(path)) return;
 	const lock = acquireLockSync(`${path}.lock`);
+	if (!lock.acquired) return;
 	try {
 		const kept = readFileSync(path, "utf8")
 			.split("\n")

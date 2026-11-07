@@ -16,9 +16,15 @@ import { readBypass, writeBypass, resolveRequestStore } from "./lib/bypass.js";
 import { cachePaths, resolveAgentDir } from "./lib/config.js";
 import { decideBlock } from "./lib/enforce.js";
 import { appendLedgerEntry, readLedger } from "./lib/ledger.js";
-import { wrapProviderWithQuota } from "./lib/provider-wrapper.js";
+import {
+	installQuotaStreamGuard,
+	isQuotaWrappedProvider,
+	restoreQuotaStreamGuard,
+	unwrapQuotaProvider,
+	wrapProviderWithQuota,
+} from "./lib/provider-wrapper.js";
 import { applicableSnapshots, effectiveSpend, evaluateQuota, firstHitSnapshot } from "./lib/quota.js";
-import { readUsageCache } from "./lib/usage-cache.js";
+import { modelLimitIdsFor, readUsageCache } from "./lib/usage-cache.js";
 import type { CachePaths } from "./lib/config.js";
 import type { QuotaPolicy, QuotaSource } from "./lib/types.js";
 import {
@@ -53,9 +59,7 @@ function evaluateProviderQuota(
 	if (!record.hasUsageSeam) return undefined;
 	const cached = readUsageCache(record.paths.usage);
 	if (!cached) return undefined;
-	const limitIds = modelId
-		? cached.modelLimitIds[modelId] ?? []
-		: [];
+	const limitIds = modelLimitIdsFor(cached.modelLimitIds, modelId) ?? [];
 	const snapshots = applicableSnapshots(cached.snapshots, limitIds, now)
 		.sort((a, b) => a.windowEnd - b.windowEnd);
 	if (snapshots.length === 0) return undefined;
@@ -108,7 +112,7 @@ function buildFooterLine(
 
 	const ledger = readLedger(record.paths.ledger);
 	const bypassActive = record.policy.bypassAllowed && readBypass(store);
-	const limitIds = modelId ? cached.modelLimitIds[modelId] ?? [] : [];
+	const limitIds = modelLimitIdsFor(cached.modelLimitIds, modelId) ?? [];
 	const snapshot = firstHitSnapshot(cached.snapshots, limitIds, ledger, now);
 	if (!snapshot) return undefined;
 
@@ -175,6 +179,27 @@ function spawnUsageRefresh(record: RecordWithRunner): void {
 // makes the detached poll operation explicit and avoids another mutable lookup.
 type RecordWithRunner = ProviderRecord & { runnerPath: string };
 
+type ProviderRegistry = {
+	getProvider(id: string): Provider | undefined;
+	getRegisteredNativeProvider?: (id: string) => Provider | undefined;
+};
+
+type AttachedProvider = {
+	effective: Provider;
+	original: Provider;
+};
+
+const PROVIDER_STATE_KEY = Symbol.for("my-pi.quota-provider-states");
+
+function providerStateStore(): Map<string, AttachedProvider> {
+	const globals = globalThis as Record<PropertyKey, unknown>;
+	const existing = globals[PROVIDER_STATE_KEY];
+	if (existing instanceof Map) return existing as Map<string, AttachedProvider>;
+	const states = new Map<string, AttachedProvider>();
+	globals[PROVIDER_STATE_KEY] = states;
+	return states;
+}
+
 /** Poll when no usable cache exists, when it is old, or after a window reset. */
 function maybeRefreshUsage(record: RecordWithRunner): void {
 	const cached = readUsageCache(record.paths.usage);
@@ -219,7 +244,8 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	const providerIdToRecord = new Map<string, RecordWithRunner>(
 		records.map((record) => [record.id, record]),
 	);
-	const attachedProviderIds = new Set<string>();
+	const attachedProviders = new Map<string, AttachedProvider>();
+	const globalProviderStates = providerStateStore();
 
 	let treeStore: SessionTreeStore | undefined;
 	let fallbackSessionId: string | undefined;
@@ -238,46 +264,105 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		if (preferFallback || !fallbackSessionId) fallbackSessionId = sessionId;
 	}
 
-	function attachProviders(ctx: { modelRegistry: { getProvider(id: string): Provider | undefined } }): void {
+	function attachProviders(ctx: { modelRegistry: ProviderRegistry }): void {
 		for (const record of providerRecords) {
-			if (attachedProviderIds.has(record.id)) continue;
-			const provider = ctx.modelRegistry.getProvider(record.id);
+			const registry = ctx.modelRegistry;
+			let provider = registry.getProvider(record.id);
 			if (!provider) continue;
-			const evaluate = (model: Model<any>, options?: SimpleStreamOptions) => evaluateProviderQuota(
+
+			const previous = attachedProviders.get(record.id);
+			const globalState = globalProviderStates.get(record.id);
+			const registeredNative = registry.getRegisteredNativeProvider?.(record.id);
+			const evaluate = (model: Model<any>, options?: SimpleStreamOptions) => {
+				maybeRefreshUsage(record);
+				return evaluateProviderQuota(
 					record,
 					resolveRequestStore(options?.sessionId, treeStore),
 					Date.now(),
 					model.id,
 				);
-			const wrapped = wrapProviderWithQuota(provider, evaluate);
-			pi.registerProvider(wrapped);
+			};
 
-			// A models.json provider is recomposed by pi after native registration.
-			// Patch that effective object so its lazy composer cannot swallow a
-			// synchronous quota block into an ordinary transport error stream.
-			const effective = ctx.modelRegistry.getProvider(record.id);
-			if (effective && effective !== wrapped) {
-				const effectiveWrapped = wrapProviderWithQuota(effective, evaluate);
-				if (effectiveWrapped !== effective) {
-					try {
-						Object.defineProperty(effective, "streamSimple", {
-							configurable: true,
-							enumerable: true,
-							writable: true,
-							value: effectiveWrapped.streamSimple,
-						});
-					} catch {
-						// Providers with an immutable stream method retain their native
-						// registration and cannot be patched in place.
-					}
+			if (previous?.effective === provider) {
+				if (!installQuotaStreamGuard(provider, evaluate)) {
+					const wrapped = wrapProviderWithQuota(provider, evaluate);
+					pi.registerProvider(wrapped);
+					provider = registry.getProvider(record.id) ?? wrapped;
+				}
+				const state = { effective: provider, original: previous.original };
+				attachedProviders.set(record.id, state);
+				globalProviderStates.set(record.id, state);
+				continue;
+			}
+
+			let original = previous?.original ?? globalState?.original;
+			if (!original) {
+				original = unwrapQuotaProvider(registeredNative ?? provider);
+			}
+
+			// A prior extension load can leave a native Proxy wrapper behind. Remove
+			// it before pi recomposes the current provider, or guards will stack.
+			if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
+				const nativeOriginal = unwrapQuotaProvider(registeredNative);
+				original = previous?.original ?? globalState?.original ?? nativeOriginal;
+				if (registeredNative !== original) {
+					pi.registerProvider(original);
+					provider = registry.getProvider(record.id) ?? provider;
 				}
 			}
-			attachedProviderIds.add(record.id);
+
+			if (previous && previous.effective !== provider) restoreQuotaStreamGuard(previous.effective);
+
+			// Native providers can be replaced with a complete Proxy without
+			// mutating their stream spy or transport. Config-composed providers must
+			// be guarded in place so their lazy composer cannot swallow a block.
+			if (registeredNative === provider) {
+				const wrapped = wrapProviderWithQuota(provider, evaluate);
+				pi.registerProvider(wrapped);
+				provider = registry.getProvider(record.id) ?? wrapped;
+			} else if (!installQuotaStreamGuard(provider, evaluate)) {
+				const wrapped = wrapProviderWithQuota(provider, evaluate);
+				pi.registerProvider(wrapped);
+				provider = registry.getProvider(record.id) ?? wrapped;
+			}
+
+			const state = { effective: provider, original };
+			attachedProviders.set(record.id, state);
+			globalProviderStates.set(record.id, state);
+		}
+	}
+
+	function restoreProviders(ctx: { modelRegistry: ProviderRegistry }): void {
+		for (const [providerId, state] of attachedProviders) {
+			const current = ctx.modelRegistry.getProvider(providerId);
+			if (current) restoreQuotaStreamGuard(current);
+			if (state.effective !== current) restoreQuotaStreamGuard(state.effective);
+			const registeredNative = ctx.modelRegistry.getRegisteredNativeProvider?.(providerId);
+			if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
+				pi.registerProvider(unwrapQuotaProvider(registeredNative));
+			}
+			globalProviderStates.delete(providerId);
+		}
+		attachedProviders.clear();
+	}
+
+	function restoreStaleProviders(ctx: { modelRegistry: ProviderRegistry }): void {
+		const active = new Set(providerRecords.map((record) => record.id));
+		for (const [providerId] of globalProviderStates) {
+			if (active.has(providerId)) continue;
+			const provider = ctx.modelRegistry.getProvider(providerId);
+			if (provider) restoreQuotaStreamGuard(provider);
+			const registeredNative = ctx.modelRegistry.getRegisteredNativeProvider?.(providerId);
+			if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
+				pi.registerProvider(unwrapQuotaProvider(registeredNative));
+			}
+			globalProviderStates.delete(providerId);
 		}
 	}
 
 	pi.on("session_start", (_event, ctx) => {
 		bindTreeStore(ctx, true);
+		restoreStaleProviders(ctx);
 		attachProviders(ctx);
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
 		if (record) maybeRefreshUsage(record);
@@ -286,9 +371,15 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 
 	pi.on("agent_start", (_event, ctx) => {
 		bindTreeStore(ctx, false);
+		attachProviders(ctx);
+	});
+
+	pi.on("before_provider_request", (_event, ctx) => {
+		attachProviders(ctx);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		restoreProviders(ctx);
 		const sessionId = sessionIdOf(ctx.sessionManager);
 		if (!sessionId) return;
 		const store = boundStores.get(sessionId);
@@ -301,6 +392,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	});
 
 	pi.on("model_select", (event, ctx) => {
+		attachProviders(ctx);
 		const record = providerIdToRecord.get(event.model.provider ?? "");
 		if (record) maybeRefreshUsage(record);
 		refreshStatusline(record, ctx);
@@ -312,7 +404,9 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		if (!record) return;
 
 		const cached = readUsageCache(record.paths.usage);
-		const quotaLimitIds = cached?.modelLimitIds[event.message.model];
+		const quotaLimitIds = cached
+			? modelLimitIdsFor(cached.modelLimitIds, event.message.model)
+			: undefined;
 		appendLedgerEntry(
 			record.paths.ledger,
 			{
@@ -327,6 +421,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	});
 
 	pi.on("input", (_event, ctx) => {
+		attachProviders(ctx);
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
 		if (!record) return;
 		maybeRefreshUsage(record);
