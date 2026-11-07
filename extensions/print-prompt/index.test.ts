@@ -45,7 +45,7 @@ beforeAll(() => {
 			'if (!SYSTEM_PROMPT_SECTION_NAME.test(name)) {',
 			`        promptSections.preamble =
             customSections.preamble ??
-            "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";`,
+            "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.";`,
 			`        if (content && name !== "preamble")
             promptSections[name] = content;`,
 		].join("\n"),
@@ -110,7 +110,7 @@ describe("/sysprompt", () => {
 	it("projects the workspace persona preamble before the first run", async () => {
 		const { command, pi } = setup();
 		const base =
-			"You are an expert coding assistant operating inside pi, a coding agent harness.\n\n<tools>\n- read\n</tools>";
+			"You are a coding assistant running inside pi, a coding agent harness.\n\n<tools>\n- read\n</tools>";
 		await command.handler("", commandCtx({
 			getSystemPrompt: () => base,
 			getSystemPromptOptions: () => ({}),
@@ -148,14 +148,14 @@ describe("/sysprompt", () => {
 		hostDirState.dir = mkdtempSync(join(tmpdir(), "print-prompt-host-plain-"));
 		const { command, pi } = setup();
 		await command.handler("", commandCtx({
-			getSystemPrompt: () => "You are an expert coding assistant.\n\n<tools>\n- read\n</tools>",
+			getSystemPrompt: () => "You are a coding assistant running inside pi.\n\n<tools>\n- read\n</tools>",
 			getSystemPromptOptions: () => ({}),
 			cwd: "/repo/pm-workspace",
 		}));
 
 		const entry = pi.appendEntry.mock.calls.at(-1)?.[1] as { text: string };
 		expect(entry.text).toContain("<persona>\nyou are the product manager");
-		expect(entry.text).toContain("expert coding assistant");
+		expect(entry.text).toContain("You are a coding assistant running inside pi");
 		expect(entry.text).not.toContain("[projected");
 	});
 

@@ -132,7 +132,7 @@ const CFG = {
 	think2: process.env.PW_THINK2 || "high",
 };
 
-const GENERIC_PREAMBLE = "You are an expert coding assistant operating inside pi";
+const GENERIC_PREAMBLE = "You are a coding assistant running inside pi";
 const CHILD_IDENTITY = "<subagent_identity>";
 
 function log(...a) {

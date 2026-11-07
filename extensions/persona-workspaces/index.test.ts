@@ -45,7 +45,7 @@ function usePatchedHost(): string {
 			'if (!SYSTEM_PROMPT_SECTION_NAME.test(name)) {',
 			`        promptSections.preamble =
             customSections.preamble ??
-            "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";`,
+            "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.";`,
 			`        if (content && name !== "preamble")
             promptSections[name] = content;`,
 		].join("\n"),
@@ -70,7 +70,7 @@ function usePatchableUnpatchedHost(): string {
 		[
 			'if (!SYSTEM_PROMPT_SECTION_NAME.test(name) || name === "preamble") {',
 			`        promptSections.preamble =
-            "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";`,
+            "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.";`,
 			`        if (content)
             promptSections[name] = content;`,
 		].join("\n"),
