@@ -203,7 +203,7 @@ Update `tools/manual-test/persona-workspaces/run.mjs` and `tools/manual-test/mod
 
 ### Step 8: Verify the integrated change
 
-**Status:** in progress
+**Status:** done
 
 Run the full Vitest suite after the legacy test updates. Check that no active quota code imports the removed provisioning or retry modules. Confirm the approved tests remain unchanged and the LLM Gateway manifest is discovered through the existing extension package resource. Do not add a build or type-check step.
 

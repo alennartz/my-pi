@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isUsageSnapshot } from "./snapshot.js";
 import type { UsageSnapshot } from "./types.js";
 
 /** The atomic cache record written by the quota usage runner. */
@@ -7,6 +6,18 @@ export interface UsageCacheFile {
 	writtenAt: number;
 	snapshots: UsageSnapshot[];
 	modelLimitIds: Record<string, string[]>;
+}
+
+function isUsageSnapshot(value: unknown): value is UsageSnapshot {
+	if (!isRecord(value)) return false;
+	const snapshot = value as Record<string, unknown>;
+	return typeof snapshot.spend === "number" && Number.isFinite(snapshot.spend)
+		&& typeof snapshot.quota === "number" && Number.isFinite(snapshot.quota)
+		&& typeof snapshot.windowStart === "number" && Number.isFinite(snapshot.windowStart)
+		&& typeof snapshot.windowEnd === "number" && Number.isFinite(snapshot.windowEnd)
+		&& typeof snapshot.asOf === "number" && Number.isFinite(snapshot.asOf)
+		&& (snapshot.limitId === undefined || typeof snapshot.limitId === "string")
+		&& (snapshot.label === undefined || typeof snapshot.label === "string");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
