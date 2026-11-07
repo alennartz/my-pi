@@ -200,7 +200,7 @@ type AttachedProvider = {
 };
 
 type ProviderStateStores = WeakMap<object, Map<string, AttachedProvider>>;
-type RefreshHooks = WeakMap<object, { afterRefresh: () => void }>;
+type RefreshHooks = WeakMap<object, { afterRefresh: () => void; generation: number }>;
 
 const PROVIDER_STATE_KEY = Symbol.for("my-pi.quota-provider-state-stores");
 const REFRESH_HOOK_KEY = Symbol.for("my-pi.quota-provider-refresh-hooks");
@@ -321,6 +321,14 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		const afterRefresh = () => {
 			const attachedProviders = stateStore(registry);
 			for (const [providerId, state] of attachedProviders) {
+				const current = registry.getProvider(providerId);
+				if (state.providerConfig?.refreshModels && current) {
+					// Dynamic providers retain the refreshed catalog on the current
+					// composer. Detaching them would recreate an empty catalog while
+					// pi restores its persisted models asynchronously.
+					state.effective = current;
+					continue;
+				}
 				detachProvider(registry, providerId, state);
 				attachedProviders.delete(providerId);
 			}
@@ -332,13 +340,14 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 			return;
 		}
 		const refresh = registry.refresh.bind(registry);
-		const hook = { afterRefresh };
+		const hook = { afterRefresh, generation: 0 };
 		try {
 			registry.refresh = async (options?: unknown) => {
+				const generation = ++hook.generation;
 				try {
 					return await refresh(options);
 				} finally {
-					hook.afterRefresh();
+					if (generation === hook.generation) hook.afterRefresh();
 				}
 			};
 			hooks.set(registry as object, hook);

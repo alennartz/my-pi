@@ -94,23 +94,27 @@ export function restoreQuotaStreamGuard(provider: Provider): boolean {
 	}
 }
 
+type GuardState = {
+	chain: QuotaGuardChain;
+	evaluate: ProviderQuotaEvaluator;
+};
+
 function guardedStream(
-	chain: QuotaGuardChain,
-	evaluate: ProviderQuotaEvaluator,
+	state: GuardState,
 	original: Provider["streamSimple"],
 	receiver: Provider,
 ): Provider["streamSimple"] {
 	return (model, context, options) => {
-		const nested = chain.depth > 0;
-		chain.depth += 1;
+		const nested = state.chain.depth > 0;
+		state.chain.depth += 1;
 		try {
 			if (!nested) {
-				const decision = evaluate(model, options);
+				const decision = state.evaluate(model, options);
 				if (decision?.blocked) throw new Error(decision.message);
 			}
 			return Reflect.apply(original, receiver, [model, context, options]);
 		} finally {
-			chain.depth -= 1;
+			state.chain.depth -= 1;
 		}
 	};
 }
@@ -133,7 +137,7 @@ export function installQuotaStreamGuard(
 
 	const originalStreamSimple = provider.streamSimple;
 	const state: WrapperState = { kind: "stream", originalStreamSimple, evaluate, chain };
-	const guardedStreamSimple = guardedStream(chain, evaluate, originalStreamSimple, provider);
+	const guardedStreamSimple = guardedStream(state, originalStreamSimple, provider);
 
 	try {
 		Object.defineProperty(provider, QUOTA_WRAPPER, {
@@ -176,7 +180,7 @@ export function wrapProviderWithQuota(
 	const streamSimple = provider.streamSimple;
 	const chain: QuotaGuardChain = { depth: 0 };
 	const state: WrapperState = { kind: "provider", original: provider, evaluate, chain };
-	const guardedStreamSimple = guardedStream(chain, evaluate, streamSimple, provider);
+	const guardedStreamSimple = guardedStream(state, streamSimple, provider);
 
 	const target = Object.create(provider) as MarkedProvider;
 	Object.defineProperty(target, QUOTA_WRAPPER, {

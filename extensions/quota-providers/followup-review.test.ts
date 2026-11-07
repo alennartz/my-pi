@@ -82,6 +82,43 @@ function configureQuota(dir: string, providerId: string) {
 	}));
 }
 
+async function createDynamicAttachment(
+	providerId: string,
+	refreshModels: (context: any) => Promise<any[]>,
+) {
+	const dir = mkdtempSync(join(tmpdir(), "quota-dynamic-"));
+	dirs.push(dir);
+	configureQuota(dir, providerId);
+	vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+	const runtime = await ModelRuntime.create({
+		modelsPath: null,
+		authPath: join(dir, "auth.json"),
+		modelsStore: new InMemoryModelsStore(),
+		refreshOnCreate: false,
+	});
+	const registry = new ModelRegistry(runtime);
+	registry.registerProvider(providerId, {
+		baseUrl: "https://example.test/v1",
+		api: "openai-completions",
+		apiKey: "test-key",
+		models: [model("initial", providerId)],
+		refreshModels,
+	} as any);
+	const { pi, events } = makePi(registry);
+	await quotaExtension(pi as any);
+	const manager = { getSessionId: () => `${providerId}-session` };
+	const ctx = {
+		modelRegistry: registry,
+		sessionManager: manager,
+		hasUI: false,
+		ui: { notify: vi.fn(), setStatus: vi.fn() },
+		model: model("initial", providerId),
+	};
+	await events.get("session_start")?.({}, ctx);
+	cleanups.push(async () => { await events.get("session_shutdown")?.({}, ctx); });
+	return { dir, registry, events, ctx };
+}
+
 async function createNativeAttachment(providerId: string, marker: string) {
 	const dir = mkdtempSync(join(tmpdir(), "quota-followup-"));
 	dirs.push(dir);
@@ -177,6 +214,57 @@ describe("quota provider review follow-up", () => {
 		expect(result.errorMessage).toMatch(/quota/i);
 	});
 
+	it("preserves the refreshed DevPass catalog before refresh resolves", async () => {
+		let refreshed = false;
+		const attachment = await createDynamicAttachment("dynamic-provider", async (context) => {
+			if (!context.allowNetwork) return [model("initial", "dynamic-provider")];
+			return [model(refreshed ? "refreshed" : "initial", "dynamic-provider")];
+		});
+		await new Promise((resolve) => setTimeout(resolve, 25));
+		refreshed = true;
+
+		await attachment.registry.refresh({ providers: ["dynamic-provider"], allowNetwork: true, force: true });
+		expect(attachment.registry.getProvider("dynamic-provider")?.getModels().map((entry) => entry.id))
+			.toEqual(["refreshed"]);
+	});
+
+	it("lets only the latest overlapping refresh rebuild the attachment", async () => {
+		let calls = 0;
+		let aborted = 0;
+		const gates: (() => void)[] = [];
+		const attachment = await createDynamicAttachment("overlap-provider", async (context) => {
+			if (!context.allowNetwork) return [model("initial", "overlap-provider")];
+			const index = calls++;
+			return new Promise<any[]>((resolve, reject) => {
+				gates[index] = () => resolve([model(`refresh-${index}`, "overlap-provider")]);
+				context.signal.addEventListener("abort", () => {
+					aborted += 1;
+					reject(new DOMException("aborted", "AbortError"));
+				}, { once: true });
+			});
+		});
+		await new Promise((resolve) => setTimeout(resolve, 25));
+
+		const first = attachment.registry.refresh({ providers: ["overlap-provider"], allowNetwork: true, force: true });
+		for (let index = 0; index < 100 && calls < 1; index += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		const second = attachment.registry.refresh({ providers: ["overlap-provider"], allowNetwork: true, force: true });
+		for (let index = 0; index < 100 && calls < 2; index += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		if (calls < 2) throw new Error("overlapping refreshes did not start");
+
+		gates[0]!();
+		await first;
+		expect(aborted).toBe(1);
+		gates[1]!();
+		await second;
+		expect(aborted).toBe(1);
+		expect(attachment.registry.getProvider("overlap-provider")?.getModels().map((entry) => entry.id))
+			.toEqual(["refresh-1"]);
+	});
+
 	it("keeps provider attachment state isolated by model registry", async () => {
 		const first = await createNativeAttachment("shared-provider", "first");
 		const second = await createNativeAttachment("shared-provider", "second");
@@ -228,6 +316,22 @@ describe("quota provider review follow-up", () => {
 			options,
 		)).toThrow("quota blocked");
 		expect(evaluate).toHaveBeenCalledTimes(1);
+	});
+
+	it("uses the latest evaluator after rewrapping", () => {
+		const provider = nativeProvider("rewrapped", "rewrapped");
+		const allowed = vi.fn(() => ({ blocked: false as const }));
+		const wrapped = wrapProviderWithQuota(provider, allowed);
+		const blocked = vi.fn(() => ({ blocked: true as const, kind: "hard" as const, message: "quota blocked" }));
+		const rewrapped = wrapProviderWithQuota(wrapped, blocked);
+
+		expect(() => rewrapped.streamSimple(
+			model("standard", "rewrapped"),
+			{ messages: [] } as any,
+			{} as any,
+		)).toThrow("quota blocked");
+		expect(allowed).not.toHaveBeenCalled();
+		expect(blocked).toHaveBeenCalledTimes(1);
 	});
 
 	it("evaluates concurrent requests that reuse one options object", async () => {

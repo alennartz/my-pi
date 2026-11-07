@@ -33,7 +33,7 @@ A third-party extension replacing the same provider ID mid-session before quota 
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/quota-providers/lib/provider-wrapper.ts:97-108,128-136,170-179`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Read the current evaluator from the stable wrapper state for every guarded stream.
 
 `guardedStream` captures the evaluator that existed when the wrapper was created. Updating `state.evaluate` no longer changes the guard's behavior. Rewrapping an allowed provider with a blocking evaluator therefore still executes transport.
@@ -43,7 +43,7 @@ A third-party extension replacing the same provider ID mid-session before quota 
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/quota-providers/index.ts:310-327,339-341`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Preserve the refreshed dynamic state or await catalog restoration before the refresh hook resolves.
 
 The refresh hook recreates the legacy DevPass registration and returns before asynchronous catalog restoration completes. An awaited successful refresh of the current LLM Gateway provider therefore returns an empty catalog, with refreshed models appearing only later.
@@ -53,7 +53,7 @@ The refresh hook recreates the legacy DevPass registration and returns before as
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/quota-providers/index.ts:321-327,337-342`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Let only the latest refresh generation detach and rebuild attachments.
 
 Every refresh completion detaches providers. When forced refreshes overlap, an older completion aborts the newer request. Two overlapping DevPass refreshes can therefore both abort without reporting an error.
