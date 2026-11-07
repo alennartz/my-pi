@@ -89,7 +89,7 @@ node tools/manual-test/persona-workspaces/run.mjs [--keep] [--timeout <sec>] [--
   default), `PW_PIN_A` + `PW_PIN_A_LEVEL` (R1/R6 pin and thinking suffix),
   `PW_PIN_B` (workspace W2 pin + R6 edited pin), `PW_PIN_C` (spawned persona
   pin + R6 user choice), `PW_RAW` (explicit spawn model), `PW_THINK` (R6 user
-  thinking level). Defaults target the devpass provider and **standard-tier**
+  thinking level). Defaults use the `llmgateway` provider and **standard-tier**
   models — premium-tier models are unusable while the gateway's weekly
   premium allowance is spent (402).
 - **Outputs:** human phase log on stderr; JSON verdict on stdout
@@ -98,8 +98,8 @@ node tools/manual-test/persona-workspaces/run.mjs [--keep] [--timeout <sec>] [--
 ## Prerequisites
 
 `pi` on PATH with this repo loadable as a package; `LLMGATEWAY_API_KEY` in
-env (the devpass quota-provider implementation is registered in the temp
-agent dir and discovers models at startup). The temp quota config relaxes
+env (the `llmgateway` provider and DevPass quota source are registered in the
+temp agent dir and the provider discovers models at startup). The temp quota config relaxes
 `lookaheadHours` so the quota soft-cap backpressure cannot block these checks'
 provider calls (the account's real spend pace is ahead of budget; quota
 behavior is out of scope here).

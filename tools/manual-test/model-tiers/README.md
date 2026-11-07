@@ -44,22 +44,21 @@ node tools/manual-test/model-tiers/run.mjs [--keep] [--timeout <sec>] [--workdir
 - `--workdir <dir>` — use an explicit workdir instead of a fresh mkdtemp.
 - `MT_VERBOSE=1` — echo pi stderr and tool-end events for debugging.
 - `MT_PROVIDER` / `MT_MODEL` — session default provider/model (defaults:
-  `azure-foundry-anthropic-messages` / `claude-opus-4-8`, the original
-  harness environment).
+  `llmgateway` / `claude-opus-4-8`).
 - `MT_TIER_MODEL` / `MT_RAW_MODEL` / `MT_PROJECT_MODEL` — three real,
   available, mutually distinct non-default models used by the tier-overlay
-  and spawn checks (defaults match the original azure-foundry environment).
+  and spawn checks.
   The tier table only renders a configured value when the model exists in the
   registry (otherwise the row shows the session default), so all three must
   be real.
 - When `LLMGATEWAY_API_KEY` is set, the temp agent dir also registers this
-  repo's devpass quota-provider implementation (with the spend-backpressure
-  lookahead relaxed) so `MT_PROVIDER=devpass-openai-completions` works.
+  repo's DevPass quota source for `llmgateway` (with the spend-backpressure
+  lookahead relaxed).
 
 ## Inputs / Outputs
 
-- **Inputs:** flags only; uses ambient pi provider config (this repo's
-  azure-foundry env credentials).
+- **Inputs:** flags and `MT_*` environment variables; the default provider
+  uses `LLMGATEWAY_API_KEY`.
 - **Outputs:** human-readable phase log on stderr; a JSON verdict on stdout
   `{ verdict, checks, observed }`. Exit 0 = PASS, 1 = FAIL.
 

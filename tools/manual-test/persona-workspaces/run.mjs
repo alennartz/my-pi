@@ -89,8 +89,8 @@
  *   { verdict, checks, observed }. Exit 0 = PASS, 1 = FAIL.
  *
  * Prerequisites: `pi` on PATH with this repo loadable as a package;
- * LLMGATEWAY_API_KEY in env (the devpass quota-provider implementation is
- * registered in the temp agent dir and discovers models at startup). The
+ * LLMGATEWAY_API_KEY in env (the llmgateway provider and DevPass quota source
+ * are registered in the temp agent dir and the provider discovers models at startup). The
  * temp quota config relaxes `lookaheadHours` so the quota soft-cap
  * backpressure cannot block these checks' provider calls (the account's real
  * spend pace is ahead of budget; quota behavior is out of scope here).
@@ -121,7 +121,7 @@ const ONLY = opt("only", "")
 	.filter(Boolean);
 
 const CFG = {
-	provider: process.env.PW_PROVIDER || "devpass-openai-completions",
+	provider: process.env.PW_PROVIDER || "llmgateway",
 	model: process.env.PW_MODEL || "mimo-v2.6-pro",
 	pinA: process.env.PW_PIN_A || "gpt-6-luna",
 	pinALevel: process.env.PW_PIN_A_LEVEL || "low",
@@ -414,8 +414,8 @@ function makeAgentDir(root) {
 		path.join(agentDir, "quota-providers.json"),
 		JSON.stringify({
 			providers: {
-				devpass: {
-					module: path.join(REPO_ROOT, "extensions/quota-providers/impls/devpass.ts"),
+				llmgateway: {
+					module: path.join(REPO_ROOT, "extensions/quota-providers/impls/devpass-quota.ts"),
 					enabled: true,
 					billingCycleAnchor: "2026-11-01T13:33:00.000Z",
 					bypassAllowed: true,

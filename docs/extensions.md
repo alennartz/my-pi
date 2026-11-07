@@ -27,14 +27,13 @@ extension says so.
 | --- | --- | --- |
 | Autoflow autostart | `~/.pi/agent/autoflow.json` | `autoStart`, `command` |
 | Subagent model tiers | `~/.pi/agent/model-tiers.json` and `.pi/model-tiers.json` | `cheap`, `medium`, `smart`, `frontier` |
-| Quota providers | `~/.pi/agent/quota-providers.json` | Provider modules and quota policy fields |
+| LLM Gateway provider | Environment and pi provider ID | `LLMGATEWAY_API_KEY`, provider ID `llmgateway` |
+| Quota attachments | `~/.pi/agent/quota-providers.json` | Provider IDs, usage-source modules, and quota policy fields |
 | Toolscript | `~/.pi/toolscript/toolscript.toml` and `toolscript.toml` | Toolscript's TOML; `TOOLSCRIPT_BIN` selects the executable |
 | Workspace personas | `<cwd>/AGENTS.md` | `kind`, `name`, `description`, `tools`, `model`, `skills`, body |
 | Model prompt overlays | `AGENTS.<model>.md` files | `models` front matter and Markdown body |
 | Subagent definitions | `~/.pi/agent/agents`, `.pi/agents`, package `pi.agents` | `name`, `description`, `tools`, `model`, `skills`, body |
 | Web tools | Environment and cache location | `BRAVE_API_KEY`, `PI_CODING_AGENT_DIR` |
-| Azure Foundry provider | Quota-provider settings and environment | `account`, `resourceGroup`, `subscription`, `tokenResource`, `AZURE_FOUNDRY_ENDPOINT` |
-| DevPass provider | Quota-provider settings and environment | `billingCycleAnchor`, `LLMGATEWAY_API_KEY` |
 
 The remaining extensions have no configuration file. They expose behavior or
 commands: `worktree`, `session-resume`, `session-name`, `print-prompt`,
@@ -98,20 +97,45 @@ suffix carries effort and outranks the level a fork or pin would otherwise
 bind. The force lasts for the session and is never persisted. Run `/fmodel`
 with no argument to clear it.
 
-## Quota providers
+## LLM Gateway provider
 
-Create `~/.pi/agent/quota-providers.json` to load out-of-repository provider
-implementations:
+The `llm-gateway` extension registers the normal pi provider ID `llmgateway`.
+It uses the OpenAI Completions API at `https://api.llmgateway.io/v1` and sends
+`LLMGATEWAY_API_KEY` as a bearer key. Set the key before starting pi:
+
+```sh
+export LLMGATEWAY_API_KEY="..."
+```
+
+The provider fetches `/v1/models` when its stored catalog is missing, older than
+one hour, or explicitly refreshed. It restores a fresh catalog without a
+network request and restores the stored catalog when network access is disabled.
+The provider owns model discovery and streaming. It does not enforce quota.
+
+Use `llmgateway` in pi settings and model references. The provider ID replaced
+`devpass-openai-completions`. Migrate existing references before resuming old
+sessions:
+
+1. Set `defaultProvider` to `llmgateway` in pi settings.
+2. Replace `devpass-openai-completions` with `llmgateway` in the pi model store
+   (`<agentDir>/models.json`) and session JSONL records.
+3. Keep model IDs unchanged. Only the provider ID changed.
+
+The migration applies to session and model-store data. This document keeps the
+old ID only in this migration guidance.
+
+## Quota attachments
+
+Quota attachments enforce usage policy for providers that already exist in pi.
+They do not register providers or discover model catalogs. Create
+`~/.pi/agent/quota-providers.json` to attach a usage source to a provider ID:
 
 ```json
 {
   "providers": {
-    "foundry": {
-      "module": "~/src/my-pi-foundry.ts",
-      "account": "my-azure-account",
-      "resourceGroup": "my-resource-group",
-      "subscription": "my-subscription",
-      "tokenResource": "https://cognitiveservices.azure.com",
+    "llmgateway": {
+      "module": "~/src/my-pi/extensions/quota-providers/impls/devpass-quota.ts",
+      "billingCycleAnchor": "2026-11-01T13:33:00.000Z",
       "bypassAllowed": true,
       "lookaheadHours": 6,
       "maxPollSeconds": 300,
@@ -121,11 +145,11 @@ implementations:
 }
 ```
 
-The top-level `providers` value must be an object. Each provider block requires
-`module`. A module path may start with `~/`. The module-specific settings pass
-through unchanged to the implementation.
+Use the path to your checkout for `devpass-quota.ts`. The top-level `providers`
+value must be an object. Each attachment requires `module`. A module path can
+start with `~/`. Other fields pass to the quota source unchanged.
 
-Core policy fields:
+Policy fields have these defaults:
 
 - `enabled` defaults to `true`.
 - `bypassAllowed` defaults to `true`.
@@ -133,31 +157,24 @@ Core policy fields:
 - `maxPollSeconds` defaults to `300`.
 - `enforceHardCap` defaults to `false`.
 
-Malformed JSON and malformed provider entries are skipped with warnings. A
-missing file means no providers. Set `PI_CODING_AGENT_DIR` to move this file
-and its cache. The extension stores provider state under
+Malformed JSON and malformed attachments are skipped with warnings. A missing
+file means no attachments. Set `PI_CODING_AGENT_DIR` to move this file and its
+cache. The extension stores state under
 `<agentDir>/cache/quota-providers/<provider-id>/`.
 
-### Built-in provider implementations
+### Built-in DevPass quota source
 
-The repository includes implementation modules under
-`extensions/quota-providers/impls/`.
+`extensions/quota-providers/impls/devpass-quota.ts` is a quota source for the
+`llmgateway` attachment. It reads usage from `/v1/key` and model membership from
+`/v1/models`. `LLMGATEWAY_API_KEY` is required for both requests.
 
-**Azure Foundry** uses the following provider settings:
+`billingCycleAnchor` must be an ISO-8601 UTC timestamp at a known monthly
+renewal boundary. It can also be a `$ENV_VAR` reference. The source uses that
+anchor to calculate the monthly window. When the account reports a premium
+pool, it adds an independently resetting `premium-weekly` snapshot and maps
+premium model IDs from catalog prices.
 
-- `account` and `resourceGroup` are required.
-- `subscription` is optional.
-- `tokenResource` is optional and defaults to
-  `https://cognitiveservices.azure.com`.
-- `AZURE_FOUNDRY_ENDPOINT` supplies the API base URL.
-- The Azure CLI must be installed and authenticated with `az login`.
-
-**DevPass** uses the following settings and environment variable:
-
-- `LLMGATEWAY_API_KEY` is required.
-- `billingCycleAnchor` is an ISO-8601 UTC timestamp, or a `$ENV_VAR` reference.
-
-Provider implementations are code. Follow the seam types in
+Quota sources are TypeScript modules. Follow the seam types in
 `extensions/quota-providers/lib/types.ts` when writing one outside this repo.
 
 ## Toolscript

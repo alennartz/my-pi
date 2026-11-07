@@ -38,8 +38,8 @@
  * Output: human phase log on stderr; JSON verdict on stdout
  *   { verdict, checks: {A..F: bool|detail}, observed }. Exit 0 = PASS, 1 = FAIL.
  *
- * Prerequisites: `pi` on PATH; ambient provider credentials in env (this repo's
- * azure-foundry config). No API keys are handled here.
+ * Prerequisites: `pi` on PATH and `LLMGATEWAY_API_KEY` in env when using the
+ * default `llmgateway` provider. No other API keys are handled here.
  */
 
 import { spawn } from "node:child_process";
@@ -61,13 +61,13 @@ const opt = (n, d) => {
 };
 const KEEP = flag("keep");
 const TIMEOUT = Number(opt("timeout", "180")) * 1000;
-// Provider landscape is parameterized (env) — the azure-foundry defaults match
-// the original harness environment; MT_* lets any working provider drive the
+// Provider landscape is parameterized (env) — the llmgateway defaults match
+// the current gateway environment; MT_* lets any working provider drive the
 // same checks. All three model knobs must be real, available, mutually
 // distinct models: the tier table renders configured values only when the
 // model exists in the registry (otherwise the row falls back to the default).
 const DEFAULT_MODEL = process.env.MT_MODEL || "claude-opus-4-8";
-const PROVIDER = process.env.MT_PROVIDER || "azure-foundry-anthropic-messages";
+const PROVIDER = process.env.MT_PROVIDER || "llmgateway";
 const TIER_MODEL = process.env.MT_TIER_MODEL || "gpt-5.4-nano";
 const RAW_MODEL = process.env.MT_RAW_MODEL || "gpt-5.4-mini";
 const PROJECT_MODEL = process.env.MT_PROJECT_MODEL || "gpt-5.4-haiku";
@@ -155,16 +155,15 @@ function makeAgentDir(root, name, { global, project, trust = "always" }) {
 	);
 	if (global) fs.writeFileSync(path.join(agentDir, "model-tiers.json"), JSON.stringify(global));
 	if (process.env.LLMGATEWAY_API_KEY) {
-		// devpass provider support (used when MT_PROVIDER selects it): register
-		// the quota-providers implementation from this repo with the spend-
-		// backpressure lookahead relaxed so the account's real spend pace cannot
-		// block these checks' provider calls.
+		// DevPass quota support (used with the llmgateway provider): register
+		// the quota source from this repo with the spend-backpressure lookahead
+		// relaxed so the account's real spend pace cannot block these checks.
 		fs.writeFileSync(
 			path.join(agentDir, "quota-providers.json"),
 			JSON.stringify({
 				providers: {
-					devpass: {
-						module: path.join(REPO_ROOT, "extensions/quota-providers/impls/devpass.ts"),
+					llmgateway: {
+						module: path.join(REPO_ROOT, "extensions/quota-providers/impls/devpass-quota.ts"),
 						enabled: true,
 						billingCycleAnchor: "2026-11-01T13:33:00.000Z",
 						bypassAllowed: true,

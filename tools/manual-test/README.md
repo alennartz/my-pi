@@ -118,17 +118,18 @@ and `list_models` (resolution, notice, and catalog checks). See
 **Invocation:** `node tools/manual-test/model-tiers/run.mjs [--keep] [--timeout <sec>] [--workdir <dir>]`.
 Provider/model landscape is env-parameterized: `MT_PROVIDER`, `MT_MODEL`
 (session default), `MT_TIER_MODEL`, `MT_RAW_MODEL`, `MT_PROJECT_MODEL` (three
-real, available, mutually distinct non-default models) — defaults match the
-original azure-foundry environment.
+real, available, mutually distinct non-default models) — defaults use the
+`llmgateway` provider.
 
-**Inputs:** flags and `MT_*` env; uses ambient pi provider config.
+**Inputs:** flags and `MT_*` env; the default provider uses
+`LLMGATEWAY_API_KEY`.
 
 **Outputs:** phase log on stderr; JSON verdict on stdout
 (`{verdict, checks, observed}`); exit 0 = PASS, 1 = FAIL.
 
-**Prerequisites:** `pi` on PATH with this repo loadable as a package. The
-harness scrubs inherited coding-agent markers from the spawned parent
-environment.
+**Prerequisites:** `pi` on PATH with this repo loadable as a package and
+`LLMGATEWAY_API_KEY` for the default provider. The harness scrubs inherited
+coding-agent markers from the spawned parent environment.
 
 **Use for:** any topic touching model-tier config, tier resolution on the
 spawn path, the tier prompt-injection block, or the `list_models` tool.

@@ -192,7 +192,7 @@ Remove `impls/foundry.ts`, the combined `impls/devpass.ts`, `lib/registration.ts
 
 ### Step 7: Migrate documentation and live harnesses
 
-**Status:** in progress
+**Status:** done
 
 Update `docs/extensions.md` and the extension summary in `README.md` to distinguish the LLM Gateway provider from quota attachments. Document `LLMGATEWAY_API_KEY`, the `llmgateway` attachment and `billingCycleAnchor`, existing policy defaults, and migration of session and `models.json` references from `devpass-openai-completions` to `llmgateway`. Remove Foundry setup instructions. Update the Quota Providers, Quota Provider Implementations, and new LLM Gateway entries in `codemap.md` to match the resulting ownership.
 
@@ -202,6 +202,8 @@ Update `tools/manual-test/persona-workspaces/run.mjs` and `tools/manual-test/mod
 **Status:** not started
 
 ### Step 8: Verify the integrated change
+
+**Status:** in progress
 
 Run the full Vitest suite after the legacy test updates. Check that no active quota code imports the removed provisioning or retry modules. Confirm the approved tests remain unchanged and the LLM Gateway manifest is discovered through the existing extension package resource. Do not add a build or type-check step.
 

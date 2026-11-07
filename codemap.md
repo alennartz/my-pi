@@ -2,7 +2,7 @@
 
 ## Overview
 
-A personal [pi coding agent](https://github.com/badlogic/pi-mono) package providing a development workflow pipeline (brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle-review → manual-test → cleanup), standalone utility skills, a subagent orchestration system, an Azure AI Foundry provider, and quota-aware provider support. Built as a pi package with TypeScript extensions and Markdown skills.
+A personal [pi coding agent](https://github.com/badlogic/pi-mono) package providing a development workflow pipeline (brainstorm → architect → test-write → test-review → impl-plan → implement → review → handle-review → manual-test → cleanup), standalone utility skills, a subagent orchestration system, the LLM Gateway provider, and quota attachment support. Built as a pi package with TypeScript extensions and Markdown skills.
 
 ```mermaid
 graph LR
@@ -60,7 +60,7 @@ The ten workflow skills and the autoflow orchestration skill that drives them. A
 - `docs/plans/**`
 - `docs/reviews/**`
 - `docs/manual-tests/**` — topic-specific manual-test reports, including persona-workspaces checks T1–T13/R1–R7/D1–D2 and their results
-- `tools/manual-test/**` — permanent live-pi harnesses and journey plan: `persona-workspaces/run.mjs` (+ README) covers root takeover, spawned identity/override, binding, resume/reload, restore and fork; `model-tiers/run.mjs` is MT-provider/model-parameterized with provider-agnostic prompt extraction and devpass quota support; `resume-restore/README.md` documents `PI_CODING_AGENT_DIR` passthrough; `PLAN.md` includes journeys J8/J9 and updated J1/J2
+- `tools/manual-test/**` — permanent live-pi harnesses and journey plan: `persona-workspaces/run.mjs` (+ README) covers root takeover, spawned identity/override, binding, resume/reload, restore and fork; `model-tiers/run.mjs` is provider/model-parameterized with provider-agnostic prompt extraction and LLM Gateway plus DevPass quota-source support; `resume-restore/README.md` documents `PI_CODING_AGENT_DIR` passthrough; `PLAN.md` includes journeys J8/J9 and updated J1/J2
 
 ### Skills
 
@@ -182,13 +182,38 @@ Extension that manages git worktree–based branch sessions — create a worktre
 **Files:**
 - `extensions/worktree/**`
 
+### LLM Gateway Provider
+
+Normal pi provider extension for the LLM Gateway DevPass service. It registers
+provider ID `llmgateway`, uses the OpenAI Completions API, authenticates with
+`LLMGATEWAY_API_KEY`, and refreshes the `/v1/models` catalog through pi's
+provider-cache contract. It owns model metadata and streaming, not quota policy.
+
+**Responsibilities:** provider registration, catalog refresh and one-hour
+stored-catalog reuse, offline catalog restore, model metadata conversion, and
+LLM Gateway authentication
+
+**Dependencies:** pi's provider registration and model-cache seams, LLM Gateway
+`/v1/models`, `LLMGATEWAY_API_KEY`
+
+**Files:**
+- `extensions/llm-gateway/**`
+
 ### Quota Providers
 
-Generic quota-aware provider extension. Out-of-repo provider implementations plug in through typed seams (model discovery, auth, usage, retryable-error classification). Core adds pro-rated spend backpressure so a provider's billing window isn't burned early. Implementations are loaded via jiti from a config file at `~/.pi/agent/quota-providers.json`.
+Quota-only extension. Configuration names existing pi provider IDs and loads a
+quota-source module for each attachment through jiti. The core polls usage,
+stores snapshots and model-limit membership, tracks local ledger spend, and
+applies quota decisions at the provider stream boundary. It does not discover
+models, manage provider tokens, register providers, or rewrite retry errors.
 
-**Responsibilities:** implementation discovery and registration via config file, provider model discovery (block-once cold start, background refresh), token management via out-of-band runner, usage polling via out-of-band runner, ledger-based spend tracking (local accumulation between snapshots), provider-call-boundary soft-cap enforcement that covers user prompts, tool loops, retries, compaction, and extension-triggered turns, opt-in hard-cap enforcement, in-memory agent-tree-scoped bypass propagated to in-process subagents, opt-in retryable-error classification (`isRetryableError`) rewritten into pi's retryable error vocabulary so transient gateway failures get pi's agent-level retry, `/quota` command (status + bypass toggle), footer/statusline indicator
+**Responsibilities:** attachment parsing and policy defaults, usage polling and
+atomic cache writes, ledger pruning and spend tracking, soft-cap and opt-in
+hard-cap enforcement, tree-scoped bypass, `/quota` command, and footer/status
+indicator
 
-**Dependencies:** Subagents' tree-scoped key/value store; uses `@earendil-works/pi-ai` for catalog metadata and the underlying API stream fallback
+**Dependencies:** Subagents' tree-scoped key/value store, jiti for quota-source
+loading, and pi's complete-provider registration seam
 
 **Files:**
 - `extensions/quota-providers/**`
@@ -197,15 +222,19 @@ Generic quota-aware provider extension. Out-of-repo provider implementations plu
 
 ### Quota Provider Implementations
 
-Built-in quota-provider implementation modules for Azure AI Foundry and the LLM Gateway DevPass service. They are loaded through the Quota Providers extension rather than as standalone extensions.
+Built-in quota-source modules loaded by the Quota Providers extension. The
+DevPass source reads LLM Gateway usage and catalog data for an `llmgateway`
+attachment. It reports the monthly window from `billingCycleAnchor` and an
+independent `premium-weekly` limit when the account provides one.
 
-**Responsibilities:** Azure deployment discovery via `az`, Azure AD token acquisition, LLM Gateway catalog and usage discovery, provider-specific authentication and billing-window interpretation
+**Responsibilities:** provider-specific usage requests, billing-window
+interpretation, and model-to-limit membership mapping
 
-**Dependencies:** Quota Providers (typed implementation seams), Azure CLI for Foundry, provider environment variables
+**Dependencies:** Quota Providers (typed source seam), LLM Gateway usage and
+catalog endpoints, `LLMGATEWAY_API_KEY`
 
 **Files:**
-- `extensions/quota-providers/impls/foundry.ts`
-- `extensions/quota-providers/impls/devpass.ts`
+- `extensions/quota-providers/impls/devpass-quota.ts`
 
 ### Toolscript Extension
 

@@ -109,7 +109,8 @@ The pipeline phase skills are hidden from the model. Only autoflow drives them.
 - **subagents** — subagent lifecycle, channel messaging, TUI dashboard
 - **persona-workspaces** — an `AGENTS.md` with `kind: persona` turns the working directory into a named specialist, with model, tool, and skill bindings
 - **web-tools** — `web_search` (Brave; requires `BRAVE_API_KEY`) and `web_fetch`
-- **quota-providers** — quota-aware model providers with a `/quota` command and a status footer. Built-in Azure Foundry and DevPass providers. Config at `~/.pi/agent/quota-providers.json`.
+- **llm-gateway** — registers the `llmgateway` pi provider, refreshes its model catalog, and uses `LLMGATEWAY_API_KEY` for authentication
+- **quota-providers** — attaches quota sources to existing pi providers, with a `/quota` command and status footer. The built-in DevPass source is `extensions/quota-providers/impls/devpass-quota.ts`. Config at `~/.pi/agent/quota-providers.json`.
 - **worktree** — `/worktree` command for git worktree-based branch sessions
 - **session-resume** — detects interrupted sessions and injects resume markers
 - **autoflow-autostart** — opt-in autoflow invocation on the first message of a new session (see above)
