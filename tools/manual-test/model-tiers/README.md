@@ -14,21 +14,19 @@ harness can inspect the exact system prompt the model received.
 
 Checks:
 
-- **A injection-unconfigured** — no config: the injected system prompt has a
-  `## Model Tiers` table with all four tiers showing the session-default
-  model + `(default)`, and no `## Available Models` block.
-- **B injection-overlay** — global `{cheap, medium}` + project `{cheap}`: the
-  tier table shows the project's `cheap` (override wins), the global `medium`
-  (survives), and default rows for `smart`/`frontier`.
-- **C trust-independent-overlay** — project config present with the project
-  untrusted: the project override is still honored (post-review user ruling:
-  tier remapping is user configuration, not a trust boundary — both overlays
-  are read unconditionally).
-- **D spawn-configured** — tier `cheap` mapped to a real non-default model:
-  spawning a subagent with `model:"cheap"` runs that model (read from the
-  child's persisted session file), no unconfigured notice fires, and a raw
-  model-id spawn resolves to that raw model. Folds in the **F list_models**
-  check (catalog table with context-window + pricing columns).
+- **A injection-unconfigured** — no config: the prompt contains the static
+  `## Model Tiers` guidance table with all four tiers and no `## Available
+  Models` block.
+- **B injection-overlay** — global `{cheap, medium}` + project `{cheap}`:
+  prompt guidance stays static and does not leak configured model IDs. The
+  overlay is exercised by the configured spawn check.
+- **C trust-independent-overlay** — an untrusted project overlay does not
+  alter the prompt guidance. The overlay is exercised by the configured spawn
+  check, where project `cheap` overrides global `cheap`.
+- **D spawn-configured** — project `cheap` overrides global `cheap`; child
+  session files prove the concrete tier model and raw model before any parent
+  teardown. No unconfigured notice fires. Folds in **F list_models** (catalog
+  table with context-window and pricing columns).
 - **E spawn-unconfigured** — no config: spawning `model:"cheap"` runs the
   session-default model AND the once-per-session "unconfigured" notice fires.
 
@@ -46,11 +44,9 @@ node tools/manual-test/model-tiers/run.mjs [--keep] [--timeout <sec>] [--workdir
 - `MT_PROVIDER` / `MT_MODEL` — session default provider/model (defaults:
   `llmgateway` / `claude-opus-4-8`).
 - `MT_TIER_MODEL` / `MT_RAW_MODEL` / `MT_PROJECT_MODEL` — three real,
-  available, mutually distinct non-default models used by the tier-overlay
-  and spawn checks.
-  The tier table only renders a configured value when the model exists in the
-  registry (otherwise the row shows the session default), so all three must
-  be real.
+  available, mutually distinct non-default models used by the overlay and
+  spawn checks. Configured values are verified from child session files, not
+  from the static prompt guidance table, so all three must be real.
 - When `LLMGATEWAY_API_KEY` is set, the temp agent dir also registers this
   repo's DevPass quota source for `llmgateway` (with the spend-backpressure
   lookahead relaxed).
@@ -59,6 +55,7 @@ node tools/manual-test/model-tiers/run.mjs [--keep] [--timeout <sec>] [--workdir
 
 - **Inputs:** flags and `MT_*` environment variables; the default provider
   uses `LLMGATEWAY_API_KEY`.
+- **Deterministic helper tests:** `node --test tools/manual-test/model-tiers/run.test.mjs`.
 - **Outputs:** human-readable phase log on stderr; a JSON verdict on stdout
   `{ verdict, checks, observed }`. Exit 0 = PASS, 1 = FAIL.
 

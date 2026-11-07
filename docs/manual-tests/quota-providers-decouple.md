@@ -39,6 +39,13 @@ change because its persistent plan entry still has `driver: TBD`.
 - Improved: the new Gateway probe waits for `models-store.json` and calls
   `set_model` after catalog publication. This avoids a false `unknown` result
   when the first RPC state request races the asynchronous catalog refresh.
+- Improved: `resume-restore` now qualifies provider/model refs, reports child
+  exit diagnostics, normalizes display thinking suffixes, and records actual
+  worker topology. `model-tiers` scopes prompt-table parsing and reads child
+  session evidence before teardown. `persona-workspaces` warms the first-run
+  host patch, checks effective thinking levels, awaits the RPC reload barrier,
+  and expects edited persona-pin precedence.
+- New deterministic tests: `run.test.mjs` beside each corrected harness.
 
 ## Harness Limitations
 
@@ -50,8 +57,9 @@ change because its persistent plan entry still has `driver: TBD`.
   stream markers, and provider responses instead.
 - The adjacent model-tier, persona, and resume harnesses drive real LLM calls.
   They need a live model catalog, can incur model cost, and can fail from
-  model-specific reasoning or timing behavior. Their temp agent directories
-  were pre-seeded with the live Gateway catalog to avoid startup races.
+  model-specific reasoning or timing behavior. Their corrected versions were
+  checked offline only in this pass. The prior temp agent directories were
+  pre-seeded with the live Gateway catalog to avoid startup races.
 - The persistent plan still has no driver for J5 (worktree lifecycle).
 
 ## Results
@@ -83,63 +91,45 @@ change because its persistent plan entry still has `driver: TBD`.
 
 ### Smoke journeys
 
-- **J1 — subagent spawn/message/teardown:** pass for the adjacent persona
-  drive. Command:
-  `PW_MODEL=gpt-4o-mini PW_PIN_A=qwen-flash PW_PIN_B=qwen-plus
-  PW_PIN_C=glm-4.6v-flashx PW_RAW=glm-4.6v-flashx node
-  tools/manual-test/persona-workspaces/run.mjs --keep --timeout 180
-  --workdir /tmp/pw-pre`. D1 reported live `zeta-child`, `eta-child`, and
-  `fx-child`; messaging and child project-resource checks passed. The journey
-  looks coherent where exercised.
-- **J2 — resurrect:** fixed teardown and the bogus-session error path passed in
-  D2. The resurrect capability re-gating check failed (`d2_resurrect_regates`)
-  because the observed tool set stayed `bash, read, respond` and the model was
-  `qwen-flash`. A separate resume driver also completed but had one model-oracle
-  mismatch. This journey looks off because adjacent harness expectations did
-  not fully agree with the live session state.
-- **J3 — fork:** pass in D2 (`d2_fork_persona`), including persona body, model,
-  tools, and no notice. The continuation looks coherent.
-- **J4 — workflow phase:** pass. This artifact, the new harness, and the
-  registered README entry were produced and exercised. The phase output is
-  coherent.
-- **J5 — worktree lifecycle:** not run. The persistent plan has `driver: TBD`
-  and this topic does not change worktree code. No pass is claimed.
-- **J6 — parent resume/restore:** the non-nested command
-  `PI_CODING_AGENT_DIR=/tmp/rr-agent RR_VERBOSE=1 node
-  tools/manual-test/resume-restore/run.mjs --timeout 120 --keep
-  --workdir /tmp/rr-final4` completed the spawn/resume flow. Six checks passed:
-  idle state, last output, turns, input, output, and cost. Two checks failed:
-  `modelRecomputed` compared `gpt-4o-mini:off` with the transcript's
-  `gpt-4o-mini`, and `subgroupInputMatches` observed a child spawned by the
-  live worker despite non-nested mode. A nested run,
-  `PI_CODING_AGENT_DIR=/tmp/rr-agent RR_VERBOSE=1 node
-  tools/manual-test/resume-restore/run.mjs --nested --timeout 120 --keep
-  --workdir /tmp/rr-nested`, timed out during spawn. The restore result looks
-  off because the adjacent harness has a thinking-suffix oracle mismatch and
-  real-model tool-call drift.
-- **J7 — model-tier selection:** command:
-  `MT_MODEL=gpt-4o-mini MT_TIER_MODEL=qwen-flash MT_RAW_MODEL=glm-4.6v-flashx
-  MT_PROJECT_MODEL=qwen-plus node tools/manual-test/model-tiers/run.mjs --keep
-  --timeout 180 --workdir /tmp/mt-pre`, with each phase's
-  `models-store.json` pre-seeded from the live Gateway catalog. Four checks
-  passed (`D_noUnconfiguredNotice`, `F`, `E_defaultModel`,
-  `E_unconfiguredNotice`). Five checks failed: A/B/C tier-table row parsing,
-  and D's configured tier/raw child model observations. The observed A/B/C rows
-  matched the generic Model Tiers guidance table rather than the injected
-  table, so this run looks off because the harness parser is stale against the
-  current prompt shape.
-- **J8/J9 — persona takeover and spawned identity:** command:
-  `PW_MODEL=gpt-4o-mini PW_PIN_A=qwen-flash PW_PIN_B=qwen-plus
-  PW_PIN_C=glm-4.6v-flashx PW_RAW=glm-4.6v-flashx node
-  tools/manual-test/persona-workspaces/run.mjs --keep --timeout 180
-  --workdir /tmp/pw-pre`, with a live catalog pre-seeded in the shared agent
-  directory. Root takeover, explicit-prompt precedence, plain/unknown AGENTS,
-  mid-session edit, spawned identity, messaging, override notice, fork, and
-  most resume/reload checks passed. Five checks failed: `r1_preamble`,
-  `r1_model_pin`, `r6_thinking_rebinds`, `r7_reload_rebinds`, and
-  `d2_resurrect_regates`. The run looks off because the selected model's
-  thinking-level binding and resurrect tool-policy expectations did not match
-  the harness assertions.
+The adjacent live runs below are prior observations. The corrected harnesses
+were not rerun because this phase cannot issue another paid model request.
+Offline command `node --test tools/manual-test/resume-restore/run.test.mjs
+ tools/manual-test/model-tiers/run.test.mjs
+ tools/manual-test/persona-workspaces/run.test.mjs` passed all eight tests in the
+three `run.test.mjs` files.
+
+- **J1 — subagent spawn/message/teardown:** prior D1 run passed. The corrected
+  persona harness keeps the same structural oracles and adds first-run patch
+  warmup. No live rerun. The prior journey looks coherent.
+- **J2 — resurrect:** prior teardown and bogus-session checks passed. The prior
+  `d2_resurrect_regates` model failure was a stale assertion: the edited
+  workspace persona pin must win under the DR-038 amendment. The corrected
+  harness expects the edited pin. No live rerun.
+- **J3 — fork:** prior D2 fork checks passed. No live rerun.
+- **J4 — workflow phase:** pass. This artifact, the new harnesses, deterministic
+  helper tests, and README updates were produced and checked offline.
+- **J5 — worktree lifecycle:** not run. The persistent plan has `driver: TBD`.
+- **J6 — parent resume/restore:** prior `rr-final4` had six live checks pass;
+  the model mismatch came from `check_status`'s display-only `:off` suffix, and
+  the subgroup mismatch came from real worker tool drift. The corrected harness
+  accepts `--provider`, splits `provider/model` refs, reports child exit/stderr,
+  normalizes valid thinking suffixes, restricts the spawn parent to
+  `subagent`, and compares subgroup state with the persisted worker topology.
+  The nested topology is reported as an observation instead of timing out.
+  No live rerun.
+- **J7 — model-tier selection:** prior A/B/C failures came from matching the
+  generic first `| cheap |` row. The product table is static guidance by
+  contract. The corrected harness scopes table extraction, checks guidance
+  rows, puts project `cheap` in D to exercise overlay precedence, and reads
+  child session files from `agent_added` records before parent teardown. No
+  live rerun.
+- **J8/J9 — persona takeover and spawned identity:** prior R1 failed because
+  the first process used the documented stacked fallback before the host patch
+  restart; thinking checks used non-reasoning models; R7 read an early reload
+  signal before `ctx.reload()` completed; D2 expected persisted model instead
+  of the edited persona pin. The corrected harness warms the host patch without
+  a model request, checks effective thinking levels, awaits the RPC reload
+  response, and expects edited-pin precedence. No live rerun.
 
 ## Plan Updates
 
@@ -148,20 +138,16 @@ new primary journey to the persistent plan. J5 remains `driver: TBD`.
 
 ## Open Issues
 
-- **Adjacent resume harness oracle:** `resume-restore/run.mjs` compares a
-  status model that includes `:off` with a transcript model that does not. Its
-  non-nested worker also spawned a child during a real LLM turn, making the
-  subgroup assertion nondeterministic. The nested attempt timed out. This is
-  an adjacent harness issue, not evidence of a quota-provider regression.
-- **Adjacent model-tier harness:** `model-tiers/run.mjs` matches the first
-  `| cheap |` rows in the generic prompt guidance, not the injected table. Its
-  configured-spawn model observations were empty despite a successful catalog
-  listing. Harden the parser and startup synchronization before treating J7 as
-  green.
-- **Adjacent persona harness:** five checks failed under the selected
-  `gpt-4o-mini`/Gateway catalog combination. The failures concern thinking
-  levels, prompt preamble matching, and resurrect tool re-gating. They need a
-  separate investigation because this topic does not change persona behavior.
+- **Live adjacent rerun pending:** corrected resume, model-tier, and persona
+  harnesses need a future live run to verify their new control flow. No paid
+  request was made in this correction pass.
+- **Real-model task drift remains a limitation:** resume nesting and model-tier
+  tool order are observed from persistence rather than treated as deterministic
+  instructions. The corrected harness reports topology/evidence instead of
+  converting drift into a product failure.
+- **R7 product behavior remains unconfirmed until live rerun:** the harness
+  now waits for the RPC `prompt` response after `ctx.reload()` before checking
+  model state and prompt payloads.
 - **J5 has no driver:** worktree lifecycle remains untested by the persistent
   manual suite.
 - **TUI-only surfaces:** the quota footer renderer and visual layout were not

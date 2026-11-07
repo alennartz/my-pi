@@ -74,7 +74,9 @@ notices, persona front-matter binding, or the subagents active-persona spawn
 path. Limitations: headless drivers — the `persona-notice` TUI renderer chrome
 is not exercised (the notice message content is); LLM-driven ordered tool
 calls in the D-drives tolerate instruction drift (oracles are structural,
-never narration); `reload` (extension reload) is not driven.
+never narration); R1 warms the host patch without a model request; R7 awaits
+the RPC reload response before probing. Deterministic helpers:
+`node --test tools/manual-test/persona-workspaces/run.test.mjs`.
 
 ### resume-restore (`resume-restore/run.mjs`)
 
@@ -85,12 +87,12 @@ lastOutput recomputed from the child session file; `hasSubgroup` recompute
 input present). This is the cross-restart path the in-process direct driver
 structurally cannot reach.
 
-**Invocation:** `node tools/manual-test/resume-restore/run.mjs [--nested] [--keep] [--model <id>] [--workdir <dir>] [--timeout <sec>]`. See `resume-restore/README.md`.
+**Invocation:** `node tools/manual-test/resume-restore/run.mjs [--nested] [--keep] [--provider <id>] [--model <id>] [--workdir <dir>] [--timeout <sec>]`. A `provider/model` model ref is also accepted. See `resume-restore/README.md`.
 
-**Inputs:** flags only; uses ambient pi provider config.
+**Inputs:** provider/model flags or ambient pi provider config.
 
 **Outputs:** phase log on stderr; JSON verdict on stdout
-(`{verdict, checks, observed, expected}`); exit 0 = PASS, 1 = FAIL.
+(`{verdict, checks, observed, expected, limitations}`); exit 0 = PASS, 1 = FAIL.
 
 **Prerequisites:** `pi` on PATH with this package loaded. The harness
 scrubs inherited coding-agent markers from the spawned parent environment so
@@ -101,9 +103,10 @@ the ambient installed package (used this way in the persona-workspaces run).
 
 **Use for:** any topic touching subagent persistence/restore on session resume.
 Limitations: observes status via `check_status` (the `hasSubgroup` widget/panel
-rendering is a TUI component factory RPC ignores — only its recompute input is
-verified); drives a real LLM, so it costs tokens and tolerates transient
-latency.
+rendering is a TUI component factory RPC ignores); drives a real LLM, so it
+costs tokens and tolerates transient latency. Worker topology is observed from
+persisted logs because model tool order is nondeterministic. Deterministic
+helpers: `node --test tools/manual-test/resume-restore/run.test.mjs`.
 
 ### quota-providers (`quota-providers/run.mjs`)
 
@@ -134,10 +137,10 @@ commands, usage-cache persistence, or the LLM Gateway provider split.
 **Purpose:** Verify the subagents extension's model-tier feature end-to-end —
 the live wiring in `index.ts` that the pure-function unit tests cannot reach.
 Drives a real `pi --mode rpc` under a controlled `PI_CODING_AGENT_DIR`,
-captures the assembled provider payload via a `before_provider_request` probe
-(prompt-injection + config-overlay checks), and drives live tier/raw spawns
-and `list_models` (resolution, notice, and catalog checks). See
-`model-tiers/README.md`.
+captures the static guidance table via a `before_provider_request` probe, and
+drives live tier/raw spawns and `list_models` (resolution, notice, and catalog
+checks). Child session files are read from persisted `agent_added` records
+before teardown. See `model-tiers/README.md`.
 
 **Invocation:** `node tools/manual-test/model-tiers/run.mjs [--keep] [--timeout <sec>] [--workdir <dir>]`.
 Provider/model landscape is env-parameterized: `MT_PROVIDER`, `MT_MODEL`
@@ -158,5 +161,6 @@ coding-agent markers from the spawned parent environment.
 **Use for:** any topic touching model-tier config, tier resolution on the
 spawn path, the tier prompt-injection block, or the `list_models` tool.
 Limitations: the spawn checks drive a real LLM to call `subagent`, so they
-cost tokens and tolerate transient latency; the child's model is read from its
-session file (an independent oracle), not from tool-call narration.
+cost tokens and tolerate transient latency; the prompt table is static guidance,
+while config resolution comes from child session files. Deterministic helpers:
+`node --test tools/manual-test/model-tiers/run.test.mjs`.

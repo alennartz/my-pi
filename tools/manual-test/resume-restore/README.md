@@ -22,7 +22,9 @@ node tools/manual-test/resume-restore/run.mjs [flags]
 
 Flags:
 - `--workdir <dir>` — scratch dir (default: fresh `mkdtemp` under `$TMPDIR`).
-- `--model <id>` — model for parent + worker (default: pi's configured default).
+- `--provider <id>` — provider for parent and worker; avoids ambiguous bare model IDs.
+- `--model <id>` — model for parent + worker (default: pi's configured default). A
+  `provider/model` reference is accepted and split into the two flags.
 - `--nested` — worker also spawns its own subagent, so the restored worker has a
   non-empty subgroup log (exercises the `hasSubgroup` recompute input).
 - `--keep` — do not delete the scratch dir on exit (for debugging).
@@ -31,7 +33,8 @@ Flags:
 
 ## Inputs / Outputs
 
-- **Input:** none required; uses the ambient pi provider config.
+- **Input:** optional provider/model flags; uses the ambient pi provider config when omitted.
+- **Deterministic helper tests:** `node --test tools/manual-test/resume-restore/run.test.mjs`.
 - **Output:** a phase log on stderr; a JSON verdict on stdout
   (`{ verdict, nested, checks, observed, expected }`). Exit 0 = PASS, 1 = FAIL.
   Each check compares the restored `check_status` detail against an independent
@@ -70,4 +73,7 @@ Flags:
   ignores, so the boolean flag's *rendering* is not directly observed — only its
   recompute *input* (the worker's own `agents.jsonl`) is verified end-to-end.
 - Drives a real LLM, so it incurs model cost and tolerates transient latency via
-  idle-boundary re-drives.
+  idle-boundary re-drives. The parent is restricted to `subagent` during spawn;
+  the worker topology remains an observation because its task is model-driven.
+- A requested nested topology can differ from the topology the worker actually
+  writes. The result reports both and checks restore against the persisted log.

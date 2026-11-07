@@ -47,7 +47,7 @@ import { StringDecoder } from "node:string_decoder";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
@@ -63,14 +63,21 @@ const KEEP = flag("keep");
 const TIMEOUT = Number(opt("timeout", "180")) * 1000;
 // Provider landscape is parameterized (env) — the llmgateway defaults match
 // the current gateway environment; MT_* lets any working provider drive the
-// same checks. All three model knobs must be real, available, mutually
-// distinct models: the tier table renders configured values only when the
-// model exists in the registry (otherwise the row falls back to the default).
+// same checks. Spawn references must be real, available, mutually distinct
+// models. The prompt table is static guidance; config resolution is checked
+// from child session evidence instead.
 const DEFAULT_MODEL = process.env.MT_MODEL || "claude-opus-4-8";
 const PROVIDER = process.env.MT_PROVIDER || "llmgateway";
 const TIER_MODEL = process.env.MT_TIER_MODEL || "gpt-5.4-nano";
 const RAW_MODEL = process.env.MT_RAW_MODEL || "gpt-5.4-mini";
 const PROJECT_MODEL = process.env.MT_PROJECT_MODEL || "gpt-5.4-haiku";
+
+const TIER_GUIDANCE = {
+	cheap: "Quick codebase scouting, file discovery, and factual documentation updates.",
+	medium: "Routine implementation or summaries",
+	smart: "Test strategy, debugging easily reproduced issues, discussing design tradeoffs.",
+	frontier: "code review, debugging rare bugs or races security/reliability/performance analysis.",
+};
 
 function log(...a) {
 	process.stderr.write("[model-tiers] " + a.join(" ") + "\n");
@@ -189,22 +196,38 @@ function persistencePaths(parentSessionFile) {
 	return { logFile: path.join(rootDir, "agents.jsonl"), sessionsDir: path.join(rootDir, "sessions") };
 }
 
-function liveAgents(logFile) {
+function agentRecords(logFile) {
 	if (!fs.existsSync(logFile)) return [];
-	const live = new Map();
+	const records = new Map();
 	for (const raw of fs.readFileSync(logFile, "utf8").split("\n")) {
-		const l = raw.trim();
-		if (!l) continue;
-		let e;
+		const line = raw.trim();
+		if (!line) continue;
+		let entry;
 		try {
-			e = JSON.parse(l);
+			entry = JSON.parse(line);
 		} catch {
 			continue;
 		}
-		if (e.type === "agent_added") live.set(e.id, e);
-		else if (e.type === "agent_removed") live.delete(e.id);
+		if (entry.type === "agent_added" && typeof entry.id === "string") records.set(entry.id, entry);
 	}
-	return [...live.values()];
+	return [...records.values()];
+}
+
+function liveAgents(logFile) {
+	if (!fs.existsSync(logFile)) return [];
+	const records = new Map(agentRecords(logFile).map((entry) => [entry.id, entry]));
+	for (const raw of fs.readFileSync(logFile, "utf8").split("\n")) {
+		const line = raw.trim();
+		if (!line) continue;
+		let entry;
+		try {
+			entry = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (entry.type === "agent_removed" && typeof entry.id === "string") records.delete(entry.id);
+	}
+	return [...records.values()];
 }
 
 // Read the model id recorded in a child session file (first assistant msg or
@@ -285,7 +308,8 @@ function capturePrompt(agentDir, workDir) {
 // Returns { notices: string[], childModels: {id: model}, listModelsText }.
 function driveSpawn(agentDir, workDir, sessionDir, { spawns, wantListModels }) {
 	return new Promise((resolve, reject) => {
-		const proc = spawn("pi", ["--mode", "rpc", "--session-dir", sessionDir], {
+		const allowedTools = wantListModels ? "subagent,list_models" : "subagent";
+		const proc = spawn("pi", ["--mode", "rpc", "--session-dir", sessionDir, "--tools", allowedTools], {
 			cwd: workDir,
 			stdio: ["pipe", "pipe", "pipe"],
 			env: cleanEnv({ PI_CODING_AGENT_DIR: agentDir }),
@@ -295,6 +319,7 @@ function driveSpawn(agentDir, workDir, sessionDir, { spawns, wantListModels }) {
 		const notices = [];
 		let listModelsText;
 		const spawnedIds = new Set();
+		let stderr = "";
 		const to = setTimeout(() => {
 			if (!settled) {
 				killGroup(proc);
@@ -315,6 +340,12 @@ function driveSpawn(agentDir, workDir, sessionDir, { spawns, wantListModels }) {
 			"Do not call await_agents. Do not narrate. After the last tool call, end your turn.";
 
 		const finishIfReady = () => {
+			if (parentSessionFile) {
+				const { logFile } = persistencePaths(parentSessionFile);
+				for (const record of agentRecords(logFile)) {
+					if (spawns.some((spawnSpec) => spawnSpec.id === record.id)) spawnedIds.add(record.id);
+				}
+			}
 			const spawnsDone = spawns.every((s) => spawnedIds.has(s.id));
 			const listDone = !wantListModels || listModelsText !== undefined;
 			if (spawnsDone && listDone && !settled) {
@@ -325,7 +356,9 @@ function driveSpawn(agentDir, workDir, sessionDir, { spawns, wantListModels }) {
 					const childModels = {};
 					if (parentSessionFile) {
 						const { logFile } = persistencePaths(parentSessionFile);
-						for (const a of liveAgents(logFile)) {
+						// Keep evidence for agents that the LLM removed before this
+						// delayed read. Their session files remain the model oracle.
+						for (const a of agentRecords(logFile)) {
 							childModels[a.id] = sessionModel(a.sessionFile);
 						}
 					}
@@ -340,11 +373,21 @@ function driveSpawn(agentDir, workDir, sessionDir, { spawns, wantListModels }) {
 				parentSessionFile = p.data.sessionFile;
 				send({ type: "prompt", id: "drive", message: prompt });
 			}
+			if (p.type === "response" && p.command === "prompt" && !p.success && !settled) {
+				settled = true;
+				clearTimeout(to);
+				killGroup(proc);
+				reject(new Error(`spawn prompt failed: ${p.error || "unknown error"}${stderr.trim() ? `\\n${stderr.trim()}` : ""}`));
+			}
 			if (p.type === "extension_ui_request" && p.method === "notify") {
 				notices.push(p.message);
 			}
 			if (p.type === "tool_execution_end" && p.toolName === "subagent") {
-				for (const s of spawns) spawnedIds.add(s.id); // spawn call returned
+				const agents = p.result?.details?.agents || p.result?.structuredContent?.agents || [];
+				for (const agent of agents) {
+					if (typeof agent?.id === "string") spawnedIds.add(agent.id);
+				}
+				finishIfReady();
 			}
 			if (p.type === "tool_execution_end" && p.toolName === "list_models") {
 				listModelsText = (p.result?.content || []).map((c) => c.text).join("\n");
@@ -354,7 +397,23 @@ function driveSpawn(agentDir, workDir, sessionDir, { spawns, wantListModels }) {
 				log("tool_end", p.toolName);
 			}
 		});
-		proc.stderr.on("data", (d) => process.env.MT_VERBOSE && process.stderr.write("[pi] " + d));
+		proc.stderr.on("data", (d) => {
+			stderr += d.toString();
+			if (process.env.MT_VERBOSE) process.stderr.write("[pi] " + d);
+		});
+		proc.once("error", (error) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(to);
+			killGroup(proc);
+			reject(new Error(`${error.message}${stderr.trim() ? `\\n${stderr.trim()}` : ""}`));
+		});
+		proc.once("exit", (code, signal) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(to);
+			reject(new Error(`spawn process exited (code=${code} signal=${signal})${stderr.trim() ? `\\n${stderr.trim()}` : ""}`));
+		});
 		proc.on("spawn", () => setTimeout(() => send({ type: "get_state", id: "s" }), 1200));
 	});
 }
@@ -366,7 +425,7 @@ function readChildModels(parentSessionFile, ids, tries = 6) {
 		const iv = setInterval(() => {
 			n += 1;
 			const { logFile } = persistencePaths(parentSessionFile);
-			const agents = liveAgents(logFile);
+			const agents = agentRecords(logFile);
 			const models = {};
 			for (const id of ids) {
 				const a = agents.find((x) => x.id === id);
@@ -381,10 +440,33 @@ function readChildModels(parentSessionFile, ids, tries = 6) {
 }
 
 // checks
-function tierRow(sys, tier) {
-	const re = new RegExp(`\\| ${tier} \\| ([^|]+) \\|`);
-	const m = sys.match(re);
-	return m ? m[1].trim() : undefined;
+function tierTableBlock(systemPrompt) {
+	const headings = [];
+	let from = 0;
+	while (true) {
+		const index = systemPrompt.indexOf("## Model Tiers", from);
+		if (index < 0) break;
+		headings.push(index);
+		from = index + 1;
+	}
+	for (const start of headings.reverse()) {
+		const end = systemPrompt.indexOf("\n## ", start + 1);
+		const block = systemPrompt.slice(start, end < 0 ? undefined : end);
+		if (block.includes("| Tier | Use when |")) return block;
+	}
+	return "";
+}
+
+function tierRow(table, tier) {
+	const re = new RegExp(`^\\| ${tier} \\| ([^|]+) \\|$`, "m");
+	const match = table.match(re);
+	return match ? match[1].trim() : undefined;
+}
+
+function guidanceTablePasses(table) {
+	return ["cheap", "medium", "smart", "frontier"].every(
+		(tier) => tierRow(table, tier) === TIER_GUIDANCE[tier],
+	);
 }
 
 async function main() {
@@ -399,12 +481,11 @@ async function main() {
 		{
 			const { agentDir, workDir } = makeAgentDir(ROOT, "A", {});
 			const sys = await capturePrompt(agentDir, workDir);
-			const hasTiers = sys.includes("## Model Tiers");
+			const table = tierTableBlock(sys);
 			const noAvail = !sys.includes("## Available Models");
-			const rows = ["cheap", "medium", "smart", "frontier"].map((t) => tierRow(sys, t));
-			const allDefault = rows.every((r) => r && r.includes(DEFAULT_MODEL) && r.includes("(default)"));
+			const rows = ["cheap", "medium", "smart", "frontier"].map((t) => tierRow(table, t));
 			observed.A = { rows };
-			checks.A = hasTiers && noAvail && allDefault;
+			checks.A = !!table && noAvail && guidanceTablePasses(table);
 		}
 
 		// B. injection-overlay
@@ -415,17 +496,12 @@ async function main() {
 				project: { cheap: PROJECT_MODEL },
 			});
 			const sys = await capturePrompt(agentDir, workDir);
-			const cheap = tierRow(sys, "cheap");
-			const medium = tierRow(sys, "medium");
-			const smart = tierRow(sys, "smart");
-			observed.B = { cheap, medium, smart };
-			checks.B =
-				!!cheap &&
-				cheap.includes(PROJECT_MODEL) && // project override wins
-				!!medium &&
-				medium.includes(RAW_MODEL) && // global survives
-				!!smart &&
-				smart.includes("(default)"); // unconfigured tier defaults
+			const table = tierTableBlock(sys);
+			const rows = ["cheap", "medium", "smart", "frontier"].map((t) => tierRow(table, t));
+			observed.B = { rows, configured: { global: { cheap: TIER_MODEL, medium: RAW_MODEL }, project: { cheap: PROJECT_MODEL } } };
+			// Config is consumed at spawn time. Prompt injection remains the
+			// stable guidance table and must not leak model IDs.
+			checks.B = !!table && guidanceTablePasses(table) && !table.includes(TIER_MODEL) && !table.includes(PROJECT_MODEL);
 		}
 
 		// C. trust-independent overlay (post-review user ruling: tier remapping
@@ -438,10 +514,10 @@ async function main() {
 				trust: "never",
 			});
 			const sys = await capturePrompt(agentDir, workDir);
-			const cheap = tierRow(sys, "cheap");
-			observed.C = { cheap };
-			// the project override is honored even when the project is untrusted
-			checks.C = !!cheap && cheap.includes(PROJECT_MODEL) && !cheap.includes(TIER_MODEL);
+			const table = tierTableBlock(sys);
+			observed.C = { rows: ["cheap", "medium", "smart", "frontier"].map((t) => tierRow(table, t)), trust: "never" };
+			// The project overlay is a spawn-time configuration, not prompt text.
+			checks.C = !!table && guidanceTablePasses(table) && !table.includes(PROJECT_MODEL);
 		}
 
 		// D. spawn-configured + raw-id passthrough
@@ -449,6 +525,7 @@ async function main() {
 		{
 			const { agentDir, workDir } = makeAgentDir(ROOT, "D", {
 				global: { cheap: TIER_MODEL },
+				project: { cheap: PROJECT_MODEL },
 			});
 			const sessionDir = path.join(ROOT, "D", "sessions");
 			fs.mkdirSync(sessionDir, { recursive: true });
@@ -460,9 +537,14 @@ async function main() {
 				wantListModels: true,
 			});
 			const models = await readChildModels(res.parentSessionFile, ["tier", "raw"]);
-			observed.D = { models, notices: res.notices, listModelsPresent: !!res.listModelsText };
+			observed.D = {
+				models,
+				notices: res.notices,
+				listModelsPresent: !!res.listModelsText,
+				configured: { globalCheap: TIER_MODEL, projectCheap: PROJECT_MODEL },
+			};
 			const noUnconfigured = !res.notices.some((n) => /unconfigured/i.test(n));
-			checks.D_tierResolved = !!models.tier && models.tier.includes(TIER_MODEL);
+			checks.D_tierResolved = !!models.tier && models.tier.includes(PROJECT_MODEL);
 			checks.D_rawResolved = !!models.raw && models.raw.includes(RAW_MODEL);
 			checks.D_noUnconfiguredNotice = noUnconfigured;
 			// F. list_models (folded into D's session)
@@ -506,4 +588,8 @@ async function main() {
 	process.exit(pass ? 0 : 1);
 }
 
-main();
+export { agentRecords, guidanceTablePasses, tierRow, tierTableBlock };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+	main();
+}

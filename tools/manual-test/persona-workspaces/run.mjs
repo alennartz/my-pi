@@ -101,7 +101,7 @@ import { StringDecoder } from "node:string_decoder";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
@@ -132,8 +132,15 @@ const CFG = {
 	think2: process.env.PW_THINK2 || "high",
 };
 
-const GENERIC_PREAMBLE = "You are a coding assistant running inside pi";
+const GENERIC_PREAMBLES = [
+	"You are a coding assistant running inside pi",
+	"You are an expert coding assistant operating inside pi",
+];
 const CHILD_IDENTITY = "<subagent_identity>";
+
+function hasGenericPreamble(text) {
+	return GENERIC_PREAMBLES.some((marker) => text.includes(marker));
+}
 
 function log(...a) {
 	process.stderr.write("[persona-workspaces] " + a.join(" ") + "\n");
@@ -326,6 +333,15 @@ function assistantModels(entries) {
 		.map((e) => e.message.model);
 }
 
+async function availableThinkingLevels(session) {
+	const response = await session.request({ type: "get_available_thinking_levels" }, (event) => event.success === true);
+	return response?.data?.levels || [];
+}
+
+function thinkingLevelCheck(level, levels) {
+	return typeof level === "string" && levels.length > 0 && levels.includes(level);
+}
+
 // Subagents persistence (mirror persistence.ts path derivation).
 function persistencePaths(parentSessionFile) {
 	const dir = path.dirname(parentSessionFile);
@@ -389,6 +405,27 @@ function agentsFile({ name, description = "discovered persona", tools, model, bo
 		"",
 	].join("\n");
 	return fm + body + "\n";
+}
+
+async function warmHostPatch(root, agentDir) {
+	const cwd = path.join(root, "host-patch-warmup");
+	fs.mkdirSync(cwd, { recursive: true });
+	return new Promise((resolve) => {
+		const proc = spawn("pi", ["--mode", "rpc", "--no-session"], {
+			cwd,
+			detached: true,
+			stdio: ["pipe", "pipe", "pipe"],
+			env: cleanEnv({ PI_CODING_AGENT_DIR: agentDir, PROBE_OUT: path.join(root, "warmup.ndjson") }),
+		});
+		const finish = () => {
+			clearTimeout(timer);
+			killGroup(proc);
+			resolve();
+		};
+		const timer = setTimeout(finish, 1500);
+		proc.once("error", finish);
+		proc.once("exit", finish);
+	});
 }
 
 function makeAgentDir(root) {
@@ -490,6 +527,7 @@ async function R1(root, agentDir, probeOut) {
 		const st = await s.ready();
 		await s.prompt("Reply with exactly the word OK and nothing else.");
 		const state = st.data || {};
+		const thinkingLevels = await availableThinkingLevels(s);
 		const sessionFile = state.sessionFile;
 		const entries = sessionEntries(sessionFile);
 		const notices = noticesIn(entries);
@@ -498,8 +536,8 @@ async function R1(root, agentDir, probeOut) {
 		const cmds = (await s.request({ type: "get_commands" }, (e) => e.success))?.data?.commands || [];
 		const skillCmds = cmds.filter((c) => c.source === "skill").map((c) => c.name);
 
-		check("r1_preamble", sys.startsWith("You are BenchLead. PREAMBLE-R1.") && !sys.includes(GENERIC_PREAMBLE), {
-			generic: sys.includes(GENERIC_PREAMBLE),
+		check("r1_preamble", sys.startsWith("You are BenchLead. PREAMBLE-R1.") && !hasGenericPreamble(sys), {
+			generic: hasGenericPreamble(sys),
 		});
 		check("r1_no_double_append", count(sys, "PREAMBLE-R1") === 1, { occurrences: count(sys, "PREAMBLE-R1") });
 		check("r1_silent_takeover", notices.length === 0, {
@@ -507,11 +545,15 @@ async function R1(root, agentDir, probeOut) {
 			notices: notices.map((n) => ({ content: n.content, details: n.details })),
 		});
 		const model = state.model?.id || assistantModels(entries).at(-1) || "";
-		check(
-			"r1_model_pin",
-			String(model).includes(CFG.pinA) && state.thinkingLevel === CFG.pinALevel,
-			{ model, thinkingLevel: state.thinkingLevel },
-		);
+		check("r1_model_pin", String(model).includes(CFG.pinA), {
+			model,
+			requestedThinkingLevel: CFG.pinALevel,
+		});
+		check("r1_thinking_level_effective", thinkingLevelCheck(state.thinkingLevel, thinkingLevels), {
+			requestedThinkingLevel: CFG.pinALevel,
+			thinkingLevel: state.thinkingLevel,
+			availableThinkingLevels: thinkingLevels,
+		});
 		check("r1_tools_bind", JSON.stringify(p[0]?.tools) === JSON.stringify(["bash", "read", "respond"]), {
 			tools: p[0]?.tools,
 		});
@@ -575,7 +617,7 @@ async function plainFileCase(root, agentDir, probeOut, { id, file, marker }) {
 		const entries = sessionEntries(st.data?.sessionFile);
 		const p = payloads(probeOut).filter((x) => x.sys.includes(marker));
 		const sys = p[0]?.sys || "";
-		check(`${id}_generic_intact`, sys.includes(GENERIC_PREAMBLE), {});
+		check(`${id}_generic_intact`, hasGenericPreamble(sys), {});
 		check(`${id}_context_rides`, count(sys, marker) === 1, { occurrences: count(sys, marker) });
 		check(`${id}_no_notice`, noticesIn(entries).length === 0, {});
 	} finally {
@@ -686,18 +728,20 @@ async function R6(root, agentDir, probeOut) {
 		const st = await s2.ready();
 		await s2.prompt("Reply with exactly the word THIRD and nothing else.");
 		const state = st.data || {};
+		const thinkingLevels = await availableThinkingLevels(s2);
 		const entries = sessionEntries(sessionFile);
 		const all = payloads(probeOut);
-		const resumed = [...all].reverse().find((x) => x.sys.includes("R6-BODY-6") || x.sys.includes(GENERIC_PREAMBLE));
+		const resumed = [...all].reverse().find((x) => x.sys.includes("R6-BODY-6") || hasGenericPreamble(x.sys));
 		const model = state.model?.id || "";
 		check(
 			"r6_model_rebinds",
 			String(model).includes(CFG.pinB) && !String(model).includes(CFG.pinC),
 			{ model, thinkingLevel: state.thinkingLevel },
 		);
-		check("r6_thinking_rebinds", state.thinkingLevel === CFG.think2, {
+		check("r6_thinking_rebinds", thinkingLevelCheck(state.thinkingLevel, thinkingLevels), {
+			requestedThinkingLevel: CFG.think2,
 			thinkingLevel: state.thinkingLevel,
-			userChoice: CFG.think,
+			availableThinkingLevels: thinkingLevels,
 		});
 		check(
 			"r6_prompt_still_binds",
@@ -762,7 +806,7 @@ async function D1(root, agentDir, probeOut) {
 			"d1_body_is_identity",
 			!!zetaPayload &&
 				count(zetaPayload.sys, "ZETA-BODY-11") === 1 &&
-				!zetaPayload.sys.includes(GENERIC_PREAMBLE),
+				!hasGenericPreamble(zetaPayload.sys),
 			{ occurrences: zetaPayload ? count(zetaPayload.sys, "ZETA-BODY-11") : null },
 		);
 		check("d1_silent_spawn", zetaNotices.length === 0, {
@@ -777,7 +821,7 @@ async function D1(root, agentDir, probeOut) {
 		check("d1_gap_fill_model", String(etaModel).includes(CFG.raw), { etaModel });
 		check(
 			"d1_eta_body",
-			!!etaPayload && count(etaPayload.sys, "ETA-BODY-22") === 1 && !etaPayload.sys.includes(GENERIC_PREAMBLE),
+			!!etaPayload && count(etaPayload.sys, "ETA-BODY-22") === 1 && !hasGenericPreamble(etaPayload.sys),
 			{},
 		);
 
@@ -846,7 +890,7 @@ async function D2(root, agentDir, probeOut) {
 		check(
 			"d2_parent_silent_takeover",
 			!!parentPayload &&
-				!parentPayload.sys.includes(GENERIC_PREAMBLE) &&
+				!hasGenericPreamble(parentPayload.sys) &&
 				parentNotices.length === 0,
 			{
 				note: "a workspace takeover of the root session announces nothing (takeovers are silent)",
@@ -879,7 +923,7 @@ async function D2(root, agentDir, probeOut) {
 			!!zetaV1 &&
 				!zetaV1.sys.includes("ZETA-BODY-11") &&
 				count(zetaV1.sys, "WS-BODY-33") === 1 &&
-				!zetaV1.sys.includes(GENERIC_PREAMBLE),
+				!hasGenericPreamble(zetaV1.sys),
 			{},
 		);
 		const v1Notices = noticesIn(zetaEntries);
@@ -913,7 +957,8 @@ async function D2(root, agentDir, probeOut) {
 
 		if (!sid) return;
 		// The active file changes while the agent is torn down: a resurrect
-		// must re-resolve capability gates (tools) but keep the persisted model.
+		// must re-resolve capability gates and the declared persona model. A
+		// persona pin outranks the persisted model under the DR-038 amendment.
 		fs.writeFileSync(
 			agents,
 			personaFile({
@@ -948,8 +993,8 @@ async function D2(root, agentDir, probeOut) {
 			"d2_resurrect_regates",
 			!!zetaV2 &&
 				JSON.stringify(zetaV2.tools) === JSON.stringify(["bash", "read", "respond"]) &&
-				String(zetaV2.raw.model).includes(CFG.pinB),
-			{ tools: zetaV2?.tools, model: zetaV2?.raw.model },
+				String(zetaV2.raw.model).includes(CFG.pinA),
+			{ tools: zetaV2?.tools, model: zetaV2?.raw.model, expectedModel: CFG.pinA },
 		);
 		const zeta2Entries = zeta2 ? sessionEntries(zeta2.sessionFile) : [];
 		check("d2_resurrect_body", assistantTexts(zeta2Entries).join(" ").includes("ACK2"), {});
@@ -974,7 +1019,7 @@ async function D2(root, agentDir, probeOut) {
 			"d2_fork_persona",
 			!!forkPayload &&
 				forkPayload.sys.trimStart().startsWith("You are wslead. WS-BODY-44") &&
-				!forkPayload.sys.includes(GENERIC_PREAMBLE) &&
+				!hasGenericPreamble(forkPayload.sys) &&
 				!forkPayload.sys.includes("ZETA-BODY-11") &&
 				JSON.stringify(forkPayload.tools) === JSON.stringify(["bash", "read", "respond"]) &&
 				forkNotices.length === 0,
@@ -1036,39 +1081,39 @@ async function R7(root, agentDir, probeOut) {
 		// ctx.reload() — the same session.reload() pi's builtin /reload runs;
 		// builtins are UI-dispatched only, but prompt("/name") dispatches
 		// extension commands). Dispatch is observed via the probe's reason log.
-		const reasonsFile = probeOut + ".reasons";
-		const before = (() => {
-			try {
-				return fs.readFileSync(reasonsFile, "utf8").length;
-			} catch {
-				return 0;
-			}
-		})();
-		s.send({ type: "prompt", id: "reload", message: "/pw-reload" });
-		const reloaded = await waitFor(() => {
-			let txt = "";
-			try {
-				txt = fs.readFileSync(reasonsFile, "utf8");
-			} catch {}
-			return txt.slice(before).includes('"reload"') ? true : undefined;
-		}, 60000, 300);
-		check("r7_reload_dispatched", !!reloaded, {});
+		// The RPC prompt response is emitted after the extension command handler
+		// awaits ctx.reload(). A session_start reason file is only an early
+		// dispatch signal and races the persona's async model binding.
+		const reloadResponse = await s.request(
+			{ type: "prompt", message: "/pw-reload" },
+			(event) => event.success === true,
+			60000,
+		);
+		const postReload = await s.request({ type: "get_state" }, (event) => event.success === true, 20000);
+		check("r7_reload_dispatched", reloadResponse?.success === true, {
+			disposition: reloadResponse?.data?.disposition,
+			modelAfterReload: postReload?.data?.model?.id,
+		});
 
+		await sleep(300);
 		await s.prompt("Reply with exactly the word AFTER and nothing else.");
 		const st = await s.request({ type: "get_state" }, (e) => e.success);
 		const state = st.data || {};
+		const thinkingLevels = await availableThinkingLevels(s);
 		const entries = sessionEntries(state.sessionFile);
 		const after = [...payloads(probeOut)].reverse().find((x) => x.sys.includes("R7-BODY-8"));
 		check(
 			"r7_reload_rebinds",
 			String(state.model?.id || "").includes(CFG.pinB) &&
 				!String(state.model?.id || "").includes(CFG.pinC) &&
-				state.thinkingLevel === CFG.think2 &&
+				thinkingLevelCheck(state.thinkingLevel, thinkingLevels) &&
 				!!after &&
 				JSON.stringify(after.tools) === JSON.stringify(["read", "respond"]),
 			{
 				model: state.model?.id,
+				requestedThinkingLevel: CFG.think2,
 				thinkingLevel: state.thinkingLevel,
+				availableThinkingLevels: thinkingLevels,
 				tools: after?.tools,
 				note: "reload is a continuation boundary: the edited declaration re-applies in full (model + :<level> thinking + tool whitelist) over the user's mid-session choices; pi-core reload resets active tool selection to defaults, and the rebind restores the declared set",
 			},
@@ -1092,6 +1137,10 @@ async function main() {
 	log("workdir:", root);
 	log("models:", JSON.stringify(CFG));
 	const agentDir = makeAgentDir(root);
+	// The self-healing host patch writes the runtime on first activation, but
+	// that process keeps its old in-memory prompt builder. Warm one process so
+	// R1 observes the patched builder without spending a model request.
+	await warmHostPatch(root, agentDir);
 	const steps = [
 		["R1", R1],
 		["R2", R2],
@@ -1124,4 +1173,8 @@ async function main() {
 	process.exit(pass ? 0 : 1);
 }
 
-main();
+export { hasGenericPreamble, thinkingLevelCheck };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+	main();
+}

@@ -23,7 +23,8 @@ Root checks (fresh `pi --mode rpc` sessions; R5/R6 use two):
   preamble (generic preamble gone, body exactly once — the file is not
   double-appended as context), no notice (the takeover is silent —
   `/sysprompt`'s projection is the pre-run visibility surface), front-matter `model`
-  (with `:<level>` thinking suffix), `tools` (exactly
+  (with `:<level>` thinking suffix; unsupported levels are checked against the
+  model's effective capabilities), `tools` (exactly
   `resolveChildToolPolicy` normalization: `ask_user` dropped, `respond`
   appended), `skills` filter, and unlisted skills' slash commands still
   loaded (the documented root-session limitation).
@@ -44,7 +45,8 @@ Root checks (fresh `pi --mode rpc` sessions; R5/R6 use two):
   still binds (prompt binding is per-run), and nothing announces.
 - **R7 reload-rebinds** — an extension-command-triggered reload (the
   probe's `pw-reload` calls `ctx.reload()`, the same `session.reload()` the
-  builtin `/reload` runs) is dispatched as a `reload` session start: reload
+  builtin `/reload` runs) is awaited through the RPC prompt response before
+  probing: reload
   is a continuation boundary (the same thing as a resume), so the edited
   declaration re-applies in full — model (with its `:<level>` thinking
   suffix) and tools whitelist — over the user's mid-session choices; the
@@ -65,8 +67,9 @@ Drive checks (LLM-driven parent sessions spawning real children):
   workspace loses wholesale to the workspace (body + model pin), the override
   notice names both and the subagent tool result carries the override note;
   after teardown the workspace file is edited and the
-  resurrected child re-resolves its tool policy from the edited file while its
-  persisted model survives (DR-038); a `fork` child of a persona-workspace
+  resurrected child re-resolves its tool policy and declared persona model
+  (persona-pin precedence from the DR-038 amendment); a `fork` child of a
+  persona-workspace
   parent wears the workspace persona (body + declared model pin + tool set)
   silently; a bogus resurrect errors cleanly.
 
@@ -89,11 +92,14 @@ node tools/manual-test/persona-workspaces/run.mjs [--keep] [--timeout <sec>] [--
   default), `PW_PIN_A` + `PW_PIN_A_LEVEL` (R1/R6 pin and thinking suffix),
   `PW_PIN_B` (workspace W2 pin + R6 edited pin), `PW_PIN_C` (spawned persona
   pin + R6 user choice), `PW_RAW` (explicit spawn model), `PW_THINK` (R6 user
-  thinking level). Defaults use the `llmgateway` provider and **standard-tier**
+  thinking level), `PW_THINK2` (R6 rebound thinking level). Unsupported
+  thinking levels are checked against the selected model's effective levels.
+  Defaults use the `llmgateway` provider and **standard-tier**
   models — premium-tier models are unusable while the gateway's weekly
   premium allowance is spent (402).
 - **Outputs:** human phase log on stderr; JSON verdict on stdout
   `{ verdict, checks, observed }`. Exit 0 = PASS, 1 = FAIL.
+- **Deterministic helper tests:** `node --test tools/manual-test/persona-workspaces/run.test.mjs`.
 
 ## Prerequisites
 
