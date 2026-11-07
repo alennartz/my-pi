@@ -161,7 +161,7 @@ Move gateway catalog conversion and its supporting price, modality, reasoning-ef
 
 ### Step 4: Register LLM Gateway
 
-**Status:** in progress
+**Status:** done
 
 Implement `extensions/llm-gateway/index.ts` and retain its extension manifest. Register `llmgateway` with the name, base URL, API, env-backed key, and auth header specified in the architecture. Do not register a custom stream.
 
@@ -178,6 +178,8 @@ Implement `wrapProviderWithQuota` in `extensions/quota-providers/lib/provider-wr
 **Status:** done
 
 ### Step 6: Attach quotas at session start
+
+**Status:** in progress
 
 Refactor `extensions/quota-providers/index.ts` to load enabled attachments, resolve each provider through `ctx.modelRegistry.getProvider(providerId)` at `session_start`, and register the complete wrapped provider with `pi.registerProvider(provider)`. Leave unattached providers unchanged. Remove provider grouping, discovery, token commands, custom API streaming, and retry rewriting. Keep usage polling, `/quota`, footer, hard and soft cap policy, and tree-scoped bypass.
 
