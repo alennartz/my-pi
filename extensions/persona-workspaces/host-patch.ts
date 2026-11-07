@@ -44,7 +44,7 @@ const GUARD =
 const GUARD_PATCHED = "if (!SYSTEM_PROMPT_SECTION_NAME.test(name)) {";
 
 const DEFAULT_SENTENCE =
-	"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+	"You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.";
 const PREAMBLE_ASSIGNMENT = `        promptSections.preamble =
             "${DEFAULT_SENTENCE}";`;
 const PREAMBLE_ASSIGNMENT_PATCHED = `        promptSections.preamble =

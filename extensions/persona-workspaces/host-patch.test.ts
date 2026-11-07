@@ -11,7 +11,7 @@ import {
 
 const GUARD = `if (!SYSTEM_PROMPT_SECTION_NAME.test(name) || name === "preamble") {`;
 const PREAMBLE_ASSIGNMENT = `        promptSections.preamble =
-            "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";`;
+            "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.";`;
 const MERGE_LOOP = `        if (content)
             promptSections[name] = content;`;
 
@@ -21,8 +21,8 @@ const BUNDLE_GUARD =
 	'if(!SYSTEM_PROMPT_SECTION_NAME.test(name)||name==="preamble")throw new Error(`Invalid system prompt section name: ${name}`);';
 const BUNDLE_GUARD_PATCHED =
 	'if(!SYSTEM_PROMPT_SECTION_NAME.test(name))throw new Error(`Invalid system prompt section name: ${name}`);';
-const BUNDLE_ASSIGNMENT = `promptSections.preamble="You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";`;
-const BUNDLE_ASSIGNMENT_PATCHED = `promptSections.preamble=customSections.preamble??"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";`;
+const BUNDLE_ASSIGNMENT = `promptSections.preamble="You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.";`;
+const BUNDLE_ASSIGNMENT_PATCHED = `promptSections.preamble=customSections.preamble??"You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.";`;
 const BUNDLE_MERGE_LOOP = "content&&(promptSections[name]=content);";
 const BUNDLE_MERGE_LOOP_PATCHED = 'content&&name!=="preamble"&&(promptSections[name]=content);';
 const BUNDLE_PREFIX = "function buildSystemPromptSections(input2){";
