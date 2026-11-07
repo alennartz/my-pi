@@ -116,7 +116,6 @@ The pipeline phase skills are hidden from the model. Only autoflow drives them.
 - **autoflow-autostart** — opt-in autoflow invocation on the first message of a new session (see above)
 - **session-name** — `set_session_name` tool so the model can name the current session
 - **model-prompt-overlays** — appends `AGENTS.<model>.md` overlays to the system prompt based on the active model
-- **toolscript** — runs [toolscript](https://github.com/badlogic/toolscript) as an MCP child and exposes its tools
 - **user-edit** — `user_edit` tool that opens a file in pi's built-in editor
 - **ask-user** — `ask_user` tool for single-choice questions
 - **print-prompt** — `/sysprompt` command to inspect the last rendered system prompt

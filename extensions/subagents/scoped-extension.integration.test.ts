@@ -1415,7 +1415,7 @@ describe("root orchestration integration", () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
 		const { pi, tools, handlers } = makePi();
-		pi.getActiveTools.mockReturnValue(["read", "toolscript_custom", "ask_user"]);
+		pi.getActiveTools.mockReturnValue(["read", "mcp__external__custom", "ask_user"]);
 		pi.getCommands.mockReturnValue([
 			{ name: "skill:debugging", source: "skill", path: "/skills/debugging/SKILL.md" },
 		]);
@@ -1444,7 +1444,7 @@ describe("root orchestration integration", () => {
 			},
 		});
 		const allowedTools = managed.created[0].config.toolPolicy.allowedTools;
-		expect(new Set(allowedTools)).toEqual(new Set(["read", "toolscript_custom", "respond"]));
+		expect(new Set(allowedTools)).toEqual(new Set(["read", "mcp__external__custom", "respond"]));
 		expect(allowedTools).toHaveLength(3);
 		expect(managed.created[0].child.submit).toHaveBeenCalledWith("Task: explore another path", "followUp");
 	});

@@ -52,7 +52,7 @@ describe("resolveChildToolPolicy", () => {
 	it("preserves exactly the active extension and built-in fork tools while adding infrastructure respond", () => {
 		expectExactStableAllowlist({
 			kind: "fork",
-			parentActiveTools: ["read", "toolscript_custom", "send", "ask_user", "send"],
-		}, ["read", "toolscript_custom", "send", "respond"]);
+			parentActiveTools: ["read", "mcp__external__custom", "send", "ask_user", "send"],
+		}, ["read", "mcp__external__custom", "send", "respond"]);
 	});
 });

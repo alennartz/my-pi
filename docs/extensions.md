@@ -29,7 +29,6 @@ extension says so.
 | Subagent model tiers | `~/.pi/agent/model-tiers.json` and `.pi/model-tiers.json` | `cheap`, `medium`, `smart`, `frontier` |
 | LLM Gateway provider | Environment and pi provider ID | `LLMGATEWAY_API_KEY`, provider ID `llmgateway` |
 | Quota attachments | `~/.pi/agent/quota-providers.json` | Provider IDs, usage-source modules, and quota policy fields |
-| Toolscript | `~/.pi/toolscript/toolscript.toml` and `toolscript.toml` | Toolscript's TOML; `TOOLSCRIPT_BIN` selects the executable |
 | Workspace personas | `<cwd>/AGENTS.md` | `kind`, `name`, `description`, `tools`, `model`, `skills`, body |
 | Model prompt overlays | `AGENTS.<model>.md` files | `models` front matter and Markdown body |
 | Subagent definitions | `~/.pi/agent/agents`, `.pi/agents`, package `pi.agents` | `name`, `description`, `tools`, `model`, `skills`, body |
@@ -177,29 +176,6 @@ premium model IDs from catalog prices.
 
 Quota sources are TypeScript modules. Follow the seam types in
 `extensions/quota-providers/lib/types.ts` when writing one outside this repo.
-
-## Toolscript
-
-The toolscript extension starts the `toolscript` MCP server when it finds at
-least one configuration file:
-
-- User config: `~/.pi/toolscript/toolscript.toml`.
-- Project config: `<cwd>/toolscript.toml`.
-
-Both files are passed to toolscript in that order. The project file can add or
-override settings according to toolscript's TOML rules. The extension does not
-parse TOML itself.
-
-Set `TOOLSCRIPT_BIN` when the executable is not named `toolscript` or is not on
-`PATH`:
-
-```sh
-export TOOLSCRIPT_BIN="$HOME/bin/toolscript"
-```
-
-If no config file exists, the extension stays inactive. Toolscript tools appear
-in pi with a `toolscript_` prefix. The server restarts on the next tool call
-after a crash.
 
 ## Workspace personas
 

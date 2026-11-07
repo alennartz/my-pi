@@ -39,7 +39,6 @@
     "typebox": "*"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "@mozilla/readability": "^0.6.0",
     "@pimote/sdk": "^0.15.4",
     "jiti": "^2.7.0",

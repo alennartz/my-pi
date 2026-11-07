@@ -15,7 +15,6 @@ graph LR
   SessionName
   Worktree
   ModelPromptOverlays
-  ToolscriptExtension
   UserEdit
   PromptTemplateCreator
 ```
@@ -236,17 +235,6 @@ catalog endpoints, `LLMGATEWAY_API_KEY`
 
 **Files:**
 - `extensions/quota-providers/impls/devpass-quota.ts`
-
-### Toolscript Extension
-
-Extension that integrates toolscript by spawning it as a long-lived MCP child process and surfacing its tools as pi tools.
-
-**Responsibilities:** toolscript process lifecycle (spawn via `StdioClientTransport`, graceful shutdown), MCP client management via `@modelcontextprotocol/sdk`, pi tool registration from MCP tool definitions (prefixed `toolscript_`), layered config file resolution (user `~/.pi/toolscript/toolscript.toml` + project `toolscript.toml`), crash recovery with auto-restart on next tool call, MCP seam fidelity (every result wrapped as `{content, structuredContent, isError}` under a wrapper `outputSchema` mirroring pi's MCP bridge, upstream `isError` surfaced as a real tool error, image blocks forwarded, model-facing text middle-truncated with a full-output temp file)
-
-**Dependencies:** none as a standalone extension (runs as MCP child process); uses `lib/truncate.ts`
-
-**Files:**
-- `extensions/toolscript/**`
 
 ### Shared Tool Seam
 
