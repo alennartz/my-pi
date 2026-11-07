@@ -121,8 +121,7 @@ sessions:
    (`<agentDir>/models.json`) and session JSONL records.
 3. Keep model IDs unchanged. Only the provider ID changed.
 
-The migration applies to session and model-store data. This document keeps the
-old ID only in this migration guidance.
+The migration applies to session and model-store data.
 
 ## Quota attachments
 
