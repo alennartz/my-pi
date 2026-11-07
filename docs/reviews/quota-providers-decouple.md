@@ -29,7 +29,7 @@ The fixes resolve eight of the nine prior findings, including wrapper cleanup, l
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/quota-providers/index.ts:267-331,377-379`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Reattach the wrapper during registry recomposition or guard a stable stream seam before the first request; do not rely on `before_provider_request`.
 
 Lifecycle events now reattach guards, but `before_provider_request` runs during payload preparation after the unguarded stream method starts. If the registry refresh occurs during a turn, the first request with the replacement provider reaches transport despite an enforced hard cap.
@@ -39,7 +39,7 @@ Lifecycle events now reattach guards, but `before_provider_request` runs during 
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/quota-providers/index.ts:183-200,247-248,298-331`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Scope attachment state to its owning model registry or runtime with a `WeakMap`, then key provider entries within that scope.
 
 The process-global provider-state map is keyed only by provider ID. Independent root and child registries can use the same ID, so one runtime overwrites another runtime's original or effective provider. A refresh or shutdown can then restore the wrong provider, including another runtime's authentication configuration.

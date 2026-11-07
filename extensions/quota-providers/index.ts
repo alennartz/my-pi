@@ -187,17 +187,20 @@ type ProviderRegistry = {
 type AttachedProvider = {
 	effective: Provider;
 	original: Provider;
+	wrapper: Provider;
 };
 
-const PROVIDER_STATE_KEY = Symbol.for("my-pi.quota-provider-states");
+type ProviderStateStores = WeakMap<object, Map<string, AttachedProvider>>;
 
-function providerStateStore(): Map<string, AttachedProvider> {
+const PROVIDER_STATE_KEY = Symbol.for("my-pi.quota-provider-state-stores");
+
+function providerStateStores(): ProviderStateStores {
 	const globals = globalThis as Record<PropertyKey, unknown>;
 	const existing = globals[PROVIDER_STATE_KEY];
-	if (existing instanceof Map) return existing as Map<string, AttachedProvider>;
-	const states = new Map<string, AttachedProvider>();
-	globals[PROVIDER_STATE_KEY] = states;
-	return states;
+	if (existing instanceof WeakMap) return existing as ProviderStateStores;
+	const stores: ProviderStateStores = new WeakMap();
+	globals[PROVIDER_STATE_KEY] = stores;
+	return stores;
 }
 
 /** Poll when no usable cache exists, when it is old, or after a window reset. */
@@ -244,8 +247,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	const providerIdToRecord = new Map<string, RecordWithRunner>(
 		records.map((record) => [record.id, record]),
 	);
-	const attachedProviders = new Map<string, AttachedProvider>();
-	const globalProviderStates = providerStateStore();
+	const providerStates = providerStateStores();
 
 	let treeStore: SessionTreeStore | undefined;
 	let fallbackSessionId: string | undefined;
@@ -264,14 +266,23 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		if (preferFallback || !fallbackSessionId) fallbackSessionId = sessionId;
 	}
 
+	function stateStore(registry: ProviderRegistry): Map<string, AttachedProvider> {
+		const key = registry as object;
+		const existing = providerStates.get(key);
+		if (existing) return existing;
+		const states = new Map<string, AttachedProvider>();
+		providerStates.set(key, states);
+		return states;
+	}
+
 	function attachProviders(ctx: { modelRegistry: ProviderRegistry }): void {
+		const registry = ctx.modelRegistry;
+		const attachedProviders = stateStore(registry);
 		for (const record of providerRecords) {
-			const registry = ctx.modelRegistry;
 			let provider = registry.getProvider(record.id);
 			if (!provider) continue;
 
 			const previous = attachedProviders.get(record.id);
-			const globalState = globalProviderStates.get(record.id);
 			const registeredNative = registry.getRegisteredNativeProvider?.(record.id);
 			const evaluate = (model: Model<any>, options?: SimpleStreamOptions) => {
 				maybeRefreshUsage(record);
@@ -283,80 +294,69 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 				);
 			};
 
-			if (previous?.effective === provider) {
-				if (!installQuotaStreamGuard(provider, evaluate)) {
-					const wrapped = wrapProviderWithQuota(provider, evaluate);
-					pi.registerProvider(wrapped);
-					provider = registry.getProvider(record.id) ?? wrapped;
-				}
-				const state = { effective: provider, original: previous.original };
-				attachedProviders.set(record.id, state);
-				globalProviderStates.set(record.id, state);
-				continue;
-			}
+			let original = previous?.original;
+			if (!original) original = unwrapQuotaProvider(registeredNative ?? provider);
 
-			let original = previous?.original ?? globalState?.original;
-			if (!original) {
-				original = unwrapQuotaProvider(registeredNative ?? provider);
+			// Keep one complete wrapper registered as the native base. Pi's provider
+			// composer can replace the effective object during a refresh, but every
+			// recomposed provider still delegates through this stable wrapper.
+			let wrapper = previous?.wrapper;
+			if (wrapper) {
+				wrapper = wrapProviderWithQuota(wrapper, evaluate);
+			} else if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
+				wrapper = wrapProviderWithQuota(registeredNative, evaluate);
+			} else {
+				wrapper = wrapProviderWithQuota(original, evaluate);
 			}
-
-			// A prior extension load can leave a native Proxy wrapper behind. Remove
-			// it before pi recomposes the current provider, or guards will stack.
-			if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
-				const nativeOriginal = unwrapQuotaProvider(registeredNative);
-				original = previous?.original ?? globalState?.original ?? nativeOriginal;
-				if (registeredNative !== original) {
-					pi.registerProvider(original);
-					provider = registry.getProvider(record.id) ?? provider;
-				}
+			if (registeredNative !== wrapper) {
+				pi.registerProvider(wrapper);
+				provider = registry.getProvider(record.id) ?? provider;
 			}
 
 			if (previous && previous.effective !== provider) restoreQuotaStreamGuard(previous.effective);
 
-			// Native providers can be replaced with a complete Proxy without
-			// mutating their stream spy or transport. Config-composed providers must
-			// be guarded in place so their lazy composer cannot swallow a block.
-			if (registeredNative === provider) {
-				const wrapped = wrapProviderWithQuota(provider, evaluate);
-				pi.registerProvider(wrapped);
-				provider = registry.getProvider(record.id) ?? wrapped;
-			} else if (!installQuotaStreamGuard(provider, evaluate)) {
-				const wrapped = wrapProviderWithQuota(provider, evaluate);
-				pi.registerProvider(wrapped);
-				provider = registry.getProvider(record.id) ?? wrapped;
+			// Keep the current request synchronous as well. The stable base wrapper
+			// protects lazy requests after a refresh; this seam protects this object.
+			if (!installQuotaStreamGuard(provider, evaluate)) {
+				const fallback = wrapProviderWithQuota(original, evaluate);
+				pi.registerProvider(fallback);
+				wrapper = fallback;
+				provider = registry.getProvider(record.id) ?? fallback;
 			}
 
-			const state = { effective: provider, original };
+			const state = { effective: provider, original, wrapper };
 			attachedProviders.set(record.id, state);
-			globalProviderStates.set(record.id, state);
 		}
 	}
 
 	function restoreProviders(ctx: { modelRegistry: ProviderRegistry }): void {
+		const registry = ctx.modelRegistry;
+		const attachedProviders = stateStore(registry);
 		for (const [providerId, state] of attachedProviders) {
-			const current = ctx.modelRegistry.getProvider(providerId);
+			const current = registry.getProvider(providerId);
 			if (current) restoreQuotaStreamGuard(current);
 			if (state.effective !== current) restoreQuotaStreamGuard(state.effective);
-			const registeredNative = ctx.modelRegistry.getRegisteredNativeProvider?.(providerId);
+			const registeredNative = registry.getRegisteredNativeProvider?.(providerId);
 			if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
 				pi.registerProvider(unwrapQuotaProvider(registeredNative));
 			}
-			globalProviderStates.delete(providerId);
+			attachedProviders.delete(providerId);
 		}
-		attachedProviders.clear();
 	}
 
 	function restoreStaleProviders(ctx: { modelRegistry: ProviderRegistry }): void {
+		const registry = ctx.modelRegistry;
+		const attachedProviders = stateStore(registry);
 		const active = new Set(providerRecords.map((record) => record.id));
-		for (const [providerId] of globalProviderStates) {
+		for (const [providerId] of attachedProviders) {
 			if (active.has(providerId)) continue;
-			const provider = ctx.modelRegistry.getProvider(providerId);
+			const provider = registry.getProvider(providerId);
 			if (provider) restoreQuotaStreamGuard(provider);
-			const registeredNative = ctx.modelRegistry.getRegisteredNativeProvider?.(providerId);
+			const registeredNative = registry.getRegisteredNativeProvider?.(providerId);
 			if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
 				pi.registerProvider(unwrapQuotaProvider(registeredNative));
 			}
-			globalProviderStates.delete(providerId);
+			attachedProviders.delete(providerId);
 		}
 	}
 
