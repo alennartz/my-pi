@@ -9,7 +9,7 @@ export const PROJECT_PROMPTS_DIRECTORY = ".pi/prompts";
  * A compact learning scaffold for Pi prompt templates. The body demonstrates
  * every documented argument form while staying useful when invoked unchanged.
  */
-export const PROMPT_TEMPLATE_SEED = [
+const PROMPT_TEMPLATE_SEED = [
 	"---",
 	"description: prompt-description",
 	"argument-hint: \"<required-argument> [optional-arguments...]\"",

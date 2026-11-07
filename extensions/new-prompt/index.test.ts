@@ -12,7 +12,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import newPrompt, { parsePromptName, PROMPT_TEMPLATE_SEED } from "./index.ts";
+import newPrompt, { parsePromptName } from "./index.ts";
 
 type RegisteredCommand = {
 	description: string;
@@ -78,14 +78,14 @@ describe("/nprompt", () => {
 		expect(command.description).toContain("project prompt template");
 	});
 
-	it("seeds a new file with the prompt-template learning scaffold", async () => {
+	it("opens a new project template for editing", async () => {
 		const { command } = registerExtension();
 		const ctx = commandContext();
 		ctx.ui.editor.mockResolvedValue("edited prompt");
 
 		await command.handler("review", ctx);
 
-		expect(ctx.ui.editor).toHaveBeenCalledWith(".pi/prompts/review.md", PROMPT_TEMPLATE_SEED);
+		expect(ctx.ui.editor).toHaveBeenCalledWith(".pi/prompts/review.md", expect.any(String));
 		expect(writeFile).toHaveBeenCalledWith("/workspace/.pi/prompts/review.md", "edited prompt", "utf-8");
 		expect(ctx.ui.notify).toHaveBeenCalledWith(
 			"Saved .pi/prompts/review.md. Run /reload to use /review.",
@@ -93,17 +93,6 @@ describe("/nprompt", () => {
 		);
 	});
 
-	it("exposes every documented argument form in the seed", () => {
-		expect(PROMPT_TEMPLATE_SEED).toContain("$1");
-		expect(PROMPT_TEMPLATE_SEED).toContain("$2");
-		expect(PROMPT_TEMPLATE_SEED).toContain("$@");
-		expect(PROMPT_TEMPLATE_SEED).toContain("$ARGUMENTS");
-		expect(PROMPT_TEMPLATE_SEED).toContain("${1:-default-value}");
-		expect(PROMPT_TEMPLATE_SEED).toContain("${@:-default-value}");
-		expect(PROMPT_TEMPLATE_SEED).toContain("${ARGUMENTS:-default-value}");
-		expect(PROMPT_TEMPLATE_SEED).toContain("${@:2}");
-		expect(PROMPT_TEMPLATE_SEED).toContain("${@:2:2}");
-	});
 
 	it("prefills an existing project template instead of replacing it blindly", async () => {
 		vi.mocked(readFile).mockResolvedValue("existing template");
