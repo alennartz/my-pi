@@ -179,7 +179,7 @@ Implement `wrapProviderWithQuota` in `extensions/quota-providers/lib/provider-wr
 
 ### Step 6: Attach quotas at session start
 
-**Status:** in progress
+**Status:** done
 
 Refactor `extensions/quota-providers/index.ts` to load enabled attachments, resolve each provider through `ctx.modelRegistry.getProvider(providerId)` at `session_start`, and register the complete wrapped provider with `pi.registerProvider(provider)`. Leave unattached providers unchanged. Remove provider grouping, discovery, token commands, custom API streaming, and retry rewriting. Keep usage polling, `/quota`, footer, hard and soft cap policy, and tree-scoped bypass.
 
@@ -191,6 +191,8 @@ Remove `impls/foundry.ts`, the combined `impls/devpass.ts`, `lib/registration.ts
 **Status:** not started
 
 ### Step 7: Migrate documentation and live harnesses
+
+**Status:** in progress
 
 Update `docs/extensions.md` and the extension summary in `README.md` to distinguish the LLM Gateway provider from quota attachments. Document `LLMGATEWAY_API_KEY`, the `llmgateway` attachment and `billingCycleAnchor`, existing policy defaults, and migration of session and `models.json` references from `devpass-openai-completions` to `llmgateway`. Remove Foundry setup instructions. Update the Quota Providers, Quota Provider Implementations, and new LLM Gateway entries in `codemap.md` to match the resulting ownership.
 
