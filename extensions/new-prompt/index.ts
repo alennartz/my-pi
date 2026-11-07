@@ -11,14 +11,16 @@ export const PROJECT_PROMPTS_DIRECTORY = ".pi/prompts";
  */
 export const PROMPT_TEMPLATE_SEED = [
 	"---",
-	"description: Describe this prompt",
-	"argument-hint: \"<subject> [focus...]\"",
+	"description: prompt-description",
+	"argument-hint: \"<required-argument> [optional-arguments...]\"",
 	"---",
-	"Act on \"$1\" with focus \"${@:2}\".",
-	"",
-	"All arguments: $@ / $ARGUMENTS",
-	"Defaults: ${1:-subject} / ${@:-subject} / ${ARGUMENTS:-subject}",
-	"Slices: ${@:2} / ${@:2:2}",
+	"first-argument: \"$1\"",
+	"second-argument: \"$2\"",
+	"all-arguments: \"$@\" / \"$ARGUMENTS\"",
+	"first-argument-or-default: \"${1:-default-value}\"",
+	"all-arguments-or-default: \"${@:-default-value}\" / \"${ARGUMENTS:-default-value}\"",
+	"arguments-from-index-2: \"${@:2}\"",
+	"two-arguments-from-index-2: \"${@:2:2}\"",
 	"",
 ].join("\n");
 

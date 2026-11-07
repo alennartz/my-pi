@@ -95,11 +95,12 @@ describe("/nprompt", () => {
 
 	it("exposes every documented argument form in the seed", () => {
 		expect(PROMPT_TEMPLATE_SEED).toContain("$1");
+		expect(PROMPT_TEMPLATE_SEED).toContain("$2");
 		expect(PROMPT_TEMPLATE_SEED).toContain("$@");
 		expect(PROMPT_TEMPLATE_SEED).toContain("$ARGUMENTS");
-		expect(PROMPT_TEMPLATE_SEED).toContain("${1:-subject}");
-		expect(PROMPT_TEMPLATE_SEED).toContain("${@:-subject}");
-		expect(PROMPT_TEMPLATE_SEED).toContain("${ARGUMENTS:-subject}");
+		expect(PROMPT_TEMPLATE_SEED).toContain("${1:-default-value}");
+		expect(PROMPT_TEMPLATE_SEED).toContain("${@:-default-value}");
+		expect(PROMPT_TEMPLATE_SEED).toContain("${ARGUMENTS:-default-value}");
 		expect(PROMPT_TEMPLATE_SEED).toContain("${@:2}");
 		expect(PROMPT_TEMPLATE_SEED).toContain("${@:2:2}");
 	});

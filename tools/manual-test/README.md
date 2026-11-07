@@ -105,6 +105,30 @@ rendering is a TUI component factory RPC ignores — only its recompute input is
 verified); drives a real LLM, so it costs tokens and tolerates transient
 latency.
 
+### quota-providers (`quota-providers/run.mjs`)
+
+**Purpose:** Exercise the quota-only extension through a real `pi --mode
+rpc` process and its executable usage runner. A local complete provider and
+deterministic source cover provider-ID attachment, pre-transport blocking,
+soft-cap bypass, `/quota`, unattached-provider isolation, and atomic usage
+cache persistence. When `LLMGATEWAY_API_KEY` is available, a live Gateway
+probe checks `llmgateway` provider/model resolution. See
+`quota-providers/README.md`.
+
+**Invocation:** `node tools/manual-test/quota-providers/run.mjs [--keep]
+[--timeout <sec>] [--workdir <dir>]`. `QP_GATEWAY_MODEL` overrides the live
+Gateway model; `QP_VERBOSE=1` forwards child stderr.
+
+**Outputs:** phase logs on stderr; JSON verdict on stdout (`verdict`, `checks`,
+`observed`, `limitations`). Exit 0 = PASS, exit 1 = FAIL.
+
+**Prerequisites:** `pi` on PATH with this repo loadable as a package. Local
+provider checks need no credentials. The Gateway probe needs
+`LLMGATEWAY_API_KEY` and an available model.
+
+**Use for:** topics changing quota attachment, provider wrapping, quota
+commands, usage-cache persistence, or the LLM Gateway provider split.
+
 ### model-tiers (`model-tiers/run.mjs`)
 
 **Purpose:** Verify the subagents extension's model-tier feature end-to-end —
