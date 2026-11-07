@@ -139,8 +139,6 @@ Keep `cachePaths` in `lib/config.ts` for usage and ledger paths. Remove its mode
 
 ### Step 2: Persist usage and membership together
 
-**Status:** done
-
 Implement `readUsageCache` in `extensions/quota-providers/lib/usage-cache.ts`. Validate the timestamp, every snapshot, and the model-to-limit-ID map as one record. Return `null` for missing, malformed, or incomplete files. Reuse snapshot validation from `lib/snapshot.ts` where practical, and remove the old snapshot-only reader after its callers move to the new interface.
 
 Change `extensions/quota-providers/runner.mjs` to run only the `usage` command. Load the `QuotaSource` with jiti, pass through source settings, validate its result, and atomically write `{ writtenAt, snapshots, modelLimitIds }`. Retain usage locking, the poll freshness guard, and ledger pruning under the ledger lock using the earliest returned `asOf`. Ensure an expired window triggers a refresh even when the cache age is below the poll interval. Remove discovery and token commands, caches, and detached token refresh. Keep the existing CLI flags used by `runner-usage.test.ts`.
@@ -148,7 +146,7 @@ Change `extensions/quota-providers/runner.mjs` to run only the `usage` command. 
 Remove discovery and token cases from `runner.test.ts`. Adapt its usage cases and `test/fake-impl.ts` to the quota-source result and retain the freshness and pruning coverage.
 
 **Verify:** `npx vitest run extensions/quota-providers/lib/usage-cache.test.ts extensions/quota-providers/runner-usage.test.ts extensions/quota-providers/runner.test.ts` passes.
-**Status:** not started
+**Status:** done
 
 ### Step 3: Split DevPass quota and catalog
 
@@ -161,14 +159,12 @@ Move gateway catalog conversion and its supporting price, modality, reasoning-ef
 
 ### Step 4: Register LLM Gateway
 
-**Status:** done
-
 Implement `extensions/llm-gateway/index.ts` and retain its extension manifest. Register `llmgateway` with the name, base URL, API, env-backed key, and auth header specified in the architecture. Do not register a custom stream.
 
 Implement `refreshModels` using the catalog conversion from Step 3. Restore stored models when offline or when the stored `checkedAt` is less than one hour old and refresh is not forced. Otherwise fetch `/v1/models` with gateway authentication and the supplied abort signal. Publish full `AnyModel` records with `provider`, `baseUrl`, and `checkedAt` through `context.publish({ persist })`. Return `ProviderModelConfig` values and convert stored records back on restore. Do not fetch or publish after cancellation.
 
 **Verify:** `npx vitest run extensions/llm-gateway` passes, including the moved catalog coverage and the approved refresh, persistence, offline, and cancellation tests.
-**Status:** not started
+**Status:** done
 
 ### Step 5: Wrap complete providers
 
@@ -179,8 +175,6 @@ Implement `wrapProviderWithQuota` in `extensions/quota-providers/lib/provider-wr
 
 ### Step 6: Attach quotas at session start
 
-**Status:** done
-
 Refactor `extensions/quota-providers/index.ts` to load enabled attachments, resolve each provider through `ctx.modelRegistry.getProvider(providerId)` at `session_start`, and register the complete wrapped provider with `pi.registerProvider(provider)`. Leave unattached providers unchanged. Remove provider grouping, discovery, token commands, custom API streaming, and retry rewriting. Keep usage polling, `/quota`, footer, hard and soft cap policy, and tree-scoped bypass.
 
 Read snapshots and model membership from the same `readUsageCache` record for each quota evaluation. Use that cached membership for `message_end` ledger entries and footer decisions too. Keep session-ID-to-tree-store binding at `session_start` and `agent_start`, and unregister it at shutdown. Preserve detached usage polling and its window-reset behavior.
@@ -188,24 +182,22 @@ Read snapshots and model membership from the same `readUsageCache` record for ea
 Remove `impls/foundry.ts`, the combined `impls/devpass.ts`, `lib/registration.ts`, and `lib/retryable-errors.ts` after their retained behavior has moved. Remove tests solely for removed registration and retry-rewrite behavior. Remove `lib/snapshot.ts` if Step 2 moved its validation. Preserve quota, ledger, bypass, and stream-blocking behavior tests that still apply.
 
 **Verify:** `npx vitest run extensions/quota-providers` passes. The attachment integration tests pass for built-in, `models.json`, legacy, and native providers, including scoped ledger accounting and tree bypass.
-**Status:** not started
+**Status:** done
 
 ### Step 7: Migrate documentation and live harnesses
-
-**Status:** done
 
 Update `docs/extensions.md` and the extension summary in `README.md` to distinguish the LLM Gateway provider from quota attachments. Document `LLMGATEWAY_API_KEY`, the `llmgateway` attachment and `billingCycleAnchor`, existing policy defaults, and migration of session and `models.json` references from `devpass-openai-completions` to `llmgateway`. Remove Foundry setup instructions. Update the Quota Providers, Quota Provider Implementations, and new LLM Gateway entries in `codemap.md` to match the resulting ownership.
 
 Update `tools/manual-test/persona-workspaces/run.mjs` and `tools/manual-test/model-tiers/run.mjs` to use the `llmgateway` provider ID and `impls/devpass-quota.ts` attachment. Keep existing policies and journey behavior. Update their README instructions and the relevant `tools/manual-test/README.md` references to match.
 
 **Verify:** Search the active documentation and harnesses for the old DevPass module path and provider ID. Only explicit migration guidance remains. With `pi`, `LLMGATEWAY_API_KEY`, and suitable model IDs available, run `node tools/manual-test/persona-workspaces/run.mjs --only R1,D1` and `MT_PROVIDER=llmgateway node tools/manual-test/model-tiers/run.mjs`; both report PASS. Record any unavailable credentials or model prerequisites instead of claiming a live pass.
-**Status:** not started
+
+**Live harness note:** The live harnesses were not run because credentials and suitable model prerequisites were unavailable.
+**Status:** done
 
 ### Step 8: Verify the integrated change
-
-**Status:** done
 
 Run the full Vitest suite after the legacy test updates. Check that no active quota code imports the removed provisioning or retry modules. Confirm the approved tests remain unchanged and the LLM Gateway manifest is discovered through the existing extension package resource. Do not add a build or type-check step.
 
 **Verify:** `npx vitest run` passes. Compare the approved test files against test-review commit `cdd469b93237234e9c03073f1f0e0e181c819340` and confirm they are unchanged. Report any live-harness prerequisites that prevented Step 7 verification.
-**Status:** not started
+**Status:** done
