@@ -9,7 +9,11 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	ProviderConfig,
+} from "@earendil-works/pi-coding-agent";
 import type { Model, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { loadQuotaAttachments } from "./lib/attachments.js";
 import { readBypass, writeBypass, resolveRequestStore } from "./lib/bypass.js";
@@ -19,6 +23,7 @@ import { appendLedgerEntry, readLedger } from "./lib/ledger.js";
 import {
 	installQuotaStreamGuard,
 	isQuotaWrappedProvider,
+	quotaGuardChain,
 	restoreQuotaStreamGuard,
 	unwrapQuotaProvider,
 	wrapProviderWithQuota,
@@ -182,17 +187,23 @@ type RecordWithRunner = ProviderRecord & { runnerPath: string };
 type ProviderRegistry = {
 	getProvider(id: string): Provider | undefined;
 	getRegisteredNativeProvider?: (id: string) => Provider | undefined;
+	getRegisteredProviderConfig?: (id: string) => ProviderConfig | undefined;
+	refresh?: (options?: unknown) => Promise<unknown>;
 };
 
 type AttachedProvider = {
 	effective: Provider;
 	original: Provider;
 	wrapper: Provider;
+	nativeBase?: Provider;
+	providerConfig?: ProviderConfig;
 };
 
 type ProviderStateStores = WeakMap<object, Map<string, AttachedProvider>>;
+type RefreshHooks = WeakMap<object, { afterRefresh: () => void }>;
 
 const PROVIDER_STATE_KEY = Symbol.for("my-pi.quota-provider-state-stores");
+const REFRESH_HOOK_KEY = Symbol.for("my-pi.quota-provider-refresh-hooks");
 
 function providerStateStores(): ProviderStateStores {
 	const globals = globalThis as Record<PropertyKey, unknown>;
@@ -201,6 +212,15 @@ function providerStateStores(): ProviderStateStores {
 	const stores: ProviderStateStores = new WeakMap();
 	globals[PROVIDER_STATE_KEY] = stores;
 	return stores;
+}
+
+function refreshHooks(): RefreshHooks {
+	const globals = globalThis as Record<PropertyKey, unknown>;
+	const existing = globals[REFRESH_HOOK_KEY];
+	if (existing instanceof WeakMap) return existing as RefreshHooks;
+	const hooks: RefreshHooks = new WeakMap();
+	globals[REFRESH_HOOK_KEY] = hooks;
+	return hooks;
 }
 
 /** Poll when no usable cache exists, when it is old, or after a window reset. */
@@ -275,15 +295,69 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		return states;
 	}
 
+	function detachProvider(
+		registry: ProviderRegistry,
+		providerId: string,
+		state: AttachedProvider,
+	): void {
+		const registeredNative = registry.getRegisteredNativeProvider?.(providerId);
+		const current = registry.getProvider(providerId);
+		if (current) restoreQuotaStreamGuard(current);
+		if (state.effective !== current) restoreQuotaStreamGuard(state.effective);
+		if (registeredNative !== state.wrapper) return;
+
+		try {
+			pi.unregisterProvider(providerId);
+		} catch {
+			return;
+		}
+		if (state.nativeBase) pi.registerProvider(state.nativeBase);
+		else if (state.providerConfig) pi.registerProvider(providerId, state.providerConfig);
+	}
+
+	function ensureRefreshHook(registry: ProviderRegistry): void {
+		if (!registry.refresh) return;
+		const hooks = refreshHooks();
+		const afterRefresh = () => {
+			const attachedProviders = stateStore(registry);
+			for (const [providerId, state] of attachedProviders) {
+				detachProvider(registry, providerId, state);
+				attachedProviders.delete(providerId);
+			}
+			attachProviders({ modelRegistry: registry });
+		};
+		const existing = hooks.get(registry as object);
+		if (existing) {
+			existing.afterRefresh = afterRefresh;
+			return;
+		}
+		const refresh = registry.refresh.bind(registry);
+		const hook = { afterRefresh };
+		try {
+			registry.refresh = async (options?: unknown) => {
+				try {
+					return await refresh(options);
+				} finally {
+					hook.afterRefresh();
+				}
+			};
+			hooks.set(registry as object, hook);
+		} catch {
+			// Some hosts expose a frozen registry facade. Lifecycle reattachment
+			// still protects the next request through the stable wrapper.
+		}
+	}
+
 	function attachProviders(ctx: { modelRegistry: ProviderRegistry }): void {
 		const registry = ctx.modelRegistry;
 		const attachedProviders = stateStore(registry);
+		ensureRefreshHook(registry);
 		for (const record of providerRecords) {
 			let provider = registry.getProvider(record.id);
 			if (!provider) continue;
 
-			const previous = attachedProviders.get(record.id);
-			const registeredNative = registry.getRegisteredNativeProvider?.(record.id);
+			let previous = attachedProviders.get(record.id);
+			let registeredNative = registry.getRegisteredNativeProvider?.(record.id);
 			const evaluate = (model: Model<any>, options?: SimpleStreamOptions) => {
 				maybeRefreshUsage(record);
 				return evaluateProviderQuota(
@@ -294,20 +368,36 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 				);
 			};
 
-			let original = previous?.original;
-			if (!original) original = unwrapQuotaProvider(registeredNative ?? provider);
+			// A refresh replaces the effective composer while retaining the stable
+			// wrapper as its native base. Remove that base first so the next wrapper
+			// starts from the current native catalog, not the old composed catalog.
+			if (previous && provider !== previous.effective && registeredNative === previous.wrapper) {
+				detachProvider(registry, record.id, previous);
+				attachedProviders.delete(record.id);
+				previous = undefined;
+				provider = registry.getProvider(record.id) ?? provider;
+				registeredNative = registry.getRegisteredNativeProvider?.(record.id);
+			} else if (previous && provider !== previous.effective && registeredNative !== previous.wrapper) {
+				// Another extension owns the current registration. Build around it
+				// instead of restoring the old provider from this attachment.
+				restoreQuotaStreamGuard(previous.effective);
+				previous = undefined;
+			}
+
+			const nativeBase = previous?.nativeBase ?? (
+				registeredNative && !isQuotaWrappedProvider(registeredNative) ? registeredNative : undefined
+			);
+			const providerConfig = previous?.providerConfig ?? registry.getRegisteredProviderConfig?.(record.id);
+			const original = previous?.original ?? unwrapQuotaProvider(nativeBase ?? registeredNative ?? provider);
 
 			// Keep one complete wrapper registered as the native base. Pi's provider
 			// composer can replace the effective object during a refresh, but every
 			// recomposed provider still delegates through this stable wrapper.
 			let wrapper = previous?.wrapper;
-			if (wrapper) {
-				wrapper = wrapProviderWithQuota(wrapper, evaluate);
-			} else if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
+			if (wrapper) wrapper = wrapProviderWithQuota(wrapper, evaluate);
+			else if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
 				wrapper = wrapProviderWithQuota(registeredNative, evaluate);
-			} else {
-				wrapper = wrapProviderWithQuota(original, evaluate);
-			}
+			} else wrapper = wrapProviderWithQuota(original, evaluate);
 			if (registeredNative !== wrapper) {
 				pi.registerProvider(wrapper);
 				provider = registry.getProvider(record.id) ?? provider;
@@ -317,15 +407,20 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 
 			// Keep the current request synchronous as well. The stable base wrapper
 			// protects lazy requests after a refresh; this seam protects this object.
-			if (!installQuotaStreamGuard(provider, evaluate)) {
+			if (!installQuotaStreamGuard(provider, evaluate, quotaGuardChain(wrapper))) {
 				const fallback = wrapProviderWithQuota(original, evaluate);
 				pi.registerProvider(fallback);
 				wrapper = fallback;
 				provider = registry.getProvider(record.id) ?? fallback;
 			}
 
-			const state = { effective: provider, original, wrapper };
-			attachedProviders.set(record.id, state);
+			attachedProviders.set(record.id, {
+				effective: provider,
+				original,
+				wrapper,
+				nativeBase,
+				providerConfig,
+			});
 		}
 	}
 
@@ -333,13 +428,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		const registry = ctx.modelRegistry;
 		const attachedProviders = stateStore(registry);
 		for (const [providerId, state] of attachedProviders) {
-			const current = registry.getProvider(providerId);
-			if (current) restoreQuotaStreamGuard(current);
-			if (state.effective !== current) restoreQuotaStreamGuard(state.effective);
-			const registeredNative = registry.getRegisteredNativeProvider?.(providerId);
-			if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
-				pi.registerProvider(unwrapQuotaProvider(registeredNative));
-			}
+			detachProvider(registry, providerId, state);
 			attachedProviders.delete(providerId);
 		}
 	}
@@ -348,14 +437,9 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		const registry = ctx.modelRegistry;
 		const attachedProviders = stateStore(registry);
 		const active = new Set(providerRecords.map((record) => record.id));
-		for (const [providerId] of attachedProviders) {
+		for (const [providerId, state] of attachedProviders) {
 			if (active.has(providerId)) continue;
-			const provider = registry.getProvider(providerId);
-			if (provider) restoreQuotaStreamGuard(provider);
-			const registeredNative = registry.getRegisteredNativeProvider?.(providerId);
-			if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
-				pi.registerProvider(unwrapQuotaProvider(registeredNative));
-			}
+			detachProvider(registry, providerId, state);
 			attachedProviders.delete(providerId);
 		}
 	}

@@ -22,17 +22,19 @@ The fixes isolate provider state per model registry and protect same-API registr
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/quota-providers/index.ts:297-313`
-- **Status:** open
+- **Status:** dismissed
 - **Fix:** Enforce quota before every transport dispatch, including the provider composer's API fallback.
 
 The retained wrapper blocks a registry refresh that keeps the same API. When the refreshed provider changes its configured API, pi selects its API fallback instead of the wrapped stream. A targeted probe reached transport despite an enforced hard cap.
+
+Accepted limitation: The approved boundary covers Pi built-ins, `models.json` providers using Pi-supported APIs, and the current DevPass provider. A third-party extension that re-registers the same provider ID mid-session before quota reattachment remains outside the guarantee because pi exposes no pre-dispatch extension hook for that replacement.
 
 ### 2. Caller-controlled marker can skip quota evaluation
 
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/quota-providers/lib/provider-wrapper.ts:20-71,142-150,198-207`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Remove options-based guard suppression and track nested calls with unforgeable closed-over state.
 
 The wrapper trusts `options[Symbol.for("my-pi.quota-provider-nested-guard")]`. Any caller or extension can set that global symbol to `true` and skip evaluation. The marker also remains on caller-owned options until the stream finishes, so a concurrent request that reuses those options can bypass its quota check.
@@ -42,7 +44,7 @@ The wrapper trusts `options[Symbol.for("my-pi.quota-provider-nested-guard")]`. A
 - **Category:** code correctness
 - **Severity:** critical
 - **Location:** `extensions/quota-providers/index.ts:297-313`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Detect an external provider replacement and rebuild the attachment around the current provider.
 
 Reattachment always reuses the previous wrapper as the native base. If another extension replaces the provider, quota registration restores the old provider instead, including its authentication configuration. The replacement provider is never used.
@@ -52,7 +54,7 @@ Reattachment always reuses the previous wrapper as the native base. If another e
 - **Category:** code correctness
 - **Severity:** warning
 - **Location:** `extensions/quota-providers/index.ts:297-310`
-- **Status:** open
+- **Status:** resolved
 - **Fix:** Recompose from the current native catalog instead of retaining a previously composed catalog as the native base.
 
 A `models.json` attachment captures its composed catalog as the permanent base. Later refreshes retain models removed from the current catalog. Replacing the sole model `removed` with `replacement` therefore leaves both models registered.

@@ -18,58 +18,25 @@ export type ProviderQuotaEvaluator = (
 // Symbol.for keeps the marker visible when pi reloads an extension module in
 // the same process. A local Symbol would make old guards look like new ones.
 const QUOTA_WRAPPER = Symbol.for("my-pi.quota-provider-wrapper");
-const NESTED_GUARD = Symbol.for("my-pi.quota-provider-nested-guard");
+
+/** Closed-over dispatch state shared by nested provider-composer calls. */
+export type QuotaGuardChain = { depth: number };
 
 type WrapperState =
 	| {
 		kind: "provider";
 		original: Provider;
 		evaluate: ProviderQuotaEvaluator;
+		chain: QuotaGuardChain;
 	}
 	| {
 		kind: "stream";
 		originalStreamSimple: Provider["streamSimple"];
 		evaluate: ProviderQuotaEvaluator;
+		chain: QuotaGuardChain;
 	};
 
 type MarkedProvider = Provider & { readonly [QUOTA_WRAPPER]?: WrapperState };
-type GuardOptions = SimpleStreamOptions & { [NESTED_GUARD]?: true };
-
-function beginGuard(options: SimpleStreamOptions | undefined): boolean {
-	if (!options || typeof options !== "object") return false;
-	const target = options as GuardOptions;
-	if (target[NESTED_GUARD]) return true;
-	try {
-		Object.defineProperty(target, NESTED_GUARD, {
-			configurable: true,
-			enumerable: false,
-			value: true,
-		});
-		return false;
-	} catch {
-		return false;
-	}
-}
-
-function endGuard(options: SimpleStreamOptions | undefined): void {
-	if (!options || typeof options !== "object") return;
-	try {
-		delete (options as GuardOptions)[NESTED_GUARD];
-	} catch {
-		// A frozen options object cannot carry the marker.
-	}
-}
-
-function releaseGuardAfterStream(options: SimpleStreamOptions | undefined, result: unknown): void {
-	if (!options || typeof options !== "object") return;
-	const resultMethod = (result as { result?: unknown } | null)?.result;
-	if (typeof resultMethod !== "function") {
-		endGuard(options);
-		return;
-	}
-	void Promise.resolve(Reflect.apply(resultMethod, result, []))
-		.then(() => endGuard(options), () => endGuard(options));
-}
 
 function wrapperState(provider: Provider): WrapperState | undefined {
 	const value = (provider as unknown as Record<PropertyKey, unknown>)[QUOTA_WRAPPER];
@@ -78,6 +45,11 @@ function wrapperState(provider: Provider): WrapperState | undefined {
 	return state.kind === "provider" || state.kind === "stream"
 		? value as WrapperState
 		: undefined;
+}
+
+/** Return the private dispatch chain for a quota wrapper. */
+export function quotaGuardChain(provider: Provider): QuotaGuardChain | undefined {
+	return wrapperState(provider)?.chain;
 }
 
 /** Return whether a provider carries one of this extension's guards. */
@@ -122,6 +94,27 @@ export function restoreQuotaStreamGuard(provider: Provider): boolean {
 	}
 }
 
+function guardedStream(
+	chain: QuotaGuardChain,
+	evaluate: ProviderQuotaEvaluator,
+	original: Provider["streamSimple"],
+	receiver: Provider,
+): Provider["streamSimple"] {
+	return (model, context, options) => {
+		const nested = chain.depth > 0;
+		chain.depth += 1;
+		try {
+			if (!nested) {
+				const decision = evaluate(model, options);
+				if (decision?.blocked) throw new Error(decision.message);
+			}
+			return Reflect.apply(original, receiver, [model, context, options]);
+		} finally {
+			chain.depth -= 1;
+		}
+	};
+}
+
 /**
  * Install a guard on the effective provider object itself. Pi's models.json
  * composer creates a lazy stream method, so this keeps a block synchronous
@@ -130,6 +123,7 @@ export function restoreQuotaStreamGuard(provider: Provider): boolean {
 export function installQuotaStreamGuard(
 	provider: Provider,
 	evaluate: ProviderQuotaEvaluator,
+	chain: QuotaGuardChain = { depth: 0 },
 ): boolean {
 	const existing = wrapperState(provider);
 	if (existing) {
@@ -138,22 +132,8 @@ export function installQuotaStreamGuard(
 	}
 
 	const originalStreamSimple = provider.streamSimple;
-	const state: WrapperState = { kind: "stream", originalStreamSimple, evaluate };
-	const guardedStreamSimple: Provider["streamSimple"] = (model, context, options) => {
-		const nested = beginGuard(options);
-		try {
-			if (!nested) {
-				const decision = state.evaluate(model, options);
-				if (decision?.blocked) throw new Error(decision.message);
-			}
-			const result = Reflect.apply(state.originalStreamSimple, provider, [model, context, options]);
-			if (!nested) releaseGuardAfterStream(options, result);
-			return result;
-		} catch (error) {
-			if (!nested) endGuard(options);
-			throw error;
-		}
-	};
+	const state: WrapperState = { kind: "stream", originalStreamSimple, evaluate, chain };
+	const guardedStreamSimple = guardedStream(chain, evaluate, originalStreamSimple, provider);
 
 	try {
 		Object.defineProperty(provider, QUOTA_WRAPPER, {
@@ -194,22 +174,9 @@ export function wrapProviderWithQuota(
 	}
 
 	const streamSimple = provider.streamSimple;
-	const state: WrapperState = { kind: "provider", original: provider, evaluate };
-	const guardedStreamSimple: Provider["streamSimple"] = (model, context, options) => {
-		const nested = beginGuard(options);
-		try {
-			if (!nested) {
-				const decision = state.evaluate(model, options);
-				if (decision?.blocked) throw new Error(decision.message);
-			}
-			const result = Reflect.apply(streamSimple, provider, [model, context, options]);
-			if (!nested) releaseGuardAfterStream(options, result);
-			return result;
-		} catch (error) {
-			if (!nested) endGuard(options);
-			throw error;
-		}
-	};
+	const chain: QuotaGuardChain = { depth: 0 };
+	const state: WrapperState = { kind: "provider", original: provider, evaluate, chain };
+	const guardedStreamSimple = guardedStream(chain, evaluate, streamSimple, provider);
 
 	const target = Object.create(provider) as MarkedProvider;
 	Object.defineProperty(target, QUOTA_WRAPPER, {

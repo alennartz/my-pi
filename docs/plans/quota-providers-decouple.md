@@ -51,6 +51,8 @@ interface QuotaSource {
 
 **Provider blocking seam.** Use the effective provider from `ctx.modelRegistry.getProvider(providerId)`, wrap its `streamSimple`, and register the complete wrapped provider with `pi.registerProvider(provider)`. The wrapper evaluates the quota before calling the original stream. It delegates every other provider field and method unchanged, including auth, filtering, model listing, refresh, and API transport. It must be idempotent within one provider runtime so reloads do not stack quota guards. At the extension lifecycle boundary, resolve attachments against the session's effective model registry and install complete wrapped providers. Leave unattached providers unchanged. Quota decisions and ledger entries use model membership from the same cached usage record; bypass follows the requesting session's tree.
 
+**Attachment boundary.** The guarantee covers Pi built-in providers, `models.json` providers using Pi-supported APIs, and the current DevPass provider registration. A third-party extension that re-registers the same provider ID during a running session, before quota reattachment, is outside the guarantee because the existing extension APIs provide no pre-dispatch hook for that replacement.
+
 Do not register a partial `{ streamSimple }` overlay over a complete native provider: pi removes the native registration when it accepts a legacy provider config. `before_provider_request` cannot block because the extension runner catches handler errors and continues with the request. A quota block remains a non-retryable stream error before the transport call, preserving DR-057 behavior.
 
 ### Technology Choices

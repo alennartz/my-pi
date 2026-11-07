@@ -6,6 +6,7 @@ import { InMemoryModelsStore } from "@earendil-works/pi-ai";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import quotaExtension from "./index.js";
+import { wrapProviderWithQuota } from "./lib/provider-wrapper.js";
 
 const source = join(dirname(fileURLToPath(import.meta.url)), "test/fake-quota-source.ts");
 const dirs: string[] = [];
@@ -61,6 +62,7 @@ function makePi(registry: ModelRegistry) {
 			registerProvider: (...args: any[]) => args.length === 1
 				? registry.registerProvider(args[0])
 				: registry.registerProvider(args[0], args[1]),
+			unregisterProvider: (providerId: string) => registry.unregisterProvider(providerId),
 		},
 	};
 }
@@ -126,12 +128,12 @@ describe("quota provider review follow-up", () => {
 		dirs.push(dir);
 		const providerId = "refresh-provider";
 		const modelsPath = join(dir, "models.json");
-		const models = (modelId: string) => ({ providers: {
+		const models = (modelId: string, api = "openai-completions") => ({ providers: {
 			[providerId]: {
 				baseUrl: "https://example.test/v1",
-				api: "openai-completions",
+				api,
 				apiKey: "test-key",
-				models: [model(modelId, providerId)],
+				models: [{ ...model(modelId, providerId), api }],
 			},
 		} });
 		writeFileSync(modelsPath, JSON.stringify(models("first")));
@@ -156,12 +158,20 @@ describe("quota provider review follow-up", () => {
 		};
 		await events.get("session_start")?.({}, ctx);
 		cleanups.push(() => cleanFirstSession(events, ctx));
+		await new Promise((resolve) => setTimeout(resolve, 25));
 
-		writeFileSync(modelsPath, JSON.stringify(models("replacement")));
+		writeFileSync(modelsPath, JSON.stringify(models("replacement", "anthropic-messages")));
 		await registry.refresh({ allowNetwork: false });
 		const effective = registry.getProvider(providerId)!;
+		expect(effective.getModels().map((entry) => entry.id)).toEqual(["replacement"]);
 		const replacement = effective.getModels().find((entry) => entry.id === "replacement")!;
-		const result = await effective.streamSimple(replacement, { messages: [] } as any, {} as any).result();
+		let result;
+		try {
+			result = await effective.streamSimple(replacement, { messages: [] } as any, {} as any).result();
+		} catch (error) {
+			expect(String(error)).toMatch(/quota/i);
+			return;
+		}
 
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toMatch(/quota/i);
@@ -190,5 +200,46 @@ describe("quota provider review follow-up", () => {
 		await first.events.get("session_shutdown")?.({}, first.ctx);
 		expect((second.registry.getProvider("shared-provider") as any).marker).toBe("second");
 		await second.events.get("session_shutdown")?.({}, second.ctx);
+	});
+
+	it("rebuilds the attachment around an external provider replacement", async () => {
+		const attachment = await createNativeAttachment("replaceable-provider", "original");
+		const replacement = nativeProvider("replaceable-provider", "replacement");
+		attachment.registry.registerProvider(replacement);
+		await attachment.events.get("agent_start")?.({}, attachment.ctx);
+
+		expect((attachment.registry.getProvider("replaceable-provider") as any).marker).toBe("replacement");
+		expect(() => attachment.registry.getProvider("replaceable-provider")!.streamSimple(
+			model("standard", "replaceable-provider"),
+			{ messages: [] } as any,
+			{ sessionId: attachment.ctx.sessionManager.getSessionId() } as any,
+		)).toThrow(/quota/i);
+	});
+
+	it("does not trust a caller-owned nested-guard marker", () => {
+		const provider = nativeProvider("marker-provider", "marker");
+		const evaluate = vi.fn(() => ({ blocked: true as const, kind: "hard" as const, message: "quota blocked" }));
+		const wrapped = wrapProviderWithQuota(provider, evaluate);
+		const options = { [Symbol.for("my-pi.quota-provider-nested-guard")]: true } as any;
+
+		expect(() => wrapped.streamSimple(
+			model("standard", "marker-provider"),
+			{ messages: [] } as any,
+			options,
+		)).toThrow("quota blocked");
+		expect(evaluate).toHaveBeenCalledTimes(1);
+	});
+
+	it("evaluates concurrent requests that reuse one options object", async () => {
+		const provider = nativeProvider("shared-options", "shared");
+		provider.streamSimple = vi.fn(() => ({ result: () => Promise.resolve({}) }));
+		const evaluate = vi.fn(() => ({ blocked: false as const }));
+		const wrapped = wrapProviderWithQuota(provider, evaluate);
+		const options = {} as any;
+
+		const first = wrapped.streamSimple(model("standard", "shared-options"), { messages: [] } as any, options);
+		const second = wrapped.streamSimple(model("standard", "shared-options"), { messages: [] } as any, options);
+		expect(evaluate).toHaveBeenCalledTimes(2);
+		await Promise.all([first.result(), second.result()]);
 	});
 });
