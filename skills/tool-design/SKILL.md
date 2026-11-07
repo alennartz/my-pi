@@ -16,6 +16,15 @@ A tool's text reaches the model in two places. The **planner** reads the system 
 - `promptGuidelines` from every tool merge into one flat `Rules` list. Each guideline must name its tool.
 - `description` goes into the tool schema. The caller reads it when it forms arguments and interprets results.
 
+## JSON Schema
+
+Pi validates tool arguments with `@earendil-works/pi-schema`.
+
+- Build `parameters` and `outputSchema` with pi-schema builders such as `obj`, `str`, `int`, `arr`, `opt`, `oneOf`, and `union`.
+- Derive TypeScript types with `Static` from the same schema. Do not duplicate the schema in a separate type.
+- Keep constraints in JSON Schema. Enforce rules that JSON Schema cannot express in `execute`.
+- Expect Pi to coerce loosely typed tool arguments before `execute`, then report pi-schema validation errors when the result remains invalid.
+
 ## Field roles
 
 | Field | Reader | Holds | Does not hold |
