@@ -38,7 +38,7 @@ Refresh an existing codemap after changes. Updates come in two flavors:
 
 1. **Read the current `codemap.md`.**
 2. **Examine the specific changes** described by the caller.
-3. **Update the affected sections.** Preserve everything else as-is.
+3. **Update the affected sections.** Apply the **glob-first invariant** to every affected file list: normalize redundant explicit paths and prefer the broadest safe glob. Preserve everything else as-is.
 4. **Commit.** Commit with message: `codemap: update`
 
 **Full update** — no specific scope given, just "update the codemap." Do a full analysis:
@@ -50,7 +50,7 @@ Refresh an existing codemap after changes. Updates come in two flavors:
    - Modules whose responsibilities have shifted
    - New modules that have emerged
    - Modules that should be merged or split
-3. **Rewrite the affected sections.** Preserve accurate content (including human edits). Update what's stale. Add what's missing. Remove what's gone.
+3. **Rewrite the affected sections.** Preserve accurate content (including human edits). Update what's stale. Add what's missing. Remove what's gone. Apply the **glob-first invariant** to every rewritten file list.
 4. **Commit.** Commit with message: `codemap: update`
 
 ## Artifact Format
@@ -108,8 +108,9 @@ sequenceDiagram
   - A one-line purpose statement (no bold label, just the sentence)
   - **Responsibilities** — what it owns, comma-separated. Dense enough for triage: "can I skip this module for my current task?"
   - **Dependencies** — which other modules it depends on and why. Include reverse dependencies if non-obvious. Use "none" if standalone.
-  - **Files** — glob patterns. Use `dir/**` when an entire directory belongs to the module. List individual files when ownership is scattered.
+  - **Files** — glob patterns. Apply the **glob-first invariant**: use the broadest safe glob that matches only files owned by the module; prefer one directory or subtree glob over a list of individual files; check whether an existing or narrower parent glob can cover a path before adding it explicitly; use explicit paths only when no stable grouping exists.
 - **Every code file should be covered by at least one module's globs.** If a source file doesn't fit anywhere, that's a signal you're missing a module or a module's scope is too narrow. Non-code files (docs, config, CI, etc.) can be included where natural but don't need to be forced into a module. Rarely, a file may legitimately belong to multiple modules — this is fine to represent, but if it happens often it's a sign of tangled responsibilities.
+- **Mixed directory ownership** — when one directory contains files owned by multiple modules, use the smallest coherent subtree globs and explicit paths only when no stable grouping exists. Treat repeated mixed ownership as a layout or architecture smell. Flag the smell in the codemap or update summary, but never change source files or directory structure to resolve it.
 - **Module count should be small.** Aim for the fewest modules that accurately capture the system's logical structure. 3-8 modules is typical; more than 12 is a red flag that modules are too granular.
 - **Mermaid and module names must match exactly** — same names in the graph and the headings.
 
@@ -121,6 +122,7 @@ The hard part of codemap generation is deciding module boundaries. Some guidelin
 - **Name modules by what they do**, not by directory name (though they'll often coincide).
 - **Config, scripts, and infra files** — include them in a module if there's a natural fit, but don't force them. A top-level `tsconfig.json` doesn't need a module.
 - **Test files** belong to the module they test — include them in that module's globs.
+- **Glob-first maintenance** — when updating a file list, re-check neighboring entries for a safe consolidation. Do not append a literal path when a broader safe glob can represent the ownership.
 - **When in doubt, merge.** Two things that feel like they might be separate modules but have heavy cross-dependencies are probably one module.
 - **Ask when genuinely uncertain.** If a boundary call isn't clear from the code, ask the user — they know the intent. A quick question is cheaper than a wrong module boundary.
 
