@@ -56,6 +56,8 @@ Archive removes the session's broker registration, connections, queued messages,
 
 Connections and queued messages survive a Pimote/NATS restart. Message-level delivery guarantees, duplicate handling, reply expiry, and acknowledgement semantics remain unresolved and belong to the NATS architecture deep dive.
 
+Opening an archived Pi session from CLI should unarchive it through Pimote before it registers. This means the CLI open is an explicit return to use. It does not restore deleted connections or queued messages. This changes Pimote's current explicit-unarchive-only rule and must be reconciled with DR-068 during architecture.
+
 ### First-class Pimote subagents
 
 Pimote will replace its subagent panel-card projection with a typed `@pimote/sdk/subagents` seam. The root my-pi extension implements a provider over its existing `AgentSessionRegistry`. The provider exposes:
@@ -105,6 +107,7 @@ NATS fits the future cross-machine requirement. A local NATS server adds a proce
 
 ### NATS and delivery semantics
 
+- Which local-server distribution options fit Pimote: bundled platform binaries, an installed NATS service, or an externally configured server? Compare lifecycle, upgrade, and data-directory ownership.
 - Which JetStream streams, consumers, and retention policies store root registrations, connections, queued messages, and replies?
 - What does a successful root `send` receipt mean: accepted into JetStream, delivered to the target runtime, or something else?
 - How does the receiving host acknowledge a message after admitting it to a Pi session? What happens if it crashes between broker delivery and session persistence?
@@ -124,6 +127,7 @@ NATS fits the future cross-machine requirement. A local NATS server adds a proce
 - Which session events does Pimote map through the existing session transcript renderer, and which remain provider-only events?
 - How does the view follow an internal child runtime replacement, or report that the child identity became unavailable?
 - How does the provider expose attachment counts to my-pi, and how does it clear held answers if the parent itself shuts down?
+- DR-025 currently lets `await_agents` return when all selected children settle. The chosen attached-view behavior keeps the wait open until the final view detaches. Confirm and record this change to that contract.
 - What replay or retention contract applies to lifecycle and communication events when the Pimote client disconnects or the server restarts?
 - Which Pimote wire changes affect only the web client, and which require an Android protocol update?
 - Which normal Pi commands are available in a child view besides the agreed safe settings and branch controls?
@@ -135,6 +139,8 @@ NATS fits the future cross-machine requirement. A local NATS server adds a proce
 - What exact slash commands expose the current session address and connect or disconnect roots?
 - Does agent discovery include previously registered closed roots by default, or offer a filter without adding presence claims?
 - What happens when two CLI/Pimote processes attempt to register or open the same Pi session identity?
+- DR-068 requires explicit unarchive before any open. Confirm the chosen CLI-open unarchive behavior and supersede DR-068 if it remains the intended contract.
+- Preserve DR-044's parent-local router for subagents. The new NATS provider joins root sessions only; do not silently turn subagent channels into one root-wide routing graph.
 
 ## Visual design to resolve in architecture
 
