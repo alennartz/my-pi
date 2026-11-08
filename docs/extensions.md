@@ -86,7 +86,8 @@ The subagents extension accepts four advertised tier names: `cheap`, `medium`,
   `high`, `xhigh`, or `max`, for example `provider/model:xhigh`.
 
 Tier names work in `subagent` model arguments and agent-definition `model`
-fields. A concrete model ID passes through unchanged. Resurrect also accepts a
+fields. Omit `model` to inherit the current session's model and thinking level.
+A concrete model ID passes through unchanged. Resurrect also accepts a
 `model`, resolved by the same precedence as spawning: the persona `model` pin
 wins, then the explicit value, then the model the session last ran on. A
 resurrected agent that declares nothing keeps its persisted concrete model.

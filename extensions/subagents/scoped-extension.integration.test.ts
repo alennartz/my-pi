@@ -1683,10 +1683,11 @@ describe("root orchestration integration", () => {
 			.rejects.toThrow(/unavailable|dead/i);
 	});
 
-	it("inherits the active parent model when model is omitted or empty", async () => {
+	it("inherits the active parent model and thinking level when model is omitted or empty", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
 		const { pi, tools, handlers } = makePi();
+		pi.getThinkingLevel.mockReturnValue("xhigh");
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile, {
 			model: { provider: "astra", id: "model" },
@@ -1704,6 +1705,7 @@ describe("root orchestration integration", () => {
 		}, ctx);
 
 		expect(managed.created.map((entry) => entry.config.modelRef)).toEqual(["astra/model", "astra/model"]);
+		expect(managed.created.map((entry) => entry.config.thinkingLevel)).toEqual(["xhigh", "xhigh"]);
 		const lifecycleLog = fs.readFileSync(path.join(tmpRoot!, "parent.subagents", "agents.jsonl"), "utf8");
 		expect(lifecycleLog).not.toContain('"agent":""');
 	});
@@ -1731,6 +1733,7 @@ describe("root orchestration integration", () => {
 		}, ctx);
 
 		expect(managed.created[0].config.modelRef).toBe("provider/model:high");
+		expect(managed.created[0].config.thinkingLevel).toBeUndefined();
 	});
 
 	it("propagates persona model, normalized tool policy, skills, and cwd to a native child", async () => {
@@ -1765,6 +1768,7 @@ describe("root orchestration integration", () => {
 			path: ["reviewer"],
 			target: { kind: "new", cwd: childCwd },
 			modelRef: "pinned/model",
+			thinkingLevel: undefined,
 			skillPaths: ["/skills/debugging/SKILL.md"],
 			scope: {
 				path: ["reviewer"],

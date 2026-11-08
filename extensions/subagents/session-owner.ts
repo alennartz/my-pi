@@ -1082,7 +1082,7 @@ class SubagentSessionOwner {
 		lines.push(
 			"## Model Tiers",
 			"",
-			"Leave `agents[].model` unspecified by default; an omitted model inherits the current session model.",
+			"Leave `agents[].model` unspecified by default; an omitted model inherits the current session model and thinking level.",
 			"If a matching specialist is listed above, prefer its name in the `persona` field instead of choosing a tier. A persona's model pin always wins.",
 			"If no listed specialist matches, omit `persona` for a default general-purpose agent.",
 			"The `subagent` tool's `agents[].model` field accepts a tier name. Use the table below as optional guidance when a deliberate model choice is useful or the user requests one:",
@@ -1408,11 +1408,14 @@ class SubagentSessionOwner {
 		// values), so construction never re-reads it. Only the active file's
 		// declared skills resolve, and only the winning model reference is
 		// validated and applied — the discarded file's fields never reach
-		// construction.
+		// construction. An unpinned child also inherits this session's
+		// thinking level.
 		const activeById = new Map<string, PersonaCapabilities | undefined>();
 		const skillPathsById = new Map<string, readonly string[]>();
 		const modelById = new Map<string, string | undefined>();
+		const thinkingLevelById = new Map<string, string | undefined>();
 		const inheritedModelRef = modelRefOf(ctx.model);
+		const inheritedThinkingLevel = this.pi.getThinkingLevel() as string;
 		const overrideNotes: string[] = [];
 		const commands = this.pi.getCommands();
 		for (const agent of params.agents) {
@@ -1439,6 +1442,7 @@ class SubagentSessionOwner {
 				availableModels,
 			});
 			modelById.set(agent.id, resolvedModel.model);
+			thinkingLevelById.set(agent.id, !active?.model && !agent.model ? inheritedThinkingLevel : undefined);
 			for (const warning of resolvedModel.warnings) session.turns.notifyTierIssueOnce(ctx, warning);
 			if (!active?.skills) continue;
 			try {
@@ -1463,6 +1467,7 @@ class SubagentSessionOwner {
 				channels: agent.channels ? Object.freeze([...agent.channels]) : undefined,
 				agent: personaNameOf(agent),
 				model: modelById.get(agent.id),
+				thinkingLevel: thinkingLevelById.get(agent.id),
 				cwd: resolvedCwds.get(agent.id),
 				skillPaths: skillPathsById.get(agent.id) ?? Object.freeze([]),
 				noSkills: activeById.get(agent.id)?.skills ? true : undefined,

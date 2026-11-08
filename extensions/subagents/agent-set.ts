@@ -617,7 +617,7 @@ export class SubagentManager {
 				// when resurrection resolved an override; otherwise it stays absent so
 				// the persisted session keeps its concrete model.
 				modelRef: spec.model,
-				thinkingLevel: spec.kind === "fork" ? spec.thinkingLevel as any : undefined,
+				thinkingLevel: spec.thinkingLevel as any,
 				toolPolicy,
 				skillPaths,
 				noSkills: spec.noSkills,
@@ -726,7 +726,7 @@ export class SubagentManager {
 			state: "running",
 			usage: zeroUsage(),
 			model: parsedModel?.model,
-			thinkingLevel: spec.kind === "fork" ? spec.thinkingLevel : parsedModel?.thinking,
+			thinkingLevel: spec.thinkingLevel ?? parsedModel?.thinking,
 			lastTurnInput: 0,
 			hasSubgroup: false,
 			pendingCorrelations: [],

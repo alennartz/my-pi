@@ -17,6 +17,8 @@ export interface RegularAgentSpec {
 	id: string;
 	agent?: string;
 	model?: string;
+	/** Parent thinking level for an unpinned spawn; explicit model suffixes win in the child runtime. */
+	thinkingLevel?: string;
 	task: string;
 	channels?: readonly string[];
 	resumeSessionFile?: string;

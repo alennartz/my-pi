@@ -1,6 +1,6 @@
 # Model Selection
 
-Read this reference when an explicit model or specialist persona is under consideration. Tier names are configurable aliases. An omitted `agents[].model` inherits the current session model.
+Read this reference when an explicit model or specialist persona is under consideration. Tier names are configurable aliases. An omitted `agents[].model` inherits the current session model and thinking level.
 
 ## Persona precedence
 
