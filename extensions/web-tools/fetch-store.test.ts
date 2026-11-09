@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -39,7 +39,7 @@ describe("FetchStore", () => {
 		const hit = await store.get("k1");
 		expect(hit).not.toBeNull();
 		expect(hit!.result.markdown).toBe(long);
-		expect(hit!.result.charCount).toBe(100_000);
+		expect(await readFile(store.pathFor("k1"), "utf-8")).toBe(long);
 	});
 
 	it("returns null on miss", async () => {
@@ -53,6 +53,7 @@ describe("FetchStore", () => {
 		nowMs += 2000;
 		expect(await store.get("k1")).toBeNull();
 		expect(await store.size()).toBe(0);
+		expect(await readdir(dir)).toEqual([]);
 	});
 
 	it("does not store error results", async () => {
@@ -72,6 +73,7 @@ describe("FetchStore", () => {
 		expect(await store.get("k0")).toBeNull(); // oldest pruned
 		expect(await store.get("k1")).toBeNull();
 		expect((await store.get("k4"))!.result.markdown).toBe("c4");
+		expect(await readFile(store.pathFor("k4"), "utf-8")).toBe("c4");
 	});
 
 	it("leaves no temp files after successful puts", async () => {
@@ -88,6 +90,7 @@ describe("FetchStore", () => {
 		await writeFile(join(dir, "k1.json"), "{not json", "utf-8");
 		expect(await store.get("k1")).toBeNull();
 		expect(await store.size()).toBe(0);
+		expect(await readdir(dir)).toEqual([]);
 	});
 
 	it("clear removes everything", async () => {

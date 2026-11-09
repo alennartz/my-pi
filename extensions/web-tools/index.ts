@@ -46,13 +46,14 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Fetch",
 		exposure: "direct",
 		description:
-			"Fetch 1 to 8 URLs as markdown through Readability. Full pages are stored on disk. Use offset to continue a page and findText to search it.",
+			"Fetch 1 to 8 URLs as markdown through Readability. Successful results include a path to the full untruncated page on disk. Use offset to continue a page and findText to search it.",
 		promptSnippet: "Fetch URLs you already know, from web_search or the user, as markdown for targeted reading.",
 		parameters: webFetchParameters,
 		outputSchema: webFetchOutput,
 		promptGuidelines: [
-			"Explore a fetched page with findText first: pass terms from your goal and read only the matching passages. Read from the start only when findText returns nothing useful.",
-			"Long output is truncated — continue with the reported offset instead of refetching.",
+			"web_fetch: Explore a fetched page with findText first: pass terms from your goal and read only the matching passages. Read from the start only when findText returns nothing useful.",
+			"web_fetch: The path in each successful result points to the full untruncated page on disk. Use read on that path when matched passages or offset slices are insufficient.",
+			"web_fetch: Long output is truncated — continue with the reported offset instead of refetching.",
 		],
 		async execute(_toolCallId, params: WebFetchParams, signal) {
 			const outcome = await runWebFetch(params, { store: fetchStore, signal });

@@ -42,6 +42,8 @@ export interface FetchResult {
 	title?: string;
 	/** Extracted content (markdown format; plain text for text/plain sources). */
 	markdown: string;
+	/** Local file containing the full untruncated fetched page. */
+	path?: string;
 	/** sha256 hex of the full untruncated markdown. */
 	contentHash: string;
 	/** Character count of the full untruncated markdown. */

@@ -56,8 +56,9 @@ export const webFetchOutput = Type.Object({
 			markdown: Type.String({
 				description: "Extracted content (markdown format; plain text for text/plain sources)",
 			}),
-			contentHash: Type.String({ description: "sha256 hex of the full untruncated markdown" }),
-			charCount: Type.Number({ description: "Character count of the full untruncated markdown" }),
+			path: Type.Optional(
+				Type.String({ description: "Local file containing the full untruncated fetched page" }),
+			),
 			truncated: Type.Boolean({
 				description: "True if the returned markdown was cut by maxCharacters",
 			}),
@@ -78,8 +79,6 @@ export const webFetchOutput = Type.Object({
 				]),
 			),
 			errorMessage: Type.Optional(Type.String()),
-			attempts: Type.Number({ description: "HTTP attempts made (>= 1)" }),
-			fromCache: Type.Boolean(),
 		}),
 	),
 });
@@ -151,11 +150,12 @@ async function fetchOne(
 	}
 
 	const key = cacheKeyFor(url, deps.extractionOptsHash ?? "");
+	const path = deps.store.pathFor(key);
 
 	if (!params.fresh) {
 		const stored = await deps.store.get(key);
 		if (stored) {
-			return renderResult(stored.result, params, true);
+			return renderResult(stored.result, params, path, true);
 		}
 	}
 
@@ -164,7 +164,7 @@ async function fetchOne(
 		http = await httpFetch(url, { fetchImpl: deps.fetchImpl, signal: deps.signal });
 	} catch (err) {
 		if (err instanceof HttpFetchError) {
-			return errorFetchResult(url, err.code, err.message, err.attempts);
+			return errorFetchResult(url, err.code, err.message);
 		}
 		throw err;
 	}
@@ -175,7 +175,6 @@ async function fetchOne(
 			url,
 			"bad-content-type",
 			`unsupported content type "${contentType || "unknown"}"`,
-			http.attempts,
 		);
 	}
 
@@ -194,7 +193,6 @@ async function fetchOne(
 			url,
 			"extraction-failed",
 			"no readable content extracted (the page may need JavaScript)",
-			http.attempts,
 		);
 	}
 
@@ -208,7 +206,7 @@ async function fetchOne(
 		fromCache: false,
 	});
 	await deps.store.put(key, result);
-	return renderResult(result, params, false);
+	return renderResult(result, params, path, false);
 }
 
 function hashOf(markdown: string): string {
@@ -216,7 +214,12 @@ function hashOf(markdown: string): string {
 }
 
 /** Apply format/maxCharacters/offset/findText to a full stored result. */
-function renderResult(full: FetchResult, params: WebFetchParams, fromCache: boolean): FetchResult {
+function renderResult(
+	full: FetchResult,
+	params: WebFetchParams,
+	path: string,
+	fromCache: boolean,
+): FetchResult {
 	const maxChars = Math.min(params.maxCharacters ?? DEFAULT_MAX_CHARS, ABSOLUTE_MAX_CHARS);
 	const queries = normalizeFindText(params.findText);
 
@@ -226,7 +229,7 @@ function renderResult(full: FetchResult, params: WebFetchParams, fromCache: bool
 		return {
 			...full,
 			markdown: body,
-			charCount: full.charCount,
+			path,
 			truncated: false,
 			nextOffset: undefined,
 			fromCache,
@@ -238,6 +241,7 @@ function renderResult(full: FetchResult, params: WebFetchParams, fromCache: bool
 		return {
 			...full,
 			markdown: `(offset ${offset} is beyond the end of the stored content: ${full.markdown.length} chars)`,
+			path,
 			truncated: false,
 			nextOffset: undefined,
 			fromCache,
@@ -254,6 +258,7 @@ function renderResult(full: FetchResult, params: WebFetchParams, fromCache: bool
 	return {
 		...full,
 		markdown: body,
+		path,
 		truncated,
 		nextOffset: truncated ? offset + maxChars : undefined,
 		fromCache,
@@ -263,8 +268,24 @@ function renderResult(full: FetchResult, params: WebFetchParams, fromCache: bool
 export interface WebFetchOutcome {
 	text: string;
 	details: FetchResult[];
-	/** Same array as `details`, wrapped as `{ results }`. */
+	/** Public result projection, wrapped as `{ results }`. */
 	structuredContent: WebFetchStructured;
+}
+
+function toStructuredResult(result: FetchResult): WebFetchStructured["results"][number] {
+	const structured: WebFetchStructured["results"][number] = {
+		url: result.url,
+		effectiveUrl: result.effectiveUrl,
+		markdown: result.markdown,
+		truncated: result.truncated,
+		status: result.status,
+	};
+	if (result.title !== undefined) structured.title = result.title;
+	if (result.path !== undefined) structured.path = result.path;
+	if (result.nextOffset !== undefined) structured.nextOffset = result.nextOffset;
+	if (result.errorCode !== undefined) structured.errorCode = result.errorCode;
+	if (result.errorMessage !== undefined) structured.errorMessage = result.errorMessage;
+	return structured;
 }
 
 /** Batch entry point: validate params, fetch with bounded concurrency. */
@@ -288,7 +309,11 @@ export async function runWebFetch(
 		fetchOne(url, params, deps),
 	);
 
-	return { text: results.map(renderOne).join("\n\n"), details: results, structuredContent: { results } };
+	return {
+		text: results.map(renderOne).join("\n\n"),
+		details: results,
+		structuredContent: { results: results.map(toStructuredResult) },
+	};
 }
 
 function renderOne(result: FetchResult): string {
@@ -298,8 +323,8 @@ function renderOne(result: FetchResult): string {
 	const header = [
 		`=== ${result.url}`,
 		result.title ? `Title: ${result.title}` : undefined,
-		`Chars: ${result.charCount}${result.truncated ? ` (truncated — continue with offset: ${result.nextOffset})` : ""}`,
-		`Hash: ${result.contentHash.slice(0, 12)} · ${result.fromCache ? "cached" : `fetched (${result.attempts} attempt${result.attempts === 1 ? "" : "s"})`}`,
+		result.path ? `Full content: ${result.path}` : undefined,
+		result.truncated ? `Content truncated — continue with offset: ${result.nextOffset}` : undefined,
 	]
 		.filter((l) => l !== undefined)
 		.join("\n");

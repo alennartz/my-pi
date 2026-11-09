@@ -47,46 +47,48 @@ describe("runWebFetch", () => {
 		expect(r.markdown).toContain("## Backpressure");
 		expect(outcome.text).toContain("=== https://example.com/streams");
 		expect(outcome.text).toContain("Title: Understanding Node Streams");
+		expect(outcome.text).toContain("Full content:");
 	});
 
-	it("returns structuredContent identical to results and matching the schema shape", async () => {
+	it("returns the public structured result without fetch diagnostics", async () => {
 		const fetchImpl = vi.fn(async () => htmlResponse(articleHtml));
 		const outcome = await runWebFetch(
 			{ url: "https://example.com/streams", maxCharacters: 500 },
 			deps(fetchImpl),
 		);
-		expect(outcome.structuredContent.results).toBe(outcome.details);
+		expect(outcome.structuredContent.results).not.toBe(outcome.details);
 		expect(outcome.structuredContent.results[0]).toEqual({
 			url: "https://example.com/streams",
 			effectiveUrl: "https://example.com/streams",
 			title: "Understanding Node Streams",
 			markdown: outcome.details[0].markdown,
-			contentHash: expect.any(String),
-			charCount: expect.any(Number),
+			path: expect.stringMatching(/\.md$/),
 			truncated: true,
 			nextOffset: 500,
 			status: "ok",
-			attempts: 1,
-			fromCache: false,
 		});
+		expect(outcome.structuredContent.results[0].path).toBeDefined();
+		expect(readFileSync(outcome.structuredContent.results[0].path!, "utf-8")).toContain(
+			"Backpressure",
+		);
+		expect(outcome.structuredContent.results[0]).not.toHaveProperty("contentHash");
+		expect(outcome.structuredContent.results[0]).not.toHaveProperty("charCount");
+		expect(outcome.structuredContent.results[0]).not.toHaveProperty("attempts");
+		expect(outcome.structuredContent.results[0]).not.toHaveProperty("fromCache");
 	});
 
 	it("shapes error results in structuredContent", async () => {
 		const fetchImpl = vi.fn();
 		const outcome = await runWebFetch({ url: "http://127.0.0.1:8080/x" }, deps(fetchImpl));
-		expect(outcome.structuredContent.results).toBe(outcome.details);
+		expect(outcome.structuredContent.results).not.toBe(outcome.details);
 		expect(outcome.structuredContent.results[0]).toEqual({
 			url: "http://127.0.0.1:8080/x",
 			effectiveUrl: "http://127.0.0.1:8080/x",
 			markdown: "",
-			contentHash: "",
-			charCount: 0,
 			truncated: false,
 			status: "error",
 			errorCode: "blocked-url",
 			errorMessage: expect.any(String),
-			attempts: 0,
-			fromCache: false,
 		});
 	});
 
@@ -104,7 +106,7 @@ describe("runWebFetch", () => {
 		const d = deps(fetchImpl);
 		const first = await runWebFetch({ url: "https://example.com/streams" }, d);
 		const second = await runWebFetch(
-			{ url: "https://example.com/streams", offset: first.details[0].charCount - 50 },
+			{ url: "https://example.com/streams", offset: first.details[0].markdown.length - 50 },
 			d,
 		);
 		expect(fetchImpl).toHaveBeenCalledTimes(1);

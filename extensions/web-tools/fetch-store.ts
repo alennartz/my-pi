@@ -1,6 +1,7 @@
 /**
- * Disk-backed page cache. One JSON file per URL under the pi agent dir;
- * survives restarts; front for offset pagination and findText retrieval.
+ * Disk-backed page cache. One JSON metadata file and one markdown sidecar per URL
+ * under the pi agent dir; survives restarts; front for offset pagination and
+ * findText retrieval.
  * Contract: docs/plans/web-tools.md → Interfaces → Disk page cache.
  */
 
@@ -19,6 +20,8 @@ export interface StoredFetch {
 export interface FetchStore {
 	get(key: string): StoredFetch | null;
 	put(key: string, result: FetchResult): void;
+	/** Local path to the full untruncated markdown sidecar. */
+	pathFor(key: string): string;
 	clear(): void;
 	get size(): number;
 }
@@ -49,6 +52,13 @@ export function openFetchStore(dir?: string, opts: FetchStoreOptions = {}): Fetc
 	const now = opts.now ?? Date.now;
 
 	const fileFor = (key: string) => join(storeDir, `${key}.json`);
+	const contentFileFor = (key: string) => join(storeDir, `${key}.md`);
+
+	async function writeAtomic(target: string, content: string): Promise<void> {
+		const tmp = join(storeDir, `.${randomBytes(6).toString("hex")}.tmp`);
+		await writeFile(tmp, content, "utf-8");
+		await rename(tmp, target);
+	}
 
 	async function prune(): Promise<void> {
 		let names: string[];
@@ -61,21 +71,31 @@ export function openFetchStore(dir?: string, opts: FetchStoreOptions = {}): Fetc
 		const live: Array<{ name: string; mtime: number; expiresAt: number }> = [];
 		for (const name of jsonFiles) {
 			const full = join(storeDir, name);
+			const key = name.slice(0, -".json".length);
 			try {
 				const raw = await readFile(full, "utf-8");
 				const parsed = JSON.parse(raw) as StoredFetch;
 				if (now() > parsed.expiresAt) {
 					await rm(full, { force: true });
+					await rm(contentFileFor(key), { force: true });
 					continue;
 				}
 				live.push({ name, mtime: (await stat(full)).mtimeMs, expiresAt: parsed.expiresAt });
 			} catch {
 				await rm(full, { force: true }); // unreadable/corrupt entry is a miss
+				await rm(contentFileFor(key), { force: true });
 			}
 		}
 		if (live.length > maxEntries) {
 			live.sort((a, b) => a.mtime - b.mtime);
 			for (const { name } of live.slice(0, live.length - maxEntries)) {
+				await rm(join(storeDir, name), { force: true });
+				await rm(contentFileFor(name.slice(0, -".json".length)), { force: true });
+			}
+		}
+		const liveKeys = new Set(live.map(({ name }) => name.slice(0, -".json".length)));
+		for (const name of names.filter((entry) => entry.endsWith(".md"))) {
+			if (!liveKeys.has(name.slice(0, -".md".length))) {
 				await rm(join(storeDir, name), { force: true });
 			}
 		}
@@ -95,11 +115,19 @@ export function openFetchStore(dir?: string, opts: FetchStoreOptions = {}): Fetc
 				parsed = JSON.parse(raw) as StoredFetch;
 			} catch {
 				await rm(full, { force: true }); // corrupt entry is a miss, not an error
+				await rm(contentFileFor(key), { force: true });
 				return null;
 			}
 			if (now() > parsed.expiresAt) {
 				await rm(full, { force: true });
+				await rm(contentFileFor(key), { force: true });
 				return null;
+			}
+			const contentPath = contentFileFor(key);
+			try {
+				await stat(contentPath);
+			} catch {
+				await writeAtomic(contentPath, parsed.result.markdown);
 			}
 			return parsed;
 		},
@@ -112,11 +140,13 @@ export function openFetchStore(dir?: string, opts: FetchStoreOptions = {}): Fetc
 				fetchedAt: now(),
 				expiresAt: now() + ttlMs,
 			};
-			const target = fileFor(key);
-			const tmp = join(storeDir, `.${randomBytes(6).toString("hex")}.tmp`);
-			await writeFile(tmp, JSON.stringify(payload), "utf-8");
-			await rename(tmp, target); // atomic on same filesystem
+			await writeAtomic(fileFor(key), JSON.stringify(payload));
+			await writeAtomic(contentFileFor(key), result.markdown);
 			await prune();
+		},
+
+		pathFor(key: string): string {
+			return contentFileFor(key);
 		},
 
 		async clear(): Promise<void> {
