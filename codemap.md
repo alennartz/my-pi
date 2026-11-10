@@ -157,7 +157,7 @@ Extension that detects interrupted sessions and injects resume markers so the ag
 
 Extension that provides a `set_session_name` LLM tool — lets the model name (or clear) the current session's display name, the same `session_info` mechanism behind `/name` and the session-selector rename. The name shows in session lists and resume pickers. Each session names itself: a subagent's call names its own child session (overriding its agent-path-derived name), never the parent's.
 
-**Responsibilities:** set_session_name tool registration, name normalization (line breaks to spaces, trim, empty clears), length validation (200 chars after normalization), unchanged-name no-op to keep session files free of redundant `session_info` entries. Result carries `details` ({name, previous}); the seam exemplar.
+**Responsibilities:** set_session_name tool registration, old-name precondition to prevent stale model updates from clobbering manual renames, name normalization (line breaks to spaces, trim, empty clears), length validation (200 chars after normalization), unchanged-name no-op to keep session files free of redundant `session_info` entries. Result carries `details` ({name, previous}); the seam exemplar.
 
 **Dependencies:** none (standalone extension loaded by pi)
 

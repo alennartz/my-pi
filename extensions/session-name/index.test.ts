@@ -67,7 +67,7 @@ describe("registration", () => {
 describe("setting names", () => {
 	it("sets the session name and reports the effective value", async () => {
 		const { state } = setup();
-		const result = await tool.execute("t1", { name: "fix webhook retry backoff" });
+		const result = await tool.execute("t1", { name: "fix webhook retry backoff", oldName: "" });
 		expect(state.name).toBe("fix webhook retry backoff");
 		expect(text(result)).toContain('"fix webhook retry backoff"');
 		expect(result.details).toEqual({ name: "fix webhook retry backoff", previous: null });
@@ -75,26 +75,35 @@ describe("setting names", () => {
 
 	it("normalizes line breaks and surrounding whitespace", async () => {
 		const { state } = setup();
-		await tool.execute("t1", { name: "  fix\nretry\nbackoff  " });
+		await tool.execute("t1", { name: "  fix\nretry\nbackoff  ", oldName: "" });
 		expect(state.name).toBe("fix retry backoff");
 	});
 
 	it("reports the previous name", async () => {
 		setup("old name");
-		const result = await tool.execute("t1", { name: "new name" });
+		const result = await tool.execute("t1", { name: "new name", oldName: "old name" });
 		expect(result.details).toEqual({ name: "new name", previous: "old name" });
+	});
+
+	it("rejects a stale old name without changing the session", async () => {
+		const { state } = setup("manual rename");
+		await expect(tool.execute("t1", { name: "model rename", oldName: "" })).rejects.toThrow(
+			/current name is \"manual rename\"/,
+		);
+		expect(state.name).toBe("manual rename");
+		expect(state.appends).toEqual([]);
 	});
 
 	it("does not append an entry when the name is unchanged", async () => {
 		const { state } = setup("same name");
-		const result = await tool.execute("t1", { name: "  same name  " });
+		const result = await tool.execute("t1", { name: "  same name  ", oldName: "same name" });
 		expect(state.appends).toEqual([]);
 		expect(text(result)).toContain("unchanged");
 	});
 
 	it("does nothing when clearing a session that has no name", async () => {
 		const { state } = setup();
-		const result = await tool.execute("t1", { name: "   " });
+		const result = await tool.execute("t1", { name: "   ", oldName: "" });
 		expect(state.appends).toEqual([]);
 		expect(text(result)).toContain("no name");
 	});
@@ -105,7 +114,7 @@ describe("setting names", () => {
 describe("clearing names", () => {
 	it("clears the name with an empty string and reports the previous name", async () => {
 		const { state } = setup("old name");
-		const result = await tool.execute("t1", { name: "" });
+		const result = await tool.execute("t1", { name: "", oldName: "old name" });
 		expect(state.name).toBeUndefined();
 		expect(text(result)).toContain("cleared");
 		expect(text(result)).toContain('"old name"');
@@ -118,19 +127,19 @@ describe("clearing names", () => {
 describe("validation", () => {
 	it("rejects names longer than 200 characters", async () => {
 		const { state } = setup();
-		await expect(tool.execute("t1", { name: "x".repeat(201) })).rejects.toThrow(/at most 200 characters/);
+		await expect(tool.execute("t1", { name: "x".repeat(201), oldName: "" })).rejects.toThrow(/at most 200 characters/);
 		expect(state.name).toBeUndefined();
 		expect(state.appends).toEqual([]);
 	});
 
 	it("measures length after normalization", async () => {
 		setup();
-		await expect(tool.execute("t1", { name: "x".repeat(105) + "\n" + "x".repeat(105) })).rejects.toThrow(/got 211/);
+		await expect(tool.execute("t1", { name: "x".repeat(105) + "\n" + "x".repeat(105), oldName: "" })).rejects.toThrow(/got 211/);
 	});
 
 	it("accepts a 200-character name padded with whitespace", async () => {
 		const { state } = setup();
-		await tool.execute("t1", { name: "x".repeat(200) + "\n\n\n" });
+		await tool.execute("t1", { name: "x".repeat(200) + "\n\n\n", oldName: "" });
 		expect(state.name).toBe("x".repeat(200));
 	});
 });

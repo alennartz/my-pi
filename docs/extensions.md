@@ -318,8 +318,9 @@ than files:
 - `worktree`: use `/worktree` with `create`, `resume`, or `cleanup` arguments.
 - `session-resume`: detects interrupted sessions automatically. It has a
   developer debug script at `scripts/pi-resume-debug.ts`.
-- `session-name`: use `set_session_name`; names are trimmed, line breaks become
-  spaces, and names are limited to 200 characters.
+- `session-name`: use `set_session_name` with `oldName` set to the current name,
+  or `""` when unnamed; names are trimmed, line breaks become spaces, and names
+  are limited to 200 characters.
 - `print-prompt`: use `/sysprompt` to inspect the last rendered system prompt.
 - `ask-user`: root sessions use `ask_user`.
 - `user-edit`: use `user_edit` to open the built-in editor.
