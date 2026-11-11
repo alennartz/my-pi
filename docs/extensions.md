@@ -29,7 +29,7 @@ extension says so.
 | Subagent model tiers | `~/.pi/agent/model-tiers.json` and `.pi/model-tiers.json` | `cheap`, `medium`, `smart`, `frontier` |
 | LLM Gateway provider | Environment and pi provider ID | `LLMGATEWAY_API_KEY`, provider ID `llmgateway` |
 | Quota attachments | `~/.pi/agent/quota-providers.json` | Provider IDs, usage-source modules, and quota policy fields |
-| Workspace personas | `<cwd>/AGENTS.md` | `kind`, `name`, `description`, `tools`, `model`, `skills`, body |
+| Workspace personas | `<cwd>/AGENTS.md` | `kind`, `name`, `icon`, `description`, `tools`, `model`, `skills`, body |
 | Model prompt overlays | `AGENTS.<model>.md` files | `models` front matter and Markdown body |
 | Subagent definitions | `~/.pi/agent/agents`, `.pi/agents`, package `pi.agents` | `name`, `description`, `tools`, `model`, `skills`, body |
 | Web tools | Environment and cache location | `BRAVE_API_KEY`, `PI_CODING_AGENT_DIR` |
@@ -187,6 +187,7 @@ The file needs `kind: persona` and a non-empty `name`:
 ---
 kind: persona
 name: release-engineer
+icon: ◆
 description: Prepare safe production releases.
 tools: read, bash, edit
 model: provider/release-model:xhigh
@@ -201,6 +202,7 @@ Supported front matter fields:
 - `kind: persona` enables the declaration. Any other value leaves the file as
   ordinary project context.
 - `name` is required.
+- `icon` is optional flat text for subagent presentation. It must not contain markup.
 - `description` is optional.
 - `tools` is a comma-separated allowlist.
 - `model` is a tier name or concrete model ID. It can carry a thinking suffix.
@@ -314,7 +316,12 @@ than files:
   and related tools. Agent definitions and model tiers are documented above.
   Child sessions bind extensions in print mode without a UI context, so
   `ctx.hasUI` is false and Pi supplies no-op UI methods. Subagents do not expose
-  tools with `model-only` exposure; attempted calls are blocked.
+  tools with `model-only` exposure; attempted calls are blocked. In Pimote, the
+  root session registers one provider on its EventBus. Pimote presents the
+  hierarchy, semantic events, and borrowed child views through that provider.
+  Nested managers publish through the root provider and do not register their
+  own providers. The TUI dashboard and idle-reap activity response remain
+  available, while subagent panel cards are not used.
 - `worktree`: use `/worktree` with `create`, `resume`, or `cleanup` arguments.
 - `session-resume`: detects interrupted sessions automatically. It has a
   developer debug script at `scripts/pi-resume-debug.ts`.

@@ -411,6 +411,8 @@ export interface SubagentProvider {
 export interface SubagentProviderOptions {
 	/** Canonical root-relative tree and live child runtime owner. */
 	registry: AgentSessionRegistry;
+	/** Optional shared registry event source. Standalone providers subscribe to the registry directly. */
+	registryEvents?: { subscribe(listener: (event: RegistryEvent) => void): () => void };
 	/** Root-scoped lifecycle authority. Provider delegates guarded mutations here. */
 	ownerControl: SubagentOwnerControlPort;
 	/** Existing append-only lifecycle projection used for replay restoration. */
@@ -421,8 +423,8 @@ export interface SubagentProviderOptions {
 	semanticEvents?: { subscribe(listener: (fact: SubagentSemanticFact) => void): () => void };
 	/** Notify the session turn owner when a child view acquires a lease. */
 	onLeaseAttached?: (path: AgentPath) => void;
-	/** Notify the session turn owner when a child view releases a lease. */
-	onLeaseDetached?: (path: AgentPath) => void;
+	/** Notify the session turn owner when a child view releases or loses a lease. */
+	onLeaseDetached?: (path: AgentPath, reason: "released" | "removed" | "unavailable") => void;
 	/** Maximum retained feed events, a positive integer. Older cursors require a snapshot. */
 	historyLimit?: number;
 }
@@ -1010,22 +1012,27 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		}
 	}
 
-	function notifyLeaseDetached(path: AgentPath): void {
+	function notifyLeaseDetached(path: AgentPath, reason: "released" | "removed" | "unavailable"): void {
 		try {
-			options.onLeaseDetached?.(copyPath(path));
+			options.onLeaseDetached?.(copyPath(path), reason);
 		} catch {
 			// Lease cleanup must finish even if the turn owner is shutting down.
 		}
 	}
 
-	function closeLease(record: LeaseRecord, reason: "removed" | "unavailable"): void {
-		if (!record.active) return;
+	function deactivateLease(record: LeaseRecord): boolean {
+		if (!record.active) return false;
 		record.active = false;
 		record.currentSession = undefined;
 		const pathLeases = leases.get(record.key);
 		pathLeases?.delete(record);
 		if (pathLeases && pathLeases.size === 0) leases.delete(record.key);
-		notifyLeaseDetached(record.path);
+		return true;
+	}
+
+	function closeLease(record: LeaseRecord, reason: "removed" | "unavailable"): void {
+		if (!deactivateLease(record)) return;
+		notifyLeaseDetached(record.path, reason);
 		notifyLease(record, { kind: "closed", reason });
 		record.listeners.clear();
 	}
@@ -1149,6 +1156,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const pathLeases = leases.get(key) ?? new Set<LeaseRecord>();
 		pathLeases.add(record);
 		leases.set(key, pathLeases);
+		notifyLeaseAttached(record.path);
 		const lease: SubagentLease = {
 			path: record.path,
 			get session(): BorrowedAgentSession {
@@ -1164,12 +1172,8 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				return () => record.listeners.delete(listener);
 			},
 			release: async () => {
-				if (!record.active) return;
-				record.active = false;
-				record.currentSession = undefined;
-				const current = leases.get(record.key);
-				current?.delete(record);
-				if (current && current.size === 0) leases.delete(record.key);
+				if (!deactivateLease(record)) return;
+				notifyLeaseDetached(record.path, "released");
 				record.listeners.clear();
 			},
 		};
@@ -1258,7 +1262,9 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		for (const record of records) appendLifecycleRecord(record);
 	}
 
-	registryUnsubscribe = options.registry.subscribe(appendRegistryEvent);
+	registryUnsubscribe = options.registryEvents
+		? options.registryEvents.subscribe(appendRegistryEvent)
+		: options.registry.subscribe(appendRegistryEvent);
 	if (options.semanticEvents) semanticUnsubscribe = options.semanticEvents.subscribe((fact) => {
 		if (closed) return;
 		const semantic = createSemanticEvent({

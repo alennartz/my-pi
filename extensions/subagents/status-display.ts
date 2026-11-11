@@ -1,11 +1,8 @@
 /**
- * Shared state presentation for the subagents UI surfaces — the TUI
- * dashboard widget (widget.ts) and the pimote panel cards (panel-cards.ts).
+ * Shared state presentation for the subagents TUI dashboard.
  *
- * One home for how an agent state is named, described, and colored, so the
- * two surfaces cannot drift apart. The TUI palette lives here; panel cards
- * adapt the semantic states to their own palette. Surface concerns — glyphs,
- * layout, width truncation — stay in the surfaces. Everything here is pure.
+ * Surface concerns — glyphs, layout, and width truncation — stay in the
+ * dashboard. Everything here is pure.
  */
 
 import type { AgentState, AgentStatus } from "./agent-set.js";

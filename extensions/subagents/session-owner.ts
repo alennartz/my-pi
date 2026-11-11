@@ -8,9 +8,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
-import { detect } from "@pimote/sdk/panels";
-import type { PanelHandle } from "@pimote/sdk/panels";
 import { answerActivity } from "@pimote/sdk/activity";
+import { registerProvider } from "@pimote/sdk/subagents";
 import {
 	getOrCreateSessionTreeStore,
 	registerSessionTreeStore,
@@ -56,7 +55,6 @@ import {
 	type AwaitMessage,
 	type AwaitOutcome,
 } from "./await-gating.js";
-import { statusesToCards } from "./panel-cards.js";
 import { modelDisplayName } from "./status-display.js";
 import { formatOverrideNote, formatSpawnToolResult } from "./tool-result.js";
 import { truncateForModel } from "../../lib/truncate.ts";
@@ -95,7 +93,13 @@ import {
 import type { MessagePort, RoutedMessage, RoutedMessagePhase, RoutedResponse } from "./message-router.js";
 import { createSemanticFactBus, type SemanticFactBus } from "./semantic-bus.js";
 export type { SemanticFactBus } from "./semantic-bus.js";
-import type { SubagentSemanticFact, SubagentEventKind, PiEventRef } from "./provider.js";
+import {
+	createSubagentProvider,
+	type SubagentSemanticFact,
+	type SubagentEventKind,
+	type PiEventRef,
+	type SubagentProvider,
+} from "./provider.js";
 import type {
 	SubagentManagerControl,
 	SubagentOwnerControlPort,
@@ -147,6 +151,9 @@ interface ActiveSubagentSession {
 	readonly incomingMessages: IncomingMessageState;
 	readonly ownerControl: SubagentOwnerControlPort;
 	readonly managerControl: SubagentManagerControl;
+	readonly registryEventsUnsubscribe: () => void;
+	readonly provider?: SubagentProvider & { shutdown(): void };
+	readonly unregisterProvider?: () => void;
 }
 
 type SessionPhase =
@@ -876,7 +883,6 @@ type DashboardLoader = () => Promise<DashboardModule>;
 export class SubagentPresentation {
 	private registryUnsubscribe: (() => void) | null = null;
 	private dashboard: DashboardView | null = null;
-	private panelHandle: PanelHandle | null = null;
 	private tuiRef: { requestRender(): void } | null = null;
 	private mountingDisabled = false;
 	private readonly loadDashboard: DashboardLoader;
@@ -894,21 +900,25 @@ export class SubagentPresentation {
 		ownerPath: AgentPath,
 		manager: SubagentManager,
 		onEvent?: (event: RegistryEvent) => void,
+		eventSource?: RegistryEventSource,
 	): void {
 		if (this.registryUnsubscribe) return;
-		const subscribe = (registry as any).subscribe;
+		const subscribe = eventSource?.subscribe ?? (registry as any).subscribe;
 		if (typeof subscribe !== "function") return;
-		this.registryUnsubscribe = subscribe.call(registry, (event: RegistryEvent) => {
+		const forward = (event: RegistryEvent): void => {
 			onEvent?.(event);
 			const path = event.node.path;
 			if (path.length <= ownerPath.length) return;
 			if (!ownerPath.every((segment, index) => segment === path[index])) return;
 			this.refresh(manager);
-		});
+		};
+		this.registryUnsubscribe = eventSource
+			? subscribe.call(eventSource, forward)
+			: subscribe.call(registry, forward);
 	}
 
 	async ensureWidget(ctx: ExtensionContext): Promise<void> {
-		if (this.mountingDisabled || this.scope.kind === "child" || this.dashboard || this.panelHandle) return;
+		if (this.mountingDisabled || this.scope.kind === "child" || this.dashboard) return;
 		if (ctx.mode === "tui") {
 			const initialName = ctx.sessionManager.getSessionName?.();
 			let DashboardComponent: new (theme: unknown) => DashboardView;
@@ -928,9 +938,6 @@ export class SubagentPresentation {
 				this.dashboard.setSessionName(initialName);
 				return this.dashboard as any;
 			});
-		} else {
-			if (this.mountingDisabled) return;
-			this.panelHandle = detect(this.pi, "subagents");
 		}
 	}
 
@@ -939,13 +946,9 @@ export class SubagentPresentation {
 	}
 
 	refresh(manager: SubagentManager): void {
-		if (!this.dashboard && !this.panelHandle) return;
-		const statuses = manager.getDisplayStatuses();
-		if (this.dashboard && this.tuiRef) {
-			this.dashboard.update(statuses);
-			this.tuiRef.requestRender();
-		}
-		if (this.panelHandle) this.panelHandle.updateCards(statusesToCards(statuses));
+		if (!this.dashboard || !this.tuiRef) return;
+		this.dashboard.update(manager.getDisplayStatuses());
+		this.tuiRef.requestRender();
 	}
 
 	setSessionName(name: string | undefined): void {
@@ -958,10 +961,6 @@ export class SubagentPresentation {
 		if (this.scope.kind === "root") ctx?.ui.setWidget("subagents", undefined as any);
 		this.dashboard = null;
 		this.tuiRef = null;
-		if (this.panelHandle) {
-			this.panelHandle.clear();
-			this.panelHandle = null;
-		}
 	}
 
 	shutdown(ctx?: ExtensionContext): void {
@@ -1071,6 +1070,32 @@ function pathKey(pathValue: AgentPath): string {
 
 function samePath(left: AgentPath, right: AgentPath): boolean {
 	return left.length === right.length && left.every((part, index) => part === right[index]);
+}
+
+type RegistryEventSource = {
+	subscribe(listener: (event: RegistryEvent) => void): () => void;
+};
+
+function createRegistryEventSource(registry: AgentSessionRegistry): {
+	source: RegistryEventSource;
+	unsubscribe: () => void;
+} {
+	const listeners = new Set<(event: RegistryEvent) => void>();
+	const unsubscribe = registry.subscribe((event) => {
+		for (const listener of Array.from(listeners)) listener(event);
+	});
+	return {
+		source: {
+			subscribe(listener) {
+				listeners.add(listener);
+				return () => listeners.delete(listener);
+			},
+		},
+		unsubscribe: () => {
+			listeners.clear();
+			unsubscribe();
+		},
+	};
 }
 
 function pathStartsWith(prefix: AgentPath, value: AgentPath): boolean {
@@ -1249,6 +1274,8 @@ class SubagentSessionOwner {
 		}
 		this.phase = { kind: "starting" };
 		if (this.scope.kind === "child") this.incomingMessages.subscribeUplink(this.scope.uplink);
+		let provider: (SubagentProvider & { shutdown(): void }) | undefined;
+		let unregisterProvider: (() => void) | undefined;
 
 		try {
 			let packageAgents: { user: AgentConfig[]; project: AgentConfig[] } | null = null;
@@ -1288,6 +1315,24 @@ class SubagentSessionOwner {
 				onMessagePhase: (event) => this.publishRoutedMessage(event),
 			});
 			const managerControl = manager.createControl((request) => this.resurrectThroughControl(manager, request, ctx));
+			const registryEvents = createRegistryEventSource(registry);
+			if (this.scope.kind === "root") {
+				provider = createSubagentProvider({
+					registry,
+					registryEvents: registryEvents.source,
+					ownerControl: ownerControl ?? this.rootControl ?? new RootSubagentControlPort(),
+					parentSessionFile: ctx.sessionManager.getSessionFile(),
+					semanticEvents: this.semanticEvents,
+					onLeaseAttached: (path) => turns.attachLease(path),
+					onLeaseDetached: (path, reason) => {
+						if (reason === "released") turns.detachLease(path);
+						else turns.discardLease(path);
+					},
+				});
+			}
+			if (provider && this.scope.kind === "root" && this.hasProviderEventBus()) {
+				unregisterProvider = registerProvider(this.pi, provider as any);
+			}
 			const session: ActiveSubagentSession = Object.freeze({
 				environment,
 				registry,
@@ -1298,11 +1343,20 @@ class SubagentSessionOwner {
 				incomingMessages,
 				ownerControl: ownerControl ?? this.rootControl ?? new RootSubagentControlPort(),
 				managerControl,
+				registryEventsUnsubscribe: registryEvents.unsubscribe,
+				...(provider ? { provider } : {}),
+				...(unregisterProvider ? { unregisterProvider } : {}),
 			});
 			ownerControl?.registerManager?.(ownerPath, managerControl);
 			this.phase = { kind: "active", session };
 			this.resolveStart();
-			presentation.subscribe(registry, ownerPath, manager, this.subscribeRegistrySemanticFacts(registry, ownerPath));
+			presentation.subscribe(
+				registry,
+				ownerPath,
+				manager,
+				this.subscribeRegistrySemanticFacts(registry, ownerPath),
+				registryEvents.source,
+			);
 
 			if (this.scope.kind === "child") {
 				if (event.reason === "resume") {
@@ -1324,6 +1378,8 @@ class SubagentSessionOwner {
 		} catch (error) {
 			if (this.phase.kind === "starting") {
 				this.phase = { kind: "shutting-down" };
+				unregisterProvider?.();
+				provider?.shutdown();
 				this.incomingMessages.shutdown();
 				this.rejectStart(error);
 			}
@@ -1342,13 +1398,27 @@ class SubagentSessionOwner {
 			return;
 		}
 
-		const { manager, registry, turns, presentation, incomingMessages, ownerControl, managerControl } = previous.session;
+		const {
+			manager,
+			registry,
+			turns,
+			presentation,
+			incomingMessages,
+			ownerControl,
+			managerControl,
+			registryEventsUnsubscribe,
+			provider,
+			unregisterProvider,
+		} = previous.session;
 		const ownerPath: AgentPath = this.scope.kind === "child" ? this.scope.path : [];
 		this.registrySemanticUnsubscribe?.();
 		this.registrySemanticUnsubscribe = null;
 		ownerControl.unregisterManager?.(ownerPath, managerControl);
 		presentation.preventLateMounts();
+		unregisterProvider?.();
 		turns.clear();
+		provider?.shutdown();
+		registryEventsUnsubscribe();
 		incomingMessages.shutdown();
 		await manager.softShutdown();
 		presentation.shutdown(ctx);
@@ -1695,6 +1765,11 @@ class SubagentSessionOwner {
 			globalPath: path.join(getAgentDir(), "model-tiers.json"),
 			projectPath: path.join(cwd, ".pi", "model-tiers.json"),
 		});
+	}
+
+	private hasProviderEventBus(): boolean {
+		const events = (this.pi as any).events;
+		return Boolean(events && typeof events.on === "function" && typeof events.emit === "function");
 	}
 
 	private registerEventHandlers(): void {
