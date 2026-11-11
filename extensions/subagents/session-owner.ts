@@ -426,8 +426,15 @@ class SessionTurnCoordinator {
 
 	/** Clear a removed path without delivering its held idle result. */
 	discardLease(path: AgentPath): void {
+		const key = JSON.stringify(path);
+		const count = this.leaseCounts.get(key) ?? 0;
 		this.holdGate.stop(path, { path, state: "stopped" });
 		this.activeGate?.stop(path, { path, state: "stopped" });
+		this.leaseCounts.delete(key);
+		for (let index = 0; index < count; index += 1) {
+			this.holdGate.detach(path);
+			this.activeGate?.detach(path);
+		}
 	}
 
 	discardLeasesUnder(prefix: AgentPath): void {
