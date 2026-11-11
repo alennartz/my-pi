@@ -1201,7 +1201,6 @@ class SubagentSessionOwner {
 	private registrySemanticUnsubscribe: (() => void) | null = null;
 	private semanticSequence = 0;
 	private activeSessionId = "unknown";
-	private sessionManager: ExtensionContext["sessionManager"] | undefined;
 	private readonly nativeEntryIds = new Map<string, string>();
 	private readonly nativeToolEntries = new Map<string, string>();
 	private readonly manualMessageFacts = new Map<string, SubagentSemanticFact>();
@@ -1305,7 +1304,6 @@ class SubagentSessionOwner {
 	}
 
 	async start(event: any, ctx: ExtensionContext): Promise<void> {
-		this.sessionManager = ctx.sessionManager;
 		if (this.phase.kind !== "before-start") {
 			if (this.phase.kind === "starting" || this.phase.kind === "active") return;
 			throw new Error("Subagents session is shutting down.");
@@ -1334,10 +1332,6 @@ class SubagentSessionOwner {
 			const ownerPath: AgentPath = this.scope.kind === "child" ? this.scope.path : [];
 			this.activeSessionId = registry.getSnapshot(ownerPath)?.sessionId
 				?? stableRootSessionId(ctx, ctx.sessionManager.getSessionFile());
-			const initialLeafId = ctx.sessionManager.getLeafId?.();
-			if (typeof initialLeafId === "string" && initialLeafId.length > 0) {
-				this.nativeEntryIds.set(this.activeSessionId, initialLeafId);
-			}
 			const turns = this.turns;
 			const presentation = new SubagentPresentation(this.pi, this.scope);
 			const incomingMessages = this.incomingMessages;
@@ -1473,7 +1467,6 @@ class SubagentSessionOwner {
 		registryEventsUnsubscribe();
 		incomingMessages.shutdown();
 		await manager.softShutdown();
-		this.sessionManager = undefined;
 		presentation.shutdown(ctx);
 		if (this.scope.kind === "root") {
 			await registry.dispose();
@@ -1529,12 +1522,11 @@ class SubagentSessionOwner {
 	private nativeRefs(toolCallId?: string, kind: PiEventRef["kind"] = "tool_call"): readonly PiEventRef[] {
 		const sessionId = this.currentSessionId();
 		if (!sessionId || sessionId === "unknown") return [];
-		if (!toolCallId && !this.nativeEntryIds.has(sessionId)) {
-			const leafId = this.sessionManager?.getLeafId?.();
-			if (typeof leafId === "string" && leafId.length > 0) this.nativeEntryIds.set(sessionId, leafId);
-		}
+		// Entry IDs are provenance, not semantic-event identity. Only attach one
+		// when the exact native append or tool-call event supplied it. Semantic
+		// custom messages persist their event ID and details separately.
 		const entryId = toolCallId
-			? this.nativeToolEntries.get(toolCallId) ?? this.nativeEntryIds.get(sessionId)
+			? this.nativeToolEntries.get(toolCallId)
 			: this.nativeEntryIds.get(sessionId);
 		return [{
 			sessionId,
@@ -1601,11 +1593,8 @@ class SubagentSessionOwner {
 	private recordNativeEvent(event: any): void {
 		const sessionId = this.currentSessionId();
 		if (!sessionId || sessionId === "unknown") return;
-		// Extension handlers do not receive the host's internal entry event on
-		// every runtime. Keep the current persisted leaf as a fallback anchor so
-		// notifications still retain a native entry reference.
-		const leafId = this.sessionManager?.getLeafId?.();
-		if (typeof leafId === "string" && leafId.length > 0) this.nativeEntryIds.set(sessionId, leafId);
+		// Keep only exact append and tool-call matches. Do not infer an entry from
+		// the current session leaf: that leaf can belong to an unrelated message.
 		if (event?.type === "entry_appended" && event.entry?.id) {
 			this.nativeEntryIds.set(sessionId, event.entry.id);
 			const message = event.entry.message;

@@ -4,13 +4,21 @@ import { NotificationQueue, type NotificationQueueConfig } from "./notification-
 function createQueue(overrides?: Partial<NotificationQueueConfig>) {
 	const delivered: string[] = [];
 	const deferred: string[] = [];
+	const deliveredDetails: Array<{ semanticEvents: readonly unknown[] } | undefined> = [];
+	const deferredDetails: Array<{ semanticEvents: readonly unknown[] } | undefined> = [];
 	const queue = new NotificationQueue({
-		deliver: (content) => delivered.push(content),
-		deliverDeferred: (content) => deferred.push(content),
+		deliver: (content, details) => {
+			delivered.push(content);
+			deliveredDetails.push(details);
+		},
+		deliverDeferred: (content, details) => {
+			deferred.push(content);
+			deferredDetails.push(details);
+		},
 		steerDelivery: false,
 		...overrides,
 	});
-	return { queue, delivered, deferred };
+	return { queue, delivered, deferred, deliveredDetails, deferredDetails };
 }
 
 // Normal delivery
@@ -288,6 +296,15 @@ describe("NotificationQueue — structured payloads", () => {
 		queue.setParentBusy(true);
 		queue.queue("<agent_idle id=\"a\"/>", "local", { id: "a", status: "idle" as const });
 		expect(queue.drainAll()).toBe("<agent_idle id=\"a\"/>");
+	});
+
+	it("persists semantic event IDs and details with custom-message delivery", () => {
+		const { queue, deliveredDetails } = createQueue();
+		const semantic = { eventId: "semantic-1", kind: "completion", relatedPiEvents: [] };
+
+		queue.queue("<agent_idle id=\"a\"/>", "local", undefined, semantic);
+
+		expect(deliveredDetails).toEqual([{ semanticEvents: [semantic] }]);
 	});
 });
 

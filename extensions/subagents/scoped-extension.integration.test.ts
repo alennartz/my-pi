@@ -522,6 +522,37 @@ describe("child-scoped extension routing", () => {
 		);
 	});
 
+	it("persists semantic IDs without fabricating a native entry from the current leaf", async () => {
+		const uplink = makePort("child");
+		const { pi, handlers } = makePi();
+		await createSubagentsExtension({
+			kind: "child",
+			registry,
+			path: ["child"],
+			identity: { id: "child", task: "work", channels: ["parent"] },
+			uplink,
+		})(pi as any);
+		const parentSessionFile = path.join(tmpRoot!, "parent-with-unrelated-leaf.jsonl");
+		fs.writeFileSync(parentSessionFile, "");
+		const ctx = makeContext(parentSessionFile, {
+			sessionManager: {
+				getSessionFile: () => parentSessionFile,
+				getSessionName: () => "parent",
+				getLeafId: () => "unrelated-leaf",
+			},
+		});
+		await startSession(handlers, ctx);
+
+		uplink.emit({ from: "parent", message: "continue", responseExpected: false });
+
+		const [message] = pi.sendMessage.mock.calls;
+		const details = (message[0] as { details?: { semanticEvents?: readonly [{ eventId: string; relatedPiEvents: readonly [{ entryId?: string }] }] } }).details;
+		const fact = details?.semanticEvents?.[0];
+		expect(fact?.eventId).toEqual(expect.any(String));
+		expect(fact?.relatedPiEvents[0]).toMatchObject({ kind: "custom_message" });
+		expect(fact?.relatedPiEvents[0]).not.toHaveProperty("entryId");
+	});
+
 	it("keeps child notifications local after session shutdown and renders the scoped model catalog", async () => {
 		const uplink = makePort("child");
 		const { pi, tools, handlers } = makePi();
