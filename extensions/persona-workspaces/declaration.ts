@@ -42,6 +42,8 @@ export type PersonaDeclaration = {
 	/** Exact marker; anything else (or absent) = not a persona. */
 	kind: "persona";
 	name: string;
+	/** Optional flat icon text for presentation metadata. */
+	icon?: string;
 	description?: string;
 	/** Front matter `tools: read, bash, edit` — comma-separated. */
 	tools?: string[];
@@ -69,6 +71,7 @@ export function parsePersonaDeclaration(
 	if (frontmatter.kind !== "persona") return undefined;
 	const name = nonBlankString(frontmatter.name);
 	if (name === undefined) return undefined;
+	const icon = nonBlankString(frontmatter.icon);
 	const description = nonBlankString(frontmatter.description);
 	const model = nonBlankString(frontmatter.model);
 	const tools = parseCommaSeparatedList(frontmatter.tools);
@@ -76,6 +79,7 @@ export function parsePersonaDeclaration(
 	return {
 		kind: "persona",
 		name,
+		...(icon !== undefined ? { icon } : {}),
 		...(description !== undefined ? { description } : {}),
 		...(tools !== undefined ? { tools } : {}),
 		...(model !== undefined ? { model } : {}),

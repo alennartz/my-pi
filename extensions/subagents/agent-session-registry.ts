@@ -9,6 +9,7 @@ import {
 import type { MessagePort } from "./message-router.js";
 import { createSessionTreeStore } from "./scoped-store.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
+import type { SubagentOwnerControlPort } from "./provider.js";
 
 export type NodeOwnership = "external" | "registry";
 export type AgentCostBreakdown = Readonly<{
@@ -85,25 +86,41 @@ export type AgentOperationalSnapshot = Readonly<{
 	contextWindow?: number;
 	hasSubgroup: boolean;
 	pendingCorrelations: readonly string[];
+	/** Local ids retained for existing status and activity projections. */
 	waitingFor: readonly string[];
+	/** Root-relative targets captured when each pending correlation began. */
+	waitingForPaths?: readonly AgentPath[];
 }>;
 export type AgentNodeSnapshot = Readonly<{
 	path: AgentPath;
 	parentPath: AgentPath | null;
 	localId: string | null;
 	ownership: NodeOwnership;
+	/** Stable at one public path until removal or path reuse. */
+	incarnation: string;
 	sessionId: string;
 	sessionFile?: string;
 	cwd: string;
 	task?: string;
+	/** Requested or persisted definition name, retained for compatibility. */
 	agentDef?: string;
+	/** Winning active persona presentation metadata. */
+	persona?: string;
+	personaIcon?: string;
 	channels: readonly string[];
 	operational: AgentOperationalSnapshot;
 }>;
 export type RegistryEvent =
 	| { type: "node_added"; node: AgentNodeSnapshot }
 	| { type: "node_updated"; previous: AgentNodeSnapshot; node: AgentNodeSnapshot }
-	| { type: "node_removed"; node: AgentNodeSnapshot };
+	| { type: "node_removed"; node: AgentNodeSnapshot }
+	| {
+			type: "runtime_replaced";
+			previous: AgentNodeSnapshot;
+			node: AgentNodeSnapshot;
+			oldSessionId: string;
+			newSessionId: string;
+	  };
 export type ExternalRootNode = { readonly snapshot: AgentNodeSnapshot & { ownership: "external" } };
 export type RegisteredAgentNode = {
 	readonly snapshot: AgentNodeSnapshot & { ownership: "registry" };
@@ -114,6 +131,9 @@ export type CreateAgentNodeRequest = {
 	localId: string;
 	task: string;
 	agentDef?: string;
+	/** Winning persona metadata, separate from the requested definition key. */
+	persona?: string;
+	personaIcon?: string;
 	channels: string[];
 	/**
 	 * Child construction inputs, including the spawn-declared `persona` payload.
@@ -127,6 +147,8 @@ export type CreateAgentNodeRequest = {
 export type AgentSessionRegistryOptions = {
 	root: AgentNodeSnapshot & { path: []; ownership: "external" };
 	dependencies: ManagedChildSessionDependencies;
+	/** Root-scoped owner registry propagated into every child scope. */
+	ownerControl?: SubagentOwnerControlPort;
 	store?: SessionTreeStore;
 	createSession?: typeof createManagedChildSession;
 };
@@ -180,17 +202,26 @@ export class AgentSessionRegistry {
 	private readonly removing = new Set<string>();
 	private readonly listeners = new Set<(event: RegistryEvent) => void>();
 	private readonly removals = new Map<string, Promise<void>>();
+	private readonly incarnationByPath = new Map<string, number>();
+	private readonly ownerControl?: SubagentOwnerControlPort;
 	private disposed = false;
 	private disposal?: Promise<void>;
 
 	constructor(options: AgentSessionRegistryOptions) {
 		if (options.root.path.length !== 0 || options.root.ownership !== "external") throw new Error("Registry root must be external path []");
-		this.rootSnapshot = cloneFreeze({ ...options.root, path: [], parentPath: null, ownership: "external" }) as AgentNodeSnapshot & { ownership: "external"; path: [] };
+		this.rootSnapshot = cloneFreeze({
+			...options.root,
+			path: [],
+			parentPath: null,
+			ownership: "external",
+			incarnation: options.root.incarnation ?? "root",
+		}) as AgentNodeSnapshot & { ownership: "external"; path: [] };
 		const registry = this;
 		this.root = { get snapshot() { return registry.rootSnapshot; } };
 		this.dependencies = options.dependencies;
 		this.createSession = options.createSession ?? createManagedChildSession;
 		this.scopedStore = options.store ?? createSessionTreeStore();
+		this.ownerControl = options.ownerControl;
 	}
 
 	getScopedStore(): SessionTreeStore {
@@ -304,10 +335,13 @@ export class AgentSessionRegistry {
 					parentPath: [...parent],
 					localId: request.localId,
 					ownership: "registry" as const,
+					incarnation: this.allocateIncarnation(path),
 					sessionId: "",
 					cwd: request.session.target.kind === "resume" ? "" : request.session.target.cwd,
 					task: request.task,
 					agentDef: request.agentDef,
+					persona: request.persona,
+					personaIcon: request.personaIcon,
 					channels: [...request.channels],
 					operational: request.initialOperational,
 				}) as AgentNodeSnapshot;
@@ -315,7 +349,11 @@ export class AgentSessionRegistry {
 				const decoratedHooks: ChildSessionHooks = {
 					onEvent: request.hooks.onEvent,
 					onDiagnostic: request.hooks.onDiagnostic,
+					getCapabilities: request.hooks.getCapabilities,
 					onShutdownRequested: request.hooks.onShutdownRequested,
+					onRuntimeReplaced: (replacement) => {
+						this.applyRuntimeReplacement(pathKey, request, replacement);
+					},
 					onSessionChanged: (metadata) => {
 						const previous = this.nodes.get(pathKey)?.snapshot ?? this.stagedSnapshots.get(pathKey);
 						if (!previous) {
@@ -349,6 +387,7 @@ export class AgentSessionRegistry {
 						path,
 						identity: { id: request.localId, task: request.task, channels: [...request.channels] },
 						uplink: request.session.uplink,
+						ownerControl: this.ownerControl,
 					},
 				};
 				const managed = await this.createSession(config, this.dependencies, decoratedHooks);
@@ -470,6 +509,55 @@ export class AgentSessionRegistry {
 			await Promise.all(topLevel.map((path) => this.remove(path)));
 		})();
 		return this.disposal;
+	}
+
+	private allocateIncarnation(path: AgentPath): string {
+		const pathKey = key(path);
+		const next = (this.incarnationByPath.get(pathKey) ?? 0) + 1;
+		this.incarnationByPath.set(pathKey, next);
+		return `incarnation-${next}`;
+	}
+
+	private applyRuntimeReplacement(pathKey: string, request: CreateAgentNodeRequest, replacement: any): void {
+		const current = this.nodes.get(pathKey)?.snapshot ?? this.stagedSnapshots.get(pathKey);
+		if (!current) {
+			request.hooks.onRuntimeReplaced?.(replacement);
+			return;
+		}
+		// ManagedChildSession calls onSessionChanged first. The explicit old id
+		// lets this event reconstruct the previous public snapshot without keeping
+		// a stale mutable slot between independent metadata updates.
+		const oldSessionId = typeof replacement?.oldSessionId === "string"
+			? replacement.oldSessionId
+			: current.sessionId;
+		const previous = oldSessionId === current.sessionId
+			? current
+			: cloneFreeze({ ...current, sessionId: oldSessionId }) as AgentNodeSnapshot;
+		const session = replacement?.session;
+		const next = cloneFreeze({
+			...current,
+			sessionId: typeof replacement?.newSessionId === "string"
+				? replacement.newSessionId
+				: typeof session?.sessionId === "string" ? session.sessionId : current.sessionId,
+			...(session?.sessionFile !== undefined ? { sessionFile: session.sessionFile } : {}),
+			...(typeof session?.sessionManager?.getCwd === "function"
+				? { cwd: session.sessionManager.getCwd() }
+				: {}),
+		}) as AgentNodeSnapshot;
+		const liveNode = this.nodes.get(pathKey);
+		if (liveNode) {
+			liveNode.snapshot = next;
+			this.emit({
+				type: "runtime_replaced",
+				previous,
+				node: next,
+				oldSessionId,
+				newSessionId: typeof replacement?.newSessionId === "string" ? replacement.newSessionId : next.sessionId,
+			});
+		} else {
+			this.stagedSnapshots.set(pathKey, next);
+		}
+		request.hooks.onRuntimeReplaced?.(replacement);
 	}
 
 	private assertCanCreate(parent: AgentPath): void {

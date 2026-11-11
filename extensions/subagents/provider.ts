@@ -355,10 +355,26 @@ export interface SubagentLease {
 }
 
 /** Root-scoped lifecycle authority used by the provider. */
+/** Operations a manager exposes to the root-scoped control registry.
+ *
+ * The control registry supplies the owning manager's local id after resolving
+ * the public root-relative path. These methods run through the manager's own
+ * mutation queue; callers never remove registry nodes directly.
+ */
+export interface SubagentManagerControl {
+	teardown(localId: string, incarnation: string): Promise<SubagentTeardownResult>;
+	stop(request: SubagentStopRequest): Promise<void>;
+	resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult>;
+}
+
 export interface SubagentOwnerControlPort {
 	teardown(path: AgentPath, incarnation: string): Promise<SubagentTeardownResult>;
 	stop(request: SubagentStopRequest): Promise<void>;
 	resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult>;
+	/** Register one immediate-child owner at its canonical root-relative path. */
+	registerManager?(ownerPath: AgentPath, manager: SubagentManagerControl): void;
+	/** Remove a manager registration during scope shutdown. */
+	unregisterManager?(ownerPath: AgentPath, manager: SubagentManagerControl): void;
 }
 
 export interface SubagentProvider {

@@ -14,6 +14,9 @@ export interface PersistedAgentRecord {
 	task: string;
 	channels: string[];
 	agent?: string;
+	/** Winning active persona presentation metadata. */
+	personaName?: string;
+	personaIcon?: string;
 	sessionFile: string;
 	sessionId?: string;
 	/**
@@ -95,6 +98,8 @@ function recordFromEvent(
 		task: event.task,
 		channels: event.channels,
 		agent: event.agent,
+		personaName: event.personaName,
+		personaIcon: event.personaIcon,
 		sessionFile: event.sessionFile,
 		sessionId: event.sessionId,
 		cwd: event.cwd,

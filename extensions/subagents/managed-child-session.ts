@@ -20,6 +20,7 @@ import {
 import { formatAgentPath, type AgentPath } from "./agent-path.js";
 import type { ChildToolPolicy } from "./child-tool-policy.js";
 import { markSubagentChildSession, type PersonaPayload } from "./child-session-marker.js";
+import type { SubagentCapabilities } from "./provider.js";
 import { stripThinkingSuffix } from "./model-tiers.js";
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import { registerSessionTreeStore } from "./scoped-store.js";
@@ -54,21 +55,105 @@ export type ChildSessionConfig = {
 	persona?: PersonaPayload;
 };
 
+export type ChildSessionMetadata = {
+	sessionId: string;
+	sessionFile?: string;
+	cwd: string;
+};
+
+/** Inputs used to build capabilities owned by the child-session provider. */
+export type ChildSessionCapabilityContext = Readonly<{
+	session: AgentSession;
+	runtime: AgentSessionRuntime;
+	eventBus: EventBusController;
+}>;
+
+/**
+ * A native runtime replacement. The public path and registry incarnation stay
+ * outside this value. The registry owns those identities while this event
+ * reports only the native object that changed.
+ */
+export type ChildSessionRuntimeReplaced = Readonly<{
+	previousSession: AgentSession;
+	session: AgentSession;
+	oldSessionId: string;
+	newSessionId: string;
+	capabilities?: SubagentCapabilities;
+}>;
+
 export type ChildSessionHooks = {
 	onEvent(event: AgentSessionEvent): void;
 	/** Non-fatal setup diagnostics must not be mistaken for prompt failures. */
 	onDiagnostic?(message: string, type?: "info" | "warning" | "error"): void;
-	onSessionChanged(metadata: {
-		sessionId: string;
-		sessionFile?: string;
-		cwd: string;
-	}): void;
+	onSessionChanged(metadata: ChildSessionMetadata): void;
+	/**
+	 * Explicitly reports every successful native-session rebind, including a
+	 * rebind whose session id, file, and cwd are unchanged.
+	 */
+	onRuntimeReplaced?(event: ChildSessionRuntimeReplaced): void;
+	/** Build provider-owned capabilities for the current native child. */
+	getCapabilities?(context: ChildSessionCapabilityContext): SubagentCapabilities;
 	onShutdownRequested(): void;
 };
 
 export type ManagedChildSessionDependencies = {
 	agentDir: string;
 };
+
+type BashOptions = Parameters<AgentSession["executeBash"]>[2];
+
+const CHILD_CAPABILITY_OPERATIONS = Object.freeze([
+	"prompt",
+	"steer",
+	"follow_up",
+	"stop",
+	"bash",
+	"abort_bash",
+	"set_model",
+	"cycle_model",
+	"set_thinking_level",
+	"cycle_thinking_level",
+	"set_auto_compaction",
+	"compact",
+	"tree",
+	"completion",
+	"state",
+	"meta",
+] as const);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Default capabilities are child-local and deliberately omit runtime-owner
+ * operations. Owners can provide a stricter projection through getCapabilities.
+ */
+function createDefaultCapabilities(session: AgentSession): SubagentCapabilities {
+	const executeBash = (...args: readonly unknown[]): Promise<unknown> => {
+		const command = args[0];
+		if (typeof command !== "string") throw new TypeError("Child bash command must be a string");
+		const options = isRecord(args[1]) ? args[1] as BashOptions : undefined;
+		return session.executeBash(command, undefined, options);
+	};
+	const abortBash = (): void => {
+		session.abortBash();
+	};
+	return Object.freeze({
+		operations: CHILD_CAPABILITY_OPERATIONS,
+		renderer: Object.freeze({ visible: true }),
+		resolveModel: (provider: string, modelId: string) => session.modelRuntime.getModel(provider, modelId),
+		getSettings: () => ({
+			availableThinkingLevels: typeof session.getAvailableThinkingLevels === "function"
+				? session.getAvailableThinkingLevels()
+				: [],
+			autoCompactionEnabled: session.autoCompactionEnabled,
+			sessionName: session.sessionName,
+		}),
+		nativeBash: Object.freeze({ admitted: true, execute: executeBash, abort: abortBash }),
+		executeBash,
+	});
+}
 
 type SessionBinding = {
 	eventBus: EventBusController;
@@ -86,6 +171,8 @@ export class ManagedChildSession {
 	readonly runtime: AgentSessionRuntime;
 
 	private activeEventBus: EventBusController;
+	private activeSession: AgentSession;
+	private activeCapabilities: SubagentCapabilities;
 	private unsubscribeSession?: () => void;
 	private disposal?: Promise<void>;
 	private readonly hooks: ChildSessionHooks;
@@ -99,9 +186,14 @@ export class ManagedChildSession {
 		this.runtime = runtime;
 		this.bindingsBySession = bindingsBySession;
 		this.hooks = hooks;
+		this.activeSession = runtime.session;
 		const binding = bindingsBySession.get(runtime.session);
 		if (!binding) throw new Error("Managed child session is missing runtime bindings");
 		this.activeEventBus = binding.eventBus;
+		// The initial bind recomputes owner capabilities after extensions are ready.
+		// Keep a safe projection available for callers that inspect the object while
+		// construction is still completing.
+		this.activeCapabilities = createDefaultCapabilities(runtime.session);
 	}
 
 	get eventBus(): EventBusController {
@@ -109,19 +201,24 @@ export class ManagedChildSession {
 	}
 
 	get session(): AgentSession {
-		return this.runtime.session;
+		return this.activeSession;
+	}
+
+	/** Provider-owned child-local operations for the currently bound session. */
+	get capabilities(): SubagentCapabilities {
+		return this.activeCapabilities;
 	}
 
 	get sessionId(): string {
-		return this.runtime.session.sessionId;
+		return this.activeSession.sessionId;
 	}
 
 	get sessionFile(): string | undefined {
-		return this.runtime.session.sessionFile;
+		return this.activeSession.sessionFile;
 	}
 
 	submit(text: string, streamingBehavior?: "steer" | "followUp"): Promise<void> {
-		const session = this.runtime.session;
+		const session = this.activeSession;
 		return new Promise<void>((resolve, reject) => {
 			let settled = false;
 			const settlePreflight = (success: boolean): void => {
@@ -160,7 +257,7 @@ export class ManagedChildSession {
 	}
 
 	abort(): Promise<void> {
-		return this.runtime.session.abort();
+		return this.activeSession.abort();
 	}
 
 	dispose(): Promise<void> {
@@ -173,8 +270,18 @@ export class ManagedChildSession {
 		return this.disposal;
 	}
 
+	private buildCapabilities(session: AgentSession): SubagentCapabilities {
+		const context: ChildSessionCapabilityContext = {
+			session,
+			runtime: this.runtime,
+			eventBus: this.activeEventBus,
+		};
+		return this.hooks.getCapabilities?.(context) ?? createDefaultCapabilities(session);
+	}
+
 	/** Called by AgentSessionRuntime whenever it installs a replacement session. */
 	async bindSession(session: AgentSession, replacement: boolean): Promise<void> {
+		const previousSession = this.activeSession;
 		this.unsubscribeSession?.();
 		this.unsubscribeSession = undefined;
 		const binding = this.bindingsBySession.get(session);
@@ -197,11 +304,31 @@ export class ManagedChildSession {
 			if (replacement) this.reportRuntimeFailure(error);
 			throw error;
 		}
+
+		// Publish the native replacement only after the new extension context and
+		// provider-owned capabilities are ready. A replacement keeps the registry
+		// path and incarnation unchanged.
+		let capabilities: SubagentCapabilities;
+		try {
+			capabilities = this.buildCapabilities(session);
+		} catch (error) {
+			if (replacement) this.reportRuntimeFailure(error);
+			throw error;
+		}
+		this.activeSession = session;
+		this.activeCapabilities = capabilities;
 		if (replacement) {
 			this.hooks.onSessionChanged({
 				sessionId: session.sessionId,
 				sessionFile: session.sessionFile,
 				cwd: session.sessionManager.getCwd(),
+			});
+			this.hooks.onRuntimeReplaced?.({
+				previousSession,
+				session,
+				oldSessionId: previousSession.sessionId,
+				newSessionId: session.sessionId,
+				capabilities,
 			});
 		}
 	}

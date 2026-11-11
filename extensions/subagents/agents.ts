@@ -3,6 +3,7 @@
  *
  * Forked from examples/extensions/subagent/agents.ts, extended with:
  * - `skills` field in AgentConfig (parsed from frontmatter, comma-separated)
+ * - optional flat persona `icon` text in AgentConfig
  * - resolveSkillPaths() — resolves skill names to filesystem paths via pi.getCommands()
  * - resolvePersonaSkillPaths() — the shared active-persona skill resolver
  *   (failure policy parameter: `fatal` | `subset`)
@@ -16,6 +17,10 @@ export interface RegularAgentSpec {
 	kind: "agent";
 	id: string;
 	agent?: string;
+	/** Winning active persona name; distinct from the requested definition name. */
+	personaName?: string;
+	/** Winning active persona's optional flat icon text. */
+	personaIcon?: string;
 	model?: string;
 	/** Parent thinking level for an unpinned spawn; explicit model suffixes win in the child runtime. */
 	thinkingLevel?: string;
@@ -48,6 +53,10 @@ export interface RegularAgentSpec {
 export interface ForkAgentSpec {
 	kind: "fork";
 	id: string;
+	/** Winning workspace persona name, when the fork has one. */
+	personaName?: string;
+	/** Winning workspace persona's optional flat icon text. */
+	personaIcon?: string;
 	task: string;
 	sessionFile: string;
 	/** Optional for legacy persisted fork records; absent means default policy. */
@@ -77,9 +86,28 @@ export interface ForkAgentSpec {
 
 export type AgentSpec = RegularAgentSpec | ForkAgentSpec;
 
+/** Presentation metadata carried by the active persona without its capabilities. */
+export type PersonaMetadata = Readonly<{
+	name: string;
+	icon?: string;
+}>;
+
+/**
+ * Project the active persona's presentation metadata without merging fields from
+ * another persona. Blank or non-text icons stay absent.
+ */
+export function projectPersonaMetadata(source: { name: string; icon?: unknown }): PersonaMetadata {
+	const icon = typeof source.icon === "string" && source.icon.trim() !== ""
+		? source.icon
+		: undefined;
+	return icon === undefined ? { name: source.name } : { name: source.name, icon };
+}
+
 export interface AgentConfig {
 	name: string;
 	description: string;
+	/** Optional flat icon text from agent-definition front matter. */
+	icon?: string;
 	tools?: string[];
 	skills?: string[];
 	model?: string;
@@ -155,6 +183,37 @@ export interface AgentDiscoveryResult {
 	projectAgentsDir: string | null;
 }
 
+/** Parse one discovered agent definition without touching the filesystem. */
+export function parseAgentConfig(
+	content: string,
+	source: AgentConfig["source"],
+	filePath: string,
+): AgentConfig | undefined {
+	const { frontmatter, body } = parseFrontmatter<Record<string, string>>(content);
+	if (!frontmatter.name || !frontmatter.description) return undefined;
+
+	const tools = frontmatter.tools
+		?.split(",")
+		.map((t: string) => t.trim())
+		.filter(Boolean);
+	const skills = frontmatter.skills
+		?.split(",")
+		.map((s: string) => s.trim())
+		.filter(Boolean);
+	const persona = projectPersonaMetadata({ name: frontmatter.name, icon: frontmatter.icon });
+
+	return {
+		...persona,
+		description: frontmatter.description,
+		tools: tools && tools.length > 0 ? tools : undefined,
+		skills: skills && skills.length > 0 ? skills : undefined,
+		model: frontmatter.model,
+		systemPrompt: body,
+		source,
+		filePath,
+	};
+}
+
 function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
@@ -179,30 +238,8 @@ function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentCon
 			continue;
 		}
 
-		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(content);
-
-		if (!frontmatter.name || !frontmatter.description) continue;
-
-		const tools = frontmatter.tools
-			?.split(",")
-			.map((t: string) => t.trim())
-			.filter(Boolean);
-
-		const skills = frontmatter.skills
-			?.split(",")
-			.map((s: string) => s.trim())
-			.filter(Boolean);
-
-		agents.push({
-			name: frontmatter.name,
-			description: frontmatter.description,
-			tools: tools && tools.length > 0 ? tools : undefined,
-			skills: skills && skills.length > 0 ? skills : undefined,
-			model: frontmatter.model,
-			systemPrompt: body,
-			source,
-			filePath,
-		});
+		const agent = parseAgentConfig(content, source, filePath);
+		if (agent) agents.push(agent);
 	}
 
 	return agents;

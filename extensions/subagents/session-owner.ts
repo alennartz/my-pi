@@ -86,6 +86,12 @@ import {
 	stripThinkingSuffix,
 } from "./model-tiers.js";
 import type { MessagePort, RoutedMessage, RoutedResponse } from "./message-router.js";
+import type {
+	SubagentManagerControl,
+	SubagentOwnerControlPort,
+	SubagentResurrectRequest,
+	SubagentResurrectResult,
+} from "./provider.js";
 
 const USE_STEER_DELIVERY = true;
 const FORCED_MODEL_KEY = "forced-model";
@@ -103,6 +109,8 @@ export type SubagentScope =
 				channels: string[];
 			};
 			uplink: MessagePort;
+		/** Root-scoped lifecycle authority shared by every nested manager. */
+		ownerControl?: SubagentOwnerControlPort;
 		};
 
 interface SessionEnvironment {
@@ -124,6 +132,8 @@ interface ActiveSubagentSession {
 	readonly presentation: SubagentPresentation;
 	readonly turns: SessionTurnCoordinator;
 	readonly incomingMessages: IncomingMessageState;
+	readonly ownerControl: SubagentOwnerControlPort;
+	readonly managerControl: SubagentManagerControl;
 }
 
 type SessionPhase =
@@ -692,9 +702,67 @@ class IncomingMessageState {
 	}
 }
 
+function pathKey(pathValue: AgentPath): string {
+	return JSON.stringify(pathValue);
+}
+
+function pathStartsWith(prefix: AgentPath, value: AgentPath): boolean {
+	return prefix.length < value.length && prefix.every((part, index) => part === value[index]);
+}
+
+/**
+ * Root-scoped lifecycle authority. It resolves arbitrary public paths to the
+ * nearest registered manager, then delegates through that manager's mutation
+ * queue. The registry itself never performs provider teardown or Stop.
+ */
+class RootSubagentControlPort implements SubagentOwnerControlPort {
+	private readonly managers = new Map<string, { path: AgentPath; control: SubagentManagerControl }>();
+
+	registerManager(ownerPath: AgentPath, control: SubagentManagerControl): void {
+		this.managers.set(pathKey(ownerPath), { path: [...ownerPath], control });
+	}
+
+	unregisterManager(ownerPath: AgentPath, control: SubagentManagerControl): void {
+		const key = pathKey(ownerPath);
+		const current = this.managers.get(key);
+		if (current?.control === control) this.managers.delete(key);
+	}
+
+	teardown(pathValue: AgentPath, incarnation: string) {
+		const owner = this.resolveOwner(pathValue);
+		return owner.control.teardown(pathValue[pathValue.length - 1], incarnation);
+	}
+
+	stop(request: import("./provider.js").SubagentStopRequest): Promise<void> {
+		const owner = this.resolveOwner(request.path);
+		return owner.control.stop(request);
+	}
+
+	resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult> {
+		const owner = this.managers.get(pathKey(request.parentPath));
+		if (!owner) throw new Error(`Unknown owner path ${JSON.stringify(request.parentPath)}`);
+		return owner.control.resurrect(request);
+	}
+
+	clear(): void {
+		this.managers.clear();
+	}
+
+	private resolveOwner(pathValue: AgentPath): { path: AgentPath; control: SubagentManagerControl } {
+		let match: { path: AgentPath; control: SubagentManagerControl } | undefined;
+		for (const candidate of this.managers.values()) {
+			if (!pathStartsWith(candidate.path, pathValue)) continue;
+			if (!match || candidate.path.length > match.path.length) match = candidate;
+		}
+		if (!match) throw new Error(`Unknown child path ${JSON.stringify(pathValue)}`);
+		return match;
+	}
+}
+
 /** Per-root or child-scope owner. Pi callbacks are adapters into this stable object. */
 class SubagentSessionOwner {
 	private phase: SessionPhase = { kind: "before-start" };
+	private readonly rootControl: RootSubagentControlPort | undefined;
 	private readonly turns: SessionTurnCoordinator;
 	private readonly incomingMessages: IncomingMessageState;
 	private readonly startReady: Promise<void>;
@@ -703,6 +771,7 @@ class SubagentSessionOwner {
 	private startReadySettled = false;
 
 	constructor(private readonly scope: SubagentScope, private readonly pi: ExtensionAPI) {
+		this.rootControl = scope.kind === "root" ? new RootSubagentControlPort() : undefined;
 		this.turns = new SessionTurnCoordinator(pi);
 		this.incomingMessages = new IncomingMessageState(this.turns);
 		this.startReady = new Promise<void>((resolve, reject) => {
@@ -809,7 +878,12 @@ class SubagentSessionOwner {
 			}
 			if (this.phase.kind !== "starting") return;
 			const environment = createSessionEnvironmentFromContext(ctx, packageAgents);
-			const registry = this.scope.kind === "child" ? this.scope.registry : this.createRootRegistry(ctx);
+			const ownerControl = this.scope.kind === "child"
+				? this.scope.ownerControl
+				: this.rootControl;
+			const registry = this.scope.kind === "child"
+				? this.scope.registry
+				: this.createRootRegistry(ctx, ownerControl);
 			const ownerPath: AgentPath = this.scope.kind === "child" ? this.scope.path : [];
 			const turns = this.turns;
 			const presentation = new SubagentPresentation(this.pi, this.scope);
@@ -825,6 +899,7 @@ class SubagentSessionOwner {
 				onAgentComplete: (current, agentId, allDone) => turns.notifyAgentComplete(current, agentId, allDone),
 				onParentMessage: (port, content, meta) => incomingMessages.receiveSerialized(port, content, meta, "local"),
 			});
+			const managerControl = manager.createControl((request) => this.resurrectThroughControl(manager, request, ctx));
 			const session: ActiveSubagentSession = Object.freeze({
 				environment,
 				registry,
@@ -832,7 +907,10 @@ class SubagentSessionOwner {
 				presentation,
 				turns,
 				incomingMessages,
+				ownerControl: ownerControl ?? this.rootControl ?? new RootSubagentControlPort(),
+				managerControl,
 			});
+			ownerControl?.registerManager?.(ownerPath, managerControl);
 			this.phase = { kind: "active", session };
 			this.resolveStart();
 			presentation.subscribe(registry, ownerPath, manager);
@@ -875,7 +953,9 @@ class SubagentSessionOwner {
 			return;
 		}
 
-		const { manager, registry, turns, presentation, incomingMessages } = previous.session;
+		const { manager, registry, turns, presentation, incomingMessages, ownerControl, managerControl } = previous.session;
+		const ownerPath: AgentPath = this.scope.kind === "child" ? this.scope.path : [];
+		ownerControl.unregisterManager?.(ownerPath, managerControl);
 		presentation.preventLateMounts();
 		turns.clear();
 		incomingMessages.shutdown();
@@ -883,6 +963,7 @@ class SubagentSessionOwner {
 		presentation.shutdown(ctx);
 		if (this.scope.kind === "root") {
 			await registry.dispose();
+			this.rootControl?.clear();
 			unregisterSessionTreeStore(ctx.sessionManager, registry.getScopedStore());
 			registry.getScopedStore().clear();
 		}
@@ -923,7 +1004,7 @@ class SubagentSessionOwner {
 		throw new Error("Subagents session has not started; wait for session_start before using its tools.");
 	}
 
-	private createRootRegistry(ctx: ExtensionContext): AgentSessionRegistry {
+	private createRootRegistry(ctx: ExtensionContext, ownerControl?: SubagentOwnerControlPort): AgentSessionRegistry {
 		const sessionFile = ctx.sessionManager.getSessionFile();
 		const scopedStore = getOrCreateSessionTreeStore(ctx.sessionManager);
 		const registry = new AgentSessionRegistry({
@@ -939,6 +1020,7 @@ class SubagentSessionOwner {
 				operational: emptyOperational("idle"),
 			},
 			dependencies: { agentDir: getAgentDir() },
+			ownerControl,
 			store: scopedStore,
 		});
 		registerSessionTreeStore(ctx.sessionManager, registry.getScopedStore());
@@ -1411,6 +1493,8 @@ class SubagentSessionOwner {
 		// construction. An unpinned child also inherits this session's
 		// thinking level.
 		const activeById = new Map<string, PersonaCapabilities | undefined>();
+		const personaNameById = new Map<string, string | undefined>();
+		const personaIconById = new Map<string, string | undefined>();
 		const skillPathsById = new Map<string, readonly string[]>();
 		const modelById = new Map<string, string | undefined>();
 		const thinkingLevelById = new Map<string, string | undefined>();
@@ -1427,6 +1511,8 @@ class SubagentSessionOwner {
 			const workspace = loadWorkspacePersona(effectiveCwd);
 			const active = selectActivePersona(workspace, agentConfig);
 			activeById.set(agent.id, active);
+			personaNameById.set(agent.id, active?.name);
+			personaIconById.set(agent.id, active?.icon);
 			// A requested persona that lost wholesale to the workspace is
 			// surfaced to the orchestrator in the tool result — the reliable
 			// parent-context channel, read immediately at spawn time.
@@ -1466,6 +1552,8 @@ class SubagentSessionOwner {
 				...item,
 				channels: agent.channels ? Object.freeze([...agent.channels]) : undefined,
 				agent: personaNameOf(agent),
+				personaName: personaNameById.get(agent.id),
+				personaIcon: personaIconById.get(agent.id),
 				model: modelById.get(agent.id),
 				thinkingLevel: thinkingLevelById.get(agent.id),
 				cwd: resolvedCwds.get(agent.id),
@@ -1540,6 +1628,8 @@ class SubagentSessionOwner {
 		const forkSpec: ForkAgentSpec = {
 			kind: "fork",
 			id: params.id,
+			personaName: active?.name,
+			personaIcon: active?.icon,
 			task: params.task,
 			sessionFile,
 			tools,
@@ -1716,6 +1806,31 @@ class SubagentSessionOwner {
 		};
 	}
 
+	private async resurrectThroughControl(
+		manager: SubagentManager,
+		request: SubagentResurrectRequest,
+		ctx: ExtensionContext,
+	): Promise<SubagentResurrectResult> {
+		const session = this.requireActiveSession();
+		if (session.manager !== manager) throw new Error("Resurrection owner mismatch");
+		await this.resurrectAgents({
+			agents: [{
+				id: request.localId,
+				sessionId: request.sessionId,
+				task: request.task,
+				channels: [...request.channels],
+				...(request.model !== undefined ? { model: request.model } : {}),
+			}],
+		}, ctx);
+		const pathValue = [...request.parentPath, request.localId];
+		const snapshot = session.registry.getSnapshot(pathValue);
+		return {
+			path: pathValue,
+			sessionId: snapshot?.sessionId,
+			incarnation: snapshot?.incarnation,
+		};
+	}
+
 	private async resurrectAgents(params: any, ctx: ExtensionContext): Promise<any> {
 		const session = this.requireActiveSession();
 		const manager = session.manager;
@@ -1745,8 +1860,11 @@ class SubagentSessionOwner {
 			// `model`, then the persisted session model, which the target
 			// resumes untouched because no override reaches construction.
 			const record = manager.findPersistedAgentRecord(agent.sessionId);
-			const persona = record?.agent;
-			const config = persona ? discovery.agents.find((candidate) => candidate.name === persona) : undefined;
+			const requestedPersona = record?.agent;
+			const persistedWinner = record?.personaName ?? requestedPersona;
+			const config = persistedWinner
+				? discovery.agents.find((candidate) => candidate.name === persistedWinner)
+				: undefined;
 			const active = loadActivePersona(record?.cwd ?? ctx.cwd, config);
 			const resolvedModel = resolveChildModelRef({
 				pin: active?.model,
@@ -1770,7 +1888,9 @@ class SubagentSessionOwner {
 			specs.push({
 				kind: "agent",
 				id: agent.id,
-				agent: persona,
+				agent: requestedPersona,
+				personaName: active?.name ?? record?.personaName,
+				personaIcon: active?.icon ?? record?.personaIcon,
 				task: agent.task,
 				channels: agent.channels,
 				resumeSessionFile: resolved,

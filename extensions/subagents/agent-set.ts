@@ -29,6 +29,13 @@ import {
 } from "./agent-session-registry.js";
 import { resolveChildToolPolicy } from "./child-tool-policy.js";
 import type { PersonaPayload } from "./child-session-marker.js";
+import type {
+	SubagentManagerControl,
+	SubagentResurrectRequest,
+	SubagentResurrectResult,
+	SubagentStopRequest,
+	SubagentTeardownResult,
+} from "./provider.js";
 import { loadWorkspacePersona, type PersonaDeclaration } from "../persona-workspaces/declaration.ts";
 import {
 	appendAgentAdded,
@@ -65,6 +72,10 @@ import {
  * construction baseline; a discarded file's values never survive.
  */
 export type PersonaCapabilities = {
+	/** Winning persona presentation name. */
+	name: string;
+	/** Winning persona flat icon text, if declared. */
+	icon?: string;
 	/** Raw model reference (tier name or model id, `":<level>"` suffix allowed). A pin: it outranks an explicit `model` spawn argument. */
 	model?: string;
 	/** Tool allowlist; absent selects the ordinary child/fork baseline. */
@@ -85,7 +96,13 @@ export function selectActivePersona(
 ): PersonaCapabilities | undefined {
 	const active = workspace ?? spawned;
 	if (active === undefined) return undefined;
-	return { model: active.model, tools: active.tools, skills: active.skills };
+	return {
+		name: active.name,
+		...(active.icon !== undefined ? { icon: active.icon } : {}),
+		model: active.model,
+		tools: active.tools,
+		skills: active.skills,
+	};
 }
 
 /**
@@ -162,8 +179,13 @@ export type AgentUsage = RegistryAgentUsage;
 
 export interface AgentStatus {
 	id: string;
+	/** Stable public-path incarnation, changed on removal and path reuse. */
+	incarnation: string;
 	state: AgentState;
 	agentDef?: string;
+	/** Winning persona metadata, distinct from the requested definition key. */
+	persona?: string;
+	personaIcon?: string;
 	task: string;
 	channels: string[];
 	lastActivity?: string;
@@ -179,6 +201,8 @@ export interface AgentStatus {
 	contextWindow?: number;
 	hasSubgroup: boolean;
 	waitingFor: string[];
+	/** Root-relative waiting targets for provider projections. */
+	waitingForPaths?: AgentPath[];
 }
 
 /**
@@ -190,6 +214,8 @@ interface AgentEntry {
 	readonly path: AgentPath;
 	readonly id: string;
 	readonly agentDef?: string;
+	readonly persona?: string;
+	readonly personaIcon?: string;
 	readonly task: string;
 	readonly channels: string[];
 	readonly kind: AgentSpec["kind"];
@@ -227,7 +253,7 @@ export class SubagentManager {
 	private readonly router: MessageRouter;
 	private readonly parentPort: MessagePort;
 	private readonly opts: SubagentManagerOptions;
-	private readonly correlationToTarget = new Map<string, string>();
+	private readonly correlationToTarget = new Map<string, { localId: string; path: AgentPath }>();
 	private sessionDir: string | null = null;
 	private persistence: PersistencePaths | null = null;
 	private restoring = false;
@@ -270,6 +296,17 @@ export class SubagentManager {
 			.listChildren(this.opts.ownerPath)
 			.find((candidate) => candidate.localId === agentId);
 		return snapshot ? projectStatus(snapshot) : undefined;
+	}
+
+	/** Control seam used by the root owner to route guarded mutations. */
+	createControl(
+		resurrect: (request: SubagentResurrectRequest) => Promise<SubagentResurrectResult>,
+	): SubagentManagerControl {
+		return {
+			teardown: (localId, incarnation) => this.teardownGuarded(localId, incarnation),
+			stop: (request) => this.stopGuarded(request),
+			resurrect,
+		};
 	}
 
 	/** Child session file id for resurrect, or undefined for an unknown agent. */
@@ -332,6 +369,54 @@ export class SubagentManager {
 	 * unwinding.
 	 */
 	async interrupt(agentId: string, options?: { timeoutMs?: number; signal?: AbortSignal }): Promise<InterruptOutcome> {
+		return this.serializeMutation(() => this.interruptUnlocked(agentId, options));
+	}
+
+	/**
+	 * Guarded child Stop entry point used by the root control port. Validation and
+	 * the abort happen in the ordinary manager mutation queue, so a stale view
+	 * cannot race a later path incarnation or call the borrowed runtime directly.
+	 */
+	async stopGuarded(request: SubagentStopRequest): Promise<void> {
+		return this.serializeMutation(async () => {
+			const childPath = childAgentPath(this.opts.ownerPath, request.path.at(-1) ?? "");
+			if (!samePath(request.path, childPath)) throw new Error("Stale child stop path");
+			const node = this.opts.registry.get(childPath);
+			if (!node || node.snapshot.ownership !== "registry") throw new Error(`Unknown agent: "${request.path.at(-1) ?? ""}"`);
+			if (node.snapshot.incarnation !== request.incarnation) throw new Error("Stale child incarnation");
+			if (node.snapshot.sessionId !== request.expectedSessionId) throw new Error("Stale child session");
+			await this.interruptUnlocked(request.path.at(-1) ?? "");
+		});
+	}
+
+	/**
+	 * Guarded teardown entry point used by the root control port. The ordinary
+	 * single-agent teardown owns lifecycle persistence, routing cleanup, reports,
+	 * and subtree disposal; this method only adds path/incarnation validation.
+	 */
+	async teardownGuarded(localId: string, incarnation: string): Promise<SubagentTeardownResult> {
+		return this.serializeMutation(async () => {
+			const childPath = childAgentPath(this.opts.ownerPath, localId);
+			const snapshot = this.opts.registry.getSnapshot(childPath);
+			if (!snapshot || snapshot.ownership !== "registry") {
+				return { path: childPath, removed: false, reason: "not_found" as const };
+			}
+			if (snapshot.incarnation !== incarnation) {
+				return { path: childPath, removed: false, incarnation: snapshot.incarnation, sessionId: snapshot.sessionId, reason: "not_found" as const };
+			}
+			const sessionId = snapshot.sessionId;
+			await this.teardownSingle(localId);
+			return {
+				path: childPath,
+				removed: true,
+				sessionId,
+				incarnation,
+				reason: "removed" as const,
+			};
+		});
+	}
+
+	private async interruptUnlocked(agentId: string, options?: { timeoutMs?: number; signal?: AbortSignal }): Promise<InterruptOutcome> {
 		const childPath = childAgentPath(this.opts.ownerPath, agentId);
 		const node = this.opts.registry.get(childPath);
 		if (!node || node.snapshot.ownership !== "registry") {
@@ -555,6 +640,8 @@ export class SubagentManager {
 			path: childAgentPath(this.opts.ownerPath, spec.id),
 			id: spec.id,
 			agentDef: spec.kind === "agent" ? spec.agent : undefined,
+			persona: spec.personaName,
+			personaIcon: spec.personaIcon,
 			task: spec.task,
 			channels,
 			kind: spec.kind,
@@ -609,6 +696,8 @@ export class SubagentManager {
 			localId: entry.id,
 			task: entry.task,
 			agentDef: entry.agentDef,
+			persona: entry.persona,
+			personaIcon: entry.personaIcon,
 			channels: [...entry.channels],
 			session: {
 				target,
@@ -629,6 +718,8 @@ export class SubagentManager {
 				onEvent: (event) => this.applyChildEvent(entry, event),
 				onDiagnostic: (message, type) => this.applyChildDiagnostic(entry, message, type),
 				onSessionChanged: () => this.persistReplacement(entry),
+				onRuntimeReplaced: () => {},
+				getCapabilities: ({ session }) => createChildCapabilities(session),
 				onShutdownRequested: () => this.markRuntimeDead(entry, "Child runtime became unavailable"),
 			},
 			initialOperational: entry.provisionalOperational!,
@@ -974,16 +1065,23 @@ export class SubagentManager {
 	}
 
 	private markAgentWaiting(agentId: string, correlationId: string, targetId: string): void {
+		const target = {
+			localId: targetId,
+			path: targetId === "parent"
+				? [...this.opts.ownerPath]
+				: childAgentPath(this.opts.ownerPath, targetId),
+		};
+		this.correlationToTarget.set(correlationId, target);
 		if (agentId === "parent") {
 			const owner = this.opts.registry.get(this.opts.ownerPath);
 			if (!owner) return;
 			const current = owner.snapshot.operational;
 			if (current.state === "dead") return;
-			this.correlationToTarget.set(correlationId, targetId);
 			this.opts.registry.updateOperational(this.opts.ownerPath, operationalWith(current, {
 				state: "waiting",
 				pendingCorrelations: [...current.pendingCorrelations, correlationId],
 				waitingFor: [...current.waitingFor, targetId],
+				waitingForPaths: [...(current.waitingForPaths ?? []), [...target.path]],
 			}));
 			return;
 		}
@@ -991,27 +1089,28 @@ export class SubagentManager {
 		if (!entry) return;
 		const current = this.operationalFor(entry);
 		if (current.state === "dead") return;
-		this.correlationToTarget.set(correlationId, targetId);
 		this.replaceOperational(entry, operationalWith(current, {
 			state: "waiting",
 			pendingCorrelations: [...current.pendingCorrelations, correlationId],
 			waitingFor: [...current.waitingFor, targetId],
+			waitingForPaths: [...(current.waitingForPaths ?? []), [...target.path]],
 		}));
 	}
 
 	private clearAgentWaiting(agentId: string, correlationId: string): void {
-		const targetId = this.correlationToTarget.get(correlationId);
+		const target = this.correlationToTarget.get(correlationId);
 		this.correlationToTarget.delete(correlationId);
 		if (agentId === "parent") {
 			const owner = this.opts.registry.get(this.opts.ownerPath);
 			if (!owner) return;
 			const current = owner.snapshot.operational;
 			const pendingCorrelations = current.pendingCorrelations.filter((id) => id !== correlationId);
-			const waitingFor = removeOne(current.waitingFor, targetId);
+			const waitingFor = removeCorrelationTarget(current, correlationId, target);
 			this.opts.registry.updateOperational(this.opts.ownerPath, operationalWith(current, {
 				state: pendingCorrelations.length === 0 && current.state === "waiting" ? "running" : current.state,
 				pendingCorrelations,
-				waitingFor,
+				waitingFor: waitingFor.local,
+				waitingForPaths: waitingFor.paths,
 			}));
 			return;
 		}
@@ -1019,11 +1118,12 @@ export class SubagentManager {
 		if (!entry) return;
 		const current = this.operationalFor(entry);
 		const pendingCorrelations = current.pendingCorrelations.filter((id) => id !== correlationId);
-		const waitingFor = removeOne(current.waitingFor, targetId);
+		const waitingFor = removeCorrelationTarget(current, correlationId, target);
 		this.replaceOperational(entry, operationalWith(current, {
 			state: pendingCorrelations.length === 0 && current.state === "waiting" ? "running" : current.state,
 			pendingCorrelations,
-			waitingFor,
+			waitingFor: waitingFor.local,
+			waitingForPaths: waitingFor.paths,
 		}));
 	}
 
@@ -1055,6 +1155,8 @@ export class SubagentManager {
 			task: entry.task,
 			channels: entry.channels.filter((channel) => channel !== "parent"),
 			agent: entry.agentDef,
+			personaName: entry.persona,
+			personaIcon: entry.personaIcon,
 			sessionFile: snapshot.sessionFile,
 			sessionId: snapshot.sessionId,
 			cwd: replacement ? snapshot.cwd : entry.cwd,
@@ -1218,6 +1320,8 @@ export class SubagentManager {
 			return {
 				kind: "fork",
 				id: agent.id,
+				personaName: workspace?.name ?? agent.personaName,
+				personaIcon: workspace?.icon ?? agent.personaIcon,
 				task: agent.task,
 				sessionFile: agent.sessionFile,
 				resumeSessionFile: agent.sessionFile,
@@ -1230,8 +1334,9 @@ export class SubagentManager {
 				thinkingLevel: this.opts.pi.getThinkingLevel() as string,
 			} as AgentSpec;
 		}
-		const agentConfig = agent.agent
-			? agentConfigs.find((candidate) => candidate.name === agent.agent)
+		const persistedWinner = agent.personaName ?? agent.agent;
+		const agentConfig = persistedWinner
+			? agentConfigs.find((candidate) => candidate.name === persistedWinner)
 			: undefined;
 		const active = loadActivePersona(effectiveCwd, agentConfig);
 		const resolved = active?.skills
@@ -1241,6 +1346,8 @@ export class SubagentManager {
 			kind: "agent",
 			id: agent.id,
 			agent: agent.agent,
+			personaName: active?.name ?? agent.personaName,
+			personaIcon: active?.icon ?? agent.personaIcon,
 			task: agent.task,
 			channels: agent.channels,
 			resumeSessionFile: agent.sessionFile,
@@ -1274,12 +1381,39 @@ export class SubagentManager {
 	}
 }
 
+function createChildCapabilities(session: any): Record<string, unknown> {
+	const executeBash = (...args: readonly unknown[]) => {
+		const command = args[0];
+		if (typeof command !== "string") throw new TypeError("Child bash command must be a string");
+		return session.executeBash(command, undefined, args[1]);
+	};
+	return {
+		operations: [
+			"prompt", "steer", "follow_up", "stop", "bash", "abort_bash", "set_model",
+			"cycle_model", "set_thinking_level", "cycle_thinking_level", "set_auto_compaction",
+			"compact", "tree", "completion", "state", "meta",
+		],
+		renderer: { visible: true },
+		resolveModel: (provider: string, modelId: string) => session.modelRuntime?.getModel?.(provider, modelId),
+		getSettings: () => ({
+			availableThinkingLevels: session.getAvailableThinkingLevels?.() ?? [],
+			autoCompactionEnabled: session.autoCompactionEnabled,
+			sessionName: session.sessionName,
+		}),
+		nativeBash: { admitted: true, execute: executeBash, abort: () => session.abortBash?.() },
+		executeBash,
+	};
+}
+
 function projectStatus(snapshot: AgentNodeSnapshot): AgentStatus {
 	const operational = snapshot.operational;
 	return {
 		id: snapshot.localId ?? "",
+		incarnation: snapshot.incarnation,
 		state: operational.state,
 		agentDef: snapshot.agentDef,
+		persona: snapshot.persona,
+		personaIcon: snapshot.personaIcon,
 		task: snapshot.task ?? "",
 		channels: [...snapshot.channels],
 		lastActivity: operational.lastActivity,
@@ -1298,6 +1432,7 @@ function projectStatus(snapshot: AgentNodeSnapshot): AgentStatus {
 		contextWindow: operational.contextWindow,
 		hasSubgroup: operational.hasSubgroup,
 		waitingFor: [...operational.waitingFor],
+		waitingForPaths: operational.waitingForPaths?.map((path) => [...path]),
 	};
 }
 
@@ -1358,6 +1493,9 @@ function operationalWith(
 			? [...changes.pendingCorrelations]
 			: [...current.pendingCorrelations],
 		waitingFor: changes.waitingFor ? [...changes.waitingFor] : [...current.waitingFor],
+		waitingForPaths: changes.waitingForPaths
+			? changes.waitingForPaths.map((path) => [...path])
+			: current.waitingForPaths?.map((path) => [...path]),
 	};
 }
 
@@ -1372,10 +1510,24 @@ function channelSpec(agent: AgentSpec): AgentChannelSpec {
 	};
 }
 
-function removeOne(values: readonly string[], value: string | undefined): string[] {
-	if (value === undefined) return [...values];
-	const index = values.indexOf(value);
-	return index === -1 ? [...values] : [...values.slice(0, index), ...values.slice(index + 1)];
+function removeCorrelationTarget(
+	current: AgentOperationalSnapshot,
+	correlationId: string,
+	target: { localId: string; path: AgentPath } | undefined,
+): { local: string[]; paths: AgentPath[] } {
+	const correlationIndex = current.pendingCorrelations.indexOf(correlationId);
+	const local = [...current.waitingFor];
+	const paths = (current.waitingForPaths ?? []).map((path) => [...path]);
+	if (correlationIndex >= 0) {
+		if (correlationIndex < local.length) local.splice(correlationIndex, 1);
+		if (correlationIndex < paths.length) paths.splice(correlationIndex, 1);
+	} else if (target) {
+		const localIndex = local.indexOf(target.localId);
+		if (localIndex >= 0) local.splice(localIndex, 1);
+		const pathIndex = paths.findIndex((path) => samePath(path, target.path));
+		if (pathIndex >= 0) paths.splice(pathIndex, 1);
+	}
+	return { local, paths };
 }
 
 /** Project a settled agent state onto the vocabulary the model is shown. */
