@@ -49,6 +49,13 @@ import { serializeAgentComplete, serializeAgentMessage, type AgentCompleteData }
 import { hasLiveBackgroundWork } from "./activity.js";
 import { createStopSequenceManager, type StopSequenceManager } from "./stop-sequences.js";
 import { NotificationQueue } from "./notification-queue.js";
+import {
+	createAwaitGate,
+	type AwaitChildStatus,
+	type AwaitGate,
+	type AwaitMessage,
+	type AwaitOutcome,
+} from "./await-gating.js";
 import { statusesToCards } from "./panel-cards.js";
 import { modelDisplayName } from "./status-display.js";
 import { formatOverrideNote, formatSpawnToolResult } from "./tool-result.js";
@@ -158,7 +165,7 @@ interface SemanticOwnerOptions {
 
 interface WaitState {
 	resolve: (result: { text: string; agents: AgentCompleteData[] }) => void;
-	satisfied: () => boolean;
+	reject: (error: unknown) => void;
 	abortCleanup: (() => void) | null;
 	semantic?: { invocationId: string; path: AgentPath; requested: readonly AgentPath[]; refs: readonly PiEventRef[] };
 }
@@ -341,6 +348,14 @@ class SessionTurnCoordinator {
 	private readonly queue: NotificationQueue;
 	private readonly stopSequences: StopSequenceManager;
 	private readonly semantic: SemanticOwnerOptions;
+	/** Persistent gate holds completions between active awaits. */
+	private holdGate: AwaitGate;
+	private activeGate: AwaitGate | null = null;
+	private readonly leaseCounts = new Map<string, number>();
+	private readonly settledStatuses = new Map<string, AwaitChildStatus>();
+	private readonly completionManagers = new Map<string, SubagentManager>();
+	private readonly completionFacts = new Map<string, SubagentSemanticFact>();
+	private readonly completionXml = new Map<string, string>();
 	private waitState: WaitState | null = null;
 	private rootRunError: string | undefined;
 	private readonly notifiedTierIssues = new Set<string>();
@@ -348,6 +363,7 @@ class SessionTurnCoordinator {
 
 	constructor(pi: ExtensionAPI, semantic: SemanticOwnerOptions) {
 		this.semantic = semantic;
+		this.holdGate = this.createHoldGate();
 		this.queue = new NotificationQueue({
 			steerDelivery: USE_STEER_DELIVERY,
 			deliver: (combined, details) => {
@@ -368,8 +384,77 @@ class SessionTurnCoordinator {
 			: { add() {}, remove() {}, addOnce() {}, clear() {} };
 	}
 
+	private createHoldGate(): AwaitGate {
+		const gate = createAwaitGate({
+			requested: [],
+			onHeldIdleDelivery: (status) => this.deliverHeldIdle(status),
+		});
+		for (const [key, count] of this.leaseCounts) {
+			const path = JSON.parse(key) as AgentPath;
+			for (let index = 0; index < count; index += 1) gate.attach(path);
+		}
+		return gate;
+	}
+
 	get isWaiting(): boolean {
 		return this.queue.isWaiting;
+	}
+
+	/** Register one provider view lease. The returned function is idempotent. */
+	attachLease(path: AgentPath): () => void {
+		const key = JSON.stringify(path);
+		this.leaseCounts.set(key, (this.leaseCounts.get(key) ?? 0) + 1);
+		this.holdGate.attach(path);
+		this.activeGate?.attach(path);
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			this.detachLease(path);
+		};
+	}
+
+	detachLease(path: AgentPath): void {
+		const key = JSON.stringify(path);
+		const count = this.leaseCounts.get(key) ?? 0;
+		if (count === 0) return;
+		if (count === 1) this.leaseCounts.delete(key);
+		else this.leaseCounts.set(key, count - 1);
+		this.holdGate.detach(path);
+		this.activeGate?.detach(path);
+	}
+
+	/** Clear a removed path without delivering its held idle result. */
+	discardLease(path: AgentPath): void {
+		this.holdGate.stop(path, { path, state: "stopped" });
+		this.activeGate?.stop(path, { path, state: "stopped" });
+	}
+
+	discardLeasesUnder(prefix: AgentPath): void {
+		for (const key of this.leaseCounts.keys()) {
+			const path = JSON.parse(key) as AgentPath;
+			if (path.length >= prefix.length && prefix.every((part, index) => path[index] === part)) {
+				this.discardLease(path);
+			}
+		}
+	}
+
+	/** Clear one child's prior completion when its next run starts. */
+	startChild(path: AgentPath): void {
+		const key = JSON.stringify(path);
+		this.settledStatuses.delete(key);
+		this.completionManagers.delete(key);
+		this.completionFacts.delete(key);
+		this.completionXml.delete(key);
+		this.holdGate.start(path);
+		this.activeGate?.start(path);
+	}
+
+	/** Parent Stop releases an active wait and discards every held answer. */
+	stopParent(): void {
+		this.holdGate.stop();
+		this.holdGate = this.createHoldGate();
+		this.activeGate?.stop();
 	}
 
 	queueNotification(content: string, source: "local" | "uplink", semantic?: SubagentSemanticFact): void {
@@ -408,10 +493,37 @@ class SessionTurnCoordinator {
 		this.queue.deferAll();
 	}
 
+	private deliverHeldIdle(status: AwaitChildStatus): void {
+		const key = JSON.stringify(status.path);
+		const manager = this.completionManagers.get(key);
+		const agentId = status.path.at(-1);
+		if (!manager || !agentId) return;
+		const data: AgentCompleteData = {
+			id: agentId,
+			status: status.state === "errored" ? "errored" : status.state === "dead" ? "dead" : "idle",
+			output: status.output,
+			error: status.error,
+			sessionId: status.sessionId,
+		};
+		const fact = this.completionFacts.get(key);
+		manager.markCompletionDelivered(agentId);
+		this.queue.queue(this.completionXml.get(key) ?? serializeAgentComplete(data), "local", data, fact);
+		this.completionXml.delete(key);
+		this.holdGate.start(status.path);
+	}
+
 	clear(): void {
 		this.queue.clear();
 		this.waitState?.abortCleanup?.();
 		this.waitState = null;
+		this.activeGate?.stop();
+		this.activeGate = null;
+		this.holdGate.stop();
+		this.leaseCounts.clear();
+		this.settledStatuses.clear();
+		this.completionManagers.clear();
+		this.completionFacts.clear();
+		this.completionXml.clear();
 		this.stopSequences.clear();
 	}
 
@@ -441,36 +553,69 @@ class SessionTurnCoordinator {
 	}
 
 	settleRun(aborted: boolean): { aborted: boolean; rootError: string | undefined } {
+		if (aborted) this.stopParent();
 		this.queue.setParentBusy(false, { flush: !aborted });
 		if (aborted) this.queue.deferAll();
 		return { aborted, rootError: this.rootRunError };
 	}
 
-	resolveWait(reason: "settled" | "message" = "settled", message?: SubagentSemanticFact): void {
-		if (!this.waitState) return;
+	private finishWait(outcome: AwaitOutcome): void {
 		const state = this.waitState;
+		if (!state) return;
 		this.waitState = null;
 		state.abortCleanup?.();
 		this.queue.setWaiting(false);
 		if (state.semantic) {
+			const reason = outcome.kind === "interrupted" ? "message" : outcome.reason;
 			this.semantic.publishFact(
-				reason === "message" ? "await_interrupted" : "await_released",
+				outcome.kind === "interrupted" ? "await_interrupted" : "await_released",
 				state.semantic.path,
 				{
 					invocationId: state.semantic.invocationId,
 					requested: state.semantic.requested,
-					statuses: [],
+					statuses: outcome.statuses,
 					reason,
-					...(message ? { message: message.data } : {}),
+					...(outcome.kind === "interrupted" ? { message: outcome.message } : {}),
 				},
 				state.semantic.refs,
 			);
+			this.clearAwaitInvocations(state.semantic.requested);
 		}
 		state.resolve(this.queue.drainDetailed());
 	}
 
+	/** Interrupt an active await because an incoming routed message arrived. */
+	resolveWait(reason: "settled" | "message" = "settled", message?: SubagentSemanticFact): void {
+		if (!this.waitState) return;
+		if (reason === "message" && message) {
+			const data = message.data as Record<string, unknown>;
+			const from = Array.isArray(data?.from) ? data.from as AgentPath : [];
+			const to = Array.isArray(data?.to) ? data.to as AgentPath : this.semantic.getScopePath();
+			this.activeGate?.message({
+				from,
+				to,
+				content: typeof data?.text === "string" ? data.text : "",
+				...(typeof data?.correlationId === "string" ? { correlationId: data.correlationId } : {}),
+				responseExpected: data?.responseExpected === true,
+			});
+			return;
+		}
+		this.activeGate?.stop();
+		this.activeGate = null;
+		this.finishWait({ kind: "released", reason: "settled", statuses: [] });
+	}
+
+	/** Finish a wait after a deferred response without changing held answers. */
+	releaseWait(): void {
+		if (!this.waitState) return;
+		this.activeGate?.stop();
+		this.activeGate = null;
+		this.finishWait({ kind: "released", reason: "settled", statuses: [] });
+	}
+
 	resolveSatisfiedWait(): void {
-		if (this.queue.isWaiting && this.waitState?.satisfied()) this.resolveWait("settled");
+		// Settlement is driven by the active await gate. Retain this method as a
+		// compatibility seam for manager callbacks that used the old coordinator.
 	}
 
 	registerAwaitInvocation(manager: SubagentManager, ids: readonly string[], invocationId: string, refs: readonly PiEventRef[] = []): void {
@@ -491,19 +636,6 @@ class SessionTurnCoordinator {
 		signal?: AbortSignal | null,
 		semantic?: { invocationId: string; refs: readonly PiEventRef[] },
 	): Promise<{ text: string; agents: AgentCompleteData[] }> {
-		const isSatisfied = () => ids.every((id) => {
-			const status = manager.getAgentStatus(id);
-			return !status || isSettledState(status.state);
-		});
-		if (isSatisfied()) {
-			const drained = this.queue.drainDetailed();
-			const agents = drained.agents.length > 0 ? drained.agents : completionDataFor(ids, manager);
-			this.publishAwaitRelease(ids, manager, semantic, agents, "settled");
-			return this.truncatedWaitResult(
-				drained.text || "All specified agents have already completed. No pending notifications.",
-				agents,
-			);
-		}
 		const blocked = manager.getBlockedSenders().filter((pending) => ids.includes(pending.from));
 		if (blocked.length > 0) {
 			const listed = blocked
@@ -517,25 +649,60 @@ class SessionTurnCoordinator {
 			return { text: [this.queue.drainAll(), notice].filter(Boolean).join("\n"), agents: [] };
 		}
 		if (this.waitState) throw new Error("Another await_agents call is already active.");
+		const requested = ids
+			.map((id) => manager.getAgentPath(id))
+			.filter((path): path is AgentPath => path !== undefined);
+		const attached = [...this.leaseCounts.entries()].flatMap(([key, count]) => {
+			const path = JSON.parse(key) as AgentPath;
+			return Array.from({ length: count }, () => path);
+		});
+		const gate = createAwaitGate({ requested, attached });
+		this.activeGate = gate;
+		for (const id of ids) {
+			const path = manager.getAgentPath(id);
+			if (!path) continue;
+			const existing = this.settledStatuses.get(JSON.stringify(path));
+			if (existing) gate.settle(existing);
+			else {
+				const status = manager.getAgentStatus(id);
+				if (status && isSettledState(status.state)) gate.settle(this.awaitStatus(path, status, manager.getSessionId(id)));
+			}
+		}
 		this.queue.setWaiting(true);
 		try {
 			const result = await new Promise<{ text: string; agents: AgentCompleteData[] }>((resolve, reject) => {
 				const state: WaitState = {
 					resolve,
-					satisfied: isSatisfied,
+					reject,
 					abortCleanup: null,
 					...(semantic ? {
 						semantic: {
 							invocationId: semantic.invocationId,
 							path: this.semantic.getScopePath(),
-							requested: ids.map((id) => manager.getAgentPath(id)).filter((path): path is AgentPath => path !== undefined),
+							requested,
 							refs: [...semantic.refs],
 						},
 					} : {}),
 				};
 				this.waitState = state;
+				gate.result.then(
+					(outcome) => {
+						if (this.activeGate === gate) this.activeGate = null;
+						this.finishWait(outcome);
+					},
+					(error) => {
+						if (this.activeGate === gate) this.activeGate = null;
+						if (this.waitState === state) {
+							this.waitState = null;
+							this.queue.setWaiting(false);
+							state.reject(error);
+						}
+					},
+				);
 				if (!signal) return;
 				const onAbort = () => {
+					gate.stop();
+					if (this.activeGate === gate) this.activeGate = null;
 					this.waitState = null;
 					this.queue.setWaiting(false);
 					if (state.semantic) {
@@ -545,17 +712,15 @@ class SessionTurnCoordinator {
 							reason: "stop",
 						}, state.semantic.refs);
 					}
-					reject(new Error("Aborted"));
+					state.reject(new Error("Aborted"));
 				};
-				if (signal.aborted) {
-					onAbort();
-					return;
+				if (signal.aborted) onAbort();
+				else {
+					signal.addEventListener("abort", onAbort, { once: true });
+					state.abortCleanup = () => signal.removeEventListener("abort", onAbort);
 				}
-				signal.addEventListener("abort", onAbort, { once: true });
-				state.abortCleanup = () => signal.removeEventListener("abort", onAbort);
 			});
 			const agents = result.agents.length > 0 ? result.agents : completionDataFor(ids, manager);
-			this.publishAwaitRelease(ids, manager, semantic, agents, "settled");
 			return this.truncatedWaitResult(
 				result.text || "All specified agents have completed. No pending notifications.",
 				agents,
@@ -566,13 +731,23 @@ class SessionTurnCoordinator {
 		}
 	}
 
-	notifyAgentComplete(manager: SubagentManager, agentId: string, allDone: boolean): void {
+	notifyAgentComplete(
+		manager: SubagentManager,
+		agentId: string,
+		allDone: boolean,
+		outcome: { aborted?: boolean } = {},
+	): boolean {
 		const status = manager.getAgentStatus(agentId);
-		if (!status) return;
+		if (!status) return true;
 		const path = manager.getAgentPath(agentId) ?? [...this.semantic.getScopePath(), agentId];
-		const awaited = this.awaitedInvocations.get(JSON.stringify(path));
+		const key = JSON.stringify(path);
+		const awaited = this.awaitedInvocations.get(key);
+		const stopped = outcome.aborted === true;
+		const completionStatus = stopped
+			? "stopped" as const
+			: status.state === "errored" ? "errored" as const : status.state === "dead" ? "dead" as const : "idle" as const;
 		const completionData = {
-			status: status.state === "errored" ? "errored" : status.state === "dead" ? "dead" : "idle",
+			status: completionStatus,
 			output: status.lastOutput,
 			error: status.state === "errored" || status.state === "dead"
 				? (status.lastError || "Agent run ended with an error")
@@ -583,6 +758,16 @@ class SessionTurnCoordinator {
 				: { delivery: "asynchronous" as const }),
 		};
 		const refs = awaited?.refs ?? this.semantic.getNativeRefs(undefined, "lifecycle");
+		this.semantic.publishFact("child_settled", path, {
+			path,
+			statuses: [{
+				path,
+				state: completionStatus,
+				...(status.lastOutput !== undefined ? { output: status.lastOutput } : {}),
+				...(status.lastError !== undefined ? { error: status.lastError } : {}),
+				...(manager.getSessionId(agentId) !== undefined ? { sessionId: manager.getSessionId(agentId) } : {}),
+			}],
+		}, refs);
 		const semanticFact = this.semantic.publishFact("completion", path, completionData, refs);
 		const data: AgentCompleteData = {
 			id: agentId,
@@ -593,13 +778,41 @@ class SessionTurnCoordinator {
 				: undefined,
 			sessionId: manager.getSessionId(agentId),
 		};
+		this.settledStatuses.set(key, {
+			path: [...path],
+			state: completionStatus,
+			...(status.lastOutput !== undefined ? { output: status.lastOutput } : {}),
+			...(data.error !== undefined ? { error: data.error } : {}),
+			...(data.sessionId !== undefined ? { sessionId: data.sessionId } : {}),
+		});
+		this.completionManagers.set(key, manager);
+		this.completionFacts.set(key, semanticFact);
+		if (stopped) {
+			const stoppedStatus = this.settledStatuses.get(key)!;
+			this.holdGate.stop(path, stoppedStatus);
+			this.activeGate?.stop(path, stoppedStatus);
+			// A Stop result is delivered by the owner-control operation, not as an
+			// unsolicited idle notification. The manager may mark it notified.
+			return true;
+		}
+
+		const settled = this.settledStatuses.get(key)!;
+		this.holdGate.settle(settled);
+		this.activeGate?.settle(settled);
+		if ((this.leaseCounts.get(key) ?? 0) > 0) return false;
+
 		let xml = serializeAgentComplete(data);
 		if (allDone) {
 			const total = manager.getAgentStatuses().length;
 			xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have settled. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
 		}
+		this.completionXml.set(key, xml);
 		this.queue.queue(xml, "local", data, semanticFact);
-		this.resolveSatisfiedWait();
+		manager.markCompletionDelivered(agentId);
+		// The notification is no longer held. Clear the persistent gate so a
+		// lease opened later cannot replay an already-delivered completion.
+		this.holdGate.start(path);
+		return true;
 	}
 
 	private publishAwaitRelease(
@@ -626,6 +839,17 @@ class SessionTurnCoordinator {
 			reason,
 		}, semantic.refs);
 		this.clearAwaitInvocations(requested);
+	}
+
+	private awaitStatus(path: AgentPath, status: AgentStatus, sessionId?: string): AwaitChildStatus {
+		const state = status.state === "errored" ? "errored" : status.state === "dead" ? "dead" : "idle";
+		return {
+			path: [...path],
+			state,
+			...(status.lastOutput !== undefined ? { output: status.lastOutput } : {}),
+			...(status.lastError !== undefined ? { error: status.lastError } : {}),
+			...(sessionId !== undefined ? { sessionId } : {}),
+		};
 	}
 
 	private async truncatedWaitResult(text: string, agents: AgentCompleteData[]): Promise<{ text: string; agents: AgentCompleteData[] }> {
@@ -1048,7 +1272,11 @@ class SubagentSessionOwner {
 				parentSessionFile: ctx.sessionManager.getSessionFile(),
 				resolveContextWindow: (modelId) => environment.resolveContextWindow(modelId),
 				onUpdate: (current) => presentation.refresh(current),
-				onAgentComplete: (current, agentId, allDone) => turns.notifyAgentComplete(current, agentId, allDone),
+				onAgentStart: (current, agentId) => {
+					const path = current.getAgentPath(agentId);
+					if (path) turns.startChild(path);
+				},
+				onAgentComplete: (current, agentId, allDone, outcome) => turns.notifyAgentComplete(current, agentId, allDone, outcome),
 				onParentMessage: (port, content, meta) => incomingMessages.receiveSerialized(port, content, meta, "local"),
 				onMessagePhase: (event) => this.publishRoutedMessage(event),
 			});
@@ -2003,7 +2231,7 @@ class SubagentSessionOwner {
 				correlationId,
 				responseExpected: false,
 			}), source);
-			if (session.turns.isWaiting) session.turns.resolveWait();
+			if (session.turns.isWaiting) session.turns.releaseWait();
 		};
 		type RaceResult = { kind: "response"; response: RoutedResponse } | { kind: "deferred" };
 		const outcome = await new Promise<RaceResult>((resolve, reject) => {
@@ -2036,7 +2264,7 @@ class SubagentSessionOwner {
 							correlationId,
 							responseExpected: false,
 						}), source);
-						if (session.turns.isWaiting) session.turns.resolveWait();
+						if (session.turns.isWaiting) session.turns.releaseWait();
 						return;
 					}
 					settled = true;
@@ -2117,6 +2345,9 @@ class SubagentSessionOwner {
 			const data = this.teardownAgentData(session.manager, id);
 			return data ? [data] : [];
 		});
+		for (const entry of reports) {
+			session.turns.discardLeasesUnder(childAgentPath(this.scopePath(), entry.id));
+		}
 		const { report, empty } = await session.manager.teardown(params.agent || undefined);
 		const refs = this.nativeRefs(toolCallId, "lifecycle");
 		const facts = reports.map((entry) => this.publishFact("teardown", childAgentPath(this.scopePath(), entry.id), {

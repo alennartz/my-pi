@@ -138,6 +138,15 @@ export function isSettledState(state: AgentState): boolean {
  */
 export type InterruptOutcome = "settled" | "pending";
 
+/**
+ * Native settlement metadata that does not change the five registry states.
+ * An aborted child is still projected as `idle`, but its completion is a
+ * stopped outcome so callers do not receive an unsolicited idle notification.
+ */
+export type AgentCompletionOutcome = Readonly<{
+	aborted?: boolean;
+}>;
+
 /** How long an interrupt waits for the child to reach idle. */
 export const INTERRUPT_SETTLE_TIMEOUT_MS = 10_000;
 
@@ -244,7 +253,13 @@ export interface SubagentManagerOptions {
 	parentSessionFile?: string;
 	resolveContextWindow: (modelId: string) => number | undefined;
 	onUpdate: (mgr: SubagentManager) => void;
-	onAgentComplete: (mgr: SubagentManager, agentId: string, allDone: boolean) => void;
+	onAgentStart?: (mgr: SubagentManager, agentId: string) => void;
+	onAgentComplete: (
+		mgr: SubagentManager,
+		agentId: string,
+		allDone: boolean,
+		outcome?: AgentCompletionOutcome,
+	) => boolean | void;
 	onParentMessage: (port: MessagePort, xml: string, meta: { from?: string; correlationId?: string; responseExpected: boolean }) => void;
 	onMessagePhase?: (event: RoutedMessagePhase) => void;
 }
@@ -256,6 +271,8 @@ export class SubagentManager {
 	private readonly parentPort: MessagePort;
 	private readonly opts: SubagentManagerOptions;
 	private readonly correlationToTarget = new Map<string, { localId: string; path: AgentPath }>();
+	/** Child paths stopped through the owner-control port. */
+	private readonly stopRequested = new Set<string>();
 	private sessionDir: string | null = null;
 	private persistence: PersistencePaths | null = null;
 	private restoring = false;
@@ -322,6 +339,12 @@ export class SubagentManager {
 		return this.opts.registry
 			.listChildren(this.opts.ownerPath)
 			.find((candidate) => candidate.localId === agentId)?.sessionId;
+	}
+
+	/** Mark a held completion after its notification actually leaves the gate. */
+	markCompletionDelivered(agentId: string): void {
+		const entry = this.findEntry(agentId);
+		if (entry) entry.completionNotified = true;
 	}
 
 	/** Usage consumed since the entry was created, including its live subtree. */
@@ -393,7 +416,15 @@ export class SubagentManager {
 			if (!node || node.snapshot.ownership !== "registry") throw new Error(`Unknown agent: "${request.path.at(-1) ?? ""}"`);
 			if (node.snapshot.incarnation !== request.incarnation) throw new Error("Stale child incarnation");
 			if (node.snapshot.sessionId !== request.expectedSessionId) throw new Error("Stale child session");
-			await this.interruptUnlocked(request.path.at(-1) ?? "");
+			const localId = request.path.at(-1) ?? "";
+			if (isSettledState(node.snapshot.operational.state)) return;
+			this.stopRequested.add(localId);
+			try {
+				await this.interruptUnlocked(localId);
+			} catch (error) {
+				this.stopRequested.delete(localId);
+				throw error;
+			}
 		});
 	}
 
@@ -571,7 +602,10 @@ export class SubagentManager {
 		const entries = this.entries;
 		this.entries = [];
 
-		for (const entry of entries) this.router.removeAgent(entry.id);
+		for (const entry of entries) {
+			this.stopRequested.delete(entry.id);
+			this.router.removeAgent(entry.id);
+		}
 		await Promise.all(entries.map((entry) => this.opts.registry.remove(entry.path)));
 		this.correlationToTarget.clear();
 		this.router.close();
@@ -903,6 +937,7 @@ export class SubagentManager {
 		}
 
 		if (event.type === "agent_start") {
+			this.opts.onAgentStart?.(this, entry.id);
 			const current = this.operationalFor(entry);
 			// A run starting on an errored agent is its revival: clear the recorded
 			// error. Only a dead runtime can never start again.
@@ -923,7 +958,7 @@ export class SubagentManager {
 		}
 
 		if (event.type === "agent_settled") {
-			this.settleAtBoundary(entry);
+			this.settleAtBoundary(entry, event.aborted === true);
 		}
 	}
 
@@ -1009,10 +1044,11 @@ export class SubagentManager {
 		);
 	}
 
-	private settleAtBoundary(entry: AgentEntry): void {
+	private settleAtBoundary(entry: AgentEntry, aborted = false): void {
 		const current = this.operationalFor(entry);
 		if (isSettledState(current.state)) return;
-		if (entry.pendingTerminalError) {
+		const stopped = aborted || this.stopRequested.delete(entry.id);
+		if (entry.pendingTerminalError && !stopped) {
 			this.settleErrored(entry, entry.pendingTerminalError);
 			return;
 		}
@@ -1022,7 +1058,7 @@ export class SubagentManager {
 			lastError: undefined,
 		}));
 		this.router.agentIdle(entry.id);
-		this.notifyCompletion(entry);
+		this.notifyCompletion(entry, { aborted: stopped });
 	}
 
 	/**
@@ -1063,13 +1099,17 @@ export class SubagentManager {
 		this.notifyCompletion(entry);
 	}
 
-	private notifyCompletion(entry: AgentEntry): void {
+	private notifyCompletion(entry: AgentEntry, outcome?: AgentCompletionOutcome): void {
 		if (!entry.committed) {
 			entry.completionPending = true;
 			return;
 		}
-		entry.completionNotified = true;
-		this.opts.onAgentComplete(this, entry.id, this.allDone());
+		// The coordinator can hold a settled result while a child view is open.
+		// Mark it only after the coordinator accepts the completion for delivery.
+		// `undefined` keeps compatibility with direct manager callers that do not
+		// return a delivery decision.
+		const delivered = this.opts.onAgentComplete(this, entry.id, this.allDone(), outcome);
+		if (delivered !== false) entry.completionNotified = true;
 	}
 
 	private markAgentWaiting(agentId: string, correlationId: string, targetId: string): void {
@@ -1284,6 +1324,7 @@ export class SubagentManager {
 		const report = serializeAgentTorndown(data);
 
 		this.entries.splice(index, 1);
+		this.stopRequested.delete(entry.id);
 		this.appendRemovalRecord(entry);
 		this.router.removeAgent(entry.id);
 		this.dropTargetCorrelations(entry.id);
