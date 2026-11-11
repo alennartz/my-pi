@@ -1605,10 +1605,6 @@ class SubagentSessionOwner {
 				}
 			}
 		}
-		if (event?.type === "tool_execution_start" && event.toolCallId) {
-			const entryId = this.nativeEntryIds.get(sessionId);
-			if (entryId) this.nativeToolEntries.set(event.toolCallId, entryId);
-		}
 	}
 
 	private subscribeRegistrySemanticFacts(_registry: AgentSessionRegistry, ownerPath: AgentPath): (event: RegistryEvent) => void {
