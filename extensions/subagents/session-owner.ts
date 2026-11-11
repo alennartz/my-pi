@@ -1276,6 +1276,7 @@ class SubagentSessionOwner {
 		if (this.scope.kind === "child") this.incomingMessages.subscribeUplink(this.scope.uplink);
 		let provider: (SubagentProvider & { shutdown(): void }) | undefined;
 		let unregisterProvider: (() => void) | undefined;
+		let registryEventsUnsubscribe: (() => void) | undefined;
 
 		try {
 			let packageAgents: { user: AgentConfig[]; project: AgentConfig[] } | null = null;
@@ -1316,6 +1317,7 @@ class SubagentSessionOwner {
 			});
 			const managerControl = manager.createControl((request) => this.resurrectThroughControl(manager, request, ctx));
 			const registryEvents = createRegistryEventSource(registry);
+			registryEventsUnsubscribe = registryEvents.unsubscribe;
 			if (this.scope.kind === "root") {
 				provider = createSubagentProvider({
 					registry,
@@ -1330,6 +1332,7 @@ class SubagentSessionOwner {
 					},
 				});
 			}
+			ownerControl?.registerManager?.(ownerPath, managerControl);
 			if (provider && this.scope.kind === "root" && this.hasProviderEventBus()) {
 				unregisterProvider = registerProvider(this.pi, provider as any);
 			}
@@ -1347,7 +1350,6 @@ class SubagentSessionOwner {
 				...(provider ? { provider } : {}),
 				...(unregisterProvider ? { unregisterProvider } : {}),
 			});
-			ownerControl?.registerManager?.(ownerPath, managerControl);
 			this.phase = { kind: "active", session };
 			this.resolveStart();
 			presentation.subscribe(
@@ -1380,6 +1382,7 @@ class SubagentSessionOwner {
 				this.phase = { kind: "shutting-down" };
 				unregisterProvider?.();
 				provider?.shutdown();
+				registryEventsUnsubscribe?.();
 				this.incomingMessages.shutdown();
 				this.rejectStart(error);
 			}
