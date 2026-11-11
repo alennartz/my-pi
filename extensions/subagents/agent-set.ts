@@ -938,6 +938,7 @@ export class SubagentManager {
 
 		if (event.type === "agent_start") {
 			this.opts.onAgentStart?.(this, entry.id);
+			entry.completionNotified = false;
 			const current = this.operationalFor(entry);
 			// A run starting on an errored agent is its revival: clear the recorded
 			// error. Only a dead runtime can never start again.
