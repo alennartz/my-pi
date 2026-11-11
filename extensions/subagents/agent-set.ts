@@ -329,10 +329,10 @@ export class SubagentManager {
 		};
 	}
 
-	/** Child session file id for resurrect, or undefined for an unknown agent. */
-	getAgentPath(agentId: string): AgentPath | undefined {
+	/** Child session path, or undefined for an unknown agent. */
+	getAgentPath(agentId: string, includePending = false): AgentPath | undefined {
 		const path = childAgentPath(this.opts.ownerPath, agentId);
-		return this.opts.registry.getSnapshot(path) ? path : undefined;
+		return includePending || this.opts.registry.getSnapshot(path) ? path : undefined;
 	}
 
 	getSessionId(agentId: string): string | undefined {
@@ -1046,9 +1046,10 @@ export class SubagentManager {
 	}
 
 	private settleAtBoundary(entry: AgentEntry, aborted = false): void {
+		const stopRequested = this.stopRequested.delete(entry.id);
 		const current = this.operationalFor(entry);
 		if (isSettledState(current.state)) return;
-		const stopped = aborted || this.stopRequested.delete(entry.id);
+		const stopped = aborted || stopRequested;
 		if (entry.pendingTerminalError && !stopped) {
 			this.settleErrored(entry, entry.pendingTerminalError);
 			return;

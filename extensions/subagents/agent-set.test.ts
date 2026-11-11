@@ -172,6 +172,14 @@ describe("registry-backed manager status projection", () => {
 		expect(registry.listChildren).toHaveBeenCalledWith(["researcher"]);
 	});
 
+	it("can form a requested child path before its registry node is committed", () => {
+		const registry = makeRegistry([]);
+		const { manager } = createManager(registry);
+
+		expect(manager.getAgentPath("worker")).toBeUndefined();
+		expect(manager.getAgentPath("worker", true)).toEqual(["researcher", "worker"]);
+	});
+
 	it("includes live descendant usage in a parent teardown delta", () => {
 		const worker = snapshot("worker", ["researcher", "worker"], {
 			operational: operational({ usage: usage({

@@ -73,10 +73,10 @@ type AwaitCycle = {
 type GateState = {
 	cycle: AwaitCycle;
 	leases: Map<string, number>;
-	totalLeases: number;
 	settlements: Map<string, AwaitChildStatus>;
 	blocked: Set<string>;
-	heldIdle?: AwaitChildStatus;
+	/** Settled results held by each viewed child until its last lease detaches. */
+	heldSettlements: Map<string, AwaitChildStatus>;
 };
 
 function createDeferred<T>(): Deferred<T> {
@@ -152,10 +152,6 @@ function tryRelease(state: GateState, cycle: AwaitCycle, reason: "settled" | "de
 	releaseCycle(state, cycle, reason);
 }
 
-function samePath(left: AgentPath, right: AgentPath): boolean {
-	return pathKey(left) === pathKey(right);
-}
-
 /** Create the pure await/lease state machine. */
 export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 	const initial = normalizeRequested(options.requested);
@@ -167,39 +163,36 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 			parentStopped: false,
 		},
 		leases: new Map(),
-		totalLeases: 0,
 		settlements: new Map(),
 		blocked: new Set(),
+		heldSettlements: new Map(),
 	};
 	const deliverHeldIdle = options.onHeldIdleDelivery;
 
-	function releaseHeldIdle(): void {
-		const held = state.heldIdle;
-		state.heldIdle = undefined;
-		if (!held || !deliverHeldIdle) return;
-		deliverHeldIdle(copyStatus(held));
+	function releaseHeld(path: AgentPath): boolean {
+		const key = pathKey(path);
+		const held = state.heldSettlements.get(key);
+		if (!held) return false;
+		state.heldSettlements.delete(key);
+		if (deliverHeldIdle) deliverHeldIdle(copyStatus(held));
+		return true;
 	}
 
 	function clearPath(path: AgentPath): void {
 		const key = pathKey(path);
 		state.settlements.delete(key);
 		state.blocked.delete(key);
-		if (state.heldIdle && samePath(state.heldIdle.path, path)) {
-			state.heldIdle = undefined;
-		}
+		state.heldSettlements.delete(key);
 	}
 
 	function attach(path: AgentPath): void {
 		const key = pathKey(path);
 		state.leases.set(key, countLease(state, key) + 1);
-		state.totalLeases += 1;
 
 		const status = state.settlements.get(key);
 		if (!status || status.state === "stopped") return;
 		state.blocked.add(key);
-		if (status.state === "idle" && !state.heldIdle) {
-			state.heldIdle = status;
-		}
+		state.heldSettlements.set(key, status);
 	}
 
 	function settle(status: AwaitChildStatus): void {
@@ -207,13 +200,11 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		const key = pathKey(next.path);
 		state.settlements.set(key, next);
 		state.blocked.delete(key);
-		if (state.heldIdle && samePath(state.heldIdle.path, next.path)) {
-			state.heldIdle = undefined;
-		}
+		state.heldSettlements.delete(key);
 
 		if (next.state !== "stopped" && countLease(state, key) > 0) {
 			state.blocked.add(key);
-			if (next.state === "idle") state.heldIdle = next;
+			state.heldSettlements.set(key, next);
 		}
 
 		tryRelease(state, state.cycle, "settled");
@@ -234,19 +225,14 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		const key = pathKey(path);
 		const current = countLease(state, key);
 		if (current === 0) return;
-		if (current === 1) state.leases.delete(key);
-		else state.leases.set(key, current - 1);
-		state.totalLeases -= 1;
-		if (state.totalLeases > 0) return;
-
-		const hadBlocked = state.blocked.size > 0;
-		state.blocked.clear();
-		const hadHeldIdle = state.heldIdle !== undefined;
-		try {
-			releaseHeldIdle();
-		} finally {
-			tryRelease(state, state.cycle, hadBlocked || hadHeldIdle ? "detach" : "settled");
+		if (current === 1) {
+			state.leases.delete(key);
+			state.blocked.delete(key);
+		} else {
+			state.leases.set(key, current - 1);
 		}
+		const released = current === 1 && releaseHeld(path);
+		tryRelease(state, state.cycle, released ? "detach" : "settled");
 	}
 
 	function stop(path?: AgentPath, suppliedStatus?: AwaitChildStatus): void {
@@ -259,9 +245,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 			};
 			state.settlements.set(key, stopped);
 			state.blocked.delete(key);
-			if (state.heldIdle && samePath(state.heldIdle.path, path)) {
-				state.heldIdle = undefined;
-			}
+			state.heldSettlements.delete(key);
 			tryRelease(state, state.cycle, "settled");
 			return;
 		}
@@ -272,7 +256,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 			state.settlements.delete(key);
 			state.blocked.delete(key);
 		}
-		state.heldIdle = undefined;
+		state.heldSettlements.clear();
 		state.blocked.clear();
 		releaseCycle(state, cycle, "stop", []);
 	}

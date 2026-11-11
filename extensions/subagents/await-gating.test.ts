@@ -71,6 +71,30 @@ describe("view-aware await gating", () => {
 		expect(delivery.statuses).toEqual([idle("latest answer")]);
 	});
 
+	it("holds each child's settlement independently and releases errors on that child's final detach", async () => {
+		const delivery = observeDelivery();
+		const gate = createAwaitGate({
+			requested: [worker, scout],
+			attached: [worker, scout],
+			onHeldIdleDelivery: delivery.onDelivery,
+		});
+		const errored: AwaitChildStatus = { path: scout, state: "errored", error: "runtime unavailable" };
+		gate.settle(idle("worker answer"));
+		gate.settle(errored);
+
+		gate.detach(worker);
+		expect(delivery.statuses).toEqual([idle("worker answer")]);
+		await expectPending(gate.result);
+
+		gate.detach(scout);
+		await expect(gate.result).resolves.toMatchObject({
+			kind: "released",
+			reason: "detach",
+			statuses: [idle("worker answer"), errored],
+		});
+		expect(delivery.statuses).toEqual([idle("worker answer"), errored]);
+	});
+
 	it("holds the latest idle notification without an active await until the final detach", async () => {
 		const delivery = observeDelivery();
 		const gate = createAwaitGate({ requested: [], attached: [worker, worker], onHeldIdleDelivery: delivery.onDelivery });

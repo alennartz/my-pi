@@ -387,6 +387,12 @@ export interface SubagentManagerControl {
 	resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult>;
 }
 
+export interface SubagentLeaseCoordinator {
+	attachLease(path: AgentPath): void;
+	detachLease(path: AgentPath): void;
+	discardLease(path: AgentPath): void;
+}
+
 export interface SubagentOwnerControlPort {
 	teardown(path: AgentPath, incarnation: string): Promise<SubagentTeardownResult>;
 	stop(request: SubagentStopRequest): Promise<void>;
@@ -395,6 +401,13 @@ export interface SubagentOwnerControlPort {
 	registerManager?(ownerPath: AgentPath, manager: SubagentManagerControl): void;
 	/** Remove a manager registration during scope shutdown. */
 	unregisterManager?(ownerPath: AgentPath, manager: SubagentManagerControl): void;
+	/** Register the coordinator that owns leases for this manager's children. */
+	registerLeaseCoordinator?(ownerPath: AgentPath, coordinator: SubagentLeaseCoordinator): void;
+	/** Remove a coordinator registration during scope shutdown. */
+	unregisterLeaseCoordinator?(ownerPath: AgentPath, coordinator: SubagentLeaseCoordinator): void;
+	/** Route a lease callback to the coordinator of the child path's owner. */
+	routeLeaseAttached?(path: AgentPath): void;
+	routeLeaseDetached?(path: AgentPath, reason: "released" | "removed" | "unavailable"): void;
 }
 
 export interface SubagentProvider {

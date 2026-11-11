@@ -103,6 +103,7 @@ import {
 import type {
 	SubagentManagerControl,
 	SubagentOwnerControlPort,
+	SubagentLeaseCoordinator,
 	SubagentResurrectRequest,
 	SubagentResurrectResult,
 } from "./provider.js";
@@ -634,7 +635,10 @@ class SessionTurnCoordinator {
 
 	registerAwaitInvocation(manager: SubagentManager, ids: readonly string[], invocationId: string, refs: readonly PiEventRef[] = []): void {
 		for (const id of ids) {
-			const path = manager.getAgentPath(id);
+			// Spawn and fork register this before their registry nodes exist. The
+			// manager still knows the canonical owner path, so use that path during
+			// invocation setup instead of dropping the awaited correlation.
+			const path = manager.getAgentPath(id, true);
 			if (!path) continue;
 			this.awaitedInvocations.set(JSON.stringify(path), { invocationId, path, refs: [...refs] });
 		}
@@ -1109,6 +1113,7 @@ function pathStartsWith(prefix: AgentPath, value: AgentPath): boolean {
  */
 class RootSubagentControlPort implements SubagentOwnerControlPort {
 	private readonly managers = new Map<string, { path: AgentPath; control: SubagentManagerControl }>();
+	private readonly leaseCoordinators = new Map<string, { path: AgentPath; coordinator: SubagentLeaseCoordinator }>();
 
 	registerManager(ownerPath: AgentPath, control: SubagentManagerControl): void {
 		this.managers.set(pathKey(ownerPath), { path: [...ownerPath], control });
@@ -1118,6 +1123,26 @@ class RootSubagentControlPort implements SubagentOwnerControlPort {
 		const key = pathKey(ownerPath);
 		const current = this.managers.get(key);
 		if (current?.control === control) this.managers.delete(key);
+	}
+
+	registerLeaseCoordinator(ownerPath: AgentPath, coordinator: SubagentLeaseCoordinator): void {
+		this.leaseCoordinators.set(pathKey(ownerPath), { path: [...ownerPath], coordinator });
+	}
+
+	unregisterLeaseCoordinator(ownerPath: AgentPath, coordinator: SubagentLeaseCoordinator): void {
+		const key = pathKey(ownerPath);
+		const current = this.leaseCoordinators.get(key);
+		if (current?.coordinator === coordinator) this.leaseCoordinators.delete(key);
+	}
+
+	routeLeaseAttached(pathValue: AgentPath): void {
+		this.resolveLeaseCoordinator(pathValue).coordinator.attachLease(pathValue);
+	}
+
+	routeLeaseDetached(pathValue: AgentPath, reason: "released" | "removed" | "unavailable"): void {
+		const coordinator = this.resolveLeaseCoordinator(pathValue).coordinator;
+		if (reason === "released") coordinator.detachLease(pathValue);
+		else coordinator.discardLease(pathValue);
 	}
 
 	teardown(pathValue: AgentPath, incarnation: string) {
@@ -1138,6 +1163,17 @@ class RootSubagentControlPort implements SubagentOwnerControlPort {
 
 	clear(): void {
 		this.managers.clear();
+		this.leaseCoordinators.clear();
+	}
+
+	private resolveLeaseCoordinator(pathValue: AgentPath): { path: AgentPath; coordinator: SubagentLeaseCoordinator } {
+		let match: { path: AgentPath; coordinator: SubagentLeaseCoordinator } | undefined;
+		for (const candidate of this.leaseCoordinators.values()) {
+			if (!pathStartsWith(candidate.path, pathValue)) continue;
+			if (!match || candidate.path.length > match.path.length) match = candidate;
+		}
+		if (!match) throw new Error(`Unknown lease owner path ${JSON.stringify(pathValue)}`);
+		return match;
 	}
 
 	private resolveOwner(pathValue: AgentPath): { path: AgentPath; control: SubagentManagerControl } {
@@ -1165,6 +1201,7 @@ class SubagentSessionOwner {
 	private registrySemanticUnsubscribe: (() => void) | null = null;
 	private semanticSequence = 0;
 	private activeSessionId = "unknown";
+	private sessionManager: ExtensionContext["sessionManager"] | undefined;
 	private readonly nativeEntryIds = new Map<string, string>();
 	private readonly nativeToolEntries = new Map<string, string>();
 	private readonly manualMessageFacts = new Map<string, SubagentSemanticFact>();
@@ -1268,6 +1305,7 @@ class SubagentSessionOwner {
 	}
 
 	async start(event: any, ctx: ExtensionContext): Promise<void> {
+		this.sessionManager = ctx.sessionManager;
 		if (this.phase.kind !== "before-start") {
 			if (this.phase.kind === "starting" || this.phase.kind === "active") return;
 			throw new Error("Subagents session is shutting down.");
@@ -1296,6 +1334,10 @@ class SubagentSessionOwner {
 			const ownerPath: AgentPath = this.scope.kind === "child" ? this.scope.path : [];
 			this.activeSessionId = registry.getSnapshot(ownerPath)?.sessionId
 				?? stableRootSessionId(ctx, ctx.sessionManager.getSessionFile());
+			const initialLeafId = ctx.sessionManager.getLeafId?.();
+			if (typeof initialLeafId === "string" && initialLeafId.length > 0) {
+				this.nativeEntryIds.set(this.activeSessionId, initialLeafId);
+			}
 			const turns = this.turns;
 			const presentation = new SubagentPresentation(this.pi, this.scope);
 			const incomingMessages = this.incomingMessages;
@@ -1325,14 +1367,20 @@ class SubagentSessionOwner {
 					ownerControl: ownerControl ?? this.rootControl ?? new RootSubagentControlPort(),
 					parentSessionFile: ctx.sessionManager.getSessionFile(),
 					semanticEvents: this.semanticEvents,
-					onLeaseAttached: (path) => turns.attachLease(path),
+					onLeaseAttached: (path) => {
+						if (ownerControl?.routeLeaseAttached) ownerControl.routeLeaseAttached(path);
+						else turns.attachLease(path);
+					},
 					onLeaseDetached: (path, reason) => {
-						if (reason === "released") turns.detachLease(path);
+						if (ownerControl?.routeLeaseDetached) ownerControl.routeLeaseDetached(path, reason);
+						else if (reason === "released") turns.detachLease(path);
 						else turns.discardLease(path);
 					},
+
 				});
 			}
 			ownerControl?.registerManager?.(ownerPath, managerControl);
+			ownerControl?.registerLeaseCoordinator?.(ownerPath, turns);
 			if (provider && this.scope.kind === "root" && this.hasProviderEventBus()) {
 				unregisterProvider = registerProvider(this.pi, provider as any);
 			}
@@ -1416,6 +1464,7 @@ class SubagentSessionOwner {
 		const ownerPath: AgentPath = this.scope.kind === "child" ? this.scope.path : [];
 		this.registrySemanticUnsubscribe?.();
 		this.registrySemanticUnsubscribe = null;
+		ownerControl.unregisterLeaseCoordinator?.(ownerPath, turns);
 		ownerControl.unregisterManager?.(ownerPath, managerControl);
 		presentation.preventLateMounts();
 		unregisterProvider?.();
@@ -1424,6 +1473,7 @@ class SubagentSessionOwner {
 		registryEventsUnsubscribe();
 		incomingMessages.shutdown();
 		await manager.softShutdown();
+		this.sessionManager = undefined;
 		presentation.shutdown(ctx);
 		if (this.scope.kind === "root") {
 			await registry.dispose();
@@ -1479,7 +1529,13 @@ class SubagentSessionOwner {
 	private nativeRefs(toolCallId?: string, kind: PiEventRef["kind"] = "tool_call"): readonly PiEventRef[] {
 		const sessionId = this.currentSessionId();
 		if (!sessionId || sessionId === "unknown") return [];
-		const entryId = toolCallId ? this.nativeToolEntries.get(toolCallId) : this.nativeEntryIds.get(sessionId);
+		if (!toolCallId && !this.nativeEntryIds.has(sessionId)) {
+			const leafId = this.sessionManager?.getLeafId?.();
+			if (typeof leafId === "string" && leafId.length > 0) this.nativeEntryIds.set(sessionId, leafId);
+		}
+		const entryId = toolCallId
+			? this.nativeToolEntries.get(toolCallId) ?? this.nativeEntryIds.get(sessionId)
+			: this.nativeEntryIds.get(sessionId);
 		return [{
 			sessionId,
 			...(entryId !== undefined ? { entryId } : {}),
@@ -1545,6 +1601,11 @@ class SubagentSessionOwner {
 	private recordNativeEvent(event: any): void {
 		const sessionId = this.currentSessionId();
 		if (!sessionId || sessionId === "unknown") return;
+		// Extension handlers do not receive the host's internal entry event on
+		// every runtime. Keep the current persisted leaf as a fallback anchor so
+		// notifications still retain a native entry reference.
+		const leafId = this.sessionManager?.getLeafId?.();
+		if (typeof leafId === "string" && leafId.length > 0) this.nativeEntryIds.set(sessionId, leafId);
 		if (event?.type === "entry_appended" && event.entry?.id) {
 			this.nativeEntryIds.set(sessionId, event.entry.id);
 			const message = event.entry.message;
@@ -1778,6 +1839,10 @@ class SubagentSessionOwner {
 	private registerEventHandlers(): void {
 		if (typeof (this.pi as any).on !== "function") return;
 		const events = [
+			// The host emits this native persistence event for direct session
+			// subscribers. Keep the handler registered when the host exposes it so
+			// provenance can use the appended entry rather than the prior leaf.
+			"entry_appended",
 			"agent_start",
 			"agent_end",
 			"agent_settled",
