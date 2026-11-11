@@ -461,6 +461,10 @@ function asString(value: unknown): string | undefined {
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function optionalString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
 function finiteNumber(value: unknown, fallback = 0): number {
 	return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -536,7 +540,8 @@ function sourceRecord(record: SubagentLifecycleRecord): UnknownRecord {
 
 function statusRecord(record: SubagentLifecycleRecord): UnknownRecord {
 	const data = isRecord(record.data) ? record.data : {};
-	return isRecord(data.status) ? data.status : {};
+	if (isRecord(data.status)) return data.status;
+	return isRecord(data.snapshot) ? data.snapshot : {};
 }
 
 function sourceChannels(source: UnknownRecord): readonly string[] {
@@ -560,7 +565,7 @@ function nodeFromLifecycle(
 	const persona = asString(source.personaName) ?? asString(source.agent);
 	const personaIcon = asString(source.personaIcon);
 	const model = asString(status.model);
-	const lastOutput = asString(status.lastOutput);
+	const lastOutput = optionalString(status.lastOutput);
 	return cloneNode({
 		path: copyPath(record.path),
 		incarnation,
@@ -626,6 +631,8 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	const liveIdentity = new Map<string, NodeIdentity>();
 	const retiredIncarnations = new Map<string, Set<string>>();
 	const leases = new Map<string, Set<LeaseRecord>>();
+	const implicitRebinds = new Map<string, BorrowedAgentSession>();
+	const removingPaths = new Set<string>();
 	const historicalNodes = new Map<string, ProviderNode>();
 	const historicalIdentity = new Map<string, NodeIdentity>();
 	const historicalRetired = new Map<string, Set<string>>();
@@ -669,9 +676,10 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		for (const target of operational.waitingForPaths ?? []) {
 			if (validPath(target)) resolved.push(copyPath(target));
 		}
+		const waitingIds = Array.isArray(operational.waitingFor) ? operational.waitingFor : [];
 		const known = resolved.length;
-		for (let index = known; index < operational.waitingFor.length; index++) {
-			const localId = operational.waitingFor[index];
+		for (let index = known; index < waitingIds.length; index++) {
+			const localId = waitingIds[index];
 			if (typeof localId !== "string" || localId.length === 0) continue;
 			const target = localId === "parent"
 				? path.slice(0, -1)
@@ -695,8 +703,8 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const model = asString(operational.model);
 		const thinkingLevel = asString(operational.thinkingLevel);
 		const activity = asString(operational.lastActivity);
-		const lastOutput = asString(operational.lastOutput);
-		const lastError = asString(operational.lastError);
+		const lastOutput = optionalString(operational.lastOutput);
+		const lastError = optionalString(operational.lastError);
 		const fill = contextFill(operational.lastTurnInput, operational.contextWindow);
 		return cloneNode({
 			path: copyPath(snapshot.path),
@@ -711,9 +719,9 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			...(activity !== undefined ? { activity } : {}),
 			usage: cloneUsage(operational.usage),
 			...(fill !== undefined ? { contextFill: fill } : {}),
-			channels: Object.freeze([...snapshot.channels]),
+			channels: Object.freeze(Array.isArray(snapshot.channels) ? [...snapshot.channels] : []),
 			waitingFor: projectWaiting(snapshot.path, operational),
-			pendingCorrelations: Object.freeze([...operational.pendingCorrelations]),
+			pendingCorrelations: Object.freeze(Array.isArray(operational.pendingCorrelations) ? [...operational.pendingCorrelations] : []),
 			hasSubgroup: Boolean(operational.hasSubgroup || descendants),
 			...(lastOutput !== undefined ? { lastOutput } : {}),
 			...(lastError !== undefined ? { lastError } : {}),
@@ -776,32 +784,27 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const key = pathKey(event.node.path);
 		if (event.type === "node_added") {
 			const previous = liveNodes.get(key);
-			if (previous) {
-				const identity = liveIdentity.get(key)!;
-				const next = projectNode(event.node, identity);
-				liveNodes.set(key, next);
-				appendEvent({
-					eventId: generatedEventId("node_updated", next.path),
-					path: next.path,
-					relatedPiEvents: [],
-					kind: "node_updated",
-					data: next,
-				});
-				return;
-			}
+			const previousIdentity = liveIdentity.get(key);
 			const identity = nextIncarnation(
 				event.node.path,
 				asString(event.node.incarnation),
 				liveIdentity,
 				retiredIncarnations,
 			);
+			if (previousIdentity && identity.incarnation !== previousIdentity.incarnation) {
+				closeLeases(event.node.path, "removed");
+				retireIdentity(event.node.path, previousIdentity);
+			}
 			const next = projectNode(event.node, identity);
 			liveNodes.set(key, next);
+			const kind = previous && identity.incarnation === previousIdentity?.incarnation
+				? "node_updated"
+				: "node_added";
 			appendEvent({
-				eventId: generatedEventId("node_added", next.path),
+				eventId: generatedEventId(kind, next.path),
 				path: next.path,
 				relatedPiEvents: [],
-				kind: "node_added",
+				kind,
 				data: next,
 			});
 			return;
@@ -820,6 +823,15 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			}
 			const next = projectNode(event.node, identity);
 			liveNodes.set(key, next);
+			const runtimeChanged = prior?.sessionId !== next.sessionId;
+			const reboundSession = rebindLeases(next.path, false);
+			if (runtimeChanged && reboundSession !== undefined) {
+				const reboundKey = pathKey(next.path);
+				implicitRebinds.set(reboundKey, reboundSession);
+				queueMicrotask(() => {
+					if (implicitRebinds.get(reboundKey) === reboundSession) implicitRebinds.delete(reboundKey);
+				});
+			}
 			appendEvent({
 				eventId: generatedEventId("node_updated", next.path),
 				path: next.path,
@@ -827,8 +839,6 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				kind: "node_updated",
 				data: next,
 			});
-			const runtimeChanged = prior?.sessionId !== next.sessionId;
-			if (runtimeChanged) rebindLeases(next.path, false);
 			return;
 		}
 
@@ -838,6 +848,9 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				?? nextIncarnation(event.node.path, asString(event.node.incarnation), liveIdentity, retiredIncarnations);
 			const next = projectNode(event.node, priorIdentity);
 			liveNodes.set(key, next);
+			const implicit = implicitRebinds.get(key);
+			implicitRebinds.delete(key);
+			rebindLeases(next.path, implicit === undefined);
 			appendEvent({
 				eventId: generatedEventId("runtime_replaced", next.path),
 				path: next.path,
@@ -845,19 +858,12 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				kind: "runtime_replaced",
 				data: { oldSessionId: event.oldSessionId, newSessionId: event.newSessionId },
 			});
-			rebindLeases(next.path, true);
 			return;
 		}
 
+		if (event.type !== "node_removed") return;
 		const identity = liveIdentity.get(key);
 		const node = liveNodes.get(key) ?? projectNode(event.node, identity ?? nextIncarnation(event.node.path, asString(event.node.incarnation), liveIdentity, retiredIncarnations));
-		appendEvent({
-			eventId: generatedEventId("node_removed", node.path),
-			path: node.path,
-			relatedPiEvents: [],
-			kind: "node_removed",
-			data: { node, reason: "removed" },
-		});
 		for (const [candidateKey, candidate] of Array.from(liveNodes.entries())) {
 			if (!isPathPrefix(node.path, candidate.path)) continue;
 			const candidateIdentity = liveIdentity.get(candidateKey);
@@ -866,6 +872,13 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			liveNodes.delete(candidateKey);
 			liveIdentity.delete(candidateKey);
 		}
+		appendEvent({
+			eventId: generatedEventId("node_removed", node.path),
+			path: node.path,
+			relatedPiEvents: [],
+			kind: "node_removed",
+			data: { node, reason: "removed" },
+		});
 	}
 
 	function historicalIdentityFor(record: SubagentLifecycleRecord, add: boolean): NodeIdentity {
@@ -884,7 +897,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function appendLifecycleRecord(record: SubagentLifecycleRecord): void {
-		if (!validPath(record.path)) return;
+		if (!validPath(record.path) || record.path.length === 0) return;
 		const key = pathKey(record.path);
 		if (record.kind === "node_added" || record.kind === "node_updated" || record.kind === "resurrect") {
 			const add = record.kind !== "node_updated";
@@ -940,6 +953,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function findRegistered(path: AgentPath): RegisteredAgentNode {
+		if (!validPath(path)) throw new Error(`Invalid subagent path ${JSON.stringify(path)}`);
 		if (path.length === 0) throw new Error("The root session is not a child view");
 		let node: ReturnType<AgentSessionRegistry["get"]>;
 		try {
@@ -996,6 +1010,10 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function closeLeases(path: AgentPath, reason: "removed" | "unavailable"): void {
+		for (const [implicitKey] of Array.from(implicitRebinds.entries())) {
+			const implicitPath = JSON.parse(implicitKey) as AgentPath;
+			if (isPathPrefix(path, implicitPath)) implicitRebinds.delete(implicitKey);
+		}
 		for (const [key, records] of Array.from(leases.entries())) {
 			const candidate = JSON.parse(key) as AgentPath;
 			if (!isPathPrefix(path, candidate)) continue;
@@ -1003,23 +1021,23 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		}
 	}
 
-	function rebindLeases(path: AgentPath, force: boolean): void {
+	function rebindLeases(path: AgentPath, force: boolean): BorrowedAgentSession | undefined {
 		const key = pathKey(path);
 		const records = leases.get(key);
-		if (!records || records.size === 0) return;
+		if (!records || records.size === 0) return undefined;
 		let registered: RegisteredAgentNode;
 		try {
 			registered = findRegistered(path);
 		} catch {
 			for (const record of Array.from(records)) closeLease(record, "unavailable");
-			return;
+			return undefined;
 		}
 		let borrowed: { session: BorrowedAgentSession; capabilities: SubagentCapabilities };
 		try {
 			borrowed = borrow(registered);
 		} catch {
 			for (const record of Array.from(records)) closeLease(record, "unavailable");
-			return;
+			return undefined;
 		}
 		for (const record of Array.from(records)) {
 			if (!record.active) continue;
@@ -1031,6 +1049,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				: { kind: "rebound", session: borrowed.session, capabilities: borrowed.capabilities };
 			notifyLease(record, event);
 		}
+		return borrowed.session;
 	}
 
 	function controlIdentity(path: AgentPath): { node: ProviderNode; explicit: boolean } {
@@ -1087,6 +1106,9 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 
 	async function acquire(path: AgentPath): Promise<SubagentLease> {
 		if (closed) throw new Error("Subagent provider is shut down");
+		if ([...removingPaths].some((removing) => isPathPrefix(JSON.parse(removing) as AgentPath, path))) {
+			throw new Error(`Subagent path is being removed ${JSON.stringify(path)}`);
+		}
 		const registered = findRegistered(path);
 		const key = pathKey(path);
 		const identity = liveIdentity.get(key) ?? nextIncarnation(path, asString(registered.snapshot.incarnation), liveIdentity, retiredIncarnations);
@@ -1136,12 +1158,19 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	async function teardown(path: AgentPath, incarnation: string): Promise<SubagentTeardownResult> {
 		assertIncarnation(path, incarnation);
 		if (closed) throw new Error("Subagent provider is shut down");
-		const result = await options.ownerControl.teardown(copyPath(path), incarnation);
-		return {
-			...result,
-			path: copyPath(result.path ?? path),
-			...(result.incarnation === undefined ? { incarnation } : {}),
-		};
+		const removalKey = pathKey(path);
+		if (removingPaths.has(removalKey)) throw new Error(`Subagent path is already being removed ${JSON.stringify(path)}`);
+		removingPaths.add(removalKey);
+		try {
+			const result = await options.ownerControl.teardown(copyPath(path), incarnation);
+			return {
+				...result,
+				path: copyPath(result.path ?? path),
+				...(result.incarnation === undefined ? { incarnation } : {}),
+			};
+		} finally {
+			removingPaths.delete(removalKey);
+		}
 	}
 
 	async function stop(request: SubagentStopRequest): Promise<void> {
@@ -1188,6 +1217,8 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			for (const record of Array.from(records)) closeLease(record, "unavailable");
 		}
 		leases.clear();
+		implicitRebinds.clear();
+		removingPaths.clear();
 		listeners.clear();
 	}
 
