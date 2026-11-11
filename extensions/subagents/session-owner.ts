@@ -1201,7 +1201,6 @@ class SubagentSessionOwner {
 	private registrySemanticUnsubscribe: (() => void) | null = null;
 	private semanticSequence = 0;
 	private activeSessionId = "unknown";
-	private readonly nativeEntryIds = new Map<string, string>();
 	private readonly nativeToolEntries = new Map<string, string>();
 	private readonly manualMessageFacts = new Map<string, SubagentSemanticFact>();
 
@@ -1523,11 +1522,9 @@ class SubagentSessionOwner {
 		const sessionId = this.currentSessionId();
 		if (!sessionId || sessionId === "unknown") return [];
 		// Entry IDs are provenance, not semantic-event identity. Only attach one
-		// when the exact native append or tool-call event supplied it. Semantic
-		// custom messages persist their event ID and details separately.
-		const entryId = toolCallId
-			? this.nativeToolEntries.get(toolCallId)
-			: this.nativeEntryIds.get(sessionId);
+		// when an exact native append matched this tool call. Semantic custom
+		// messages persist their event ID and details separately.
+		const entryId = toolCallId === undefined ? undefined : this.nativeToolEntries.get(toolCallId);
 		return [{
 			sessionId,
 			...(entryId !== undefined ? { entryId } : {}),
@@ -1596,7 +1593,6 @@ class SubagentSessionOwner {
 		// Keep only exact append and tool-call matches. Do not infer an entry from
 		// the current session leaf: that leaf can belong to an unrelated message.
 		if (event?.type === "entry_appended" && event.entry?.id) {
-			this.nativeEntryIds.set(sessionId, event.entry.id);
 			const message = event.entry.message;
 			if (message?.toolCallId) this.nativeToolEntries.set(message.toolCallId, event.entry.id);
 			if (message?.content && Array.isArray(message.content)) {
