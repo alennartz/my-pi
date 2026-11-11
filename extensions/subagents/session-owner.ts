@@ -798,9 +798,9 @@ class SessionTurnCoordinator {
 			const stoppedStatus = this.settledStatuses.get(key)!;
 			this.holdGate.stop(path, stoppedStatus);
 			this.activeGate?.stop(path, stoppedStatus);
-			// A Stop result is delivered by the owner-control operation, not as an
-			// unsolicited idle notification. The manager may mark it notified.
-			return true;
+			// Stop has no idle notification. Keep completionNotified false so a
+			// later teardown still carries the last output or error.
+			return false;
 		}
 
 		const settled = this.settledStatuses.get(key)!;
