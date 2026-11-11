@@ -31,7 +31,7 @@ extension says so.
 | Quota attachments | `~/.pi/agent/quota-providers.json` | Provider IDs, usage-source modules, and quota policy fields |
 | Workspace personas | `<cwd>/AGENTS.md` | `kind`, `name`, `icon`, `description`, `tools`, `model`, `skills`, body |
 | Model prompt overlays | `AGENTS.<model>.md` files | `models` front matter and Markdown body |
-| Subagent definitions | `~/.pi/agent/agents`, `.pi/agents`, package `pi.agents` | `name`, `description`, `tools`, `model`, `skills`, body |
+| Subagent definitions | `~/.pi/agent/agents`, `.pi/agents`, package `pi.agents` | `name`, `description`, `icon`, `tools`, `model`, `skills`, body |
 | Web tools | Environment and cache location | `BRAVE_API_KEY`, `PI_CODING_AGENT_DIR` |
 | Prompt template creator | `/nprompt <name>` | Project-local `.pi/prompts/<name>.md` |
 
@@ -268,6 +268,7 @@ fields are `name` and `description`:
 ```markdown
 ---
 name: scout
+icon: ⌕
 description: Read-only codebase search agent.
 tools: read, bash
 model: cheap
@@ -277,8 +278,9 @@ skills: codemap
 You investigate the repository and report relevant files.
 ```
 
-Optional fields are `tools`, `model`, and `skills`. Each list is comma-separated.
-The body is the specialist system prompt.
+Optional fields are `icon`, `tools`, `model`, and `skills`. `icon` is flat text
+for persona presentation and must not contain markup. Each list is
+comma-separated. The body is the specialist system prompt.
 
 Definitions can come from:
 
