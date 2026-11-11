@@ -10,6 +10,7 @@ import type { MessagePort } from "./message-router.js";
 import { createSessionTreeStore } from "./scoped-store.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
 import type { SubagentOwnerControlPort } from "./provider.js";
+import type { SemanticFactBus } from "./semantic-bus.js";
 
 export type NodeOwnership = "external" | "registry";
 export type AgentCostBreakdown = Readonly<{
@@ -149,6 +150,8 @@ export type AgentSessionRegistryOptions = {
 	dependencies: ManagedChildSessionDependencies;
 	/** Root-scoped owner registry propagated into every child scope. */
 	ownerControl?: SubagentOwnerControlPort;
+	/** Root-scoped semantic fact bus propagated into every child scope. */
+	semanticEvents?: SemanticFactBus;
 	store?: SessionTreeStore;
 	createSession?: typeof createManagedChildSession;
 };
@@ -204,6 +207,7 @@ export class AgentSessionRegistry {
 	private readonly removals = new Map<string, Promise<void>>();
 	private readonly incarnationByPath = new Map<string, number>();
 	private readonly ownerControl?: SubagentOwnerControlPort;
+	private readonly semanticEvents?: SemanticFactBus;
 	private disposed = false;
 	private disposal?: Promise<void>;
 
@@ -222,6 +226,7 @@ export class AgentSessionRegistry {
 		this.createSession = options.createSession ?? createManagedChildSession;
 		this.scopedStore = options.store ?? createSessionTreeStore();
 		this.ownerControl = options.ownerControl;
+		this.semanticEvents = options.semanticEvents;
 	}
 
 	getScopedStore(): SessionTreeStore {
@@ -388,6 +393,7 @@ export class AgentSessionRegistry {
 						identity: { id: request.localId, task: request.task, channels: [...request.channels] },
 						uplink: request.session.uplink,
 						ownerControl: this.ownerControl,
+						semanticEvents: this.semanticEvents,
 					},
 				};
 				const managed = await this.createSession(config, this.dependencies, decoratedHooks);

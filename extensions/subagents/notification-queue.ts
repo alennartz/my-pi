@@ -31,14 +31,14 @@ export interface NotificationQueueConfig {
 	 * Called to deliver accumulated notifications to the parent agent.
 	 * Receives the combined XML content of all queued notifications.
 	 */
-	deliver: (content: string) => void;
+	deliver: (content: string, details?: { semanticEvents: readonly unknown[] }) => void;
 
 	/**
 	 * Called to hand notifications to the agent without starting a turn.
 	 * Used after an aborted run, where waking the agent would defeat the
 	 * interrupt. Delivery happens whenever the agent is next prompted.
 	 */
-	deliverDeferred: (content: string) => void;
+	deliverDeferred: (content: string, details?: { semanticEvents: readonly unknown[] }) => void;
 
 	/**
 	 * Use steer delivery mode: flush between tool call rounds instead of
@@ -53,6 +53,8 @@ interface QueueEntry {
 	source: NotificationSource;
 	/** Structured payload for tool-result consumers; absent for message notifications. */
 	data?: AgentCompleteData;
+	/** Persisted semantic facts for the custom-message entry. */
+	semantic?: unknown;
 }
 
 export class NotificationQueue {
@@ -63,8 +65,8 @@ export class NotificationQueue {
 
 	constructor(private config: NotificationQueueConfig) {}
 
-	queue(xml: string, source: NotificationSource, data?: AgentCompleteData): void {
-		this.entries.push({ xml, source, data });
+	queue(xml: string, source: NotificationSource, data?: AgentCompleteData, semantic?: unknown): void {
+		this.entries.push({ xml, source, data, semantic });
 
 		if (this._isWaiting) {
 			return;
@@ -99,10 +101,11 @@ export class NotificationQueue {
 	}
 
 	/** Drain all entries, keeping the structured per-agent payloads alongside the text. */
-	drainDetailed(): { text: string; agents: AgentCompleteData[] } {
+	drainDetailed(): { text: string; agents: AgentCompleteData[]; semanticEvents?: readonly unknown[] } {
 		const agents = this.entries.flatMap((e) => e.data ? [e.data] : []);
+		const semanticEvents = this.entries.flatMap((e) => e.semantic === undefined ? [] : [e.semantic]);
 		const text = this.drainAll();
-		return { text, agents };
+		return semanticEvents.length > 0 ? { text, agents, semanticEvents } : { text, agents };
 	}
 
 	drainLocal(): void {
@@ -132,8 +135,12 @@ export class NotificationQueue {
 	deferAll(): void {
 		if (this._isWaiting) return;
 		if (this.entries.length === 0) return;
+		const semanticEvents = this.entries.flatMap((e) => e.semantic === undefined ? [] : [e.semantic]);
 		const combined = this.drainAll();
-		this.config.deliverDeferred(truncateMiddle(combined).content);
+		this.config.deliverDeferred(
+			truncateMiddle(combined).content,
+			semanticEvents.length > 0 ? { semanticEvents } : undefined,
+		);
 	}
 
 	setWaiting(waiting: boolean): void {
@@ -169,8 +176,12 @@ export class NotificationQueue {
 		if (this.entries.length === 0) return;
 
 		this.parentBusy = true;
+		const semanticEvents = this.entries.flatMap((e) => e.semantic === undefined ? [] : [e.semantic]);
 		const combined = this.entries.map((e) => e.xml).join("\n");
 		this.entries.length = 0;
-		this.config.deliver(truncateMiddle(combined).content);
+		this.config.deliver(
+			truncateMiddle(combined).content,
+			semanticEvents.length > 0 ? { semanticEvents } : undefined,
+		);
 	}
 }

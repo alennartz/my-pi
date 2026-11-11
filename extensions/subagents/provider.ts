@@ -354,6 +354,12 @@ export interface SubagentLease {
 	release(): Promise<void>;
 }
 
+/** Root-scoped semantic facts shared by every nested manager. */
+export interface SubagentSemanticFactBus {
+	publish(fact: SubagentSemanticFact): void;
+	subscribe(listener: (fact: SubagentSemanticFact) => void): () => void;
+}
+
 /** Root-scoped lifecycle authority used by the provider. */
 /** Operations a manager exposes to the root-scoped control registry.
  *

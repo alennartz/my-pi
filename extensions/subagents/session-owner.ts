@@ -42,7 +42,7 @@ import {
 	type AgentOperationalSnapshot,
 	type RegistryEvent,
 } from "./agent-session-registry.js";
-import type { AgentPath } from "./agent-path.js";
+import { childAgentPath, type AgentPath } from "./agent-path.js";
 import { excludeModelOnlyTools } from "./child-tool-policy.js";
 import { getPersistencePaths } from "./persistence.js";
 import { serializeAgentComplete, serializeAgentMessage, type AgentCompleteData } from "./messages.js";
@@ -85,7 +85,10 @@ import {
 	renderTierTable,
 	stripThinkingSuffix,
 } from "./model-tiers.js";
-import type { MessagePort, RoutedMessage, RoutedResponse } from "./message-router.js";
+import type { MessagePort, RoutedMessage, RoutedMessagePhase, RoutedResponse } from "./message-router.js";
+import { createSemanticFactBus, type SemanticFactBus } from "./semantic-bus.js";
+export type { SemanticFactBus } from "./semantic-bus.js";
+import type { SubagentSemanticFact, SubagentEventKind, PiEventRef, SubagentAwaitData, SubagentLifecycleData } from "./provider.js";
 import type {
 	SubagentManagerControl,
 	SubagentOwnerControlPort,
@@ -98,7 +101,7 @@ const FORCED_MODEL_KEY = "forced-model";
 
 /** Identity and communication scope injected into a child session. */
 export type SubagentScope =
-	| { kind: "root" }
+	| { kind: "root"; semanticEvents?: SemanticFactBus }
 	| {
 			kind: "child";
 			registry: AgentSessionRegistry;
@@ -111,6 +114,8 @@ export type SubagentScope =
 			uplink: MessagePort;
 		/** Root-scoped lifecycle authority shared by every nested manager. */
 		ownerControl?: SubagentOwnerControlPort;
+		/** Root-scoped semantic facts shared by every nested manager. */
+		semanticEvents?: SemanticFactBus;
 		};
 
 interface SessionEnvironment {
@@ -128,6 +133,7 @@ interface SessionEnvironment {
 interface ActiveSubagentSession {
 	readonly environment: SessionEnvironment;
 	readonly registry: AgentSessionRegistry;
+	readonly semanticEvents: SemanticFactBus;
 	readonly manager: SubagentManager;
 	readonly presentation: SubagentPresentation;
 	readonly turns: SessionTurnCoordinator;
@@ -142,10 +148,19 @@ type SessionPhase =
 	| { kind: "active"; session: ActiveSubagentSession }
 	| { kind: "shutting-down" };
 
+interface SemanticOwnerOptions {
+	semanticEvents: SemanticFactBus;
+	getScopePath: () => AgentPath;
+	getSessionId: () => string;
+	getNativeRefs: (toolCallId?: string, kind?: PiEventRef["kind"]) => readonly PiEventRef[];
+	publishFact: (kind: SubagentEventKind, path: AgentPath, data: any, refs?: readonly PiEventRef[]) => SubagentSemanticFact;
+}
+
 interface WaitState {
 	resolve: (result: { text: string; agents: AgentCompleteData[] }) => void;
 	satisfied: () => boolean;
 	abortCleanup: (() => void) | null;
+	semantic?: { invocationId: string; path: AgentPath; requested: readonly AgentPath[]; refs: readonly PiEventRef[] };
 }
 
 function createSessionEnvironment(
@@ -325,22 +340,25 @@ function createSessionEnvironmentFromContext(ctx: ExtensionContext, packageAgent
 class SessionTurnCoordinator {
 	private readonly queue: NotificationQueue;
 	private readonly stopSequences: StopSequenceManager;
+	private readonly semantic: SemanticOwnerOptions;
 	private waitState: WaitState | null = null;
 	private rootRunError: string | undefined;
 	private readonly notifiedTierIssues = new Set<string>();
+	private readonly awaitedInvocations = new Map<string, { invocationId: string; path: AgentPath; refs: readonly PiEventRef[] }>();
 
-	constructor(pi: ExtensionAPI) {
+	constructor(pi: ExtensionAPI, semantic: SemanticOwnerOptions) {
+		this.semantic = semantic;
 		this.queue = new NotificationQueue({
 			steerDelivery: USE_STEER_DELIVERY,
-			deliver: (combined) => {
+			deliver: (combined, details) => {
 				pi.sendMessage(
-					{ customType: "subagents", content: combined, display: true },
+					{ customType: "subagents", content: combined, display: true, ...(details ? { details } : {}) },
 					{ triggerTurn: true },
 				);
 			},
-			deliverDeferred: (combined) => {
+			deliverDeferred: (combined, details) => {
 				pi.sendMessage(
-					{ customType: "subagents", content: combined, display: true },
+					{ customType: "subagents", content: combined, display: true, ...(details ? { details } : {}) },
 					{ deliverAs: "nextTurn" },
 				);
 			},
@@ -354,8 +372,8 @@ class SessionTurnCoordinator {
 		return this.queue.isWaiting;
 	}
 
-	queueNotification(content: string, source: "local" | "uplink"): void {
-		this.queue.queue(content, source);
+	queueNotification(content: string, source: "local" | "uplink", semantic?: SubagentSemanticFact): void {
+		this.queue.queue(content, source, undefined, semantic);
 	}
 
 	setParentBusy(busy: boolean, options?: { flush?: boolean }): void {
@@ -428,23 +446,50 @@ class SessionTurnCoordinator {
 		return { aborted, rootError: this.rootRunError };
 	}
 
-	resolveWait(): void {
+	resolveWait(reason: "settled" | "message" = "settled", message?: SubagentSemanticFact): void {
 		if (!this.waitState) return;
 		const state = this.waitState;
 		this.waitState = null;
 		state.abortCleanup?.();
 		this.queue.setWaiting(false);
+		if (state.semantic) {
+			this.semantic.publishFact(
+				reason === "message" ? "await_interrupted" : "await_released",
+				state.semantic.path,
+				{
+					invocationId: state.semantic.invocationId,
+					requested: state.semantic.requested,
+					statuses: [],
+					reason,
+					...(message ? { message: message.data } : {}),
+				},
+				state.semantic.refs,
+			);
+		}
 		state.resolve(this.queue.drainDetailed());
 	}
 
 	resolveSatisfiedWait(): void {
-		if (this.queue.isWaiting && this.waitState?.satisfied()) this.resolveWait();
+		if (this.queue.isWaiting && this.waitState?.satisfied()) this.resolveWait("settled");
+	}
+
+	registerAwaitInvocation(manager: SubagentManager, ids: readonly string[], invocationId: string, refs: readonly PiEventRef[] = []): void {
+		for (const id of ids) {
+			const path = manager.getAgentPath(id);
+			if (!path) continue;
+			this.awaitedInvocations.set(JSON.stringify(path), { invocationId, path, refs: [...refs] });
+		}
+	}
+
+	clearAwaitInvocations(ids: readonly AgentPath[]): void {
+		for (const path of ids) this.awaitedInvocations.delete(JSON.stringify(path));
 	}
 
 	async awaitAgentCompletion(
 		ids: string[],
 		manager: SubagentManager,
 		signal?: AbortSignal | null,
+		semantic?: { invocationId: string; refs: readonly PiEventRef[] },
 	): Promise<{ text: string; agents: AgentCompleteData[] }> {
 		const isSatisfied = () => ids.every((id) => {
 			const status = manager.getAgentStatus(id);
@@ -452,9 +497,11 @@ class SessionTurnCoordinator {
 		});
 		if (isSatisfied()) {
 			const drained = this.queue.drainDetailed();
+			const agents = drained.agents.length > 0 ? drained.agents : completionDataFor(ids, manager);
+			this.publishAwaitRelease(ids, manager, semantic, agents, "settled");
 			return this.truncatedWaitResult(
 				drained.text || "All specified agents have already completed. No pending notifications.",
-				drained.agents.length > 0 ? drained.agents : completionDataFor(ids, manager),
+				agents,
 			);
 		}
 		const blocked = manager.getBlockedSenders().filter((pending) => ids.includes(pending.from));
@@ -473,12 +520,31 @@ class SessionTurnCoordinator {
 		this.queue.setWaiting(true);
 		try {
 			const result = await new Promise<{ text: string; agents: AgentCompleteData[] }>((resolve, reject) => {
-				const state: WaitState = { resolve, satisfied: isSatisfied, abortCleanup: null };
+				const state: WaitState = {
+					resolve,
+					satisfied: isSatisfied,
+					abortCleanup: null,
+					...(semantic ? {
+						semantic: {
+							invocationId: semantic.invocationId,
+							path: this.semantic.getScopePath(),
+							requested: ids.map((id) => manager.getAgentPath(id)).filter((path): path is AgentPath => path !== undefined),
+							refs: [...semantic.refs],
+						},
+					} : {}),
+				};
 				this.waitState = state;
 				if (!signal) return;
 				const onAbort = () => {
 					this.waitState = null;
 					this.queue.setWaiting(false);
+					if (state.semantic) {
+						this.semantic.publishFact("await_interrupted", state.semantic.path, {
+							invocationId: state.semantic.invocationId,
+							requested: state.semantic.requested,
+							reason: "stop",
+						}, state.semantic.refs);
+					}
 					reject(new Error("Aborted"));
 				};
 				if (signal.aborted) {
@@ -488,9 +554,11 @@ class SessionTurnCoordinator {
 				signal.addEventListener("abort", onAbort, { once: true });
 				state.abortCleanup = () => signal.removeEventListener("abort", onAbort);
 			});
+			const agents = result.agents.length > 0 ? result.agents : completionDataFor(ids, manager);
+			this.publishAwaitRelease(ids, manager, semantic, agents, "settled");
 			return this.truncatedWaitResult(
 				result.text || "All specified agents have completed. No pending notifications.",
-				result.agents.length > 0 ? result.agents : completionDataFor(ids, manager),
+				agents,
 			);
 		} catch (error: any) {
 			if (error?.message === "Aborted") throw new Error("Wait cancelled.");
@@ -501,6 +569,21 @@ class SessionTurnCoordinator {
 	notifyAgentComplete(manager: SubagentManager, agentId: string, allDone: boolean): void {
 		const status = manager.getAgentStatus(agentId);
 		if (!status) return;
+		const path = manager.getAgentPath(agentId) ?? [...this.semantic.getScopePath(), agentId];
+		const awaited = this.awaitedInvocations.get(JSON.stringify(path));
+		const completionData = {
+			status: status.state === "errored" ? "errored" : status.state === "dead" ? "dead" : "idle",
+			output: status.lastOutput,
+			error: status.state === "errored" || status.state === "dead"
+				? (status.lastError || "Agent run ended with an error")
+				: undefined,
+			usage: status.usage,
+			...(awaited
+				? { delivery: "awaited" as const, invocationId: awaited.invocationId }
+				: { delivery: "asynchronous" as const }),
+		};
+		const refs = awaited?.refs ?? this.semantic.getNativeRefs(undefined, "lifecycle");
+		const semanticFact = this.semantic.publishFact("completion", path, completionData, refs);
 		const data: AgentCompleteData = {
 			id: agentId,
 			status: status.state === "errored" ? "errored" : status.state === "dead" ? "dead" : "idle",
@@ -515,8 +598,34 @@ class SessionTurnCoordinator {
 			const total = manager.getAgentStatuses().length;
 			xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have settled. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
 		}
-		this.queue.queue(xml, "local", data);
+		this.queue.queue(xml, "local", data, semanticFact);
 		this.resolveSatisfiedWait();
+	}
+
+	private publishAwaitRelease(
+		ids: readonly string[],
+		manager: SubagentManager,
+		semantic: { invocationId: string; refs: readonly PiEventRef[] } | undefined,
+		agents: readonly AgentCompleteData[],
+		reason: "settled" | "detach" | "stop",
+	): void {
+		if (!semantic) return;
+		const requested = ids
+			.map((id) => manager.getAgentPath(id))
+			.filter((path): path is AgentPath => path !== undefined);
+		this.semantic.publishFact("await_released", this.semantic.getScopePath(), {
+			invocationId: semantic.invocationId,
+			requested,
+			statuses: agents.map((agent) => ({
+				path: manager.getAgentPath(agent.id) ?? [...this.semantic.getScopePath(), agent.id],
+				state: agent.status,
+				...(agent.output !== undefined ? { output: agent.output } : {}),
+				...(agent.error !== undefined ? { error: agent.error } : {}),
+				...(agent.sessionId !== undefined ? { sessionId: agent.sessionId } : {}),
+			})),
+			reason,
+		}, semantic.refs);
+		this.clearAwaitInvocations(requested);
 	}
 
 	private async truncatedWaitResult(text: string, agents: AgentCompleteData[]): Promise<{ text: string; agents: AgentCompleteData[] }> {
@@ -549,11 +658,17 @@ export class SubagentPresentation {
 		this.loadDashboard = loadDashboard;
 	}
 
-	subscribe(registry: AgentSessionRegistry, ownerPath: AgentPath, manager: SubagentManager): void {
+	subscribe(
+		registry: AgentSessionRegistry,
+		ownerPath: AgentPath,
+		manager: SubagentManager,
+		onEvent?: (event: RegistryEvent) => void,
+	): void {
 		if (this.registryUnsubscribe) return;
 		const subscribe = (registry as any).subscribe;
 		if (typeof subscribe !== "function") return;
 		this.registryUnsubscribe = subscribe.call(registry, (event: RegistryEvent) => {
+			onEvent?.(event);
 			const path = event.node.path;
 			if (path.length <= ownerPath.length) return;
 			if (!ownerPath.every((segment, index) => segment === path[index])) return;
@@ -629,10 +744,14 @@ export class SubagentPresentation {
 /** Owns exact reply ports and the child-session uplink subscription. */
 class IncomingMessageState {
 	private readonly correlationOrigin = new Map<string, MessagePort>();
+	private readonly correlationMessages = new Map<string, RoutedMessage>();
 	private uplinkUnsubscribe: (() => void) | null = null;
 	private closed = false;
 
-	constructor(private readonly turns: SessionTurnCoordinator) {}
+	constructor(
+		private readonly turns: SessionTurnCoordinator,
+		private readonly onMessage?: (message: RoutedMessage, source: "local" | "uplink") => SubagentSemanticFact,
+	) {}
 
 	subscribeUplink(port: MessagePort): void {
 		if (this.closed || this.uplinkUnsubscribe || typeof port.subscribe !== "function") return;
@@ -644,34 +763,46 @@ class IncomingMessageState {
 		if (message.responseExpected && message.correlationId && !this.rememberCorrelationOrigin(message.correlationId, port)) {
 			return;
 		}
+		if (message.responseExpected && message.correlationId) this.correlationMessages.set(message.correlationId, message);
+		const semantic = this.onMessage?.(message, source);
 		this.turns.queueNotification(serializeAgentMessage({
 			from: message.from,
 			content: message.message,
 			correlationId: message.correlationId,
 			responseExpected: message.responseExpected,
-		}), source);
-		if (this.turns.isWaiting) this.turns.resolveWait();
+		}), source, semantic);
+		if (this.turns.isWaiting) this.turns.resolveWait("message", semantic);
 	}
 
 	receiveSerialized(
 		port: MessagePort,
 		content: string,
-		meta: { correlationId?: string; responseExpected: boolean },
+		meta: { from?: string; correlationId?: string; responseExpected: boolean },
 		source: "local" | "uplink",
 	): void {
 		if (this.closed) return;
 		if (meta.responseExpected && meta.correlationId && !this.rememberCorrelationOrigin(meta.correlationId, port)) {
 			return;
 		}
-		this.turns.queueNotification(content, source);
-		if (this.turns.isWaiting) this.turns.resolveWait();
+		const message: RoutedMessage = {
+			from: meta.from ?? "unknown",
+			message: content,
+			...(meta.correlationId !== undefined ? { correlationId: meta.correlationId } : {}),
+			responseExpected: meta.responseExpected,
+		};
+		const semantic = this.onMessage?.(message, source);
+		if (message.responseExpected && message.correlationId) this.correlationMessages.set(message.correlationId, message);
+		this.turns.queueNotification(content, source, semantic);
+		if (this.turns.isWaiting) this.turns.resolveWait("message", semantic);
 	}
 
-	async respond(correlationId: string, message: string): Promise<void> {
+	async respond(correlationId: string, message: string, toolCallId?: string): Promise<void> {
 		const port = this.correlationOrigin.get(correlationId);
 		if (!port) throw new Error(`No recorded response origin for correlation ID "${correlationId}".`);
+		port.setSemanticToolCall?.(toolCallId);
 		await port.respond(correlationId, message);
 		this.correlationOrigin.delete(correlationId);
+		this.correlationMessages.delete(correlationId);
 	}
 
 	shutdown(): void {
@@ -680,6 +811,7 @@ class IncomingMessageState {
 		this.uplinkUnsubscribe?.();
 		this.uplinkUnsubscribe = null;
 		this.correlationOrigin.clear();
+		this.correlationMessages.clear();
 	}
 
 	private rememberCorrelationOrigin(correlationId: string, port: MessagePort): boolean {
@@ -704,6 +836,10 @@ class IncomingMessageState {
 
 function pathKey(pathValue: AgentPath): string {
 	return JSON.stringify(pathValue);
+}
+
+function samePath(left: AgentPath, right: AgentPath): boolean {
+	return left.length === right.length && left.every((part, index) => part === right[index]);
 }
 
 function pathStartsWith(prefix: AgentPath, value: AgentPath): boolean {
@@ -763,17 +899,31 @@ class RootSubagentControlPort implements SubagentOwnerControlPort {
 class SubagentSessionOwner {
 	private phase: SessionPhase = { kind: "before-start" };
 	private readonly rootControl: RootSubagentControlPort | undefined;
+	private readonly semanticEvents: SemanticFactBus;
 	private readonly turns: SessionTurnCoordinator;
 	private readonly incomingMessages: IncomingMessageState;
 	private readonly startReady: Promise<void>;
 	private resolveStartReady!: () => void;
 	private rejectStartReady!: (error: unknown) => void;
 	private startReadySettled = false;
+	private registrySemanticUnsubscribe: (() => void) | null = null;
+	private semanticSequence = 0;
+	private activeSessionId = "unknown";
+	private readonly nativeEntryIds = new Map<string, string>();
+	private readonly nativeToolEntries = new Map<string, string>();
+	private readonly manualMessageFacts = new Map<string, SubagentSemanticFact>();
 
 	constructor(private readonly scope: SubagentScope, private readonly pi: ExtensionAPI) {
 		this.rootControl = scope.kind === "root" ? new RootSubagentControlPort() : undefined;
-		this.turns = new SessionTurnCoordinator(pi);
-		this.incomingMessages = new IncomingMessageState(this.turns);
+		this.semanticEvents = scope.semanticEvents ?? createSemanticFactBus();
+		this.turns = new SessionTurnCoordinator(pi, {
+			semanticEvents: this.semanticEvents,
+			getScopePath: () => this.scopePath(),
+			getSessionId: () => this.currentSessionId(),
+			getNativeRefs: (toolCallId, kind = "tool_call") => this.nativeRefs(toolCallId, kind),
+			publishFact: (kind, path, data, refs) => this.publishFact(kind, path, data, refs),
+		});
+		this.incomingMessages = new IncomingMessageState(this.turns, (message, source) => this.publishIncomingMessage(message, source));
 		this.startReady = new Promise<void>((resolve, reject) => {
 			this.resolveStartReady = resolve;
 			this.rejectStartReady = reject;
@@ -883,8 +1033,10 @@ class SubagentSessionOwner {
 				: this.rootControl;
 			const registry = this.scope.kind === "child"
 				? this.scope.registry
-				: this.createRootRegistry(ctx, ownerControl);
+				: this.createRootRegistry(ctx, ownerControl, this.semanticEvents);
 			const ownerPath: AgentPath = this.scope.kind === "child" ? this.scope.path : [];
+			this.activeSessionId = registry.getSnapshot(ownerPath)?.sessionId
+				?? stableRootSessionId(ctx, ctx.sessionManager.getSessionFile());
 			const turns = this.turns;
 			const presentation = new SubagentPresentation(this.pi, this.scope);
 			const incomingMessages = this.incomingMessages;
@@ -898,11 +1050,13 @@ class SubagentSessionOwner {
 				onUpdate: (current) => presentation.refresh(current),
 				onAgentComplete: (current, agentId, allDone) => turns.notifyAgentComplete(current, agentId, allDone),
 				onParentMessage: (port, content, meta) => incomingMessages.receiveSerialized(port, content, meta, "local"),
+				onMessagePhase: (event) => this.publishRoutedMessage(event),
 			});
 			const managerControl = manager.createControl((request) => this.resurrectThroughControl(manager, request, ctx));
 			const session: ActiveSubagentSession = Object.freeze({
 				environment,
 				registry,
+				semanticEvents: this.semanticEvents,
 				manager,
 				presentation,
 				turns,
@@ -913,7 +1067,7 @@ class SubagentSessionOwner {
 			ownerControl?.registerManager?.(ownerPath, managerControl);
 			this.phase = { kind: "active", session };
 			this.resolveStart();
-			presentation.subscribe(registry, ownerPath, manager);
+			presentation.subscribe(registry, ownerPath, manager, this.subscribeRegistrySemanticFacts(registry, ownerPath));
 
 			if (this.scope.kind === "child") {
 				if (event.reason === "resume") {
@@ -955,6 +1109,8 @@ class SubagentSessionOwner {
 
 		const { manager, registry, turns, presentation, incomingMessages, ownerControl, managerControl } = previous.session;
 		const ownerPath: AgentPath = this.scope.kind === "child" ? this.scope.path : [];
+		this.registrySemanticUnsubscribe?.();
+		this.registrySemanticUnsubscribe = null;
 		ownerControl.unregisterManager?.(ownerPath, managerControl);
 		presentation.preventLateMounts();
 		turns.clear();
@@ -970,6 +1126,7 @@ class SubagentSessionOwner {
 	}
 
 	async handlePiEvent(eventName: string, event: any, ctx: ExtensionContext): Promise<any> {
+		this.recordNativeEvent(event);
 		switch (eventName) {
 			case "session_start":
 				return this.start(event, ctx);
@@ -998,13 +1155,126 @@ class SubagentSessionOwner {
 		}
 	}
 
+	private scopePath(): AgentPath {
+		return this.scope.kind === "child" ? [...this.scope.path] : [];
+	}
+
+	private currentSessionId(): string {
+		if (this.scope.kind === "child") {
+			const snapshot = this.scope.registry.getSnapshot(this.scope.path);
+			if (snapshot?.sessionId) return snapshot.sessionId;
+		}
+		if (this.phase.kind === "active") return this.phase.session.registry.getSnapshot(this.scopePath())?.sessionId ?? this.activeSessionId;
+		return this.activeSessionId;
+	}
+
+	private nativeRefs(toolCallId?: string, kind: PiEventRef["kind"] = "tool_call"): readonly PiEventRef[] {
+		const sessionId = this.currentSessionId();
+		if (!sessionId || sessionId === "unknown") return [];
+		const entryId = toolCallId ? this.nativeToolEntries.get(toolCallId) : this.nativeEntryIds.get(sessionId);
+		return [{
+			sessionId,
+			...(entryId !== undefined ? { entryId } : {}),
+			...(toolCallId !== undefined ? { toolCallId } : {}),
+			kind,
+		}];
+	}
+
+	private publishFact(kind: SubagentEventKind, path: AgentPath, data: any, refs: readonly PiEventRef[] = []): SubagentSemanticFact {
+		const fact: SubagentSemanticFact = {
+			eventId: `${this.currentSessionId()}:semantic-${++this.semanticSequence}`,
+			path: [...path],
+			kind: kind as any,
+			data,
+			relatedPiEvents: refs.map((ref) => ({ ...ref })),
+		} as SubagentSemanticFact;
+		this.semanticEvents.publish(fact);
+		return fact;
+	}
+
+	private pathForEndpoint(id: string): AgentPath {
+		if (id === "parent") {
+			const current = this.scopePath();
+			return current.length > 0 ? current.slice(0, -1) : [];
+		}
+		return [...this.scopePath(), id];
+	}
+
+	private publishRoutedMessage(event: RoutedMessagePhase): void {
+		if (event.phase === "sent" && event.toolCallId) {
+			const manual = this.manualMessageFacts.get(event.toolCallId);
+			if (manual) {
+				this.manualMessageFacts.delete(event.toolCallId);
+				return;
+			}
+		}
+		const from = this.pathForEndpoint(event.from);
+		const to = this.pathForEndpoint(event.to);
+		this.publishFact("message_thread", from, {
+			from,
+			to,
+			text: event.message,
+			...(event.correlationId !== undefined ? { correlationId: event.correlationId } : {}),
+			responseExpected: event.responseExpected,
+			phase: event.phase,
+			...(event.error !== undefined ? { error: event.error } : {}),
+		}, this.nativeRefs(event.toolCallId, event.phase === "failure" ? "lifecycle" : "tool_call"));
+	}
+
+	private publishIncomingMessage(message: RoutedMessage, _source: "local" | "uplink"): SubagentSemanticFact {
+		const from = this.pathForEndpoint(message.from);
+		const to = this.scopePath();
+		return this.publishFact("message_thread", from, {
+			from,
+			to,
+			text: message.message,
+			...(message.correlationId !== undefined ? { correlationId: message.correlationId } : {}),
+			responseExpected: message.responseExpected,
+			phase: "received",
+		}, this.nativeRefs(undefined, "custom_message"));
+	}
+
+	private recordNativeEvent(event: any): void {
+		const sessionId = this.currentSessionId();
+		if (!sessionId || sessionId === "unknown") return;
+		if (event?.type === "entry_appended" && event.entry?.id) {
+			this.nativeEntryIds.set(sessionId, event.entry.id);
+			const message = event.entry.message;
+			if (message?.toolCallId) this.nativeToolEntries.set(message.toolCallId, event.entry.id);
+			if (message?.content && Array.isArray(message.content)) {
+				for (const part of message.content) {
+					if (part?.type === "toolCall" && typeof part.id === "string") this.nativeToolEntries.set(part.id, event.entry.id);
+				}
+			}
+		}
+		if (event?.type === "tool_execution_start" && event.toolCallId) {
+			const entryId = this.nativeEntryIds.get(sessionId);
+			if (entryId) this.nativeToolEntries.set(event.toolCallId, entryId);
+		}
+	}
+
+	private subscribeRegistrySemanticFacts(_registry: AgentSessionRegistry, ownerPath: AgentPath): (event: RegistryEvent) => void {
+		return (event: RegistryEvent) => {
+			if (event.type !== "runtime_replaced") return;
+			const parentPath = event.node.parentPath ?? [];
+			if (!samePath(parentPath, ownerPath)) return;
+			this.publishFact("runtime_replaced", event.node.path, {
+				oldSessionId: event.oldSessionId,
+				newSessionId: event.newSessionId,
+			}, [
+				{ sessionId: event.oldSessionId, kind: "lifecycle" },
+				{ sessionId: event.newSessionId, kind: "lifecycle" },
+			]);
+		};
+	}
+
 	private requireActiveSession(): ActiveSubagentSession {
 		if (this.phase.kind === "active") return this.phase.session;
 		if (this.phase.kind === "shutting-down") throw new Error("Subagents session is shutting down.");
 		throw new Error("Subagents session has not started; wait for session_start before using its tools.");
 	}
 
-	private createRootRegistry(ctx: ExtensionContext, ownerControl?: SubagentOwnerControlPort): AgentSessionRegistry {
+	private createRootRegistry(ctx: ExtensionContext, ownerControl?: SubagentOwnerControlPort, semanticEvents?: SemanticFactBus): AgentSessionRegistry {
 		const sessionFile = ctx.sessionManager.getSessionFile();
 		const scopedStore = getOrCreateSessionTreeStore(ctx.sessionManager);
 		const registry = new AgentSessionRegistry({
@@ -1021,6 +1291,7 @@ class SubagentSessionOwner {
 			},
 			dependencies: { agentDir: getAgentDir() },
 			ownerControl,
+			semanticEvents,
 			store: scopedStore,
 		});
 		registerSessionTreeStore(ctx.sessionManager, registry.getScopedStore());
@@ -1322,7 +1593,7 @@ class SubagentSessionOwner {
 			// first, so the empty-optional cleanup and schema validation see only
 			// the advertised name.
 			prepareArguments: (args: unknown) => dropEmptyOptionals(SubagentParams, renameLegacyPersonaFields(args)) as any,
-			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.spawnAgents(params, signal, ctx)),
+			execute: async (toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.spawnAgents(params, signal, ctx, toolCallId)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1338,7 +1609,7 @@ class SubagentSessionOwner {
 				await: Type.Optional(Type.Boolean({ description: "Block until the forked agent completes. Default: false.", default: false })),
 			}),
 			executionMode: "sequential",
-			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.forkAgent(params, signal, ctx)),
+			execute: async (toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.forkAgent(params, signal, ctx, toolCallId)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1357,7 +1628,7 @@ class SubagentSessionOwner {
 				message: Type.String({ description: "Message content" }),
 				expectResponse: Type.Optional(Type.Boolean({ description: "Wait for a response (blocking). Default: false.", default: false })),
 			}),
-			execute: async (_toolCallId, params, signal) => this.runWhenReady(signal, () => this.sendMessage(params, signal)),
+			execute: async (toolCallId, params, signal) => this.runWhenReady(signal, () => this.sendMessage(params, signal, toolCallId)),
 		});
 
 		this.pi.registerTool({
@@ -1370,7 +1641,7 @@ class SubagentSessionOwner {
 				correlationId: Type.String({ description: "The correlation_id from the incoming agent_message" }),
 				message: Type.String({ description: "Response content" }),
 			}),
-			execute: async (_toolCallId, params, signal) => this.runWhenReady(signal, () => this.respondToMessage(params)),
+			execute: async (toolCallId, params, signal) => this.runWhenReady(signal, () => this.respondToMessage(params, toolCallId)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1393,7 +1664,7 @@ class SubagentSessionOwner {
 			description: "Remove an agent or tear down all agents. Returns a completion report.",
 			promptSnippet: "Remove agents no longer needed; idle or errored agents stay usable, so send new messages to restart or continue work.",
 			parameters: Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to remove. Omit to tear down all agents." })) }),
-			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.teardownAgents(params, ctx)),
+			execute: async (toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.teardownAgents(params, ctx, toolCallId)),
 		});
 
 		this.pi.registerTool({
@@ -1408,7 +1679,7 @@ class SubagentSessionOwner {
 			],
 			parameters: Type.Object({ agents: Type.Array(ResurrectItem, { description: "Agents to resurrect from their session files." }) }),
 			executionMode: "sequential",
-			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.resurrectAgents(params, ctx)),
+			execute: async (toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.resurrectAgents(params, ctx, toolCallId)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1422,7 +1693,7 @@ class SubagentSessionOwner {
 				"Any agent message that arrives during await_agents interrupts the wait. If that message expects a response, you must call `respond` before waiting again.",
 			],
 			parameters: Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to wait on. Omit to wait on all active agents." })) }),
-			execute: async (_toolCallId, params, signal) => this.runWhenReady(signal, () => this.awaitAgents(params, signal)),
+			execute: async (toolCallId, params, signal) => this.runWhenReady(signal, () => this.awaitAgents(params, signal, toolCallId)),
 		});
 
 		registerLooseTool(this.pi, {
@@ -1433,7 +1704,7 @@ class SubagentSessionOwner {
 			description: "Halt a subagent immediately without tearing it down. Interrupts any in-flight tool call. Returns interrupted, pending, and failed agent lists. pending means the abort was delivered but has not settled.",
 			promptSnippet: "Halt an agent immediately without tearing it down; prefer send unless the agent must stop now.",
 			parameters: Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to interrupt. Omit to interrupt all active agents." })) }),
-			execute: async (_toolCallId, params, signal) => this.runWhenReady(signal, () => this.interruptAgents(params, signal)),
+			execute: async (toolCallId, params, signal) => this.runWhenReady(signal, () => this.interruptAgents(params, signal, toolCallId)),
 		});
 	}
 
@@ -1459,7 +1730,7 @@ class SubagentSessionOwner {
 		return { content: [{ type: "text", text: lines.join("\n") }], details: data, structuredContent: data };
 	}
 
-	private async spawnAgents(params: any, signal: AbortSignal | undefined, ctx: ExtensionContext): Promise<any> {
+	private async spawnAgents(params: any, signal: AbortSignal | undefined, ctx: ExtensionContext, toolCallId?: string): Promise<any> {
 		const session = this.requireActiveSession();
 		const discovery = session.environment.discoverAgents(ctx.cwd);
 		const allAgentConfigs = discovery.agents;
@@ -1563,6 +1834,20 @@ class SubagentSessionOwner {
 			});
 		});
 
+		const refs = this.nativeRefs(toolCallId, "tool_call");
+		const delegation = this.publishFact("delegation", this.scopePath(), {
+			invocationId: toolCallId ?? `${this.currentSessionId()}:subagent`,
+			awaitsResult: params.await === true,
+			children: agentSpecs.map((spec) => ({
+				path: childAgentPath(this.scopePath(), spec.id),
+				task: spec.task,
+				...(spec.personaName !== undefined ? { persona: spec.personaName } : {}),
+			})),
+		}, refs);
+		if (params.await) {
+			const ids = params.agents.map((agent: any) => agent.id);
+			session.turns.registerAwaitInvocation(manager, ids, toolCallId ?? delegation.eventId, refs);
+		}
 		await session.presentation.ensureWidget(ctx);
 		const ack = await manager.start(agentSpecs, allAgentConfigs);
 		session.presentation.refresh(manager);
@@ -1570,18 +1855,21 @@ class SubagentSessionOwner {
 		const overrideNote = overrideNotes.length > 0 ? `\n\n${overrideNotes.join("\n")}` : "";
 		if (params.await) {
 			const ids = params.agents.map((agent: any) => agent.id);
-			const wait = await session.turns.awaitAgentCompletion(ids, manager, signal);
-			return this.structuredTextResult(formatSpawnToolResult(wait.text) + overrideNote, { agents: wait.agents });
+			const wait = await session.turns.awaitAgentCompletion(ids, manager, signal, {
+				invocationId: toolCallId ?? delegation.eventId,
+				refs,
+			});
+			return this.structuredTextResult(formatSpawnToolResult(wait.text) + overrideNote, { agents: wait.agents }, delegation);
 		}
 		return this.structuredTextResult(ack + overrideNote, {
 			agents: params.agents.map((agent: any) => ({
 				id: agent.id,
 				status: manager.getAgentStatus(agent.id)?.state ?? "running",
 			})),
-		});
+		}, delegation);
 	}
 
-	private async forkAgent(params: any, signal: AbortSignal | undefined, ctx: ExtensionContext): Promise<any> {
+	private async forkAgent(params: any, signal: AbortSignal | undefined, ctx: ExtensionContext, toolCallId?: string): Promise<any> {
 		const session = this.requireActiveSession();
 		const manager = session.manager;
 		if (manager.getAgentStatus(params.id)) throw new Error(`Agent id "${params.id}" already exists`);
@@ -1639,21 +1927,42 @@ class SubagentSessionOwner {
 			thinkingLevel,
 			model,
 		};
+		const refs = this.nativeRefs(toolCallId, "tool_call");
+		const delegation = this.publishFact("delegation", this.scopePath(), {
+			invocationId: toolCallId ?? `${this.currentSessionId()}:fork`,
+			awaitsResult: params.await === true,
+			children: [{ path: childAgentPath(this.scopePath(), params.id), task: params.task }],
+		}, refs);
+		if (params.await) session.turns.registerAwaitInvocation(manager, [params.id], toolCallId ?? delegation.eventId, refs);
 		await session.presentation.ensureWidget(ctx);
 		const ack = await manager.start([forkSpec], []);
 		session.presentation.refresh(manager);
 		session.turns.addStopSequenceOnce("<agent_idle");
 		if (params.await) {
-			const wait = await session.turns.awaitAgentCompletion([params.id], manager, signal);
-			return this.structuredTextResult(formatSpawnToolResult(wait.text), { agents: wait.agents });
+			const wait = await session.turns.awaitAgentCompletion([params.id], manager, signal, {
+				invocationId: toolCallId ?? delegation.eventId,
+				refs,
+			});
+			return this.structuredTextResult(formatSpawnToolResult(wait.text), { agents: wait.agents }, delegation);
 		}
 		return this.structuredTextResult(ack, {
 			agents: [{ id: params.id, status: manager.getAgentStatus(params.id)?.state ?? "running" }],
-		});
+		}, delegation);
 	}
 
-	private async sendMessage(params: any, signal: AbortSignal | undefined): Promise<any> {
+	private async sendMessage(params: any, signal: AbortSignal | undefined, toolCallId?: string): Promise<any> {
 		const session = this.requireActiveSession();
+		const from = this.scopePath();
+		const to = this.pathForEndpoint(params.to);
+		const refs = this.nativeRefs(toolCallId, "tool_call");
+		const sentFact = this.publishFact("message_thread", from, {
+			from,
+			to,
+			text: String(params.message),
+			responseExpected: params.expectResponse === true,
+			phase: "sent",
+		}, refs);
+		if (toolCallId) this.manualMessageFacts.set(toolCallId, sentFact);
 		if (signal?.aborted) throw new Error("Cancelled");
 		const isLocalAgent = session.manager.getAgentStatus(params.to) !== undefined;
 		const port = isLocalAgent
@@ -1668,14 +1977,16 @@ class SubagentSessionOwner {
 					: "No agents running. Spawn agents first with the subagent or fork tool.",
 			);
 		}
+		port.setSemanticToolCall?.(toolCallId);
 		const receipt = await port.send({
 			to: params.to,
 			message: params.message,
 			expectResponse: params.expectResponse,
 		});
+		if (toolCallId) this.manualMessageFacts.delete(toolCallId);
 		if (!params.expectResponse) {
 			const data: SendResultData = { response: null, deferred: false };
-			return { content: [{ type: "text", text: `Message sent to ${params.to}.` }], details: data, structuredContent: data };
+			return { content: [{ type: "text", text: `Message sent to ${params.to}.` }], details: semanticDetails(data, sentFact), structuredContent: data };
 		}
 		const correlationId = receipt.correlationId;
 		const responsePromise = receipt.response;
@@ -1736,20 +2047,45 @@ class SubagentSessionOwner {
 				`Your blocking wait on "${params.to}" was interrupted, not cancelled. "${params.to}" is still working; ` +
 				`its reply will arrive later as an <agent_message> notification (correlation_id="${correlationId}"). ` +
 				"Handle whatever the user needs now — you'll be prompted again when the response lands.",
-			}], details: data, structuredContent: data };
+			}], details: semanticDetails(data, sentFact), structuredContent: data };
 		}
 		if (outcome.response.type === "response") {
+			const responseFact = this.publishFact("message_thread", to, {
+				from: to,
+				to: from,
+				text: outcome.response.message,
+				correlationId,
+				responseExpected: false,
+				phase: "response",
+			}, refs);
 			const bounded = await truncateForModel(outcome.response.message);
 			const data: SendResultData = { response: outcome.response.message, deferred: false, correlationId };
-			return { content: [{ type: "text", text: bounded.text }], details: data, structuredContent: data };
+			return { content: [{ type: "text", text: bounded.text }], details: semanticDetails(data, [sentFact, responseFact]), structuredContent: data };
 		}
-		throw new Error(outcome.response.error);
+		const failureFact = this.publishFact("message_thread", to, {
+			from: to,
+			to: from,
+			text: params.message,
+			correlationId,
+			responseExpected: false,
+			phase: "failure",
+			error: outcome.response.error,
+		}, refs);
+		throw Object.assign(new Error(outcome.response.error), { semantic: failureFact });
 	}
 
-	private async respondToMessage(params: any): Promise<any> {
+	private async respondToMessage(params: any, toolCallId?: string): Promise<any> {
 		const session = this.requireActiveSession();
-		await session.incomingMessages.respond(params.correlationId, params.message);
-		return { content: [{ type: "text", text: "Response sent." }], details: undefined };
+		await session.incomingMessages.respond(params.correlationId, params.message, toolCallId);
+		const fact = this.publishFact("message_thread", this.scopePath(), {
+			from: this.scopePath(),
+			to: this.scope.kind === "child" ? this.scope.path.slice(0, -1) : [],
+			text: String(params.message),
+			correlationId: params.correlationId,
+			responseExpected: false,
+			phase: "response",
+		}, this.nativeRefs(toolCallId, "tool_call"));
+		return { content: [{ type: "text", text: "Response sent." }], details: { semantic: fact } };
 	}
 
 	private checkStatus(params: any): { content: { type: "text"; text: string }[]; details: StatusResultData; structuredContent: StatusResultData } {
@@ -1767,7 +2103,7 @@ class SubagentSessionOwner {
 		return { content: [{ type: "text", text: statuses.map(formatAgentStatusSummary).join("\n") }], details: data, structuredContent: data };
 	}
 
-	private async teardownAgents(params: any, ctx: ExtensionContext): Promise<any> {
+	private async teardownAgents(params: any, ctx: ExtensionContext, toolCallId?: string): Promise<any> {
 		const session = this.requireActiveSession();
 		if (!session.manager.hasAgents()) throw new Error("No agents to teardown.");
 		const targetIds: string[] = params.agent ? [params.agent] : session.manager.getAgentStatuses().map((status) => status.id);
@@ -1776,6 +2112,14 @@ class SubagentSessionOwner {
 			return data ? [data] : [];
 		});
 		const { report, empty } = await session.manager.teardown(params.agent || undefined);
+		const refs = this.nativeRefs(toolCallId, "lifecycle");
+		const facts = reports.map((entry) => this.publishFact("teardown", childAgentPath(this.scopePath(), entry.id), {
+			operation: "teardown",
+			outcome: "succeeded",
+			path: childAgentPath(this.scopePath(), entry.id),
+			sessionId: entry.sessionId,
+			output: report,
+		}, refs));
 		if (empty) {
 			session.turns.drainLocal();
 			session.presentation.clear(ctx);
@@ -1790,7 +2134,7 @@ class SubagentSessionOwner {
 		// `usage` is pi's ToolResultMessage accounting seam. `details` is only
 		// tool-specific data and does not contribute to the root session total.
 		const usage = toPiUsage(sumAgentUsage(reports.map((agent) => agent.usage)));
-		return { content: [{ type: "text", text: bounded.text }], details: data, structuredContent: data, usage };
+		return { content: [{ type: "text", text: bounded.text }], details: semanticDetails(data, facts), structuredContent: data, usage };
 	}
 
 	private teardownAgentData(manager: SubagentManager, id: string): TeardownAgentData | undefined {
@@ -1831,7 +2175,7 @@ class SubagentSessionOwner {
 		};
 	}
 
-	private async resurrectAgents(params: any, ctx: ExtensionContext): Promise<any> {
+	private async resurrectAgents(params: any, ctx: ExtensionContext, toolCallId?: string): Promise<any> {
 		const session = this.requireActiveSession();
 		const manager = session.manager;
 		if (params.agents.length === 0) throw new Error("Empty agents array — provide at least one agent to resurrect.");
@@ -1908,10 +2252,20 @@ class SubagentSessionOwner {
 		const data: ResurrectResultData = {
 			agents: params.agents.map((agent: any) => ({ id: agent.id, sessionId: agent.sessionId })),
 		};
-		return { content: [{ type: "text", text: ack }], details: data, structuredContent: data };
+		const refs = this.nativeRefs(toolCallId, "lifecycle");
+		const facts = params.agents.map((agent: any) => {
+			const pathValue = childAgentPath(this.scopePath(), agent.id);
+			return this.publishFact("resurrect", pathValue, {
+				operation: "resurrect",
+				outcome: "succeeded",
+				path: pathValue,
+				sessionId: agent.sessionId,
+			}, refs);
+		});
+		return { content: [{ type: "text", text: ack }], details: semanticDetails(data, facts), structuredContent: data };
 	}
 
-	private async awaitAgents(params: any, signal: AbortSignal | undefined): Promise<any> {
+	private async awaitAgents(params: any, signal: AbortSignal | undefined, toolCallId?: string): Promise<any> {
 		const session = this.requireActiveSession();
 		const manager = session.manager;
 		if (!manager.hasAgents()) throw new Error("No agents running. Spawn agents first with the subagent or fork tool.");
@@ -1920,11 +2274,21 @@ class SubagentSessionOwner {
 			if (!manager.getAgentStatus(id)) throw new Error(`Unknown agent: "${id}"`);
 		}
 		const ids = requested ?? manager.getAgentStatuses().map((status) => status.id);
-		const result = await session.turns.awaitAgentCompletion(ids, manager, signal);
-		return this.structuredTextResult(result.text, { agents: result.agents });
+		const refs = this.nativeRefs(toolCallId, "tool_call");
+		const requestedPaths = ids.map((id) => manager.getAgentPath(id)).filter((path): path is AgentPath => path !== undefined);
+		const started = this.publishFact("await_started", this.scopePath(), {
+			invocationId: toolCallId ?? `${this.currentSessionId()}:await`,
+			requested: requestedPaths,
+		}, refs);
+		session.turns.registerAwaitInvocation(manager, ids, toolCallId ?? started.eventId, refs);
+		const result = await session.turns.awaitAgentCompletion(ids, manager, signal, {
+			invocationId: toolCallId ?? started.eventId,
+			refs,
+		});
+		return this.structuredTextResult(result.text, { agents: result.agents }, started);
 	}
 
-	private async interruptAgents(params: any, signal: AbortSignal | undefined): Promise<any> {
+	private async interruptAgents(params: any, signal: AbortSignal | undefined, toolCallId?: string): Promise<any> {
 		const { manager } = this.requireActiveSession();
 		if (!manager.hasAgents()) throw new Error("No agents running. Spawn agents first with the subagent or fork tool.");
 		const requested = params.agents?.length ? params.agents : undefined;
@@ -1943,6 +2307,18 @@ class SubagentSessionOwner {
 			else interrupted.push(ids[index]);
 		});
 		const lines: string[] = [];
+		const refs = this.nativeRefs(toolCallId, "lifecycle");
+		const facts = ids.map((id, index) => {
+			const pathValue = manager.getAgentPath(id) ?? childAgentPath(this.scopePath(), id);
+			const result = results[index];
+			const outcome = result.status === "fulfilled" ? result.value : "failed";
+			return this.publishFact("interrupt", pathValue, {
+				operation: "interrupt",
+				outcome: outcome === "settled" ? "succeeded" : "failed",
+				path: pathValue,
+				...(result.status === "rejected" ? { error: String(result.reason) } : {}),
+			}, refs);
+		});
 		if (interrupted.length > 0) lines.push(`Interrupted: ${interrupted.join(", ")}`);
 		if (pending.length > 0) lines.push(
 			`Abort delivered but not yet settled: ${pending.join(", ")}. ` +
@@ -1950,7 +2326,7 @@ class SubagentSessionOwner {
 		);
 		if (failed.length > 0) lines.push(`Failed: ${failed.join("; ")}`);
 		const data: InterruptResultData = { interrupted, pending, failed };
-		return { content: [{ type: "text", text: lines.join("\n") || "No agents interrupted." }], details: data, structuredContent: data };
+		return { content: [{ type: "text", text: lines.join("\n") || "No agents interrupted." }], details: semanticDetails(data, facts), structuredContent: data };
 	}
 
 	private assertNewAgentIds(ids: string[], manager: SubagentManager): void {
@@ -1963,8 +2339,9 @@ class SubagentSessionOwner {
 	}
 
 	/** Tool result whose details and structuredContent carry the same payload. */
-	private structuredTextResult<T>(text: string, data: T) {
-		return { content: [{ type: "text" as const, text }], details: data, structuredContent: data };
+	private structuredTextResult<T>(text: string, data: T, facts?: readonly SubagentSemanticFact[] | SubagentSemanticFact) {
+		const details = semanticDetails(data, facts);
+		return { content: [{ type: "text" as const, text }], details, structuredContent: data };
 	}
 
 	private async restoreChildDescendants(ctx: ExtensionContext, session: ActiveSubagentSession): Promise<void> {
@@ -1977,6 +2354,16 @@ class SubagentSessionOwner {
 /** Build an extension factory bound to one root or child session scope. */
 export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory {
 	return (pi: ExtensionAPI) => new SubagentSessionOwner(scope, pi).register();
+}
+
+function semanticDetails<T>(data: T, facts: readonly SubagentSemanticFact[] | SubagentSemanticFact | undefined): T {
+	if (!facts) return data;
+	const list = Array.isArray(facts) ? facts : [facts];
+	if (list.length === 0) return data;
+	if (data && typeof data === "object" && !Array.isArray(data)) {
+		return { ...(data as Record<string, unknown>), semantic: list.length === 1 ? list[0] : list } as T;
+	}
+	return { value: data, semantic: list.length === 1 ? list[0] : list } as T;
 }
 
 function formatAgentStatusSummary(status: AgentStatus): string {

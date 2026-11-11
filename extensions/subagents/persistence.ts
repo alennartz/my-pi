@@ -68,7 +68,7 @@ function appendJsonl(file: string, data: unknown): void {
  * files and malformed lines are skipped silently (returns the events that did
  * parse). Single home for the parse-per-line loop both readers share.
  */
-function readEvents(logFile: string): AgentLifecycleEvent[] {
+export function readEvents(logFile: string): AgentLifecycleEvent[] {
 	let contents: string;
 	try {
 		contents = fs.readFileSync(logFile, "utf8");

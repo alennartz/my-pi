@@ -53,6 +53,7 @@ import {
 	MessageRouter,
 	type MessagePort,
 	type RoutedMessage,
+	type RoutedMessagePhase,
 } from "./message-router.js";
 import { parseSessionSnapshot } from "./session-snapshot.js";
 import { formatTokenCount } from "./format.js";
@@ -244,7 +245,8 @@ export interface SubagentManagerOptions {
 	resolveContextWindow: (modelId: string) => number | undefined;
 	onUpdate: (mgr: SubagentManager) => void;
 	onAgentComplete: (mgr: SubagentManager, agentId: string, allDone: boolean) => void;
-	onParentMessage: (port: MessagePort, xml: string, meta: { correlationId?: string; responseExpected: boolean }) => void;
+	onParentMessage: (port: MessagePort, xml: string, meta: { from?: string; correlationId?: string; responseExpected: boolean }) => void;
+	onMessagePhase?: (event: RoutedMessagePhase) => void;
 }
 
 export class SubagentManager {
@@ -265,6 +267,7 @@ export class SubagentManager {
 		this.router = new MessageRouter({
 			onBlockingSendStart: (from, to, correlationId) => this.markAgentWaiting(from, correlationId, to),
 			onBlockingSendEnd: (from, correlationId) => this.clearAgentWaiting(from, correlationId),
+			onMessagePhase: (event) => this.opts.onMessagePhase?.(event),
 		});
 		this.parentPort = this.router.connect("parent");
 		this.parentPort.subscribe((message) => this.deliverParentMessage(message));
@@ -310,6 +313,11 @@ export class SubagentManager {
 	}
 
 	/** Child session file id for resurrect, or undefined for an unknown agent. */
+	getAgentPath(agentId: string): AgentPath | undefined {
+		const path = childAgentPath(this.opts.ownerPath, agentId);
+		return this.opts.registry.getSnapshot(path) ? path : undefined;
+	}
+
 	getSessionId(agentId: string): string | undefined {
 		return this.opts.registry
 			.listChildren(this.opts.ownerPath)
@@ -1135,6 +1143,7 @@ export class SubagentManager {
 			responseExpected: message.responseExpected,
 		});
 		this.opts.onParentMessage(this.parentPort, xml, {
+			from: message.from,
 			correlationId: message.correlationId,
 			responseExpected: message.responseExpected,
 		});
