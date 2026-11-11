@@ -88,7 +88,7 @@ import {
 import type { MessagePort, RoutedMessage, RoutedMessagePhase, RoutedResponse } from "./message-router.js";
 import { createSemanticFactBus, type SemanticFactBus } from "./semantic-bus.js";
 export type { SemanticFactBus } from "./semantic-bus.js";
-import type { SubagentSemanticFact, SubagentEventKind, PiEventRef, SubagentAwaitData, SubagentLifecycleData } from "./provider.js";
+import type { SubagentSemanticFact, SubagentEventKind, PiEventRef } from "./provider.js";
 import type {
 	SubagentManagerControl,
 	SubagentOwnerControlPort,
@@ -1955,14 +1955,6 @@ class SubagentSessionOwner {
 		const from = this.scopePath();
 		const to = this.pathForEndpoint(params.to);
 		const refs = this.nativeRefs(toolCallId, "tool_call");
-		const sentFact = this.publishFact("message_thread", from, {
-			from,
-			to,
-			text: String(params.message),
-			responseExpected: params.expectResponse === true,
-			phase: "sent",
-		}, refs);
-		if (toolCallId) this.manualMessageFacts.set(toolCallId, sentFact);
 		if (signal?.aborted) throw new Error("Cancelled");
 		const isLocalAgent = session.manager.getAgentStatus(params.to) !== undefined;
 		const port = isLocalAgent
@@ -1970,13 +1962,24 @@ class SubagentSessionOwner {
 			: this.scope.kind === "child"
 				? this.scope.uplink
 				: null;
-		if (!port) {
+			if (!port) {
 			throw new Error(
 				session.manager.hasAgents()
 					? `No route to agent "${params.to}".`
 					: "No agents running. Spawn agents first with the subagent or fork tool.",
 			);
 		}
+		const manualTransport = typeof port.setSemanticToolCall !== "function";
+		const sentFact = manualTransport
+			? this.publishFact("message_thread", from, {
+				from,
+				to,
+				text: String(params.message),
+				responseExpected: params.expectResponse === true,
+				phase: "sent",
+			}, refs)
+			: undefined;
+		if (manualTransport && toolCallId && sentFact) this.manualMessageFacts.set(toolCallId, sentFact);
 		port.setSemanticToolCall?.(toolCallId);
 		const receipt = await port.send({
 			to: params.to,
@@ -2050,19 +2053,22 @@ class SubagentSessionOwner {
 			}], details: semanticDetails(data, sentFact), structuredContent: data };
 		}
 		if (outcome.response.type === "response") {
-			const responseFact = this.publishFact("message_thread", to, {
-				from: to,
-				to: from,
-				text: outcome.response.message,
-				correlationId,
-				responseExpected: false,
-				phase: "response",
-			}, refs);
+			const responseFact = manualTransport
+				? this.publishFact("message_thread", to, {
+					from: to,
+					to: from,
+					text: outcome.response.message,
+					correlationId,
+					responseExpected: false,
+					phase: "response",
+				}, refs)
+				: undefined;
 			const bounded = await truncateForModel(outcome.response.message);
 			const data: SendResultData = { response: outcome.response.message, deferred: false, correlationId };
-			return { content: [{ type: "text", text: bounded.text }], details: semanticDetails(data, [sentFact, responseFact]), structuredContent: data };
+			const facts = [sentFact, responseFact].filter((fact): fact is SubagentSemanticFact => fact !== undefined);
+			return { content: [{ type: "text", text: bounded.text }], details: semanticDetails(data, facts), structuredContent: data };
 		}
-		const failureFact = this.publishFact("message_thread", to, {
+		const failureFact = manualTransport ? this.publishFact("message_thread", to, {
 			from: to,
 			to: from,
 			text: params.message,
@@ -2070,7 +2076,7 @@ class SubagentSessionOwner {
 			responseExpected: false,
 			phase: "failure",
 			error: outcome.response.error,
-		}, refs);
+		}, refs) : undefined;
 		throw Object.assign(new Error(outcome.response.error), { semantic: failureFact });
 	}
 
