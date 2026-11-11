@@ -1,15 +1,7 @@
-import type { AgentPath } from "./agent-path.js";
-import type { FeedCursor, PiEventRef, SubagentEvent, SubagentEventKind } from "./provider.js";
+import type { SubagentEvent } from "./provider.js";
 
 /** Input accepted by the semantic-event provenance seam. */
-export type SemanticEventInput = Readonly<{
-	eventId: string;
-	cursor: FeedCursor;
-	path: AgentPath;
-	kind: SubagentEventKind;
-	relatedPiEvents: readonly PiEventRef[];
-	data: unknown;
-}>;
+export type SemanticEventInput = SubagentEvent;
 
 /**
  * Build one semantic overlay while retaining every supplied native Pi reference.

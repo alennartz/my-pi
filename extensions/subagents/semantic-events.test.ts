@@ -27,10 +27,12 @@ describe("semantic event provenance", () => {
 			kind: "message_thread",
 			relatedPiEvents: refs,
 			data: {
-				from: ["worker"],
-				to: ["worker", "scout"],
-				request: "Confirm the callback owner.",
-				reply: "The session store owns the mutation.",
+				phase: "response",
+				from: ["worker", "scout"],
+				to: ["worker"],
+				text: "The session store owns the mutation.",
+				correlationId: "corr-1",
+				responseExpected: false,
 			},
 		});
 

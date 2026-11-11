@@ -21,7 +21,7 @@ export type AwaitMessage = Readonly<{
 export type AwaitOutcome =
 	| Readonly<{
 			kind: "released";
-			reason: "detach" | "stop";
+			reason: "settled" | "detach" | "stop";
 			statuses: readonly AwaitChildStatus[];
 	  }>
 	| Readonly<{
@@ -31,13 +31,19 @@ export type AwaitOutcome =
 	  }>;
 
 export interface AwaitGateOptions {
+	/** Empty when no parent await is active. */
 	requested: readonly AgentPath[];
+	/** Each occurrence represents one client lease. */
 	attached?: readonly AgentPath[];
+	/** Deliver the latest held idle notification after the final lease detaches. */
+	onHeldIdleDelivery?: (status: AwaitChildStatus) => void;
 }
 
 /**
- * View-aware await coordination. Lease state is internal coordination, not
- * transcript copy: callers observe only the eventual outcome and statuses.
+ * View-aware await and idle notification coordination. The gate continues
+ * holding notifications after its result resolves, including when no await
+ * is active. A message interrupts the wait without discarding held idle
+ * notifications. Stop discards them.
  */
 export interface AwaitGate {
 	readonly result: Promise<AwaitOutcome>;
