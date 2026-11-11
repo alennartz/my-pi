@@ -1059,7 +1059,7 @@ export class SubagentManager {
 			lastError: undefined,
 		}));
 		this.router.agentIdle(entry.id);
-		this.notifyCompletion(entry, { aborted: stopped });
+		this.notifyCompletion(entry, stopped ? { aborted: true } : undefined);
 	}
 
 	/**
@@ -1109,7 +1109,9 @@ export class SubagentManager {
 		// Mark it only after the coordinator accepts the completion for delivery.
 		// `undefined` keeps compatibility with direct manager callers that do not
 		// return a delivery decision.
-		const delivered = this.opts.onAgentComplete(this, entry.id, this.allDone(), outcome);
+		const delivered = outcome === undefined
+			? this.opts.onAgentComplete(this, entry.id, this.allDone())
+			: this.opts.onAgentComplete(this, entry.id, this.allDone(), outcome);
 		if (delivered !== false) entry.completionNotified = true;
 	}
 

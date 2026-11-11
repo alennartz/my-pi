@@ -419,6 +419,10 @@ export interface SubagentProviderOptions {
 	parentSessionFile?: string;
 	/** Live semantic facts, independent of child view leases. */
 	semanticEvents?: { subscribe(listener: (fact: SubagentSemanticFact) => void): () => void };
+	/** Notify the session turn owner when a child view acquires a lease. */
+	onLeaseAttached?: (path: AgentPath) => void;
+	/** Notify the session turn owner when a child view releases a lease. */
+	onLeaseDetached?: (path: AgentPath) => void;
 	/** Maximum retained feed events, a positive integer. Older cursors require a snapshot. */
 	historyLimit?: number;
 }
@@ -998,6 +1002,22 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		}
 	}
 
+	function notifyLeaseAttached(path: AgentPath): void {
+		try {
+			options.onLeaseAttached?.(copyPath(path));
+		} catch {
+			// The turn owner cannot invalidate an already-issued lease.
+		}
+	}
+
+	function notifyLeaseDetached(path: AgentPath): void {
+		try {
+			options.onLeaseDetached?.(copyPath(path));
+		} catch {
+			// Lease cleanup must finish even if the turn owner is shutting down.
+		}
+	}
+
 	function closeLease(record: LeaseRecord, reason: "removed" | "unavailable"): void {
 		if (!record.active) return;
 		record.active = false;
@@ -1005,6 +1025,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const pathLeases = leases.get(record.key);
 		pathLeases?.delete(record);
 		if (pathLeases && pathLeases.size === 0) leases.delete(record.key);
+		notifyLeaseDetached(record.path);
 		notifyLease(record, { kind: "closed", reason });
 		record.listeners.clear();
 	}
