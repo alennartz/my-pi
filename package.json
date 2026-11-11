@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
-    "@pimote/sdk": "^0.15.4",
+    "@pimote/sdk": "0.16.0-rc.1",
     "jiti": "^2.7.0",
     "jsdom": "^29.1.1",
     "turndown": "^7.2.4",
