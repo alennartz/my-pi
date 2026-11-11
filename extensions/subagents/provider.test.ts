@@ -18,12 +18,15 @@ import {
   type ReplayResult,
   type SubagentEvent,
   type SubagentLeaseEvent,
+  type SubagentOwnerControlPort,
   type SubagentSemanticFact,
   type SubagentProviderOptions,
 } from "./provider.js";
 
 const workerPath: AgentPath = ["worker"];
 const scoutPath: AgentPath = ["worker", "scout"];
+const workerIncarnation = "incarnation-worker";
+const scoutIncarnation = "incarnation-scout";
 
 function samePath(left: AgentPath, right: AgentPath): boolean {
   return (
@@ -77,6 +80,7 @@ function node(
 
 function registryFixture(workerSessionFile?: string): {
   registry: AgentSessionRegistry;
+  ownerControl: SubagentOwnerControlPort;
   emit(event: RegistryEvent): void;
   worker: RegisteredAgentNode;
   scout: RegisteredAgentNode;
@@ -128,8 +132,23 @@ function registryFixture(workerSessionFile?: string): {
       }
     }),
   } as unknown as AgentSessionRegistry;
+  const ownerControl: SubagentOwnerControlPort = {
+    teardown: vi.fn(async (path, incarnation) => {
+      const current = nodes.find((item) => samePath(item.snapshot.path, path));
+      if (!current) return { path, removed: false, incarnation, reason: "not_found" as const };
+      await registry.remove(path);
+      return { path, removed: true, incarnation, sessionId: current.snapshot.sessionId, reason: "removed" as const };
+    }),
+    stop: vi.fn(async () => undefined),
+    resurrect: vi.fn(async (request) => ({
+      path: [...request.parentPath, request.localId],
+      sessionId: request.sessionId,
+      incarnation: "resurrected-incarnation",
+    })),
+  };
   return {
     registry,
+    ownerControl,
     emit,
     worker,
     scout,
@@ -160,6 +179,7 @@ function setup(overrides: Partial<SubagentProviderOptions> = {}) {
   const fixture = registryFixture();
   const provider = createSubagentProvider({
     registry: fixture.registry,
+    ownerControl: fixture.ownerControl,
     ...overrides,
   });
   return { provider, fixture };
@@ -274,7 +294,11 @@ describe("SubagentProvider snapshot and replay", () => {
       fs.writeFileSync(paths.logFile, records.map((record) => JSON.stringify(record)).join("\n") + "\n");
       fs.writeFileSync(sessionFile, JSON.stringify({ type: "session", version: 3, id: sessionId, timestamp: "2026-01-01T00:00:00.000Z", cwd: root }) + "\n");
       const fixture = registryFixture(sessionFile);
-      const provider = createSubagentProvider({ registry: fixture.registry, lifecycle: createSubagentLifecycleReader(paths) });
+      const provider = createSubagentProvider({
+        registry: fixture.registry,
+        ownerControl: fixture.ownerControl,
+        lifecycle: createSubagentLifecycleReader(paths),
+      });
 
       const replay = provider.replay();
       expect(replay.kind).toBe("events");
@@ -290,7 +314,7 @@ describe("SubagentProvider snapshot and replay", () => {
       const lease = await provider.acquire(workerPath);
       expect(lease.session.sessionFile).toBe(sessionFile);
       await lease.release();
-      expect(await provider.teardown(workerPath)).toMatchObject({ path: workerPath, removed: true, sessionId });
+      expect(await provider.teardown(workerPath, workerIncarnation)).toMatchObject({ path: workerPath, removed: true, sessionId });
       expect(fs.existsSync(sessionFile)).toBe(true);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -299,9 +323,9 @@ describe("SubagentProvider snapshot and replay", () => {
 
   it("requires a fresh snapshot when a provider restarts with a new epoch", () => {
     const fixture = registryFixture();
-    const first = createSubagentProvider({ registry: fixture.registry });
+    const first = createSubagentProvider({ registry: fixture.registry, ownerControl: fixture.ownerControl });
     const boundary = first.snapshot().cursor;
-    const restarted = createSubagentProvider({ registry: fixture.registry });
+    const restarted = createSubagentProvider({ registry: fixture.registry, ownerControl: fixture.ownerControl });
     expect(restarted.snapshot().cursor.epoch).not.toBe(boundary.epoch);
     const replay = restarted.replay(boundary);
 
@@ -403,7 +427,7 @@ describe("SubagentProvider path identity and leases", () => {
     let resolveClosed!: (event: SubagentLeaseEvent) => void;
     const closed = new Promise<SubagentLeaseEvent>((resolve) => { resolveClosed = resolve; });
     lease.subscribe((event) => { if (event.kind === "closed") resolveClosed(event); });
-    await provider.teardown(scoutPath);
+    await provider.teardown(scoutPath, scoutIncarnation);
     const replacement = node(scoutPath, "session-scout-new", workerPath, "New task");
     fixture.add(replacement);
     const newLease = await provider.acquire(scoutPath);
@@ -439,7 +463,7 @@ describe("SubagentProvider path identity and leases", () => {
     const flatLease = await provider.acquire(["worker/scout"]);
     expect(nestedLease.session).toBe(fixture.scout.session.session);
     expect(flatLease.session).toBe(flat.session.session);
-    await provider.teardown(["worker/scout"]);
+    await provider.teardown(["worker/scout"], "incarnation-flat");
     expect(nestedLease.session).toBe(fixture.scout.session.session);
     expect(() => flatLease.session).toThrow();
     await nestedLease.release();
@@ -448,7 +472,7 @@ describe("SubagentProvider path identity and leases", () => {
 
   it("reports teardown by public path without exposing runtime disposal", async () => {
     const { provider } = setup();
-    const result = await provider.teardown(scoutPath);
+    const result = await provider.teardown(scoutPath, scoutIncarnation);
 
     expect(result.path).toEqual(scoutPath);
     expect(result.removed).toBe(true);
