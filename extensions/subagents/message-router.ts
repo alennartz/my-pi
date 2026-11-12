@@ -57,7 +57,7 @@ export interface MessagePort {
 		correlationId?: string;
 	}): Promise<SendReceipt>;
 	/** Attach the next native tool call to one transport operation. */
-	setSemanticToolCall?(toolCallId: string | undefined): void;
+	setSemanticToolCall?(toolCallId: string | undefined, publishPhase?: (event: RoutedMessagePhase) => void): void;
 	/** Only the endpoint addressed by the correlation may respond. */
 	respond(correlationId: string, message: string): Promise<void>;
 	/** Reject a pending request from its addressed endpoint (optional adapter seam). */
@@ -82,6 +82,7 @@ interface Endpoint {
 	active: boolean;
 	/** One-shot native invocation metadata supplied by the tool adapter. */
 	semanticToolCallId?: string;
+	semanticPublisher?: (event: RoutedMessagePhase) => void;
 }
 
 interface PendingCorrelation {
@@ -91,6 +92,7 @@ interface PendingCorrelation {
 	readonly message: string;
 	readonly responseExpected: boolean;
 	readonly toolCallId?: string;
+	readonly semanticPublisher?: (event: RoutedMessagePhase) => void;
 	readonly resolve: (response: RoutedResponse) => void;
 	readonly reject: (error: Error) => void;
 	waitingEdgeAttached: boolean;
@@ -277,8 +279,9 @@ export class MessageRouter {
 		return {
 			id: endpoint.id,
 			send: (input) => this.sendFrom(endpoint, input),
-			setSemanticToolCall: (toolCallId) => {
+			setSemanticToolCall: (toolCallId, publishPhase) => {
 				endpoint.semanticToolCallId = toolCallId;
+				endpoint.semanticPublisher = publishPhase;
 			},
 			respond: (correlationId, message) => this.respondFrom(endpoint, correlationId, message),
 			reject: (correlationId, error) => this.rejectFrom(endpoint, correlationId, error),
@@ -306,7 +309,9 @@ export class MessageRouter {
 		}
 
 		const toolCallId = endpoint.semanticToolCallId;
+		const publishPhase = endpoint.semanticPublisher;
 		endpoint.semanticToolCallId = undefined;
+		endpoint.semanticPublisher = undefined;
 		if (!input.expectResponse) {
 			this.emitMessagePhase({
 				phase: "sent",
@@ -316,7 +321,7 @@ export class MessageRouter {
 				...(input.correlationId !== undefined ? { correlationId: input.correlationId } : {}),
 				responseExpected: false,
 				...(toolCallId !== undefined ? { toolCallId } : {}),
-			});
+			}, publishPhase);
 			this.deliverMessage(endpoint.id, target, input.message, input.correlationId, false);
 			return {};
 		}
@@ -344,6 +349,7 @@ export class MessageRouter {
 			message: input.message,
 			responseExpected: true,
 			...(toolCallId !== undefined ? { toolCallId } : {}),
+			...(publishPhase ? { semanticPublisher: publishPhase } : {}),
 			resolve: resolveResponse,
 			reject: rejectResponse,
 			waitingEdgeAttached: true,
@@ -363,7 +369,7 @@ export class MessageRouter {
 			correlationId,
 			responseExpected: true,
 			...(toolCallId !== undefined ? { toolCallId } : {}),
-		});
+		}, publishPhase);
 		this.deliverMessage(endpoint.id, target, input.message, correlationId, true);
 
 		return { correlationId, response };
@@ -372,7 +378,9 @@ export class MessageRouter {
 	private async respondFrom(endpoint: Endpoint, correlationId: string, message: string): Promise<void> {
 		this.assertEndpointActive(endpoint);
 		const toolCallId = endpoint.semanticToolCallId;
+		const publishPhase = endpoint.semanticPublisher;
 		endpoint.semanticToolCallId = undefined;
+		endpoint.semanticPublisher = undefined;
 		const pending = this.pendingCorrelations.get(correlationId);
 		if (!pending) {
 			throw new Error(`No pending request for correlation ID "${correlationId}"`);
@@ -383,12 +391,13 @@ export class MessageRouter {
 			);
 		}
 
-		this.completePendingResponse(pending, message, toolCallId);
+		this.completePendingResponse(pending, message, toolCallId, publishPhase);
 	}
 
 	private async rejectFrom(endpoint: Endpoint, correlationId: string, error: string): Promise<void> {
 		this.assertEndpointActive(endpoint);
 		endpoint.semanticToolCallId = undefined;
+		endpoint.semanticPublisher = undefined;
 		const pending = this.pendingCorrelations.get(correlationId);
 		if (!pending) {
 			throw new Error(`No pending request for correlation ID "${correlationId}"`);
@@ -519,7 +528,7 @@ export class MessageRouter {
 		this.invokeBlockingSendEnd(pending.from, pending.correlationId);
 	}
 
-	private completePendingResponse(pending: PendingCorrelation, message: string, responderToolCallId?: string): void {
+	private completePendingResponse(pending: PendingCorrelation, message: string, responderToolCallId?: string, publishPhase?: (event: RoutedMessagePhase) => void): void {
 		if (this.pendingCorrelations.get(pending.correlationId) !== pending) return;
 		this.pendingCorrelations.delete(pending.correlationId);
 		this.endWaiting(pending);
@@ -531,7 +540,7 @@ export class MessageRouter {
 			correlationId: pending.correlationId,
 			responseExpected: false,
 			...((responderToolCallId ?? pending.toolCallId) !== undefined ? { toolCallId: responderToolCallId ?? pending.toolCallId } : {}),
-		});
+		}, publishPhase ?? pending.semanticPublisher);
 		pending.resolve({ type: "response", message });
 	}
 
@@ -548,7 +557,7 @@ export class MessageRouter {
 			responseExpected: false,
 			error,
 			...(pending.toolCallId !== undefined ? { toolCallId: pending.toolCallId } : {}),
-		});
+		}, pending.semanticPublisher);
 		pending.resolve({ type: "error", error });
 	}
 
@@ -607,9 +616,10 @@ export class MessageRouter {
 		}
 	}
 
-	private emitMessagePhase(event: RoutedMessagePhase): void {
+	private emitMessagePhase(event: RoutedMessagePhase, publishPhase?: (event: RoutedMessagePhase) => void): void {
 		try {
-			this.onMessagePhase?.(event);
+			if (publishPhase) publishPhase(event);
+			else this.onMessagePhase?.(event);
 		} catch {
 			// Semantic observers cannot interrupt an accepted transport operation.
 		}

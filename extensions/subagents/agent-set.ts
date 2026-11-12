@@ -260,7 +260,7 @@ export interface SubagentManagerOptions {
 		allDone: boolean,
 		outcome?: AgentCompletionOutcome,
 	) => boolean | void;
-	onParentMessage: (port: MessagePort, xml: string, meta: { from?: string; correlationId?: string; responseExpected: boolean }) => void;
+	onParentMessage: (port: MessagePort, xml: string, message: RoutedMessage) => void;
 	onMessagePhase?: (event: RoutedMessagePhase) => void;
 }
 
@@ -1038,10 +1038,11 @@ export class SubagentManager {
 	): void {
 		if (!this.isActiveEntry(entry)) return;
 		const label = type === "error" ? "Child resource error" : "Child resource diagnostic";
+		const body = `${label}: ${message}`;
 		this.opts.onParentMessage(
 			this.parentPort,
-			serializeAgentMessage({ from: entry.id, content: `${label}: ${message}`, responseExpected: false }),
-			{ responseExpected: false },
+			serializeAgentMessage({ from: entry.id, content: body, responseExpected: false }),
+			{ from: entry.id, message: body, responseExpected: false },
 		);
 	}
 
@@ -1186,11 +1187,7 @@ export class SubagentManager {
 			correlationId: message.correlationId,
 			responseExpected: message.responseExpected,
 		});
-		this.opts.onParentMessage(this.parentPort, xml, {
-			from: message.from,
-			correlationId: message.correlationId,
-			responseExpected: message.responseExpected,
-		});
+		this.opts.onParentMessage(this.parentPort, xml, message);
 	}
 
 	private persistReplacement(entry: AgentEntry): void {

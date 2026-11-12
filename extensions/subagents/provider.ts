@@ -190,11 +190,18 @@ export type SubagentEventData =
 			data: SubagentLifecycleData;
 	  }>;
 
+export type SubagentTranscriptPosition = Readonly<{
+	sessionId: string;
+	afterEntryId: string | null;
+	messageIndex?: number;
+}>;
+
 /** A semantic overlay. Native Pi entries remain the transcript source. */
 export type SubagentSemanticFact = Readonly<{
 	eventId: string;
 	path: AgentPath;
 	relatedPiEvents: readonly PiEventRef[];
+	transcriptPosition?: SubagentTranscriptPosition;
 }> &
 	SubagentEventData;
 

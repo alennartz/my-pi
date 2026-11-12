@@ -3,6 +3,16 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const randomness = vi.hoisted(() => ({
+	nextId: 0,
+	randomUUID: vi.fn(() => `00000000-0000-4000-8000-${String(++randomness.nextId).padStart(12, "0")}`),
+}));
+
+vi.mock("node:crypto", async (importOriginal) => ({
+	...await importOriginal<typeof import("node:crypto")>(),
+	randomUUID: randomness.randomUUID,
+}));
+
 const managed = vi.hoisted(() => {
 	let sequence = 0;
 	const created: Array<{ config: any; dependencies: any; hooks: any; child: any }> = [];
@@ -71,6 +81,9 @@ vi.mock("./broker.js", () => ({
 
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import { SubagentPresentation } from "./session-owner.js";
+import { createSemanticFactBus } from "./semantic-bus.js";
+import type { SubagentSemanticFact } from "./provider.js";
+import { serializeAgentMessage } from "./messages.js";
 import * as agentDiscovery from "./agents.js";
 import type { AgentPath } from "./agent-path.js";
 import { appendAgentAdded, ensurePersistence } from "./persistence.js";
@@ -138,6 +151,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 	const registry: any = {
 		get: vi.fn((agentPath: AgentPath) => nodes.get(key(agentPath))),
 		getSnapshot: vi.fn((agentPath: AgentPath) => nodes.get(key(agentPath))?.snapshot),
+		waitForLiveNode: async (agentPath: AgentPath) => livePaths.has(key(agentPath)),
 		listChildren: vi.fn((parentPath: AgentPath) => [...nodes.values()]
 			.filter((node) => node.snapshot.parentPath !== null && key(node.snapshot.parentPath) === key(parentPath))
 			.map((node) => node.snapshot)),
@@ -315,6 +329,7 @@ function makeContext(parentSessionFile: string, overrides: Record<string, unknow
 		sessionManager: {
 			getSessionFile: () => parentSessionFile,
 			getSessionName: () => "parent",
+			getLeafId: (): string | null => null,
 		},
 		modelRegistry: {
 			getAvailable: vi.fn(() => [{
@@ -351,6 +366,7 @@ async function startSession(handlers: Map<string, (...args: any[]) => any>, ctx:
 let tmpRoot: string | undefined;
 
 beforeEach(() => {
+	randomness.nextId = 0;
 	managed.reset();
 	tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "scoped-subagents-test-"));
 });
@@ -820,6 +836,218 @@ describe("child-scoped extension routing", () => {
 			expect.objectContaining({ content: expect.stringContaining("only first") }),
 			{ triggerTurn: true },
 		);
+	});
+});
+
+describe("semantic facts on native messages", () => {
+	function factsIn(result: { details?: { semantic?: SubagentSemanticFact | readonly SubagentSemanticFact[]; semanticEvents?: readonly SubagentSemanticFact[] } }): readonly SubagentSemanticFact[] {
+		const facts = result.details?.semantic ?? result.details?.semanticEvents ?? [];
+		return Array.isArray(facts) ? facts : [facts as SubagentSemanticFact];
+	}
+
+	async function rootSession() {
+		const sessionFile = path.join(tmpRoot!, "semantic-parent.jsonl");
+		fs.writeFileSync(sessionFile, "");
+		const root = makePi();
+		const bus = createSemanticFactBus();
+		const published: SubagentSemanticFact[] = [];
+		bus.subscribe((fact) => published.push(fact));
+		await createSubagentsExtension({ kind: "root", semanticEvents: bus })(root.pi as any);
+		const ctx = makeContext(sessionFile);
+		ctx.sessionManager.getLeafId = () => "root-leaf";
+		await startSession(root.handlers, ctx);
+		await execute(root.tools, "subagent", { agents: [{ id: "worker", task: "inspect", channels: [] }] }, ctx);
+		return { ...root, ctx, published, worker: managed.created[0] };
+	}
+
+	it("keeps notification IDs unique when the same child session resumes", async () => {
+		const childRegistry = makeRegistryFake(["worker"]);
+		const ctx = makeContext(path.join(tmpRoot!, "child.jsonl"));
+		const ids: string[] = [];
+		for (const reason of ["new", "resume", "reload"]) {
+			const afterEntryId = reason === "new" ? null : "child-leaf";
+			ctx.sessionManager.getLeafId = () => afterEntryId;
+			const child = makePi();
+			const uplink = makePort("worker");
+			await createSubagentsExtension({
+				kind: "child", registry: childRegistry, path: ["worker"],
+				identity: { id: "worker", task: "inspect", channels: ["parent"] }, uplink,
+			})(child.pi as any);
+			await child.handlers.get("session_start")?.({ reason }, ctx);
+			uplink.emit({ from: "parent", message: reason, responseExpected: false });
+			const notification = child.pi.sendMessage.mock.calls.at(-1)?.[0];
+			const fact = factsIn(notification)[0];
+			expect(fact).toMatchObject({
+				kind: "message_thread", data: { text: reason },
+				transcriptPosition: { sessionId: "seed-worker", afterEntryId },
+			});
+			expect(fact.relatedPiEvents.every((ref) => ref.entryId === undefined)).toBe(true);
+			ids.push(fact.eventId);
+			await child.handlers.get("session_shutdown")?.({}, ctx);
+		}
+		expect(new Set(ids).size).toBe(ids.length);
+	});
+
+	it("persists the accepted send fact on the sender's native tool result", async () => {
+		const root = await rootSession();
+		const result = await root.tools.get("send")!.execute("send-call", { to: "worker", message: "continue", expectResponse: false }, undefined, undefined, root.ctx);
+		const sent = factsIn(result).find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent");
+		expect(sent).toMatchObject({
+			kind: "message_thread", path: [], data: { from: [], to: ["worker"], text: "continue" },
+		});
+		expect(sent?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: "semantic-parent", toolCallId: "send-call", kind: "tool_call" })]));
+		expect(root.published.some((fact) => fact.eventId === sent?.eventId)).toBe(true);
+		expect(sent).toMatchObject({ transcriptPosition: { sessionId: "semantic-parent", afterEntryId: "root-leaf" } });
+	});
+
+	it("attributes child sends to their native session, not the parent router", async () => {
+		const root = await rootSession();
+		const child = makePi();
+		await createSubagentsExtension(root.worker.config.scope)(child.pi as any);
+		const ctx = makeContext(root.worker.child.sessionFile);
+		ctx.sessionManager.getLeafId = () => "child-leaf";
+		await startSession(child.handlers, ctx);
+		const result = await child.tools.get("send")!.execute("child-send-call", { to: "parent", message: "progress", expectResponse: false }, undefined, undefined, ctx);
+		const sent = factsIn(result).find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent");
+		expect(sent).toMatchObject({
+			path: ["worker"], data: { from: ["worker"], to: [], text: "progress" },
+			transcriptPosition: { sessionId: root.worker.child.sessionId, afterEntryId: "child-leaf" },
+		});
+		expect(sent?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: root.worker.child.sessionId, toolCallId: "child-send-call", kind: "tool_call" })]));
+		expect(root.published.filter((fact) => fact.kind === "message_thread" && fact.data.phase === "sent" && fact.data.text === "progress").map((fact) => fact.eventId)).toEqual([sent?.eventId]);
+	});
+
+	it("keeps root and child received facts plain while preserving their native XML", async () => {
+		const root = await rootSession();
+		const child = makePi();
+		await createSubagentsExtension(root.worker.config.scope)(child.pi as any);
+		const ctx = makeContext(root.worker.child.sessionFile);
+		await startSession(child.handlers, ctx);
+		const body = "<raw> & **body**\nnext";
+		await child.tools.get("send")!.execute("child-body", { to: "parent", message: body, expectResponse: false }, undefined, undefined, ctx);
+		await root.tools.get("send")!.execute("parent-body", { to: "worker", message: body, expectResponse: false }, undefined, undefined, root.ctx);
+		for (const [notification, from] of [[root.pi.sendMessage.mock.calls.at(-1)?.[0], "worker"], [child.pi.sendMessage.mock.calls.at(-1)?.[0], "parent"]] as const) {
+			expect(notification.content).toBe(serializeAgentMessage({ from, content: body, responseExpected: false }));
+			expect(factsIn(notification).find((fact) => fact.kind === "message_thread" && fact.data.phase === "received")).toMatchObject({ data: { text: body } });
+		}
+	});
+
+	it("persists one canonical response phase in both sender and responder results", async () => {
+		const root = await rootSession();
+		const child = makePi();
+		await createSubagentsExtension(root.worker.config.scope)(child.pi as any);
+		const ctx = makeContext(root.worker.child.sessionFile);
+		ctx.sessionManager.getLeafId = () => "child-reply-leaf";
+		await startSession(child.handlers, ctx);
+		const waiting = root.tools.get("send")!.execute("request-call", { to: "worker", message: "question", expectResponse: true }, undefined, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "message_thread" && fact.data.phase === "sent" && fact.data.correlationId)).toBe(true));
+		const request = root.published.find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")!;
+		const correlationId = request.kind === "message_thread" ? request.data.correlationId : undefined;
+		const responder = await child.tools.get("respond")!.execute("response-call", { correlationId, message: "answer" }, undefined, undefined, ctx);
+		const result = await waiting;
+		const terminal = factsIn(result).find((fact) => fact.kind === "message_thread" && fact.data.phase === "response");
+		expect(terminal).toMatchObject({
+			data: { from: ["worker"], to: [], text: "answer", correlationId },
+			transcriptPosition: { sessionId: root.worker.child.sessionId, afterEntryId: "child-reply-leaf" },
+		});
+		expect(terminal?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: root.worker.child.sessionId, toolCallId: "response-call", kind: "tool_call" })]));
+		expect(factsIn(responder).map((fact) => fact.eventId)).toContain(terminal?.eventId);
+		expect(root.published.filter((fact) => fact.kind === "message_thread" && fact.data.phase === "response" && fact.data.correlationId === correlationId).map((fact) => fact.eventId)).toEqual([terminal?.eventId]);
+	});
+
+	it("retains awaited settlements and release facts in the await tool result", async () => {
+		const root = await rootSession();
+		const waiting = root.tools.get("await_agents")!.execute("await-call", { agents: ["worker"] }, undefined, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "saved answer" }] } });
+		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		const facts = factsIn(await waiting);
+		for (const kind of ["await_started", "child_settled", "completion", "await_released"]) {
+			expect(facts.some((fact) => fact.kind === kind)).toBe(true);
+		}
+		expect(facts.find((fact) => fact.kind === "completion")).toMatchObject({ data: { output: "saved answer", delivery: "awaited", invocationId: "await-call" } });
+	});
+
+	it("releases a refused await without leaving a running semantic wait", async () => {
+		const root = await rootSession();
+		const receipt = await root.worker.config.scope.uplink.send({ to: "parent", message: "answer before waiting", expectResponse: true });
+		const result = await root.tools.get("await_agents")!.execute("refused-await", { agents: ["worker"] }, undefined, undefined, root.ctx);
+		expect(result.content[0].text).toContain("Cannot wait");
+		expect(factsIn(result).find((fact) => fact.kind === "await_released")).toMatchObject({ data: { invocationId: "refused-await", reason: "message" } });
+		await root.tools.get("respond")!.execute("unblock-worker", { correlationId: receipt.correlationId, message: "continue" }, undefined, undefined, root.ctx);
+		await receipt.response;
+	});
+
+	it("retains the incoming message and interruption facts when an await releases", async () => {
+		const root = await rootSession();
+		const waiting = root.tools.get("await_agents")!.execute("await-message-call", { agents: ["worker"] }, undefined, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		await root.worker.config.scope.uplink.send({ to: "parent", message: "need a decision", expectResponse: false });
+		const result = await waiting;
+		const facts = factsIn(result);
+		expect(result.content[0].text).toContain("need a decision");
+		expect(facts.some((fact) => fact.kind === "message_thread" && fact.data.phase === "received")).toBe(true);
+		expect(facts.find((fact) => fact.kind === "await_interrupted")).toMatchObject({ data: { message: { text: "need a decision", phase: "received" } } });
+	});
+
+	it("persists cancellation facts on the native await error result", async () => {
+		const root = await rootSession();
+		const controller = new AbortController();
+		const waiting = root.tools.get("await_agents")!.execute("cancelled-await", { agents: ["worker"] }, controller.signal, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		controller.abort();
+		await expect(waiting).rejects.toThrow("Wait cancelled.");
+		const result = await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "cancelled-await", isError: true }, root.ctx);
+		const facts = factsIn(result);
+		expect(facts.some((fact) => fact.kind === "await_started")).toBe(true);
+		expect(facts.some((fact) => fact.kind === "await_interrupted" && fact.data.reason === "stop")).toBe(true);
+		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		const notification = root.pi.sendMessage.mock.calls.at(-1)?.[0];
+		expect(factsIn(notification).find((fact) => fact.kind === "completion")).toMatchObject({ data: { delivery: "asynchronous" } });
+	});
+
+	it("persists a rejected response on the native send error result", async () => {
+		const root = await rootSession();
+		const waiting = root.tools.get("send")!.execute("failed-send", { to: "worker", message: "question", expectResponse: true }, undefined, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")).toBe(true));
+		const sent = root.published.find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")!;
+		const correlationId = sent.kind === "message_thread" ? sent.data.correlationId : undefined;
+		await root.worker.config.scope.uplink.reject(correlationId, "declined");
+		await expect(waiting).rejects.toThrow("declined");
+		const result = await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "send", toolCallId: "failed-send", isError: true }, root.ctx);
+		const failure = factsIn(result).find((fact) => fact.kind === "message_thread" && fact.data.phase === "failure" && fact.data.error === "declined");
+		expect(failure?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: "semantic-parent", toolCallId: "failed-send", kind: "tool_call" })]));
+	});
+
+	it("persists a deferred reply with its eventual native custom message", async () => {
+		const root = await rootSession();
+		const controller = new AbortController();
+		const waiting = root.tools.get("send")!.execute("deferred-send", { to: "worker", message: "question", expectResponse: true }, controller.signal, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")).toBe(true));
+		const sent = root.published.find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")!;
+		const correlationId = sent.kind === "message_thread" ? sent.data.correlationId : undefined;
+		controller.abort();
+		expect((await waiting).details).toMatchObject({ deferred: true });
+		await root.worker.config.scope.uplink.respond(correlationId, "late answer");
+		await vi.waitFor(() => expect(root.pi.sendMessage.mock.calls.some(([message]) => message.content.includes("late answer"))).toBe(true));
+		const notification = root.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("late answer"))?.[0];
+		const reply = factsIn(notification).find((fact) => fact.kind === "message_thread" && fact.data.phase === "response");
+		expect(reply).toMatchObject({ data: { text: "late answer", correlationId } });
+		expect(root.published.filter((fact) => fact.kind === "message_thread" && fact.data.phase === "response" && fact.data.correlationId === correlationId).map((fact) => fact.eventId)).toEqual([reply?.eventId]);
+	});
+
+	it("persists asynchronous settlement facts with the idle custom message", async () => {
+		const root = await rootSession();
+		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "saved answer" }] } });
+		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		const notification = root.pi.sendMessage.mock.calls.at(-1)?.[0];
+		expect(notification?.content).toContain("<agent_idle");
+		const facts = factsIn(notification);
+		expect(facts.some((fact) => fact.kind === "child_settled")).toBe(true);
+		expect(facts.some((fact) => fact.kind === "completion" && fact.data.output === "saved answer")).toBe(true);
 	});
 });
 
