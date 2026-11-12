@@ -79,7 +79,7 @@ Pi then delivers your first message in a new session as an autoflow invocation w
 
 ### Subagents
 
-The `subagents` extension provides long-lived subagent orchestration. Its tools spawn child pi sessions (optionally in their own working directories), communicate over channels, fork and resurrect sessions, and await with interrupts. A dashboard shows their status.
+The `subagents` extension provides long-lived subagent orchestration. Its tools spawn child pi sessions (optionally in their own working directories), communicate over channels, fork and resurrect sessions, and await with interrupts. A dashboard shows their status. When my-pi runs under Pimote, it publishes the hierarchy and semantic activity through a provider. Pimote can open an interactive view of an existing child session without creating a second runtime.
 
 Subagent calls and agent definitions accept model tier names (`cheap`, `medium`, `smart`, `frontier`). Map tiers to model IDs in `~/.pi/agent/model-tiers.json`, or `.pi/model-tiers.json` for a single project.
 
