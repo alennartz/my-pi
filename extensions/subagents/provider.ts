@@ -1467,6 +1467,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				if (!isRecord(candidate) || typeof candidate.operationId !== "string" || !isPresentationKind(candidate.kind) || typeof candidate.state !== "string") continue;
 				if (candidate.state !== "complete" && candidate.state !== "error" && candidate.state !== "aborted") continue;
 				if (!isRecord(candidate.data) || (candidate.source !== "tool" && candidate.source !== "custom_entry")) continue;
+				if (candidate.data.operation !== candidate.kind && candidate.data.operation !== "protocol_error") continue;
 				if (candidate.source === "tool" && (!isRecord(candidate.placement) || typeof candidate.placement.toolCallId !== "string" || typeof candidate.placement.contentIndex !== "number")) continue;
 				if (candidate.source === "custom_entry" && candidate.placement !== undefined && (!isRecord(candidate.placement) || typeof candidate.placement.entryId !== "string")) continue;
 				const payload = candidate as unknown as PersistedSubagentContent;
