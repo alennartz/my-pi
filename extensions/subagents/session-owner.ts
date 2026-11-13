@@ -1525,9 +1525,10 @@ class SubagentSessionOwner {
 
 	private persistAbortedPresentation(content: readonly PersistedSubagentContent[]): void {
 		if (content.length === 0) return;
+		const customContent = content.map(({ placement: _placement, ...item }) => ({ ...item, source: "custom_entry" as const }));
 		try {
 			this.pi.sendMessage(
-				{ customType: "subagents", content: "", display: true, details: { subagentContent: [...content] } },
+				{ customType: "subagents", content: "", display: true, details: { subagentContent: customContent } },
 				{ deliverAs: "nextTurn" },
 			);
 		} catch {

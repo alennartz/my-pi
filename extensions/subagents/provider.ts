@@ -763,6 +763,13 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const retired = retiredIncarnations.get(key) ?? new Set<string>();
 		retired.add(identity.incarnation);
 		retiredIncarnations.set(key, retired);
+		const prefix = `${key}:`;
+		for (const operationKey of [...presentationOperations]) {
+			if (operationKey.startsWith(prefix)) presentationOperations.delete(operationKey);
+		}
+		for (const operationKey of [...activeOperations.keys()]) {
+			if (operationKey.startsWith(prefix)) activeOperations.delete(operationKey);
+		}
 	}
 
 	function projectWaiting(path: AgentPath, operational: AgentNodeSnapshot["operational"]): readonly AgentPath[] {

@@ -1093,7 +1093,7 @@ describe("semantic facts on native messages", () => {
 		const persisted = root.pi.sendMessage.mock.calls
 			.map(([message]) => message)
 			.find((message) => message.details?.subagentContent?.some((item: any) => item.operationId === "aborted-send"));
-		expect(persisted).toMatchObject({ customType: "subagents", details: { subagentContent: [expect.objectContaining({ state: "aborted", source: "tool", kind: "send" })] } });
+		expect(persisted).toMatchObject({ customType: "subagents", details: { subagentContent: [expect.objectContaining({ state: "aborted", source: "custom_entry", kind: "send" })] } });
 	});
 
 	it("persists a rejected response on the native send error result", async () => {
