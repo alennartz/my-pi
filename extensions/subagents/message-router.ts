@@ -32,6 +32,14 @@ export type RoutedMessagePhase = {
 	toolCallId?: string;
 };
 
+/** Router-local response body progress. Correlation IDs stop at this seam. */
+export type RoutedResponseProgress = {
+	from: string;
+	to: string;
+	correlationId: string;
+	delta: string;
+};
+
 /** The response observed by the sender of a routed message. */
 export type RoutedResponse =
 	| { type: "response"; message: string }
@@ -60,6 +68,8 @@ export interface MessagePort {
 	setSemanticToolCall?(toolCallId: string | undefined, publishPhase?: (event: RoutedMessagePhase) => void): void;
 	/** Only the endpoint addressed by the correlation may respond. */
 	respond(correlationId: string, message: string): Promise<void>;
+	/** Forward response-body progress to the blocked sender without completing it. */
+	responseProgress?(correlationId: string, delta: string): Promise<void>;
 	/** Reject a pending request from its addressed endpoint (optional adapter seam). */
 	reject?(correlationId: string, error: string): Promise<void>;
 	detach(correlationId: string): void;
@@ -74,6 +84,8 @@ export interface MessageRouterOptions {
 	onBlockingSendEnd?: (from: string, correlationId: string) => void;
 	/** Transport phases feed the owning semantic fact bus. */
 	onMessagePhase?: (event: RoutedMessagePhase) => void;
+	/** Router-local response-body progress; never part of the SDK presentation feed. */
+	onResponseProgress?: (event: RoutedResponseProgress) => void;
 }
 
 interface Endpoint {
