@@ -563,8 +563,9 @@ describe("child-scoped extension routing", () => {
 		uplink.emit({ from: "parent", message: "continue", responseExpected: false });
 
 		const [message] = pi.sendMessage.mock.calls;
-		expect(message[0]).toMatchObject({ content: expect.stringContaining("continue") });
-		expect(message[0]).not.toHaveProperty("details");
+		expect(message[0]).toMatchObject({ customType: "subagents", content: expect.stringContaining("continue") });
+		expect((message[0] as any).details?.subagentContent).toHaveLength(1);
+		expect((message[0] as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "send", data: { operation: "send", request: "continue" } });
 	});
 
 	it("keeps child notifications local after session shutdown and renders the scoped model catalog", async () => {
@@ -874,8 +875,9 @@ describe("semantic facts on native messages", () => {
 			await child.handlers.get("session_start")?.({ reason }, ctx);
 			uplink.emit({ from: "parent", message: reason, responseExpected: false });
 			const notification = child.pi.sendMessage.mock.calls.at(-1)?.[0];
-			expect(notification).toMatchObject({ content: serializeAgentMessage({ from: "parent", content: reason, responseExpected: false }) });
-			expect(notification).not.toHaveProperty("details");
+			expect(notification).toMatchObject({ customType: "subagents", content: serializeAgentMessage({ from: "parent", content: reason, responseExpected: false }) });
+			expect((notification as any).details?.subagentContent).toHaveLength(1);
+			expect((notification as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "send", data: { operation: "send", request: reason } });
 			await child.handlers.get("session_shutdown")?.({}, ctx);
 		}
 	});

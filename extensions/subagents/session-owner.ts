@@ -449,11 +449,18 @@ class SessionTurnCoordinator {
 						continue;
 					}
 					flushCompletionBatch();
-					if (typeof (pi as any).sendUserMessage === "function") {
-						(pi as any).sendUserMessage(entry.xml, { deliverAs: deferred ? "nextTurn" : "followUp" });
-						continue;
-					}
-					pi.sendMessage({ customType: "subagents", content: entry.xml, display: true }, { ...(deferred ? { deliverAs: "nextTurn" } : { triggerTurn: true }) });
+					const details = entry.subagentContent && entry.subagentContent.length > 0
+						? { subagentContent: entry.subagentContent }
+						: undefined;
+					pi.sendMessage(
+						{
+							customType: "subagents",
+							content: entry.xml,
+							display: true,
+							...(details ? { details } : {}),
+						},
+						{ ...(deferred ? { deliverAs: "nextTurn" } : { triggerTurn: true }) },
+					);
 				}
 				flushCompletionBatch();
 			},
@@ -543,8 +550,13 @@ class SessionTurnCoordinator {
 		this.activeGate?.stop();
 	}
 
-	queueNotification(content: string, source: "local" | "uplink", semantic?: SubagentSemanticFact | readonly SubagentSemanticFact[]): void {
-		this.queue.queue(content, source, undefined, semantic);
+	queueNotification(
+		content: string,
+		source: "local" | "uplink",
+		semantic?: SubagentSemanticFact | readonly SubagentSemanticFact[],
+		subagentContent?: readonly PersistedSubagentContent[],
+	): void {
+		this.queue.queue(content, source, undefined, semantic, subagentContent);
 	}
 
 	setParentBusy(busy: boolean, options?: { flush?: boolean }): void {
@@ -1090,6 +1102,7 @@ class IncomingMessageState {
 		private readonly turns: SessionTurnCoordinator,
 		private readonly onMessage?: (message: RoutedMessage, source: "local" | "uplink") => SubagentSemanticFact,
 		private readonly onResponse?: (event: RoutedMessagePhase, request: RoutedMessage, source: "local" | "uplink") => SubagentSemanticFact,
+		private readonly onPresentation?: (message: RoutedMessage) => PersistedSubagentContent,
 	) {}
 
 	subscribeUplink(port: MessagePort): void {
@@ -1118,7 +1131,8 @@ class IncomingMessageState {
 		}
 		const semantic = this.onMessage?.(message, source);
 		if (message.responseExpected && message.correlationId) this.correlationMessages.set(message.correlationId, { message, source });
-		this.turns.queueNotification(content, source, semantic);
+		const presentation = this.onPresentation?.(message);
+		this.turns.queueNotification(content, source, semantic, presentation ? [presentation] : undefined);
 		if (this.turns.isWaiting) this.turns.resolveWait("message", semantic);
 	}
 
@@ -1302,6 +1316,7 @@ class SubagentSessionOwner {
 	private readonly semanticEvents: SemanticFactBus;
 	private readonly turns: SessionTurnCoordinator;
 	private readonly incomingMessages: IncomingMessageState;
+	private incomingPresentationSequence = 0;
 	private readonly startReady: Promise<void>;
 	private resolveStartReady!: () => void;
 	private rejectStartReady!: (error: unknown) => void;
@@ -1341,6 +1356,7 @@ class SubagentSessionOwner {
 			(event, request, source) => this.publishRoutedMessage(event, {
 				from: this.scopePath(), to: this.pathForEndpoint(request.from, source),
 			}),
+			(message) => this.incomingPresentationContent(message),
 		);
 		this.startReady = new Promise<void>((resolve, reject) => {
 			this.resolveStartReady = resolve;
@@ -1807,6 +1823,21 @@ class SubagentSessionOwner {
 			phase: event.phase,
 			...(event.error !== undefined ? { error: event.error } : {}),
 		}, this.nativeRefs(event.toolCallId, event.toolCallId ? "tool_call" : "lifecycle"));
+	}
+
+	private incomingPresentationContent(message: RoutedMessage): PersistedSubagentContent {
+		return {
+			operationId: `incoming:${this.currentSessionId()}:${++this.incomingPresentationSequence}`,
+			kind: "send",
+			state: "complete",
+			source: "custom_entry",
+			data: {
+				operation: "send",
+				to: this.scopePath(),
+				request: message.message,
+				response: "",
+			},
+		};
 	}
 
 	private publishIncomingMessage(message: RoutedMessage, source: "local" | "uplink"): SubagentSemanticFact {
