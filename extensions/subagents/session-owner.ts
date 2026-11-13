@@ -11,7 +11,8 @@ import { Type } from "typebox";
 import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
 import { answerActivity } from "@pimote/sdk/activity";
 import { registerProvider } from "@pimote/sdk/subagents";
-import type { PersistedSubagentContent, SubagentFiniteData } from "@pimote/sdk/subagents";
+import type { PersistedSubagentContent } from "@pimote/sdk/subagents";
+import { normalizeSavedPresentationData } from "./presentation-data.js";
 import {
 	getOrCreateSessionTreeStore,
 	registerSessionTreeStore,
@@ -61,13 +62,13 @@ import { modelDisplayName } from "./status-display.js";
 import { formatOverrideNote } from "./tool-result.js";
 import { truncateForModel } from "../../lib/truncate.ts";
 import {
-	completionDataFor,
 	formatUsageLine,
 	isZeroUsage,
 	lifecycleStatus,
 	statusData,
 	sumAgentUsage,
 	toPiUsage,
+	type AwaitResultData,
 	type InterruptResultData,
 	type ModelsResultData,
 	type ResurrectResultData,
@@ -76,6 +77,7 @@ import {
 	type TeardownAgentData,
 	type TeardownResultData,
 	type AgentRefData,
+	AwaitResultSchema,
 	InterruptResultSchema,
 	ModelsResultSchema,
 	ResurrectResultSchema,
@@ -183,9 +185,8 @@ interface SemanticOwnerOptions {
 
 type DelegationPresentationChild = Readonly<{ path: AgentPath; task: string; persona?: string }>;
 
-interface AwaitResult {
+interface AwaitResult extends AwaitResultData {
 	text: string;
-	agents: AgentRefData[];
 	semanticEvents?: readonly SubagentSemanticFact[];
 	subagentContent?: readonly PersistedSubagentContent[];
 }
@@ -424,7 +425,7 @@ class SessionTurnCoordinator {
 		primary: readonly AgentRefData[],
 		additional: readonly AgentRefData[],
 	): AgentRefData[] {
-		const merged = new Map<string, AgentCompleteData>();
+		const merged = new Map<string, AgentRefData>();
 		for (const agent of primary) merged.set(agent.id, agent);
 		for (const agent of additional) if (!merged.has(agent.id)) merged.set(agent.id, agent);
 		return [...merged.values()];
@@ -715,6 +716,7 @@ class SessionTurnCoordinator {
 		state.resolve({
 			...drained,
 			agents,
+			...(outcome.kind === "interrupted" ? { interrupted: true } : {}),
 			...(semanticEvents.length > 0 ? { semanticEvents } : {}),
 			...(drained.subagentContent && drained.subagentContent.length > 0 ? { subagentContent: drained.subagentContent } : {}),
 		});
@@ -787,9 +789,9 @@ class SessionTurnCoordinator {
 				"then call await_agents again if you still need to wait.";
 			const drained = this.queue.drainDetailed();
 			const released = this.publishAwaitRelease(ids, manager, semantic, [], "message");
-			return this.truncatedWaitResult([drained.text, notice].filter(Boolean).join("\n"), drained.agents, [
+			return this.truncatedWaitResult([drained.text, notice].filter(Boolean).join("\n"), this.mergeCompletionAgents(drained.agents, this.currentAwaitAgents(ids, manager)), [
 				...(drained.semanticEvents ?? []), ...(released ? [released] : []),
-			], drained.subagentContent);
+			], drained.subagentContent, { interrupted: true, error: `Cannot wait: ${blocked.map((pending) => pending.from).join(", ")} must receive your response before settling.` });
 		}
 		if (this.waitState) throw new Error("Another await_agents call is already active.");
 		const requested = ids
@@ -867,12 +869,13 @@ class SessionTurnCoordinator {
 					state.abortCleanup = () => signal.removeEventListener("abort", onAbort);
 				}
 			});
-			const agents = this.mergeCompletionAgents(result.agents, completionDataFor(ids, manager));
+			const agents = this.mergeCompletionAgents(result.agents, this.currentAwaitAgents(ids, manager));
 			return this.truncatedWaitResult(
 				result.text || "All specified agents have completed. No pending notifications.",
 				agents,
 				result.semanticEvents,
 				result.subagentContent,
+				{ interrupted: result.interrupted, error: result.error },
 			);
 		} catch (error: any) {
 			if (error?.message === "Aborted") throw new Error("Wait cancelled.");
@@ -1003,15 +1006,32 @@ class SessionTurnCoordinator {
 		};
 	}
 
+	private currentAwaitAgents(ids: readonly string[], manager: SubagentManager): AgentRefData[] {
+		return ids.map((id) => {
+			const status = manager.getAgentStatus(id);
+			const sessionId = manager.getSessionId(id);
+			return {
+				id,
+				status: status?.state ?? "idle",
+				...(status?.lastOutput !== undefined ? { output: status.lastOutput } : {}),
+				...(status?.lastError !== undefined ? { error: status.lastError } : {}),
+				...(sessionId !== undefined ? { sessionId } : {}),
+			};
+		});
+	}
+
 	private async truncatedWaitResult(
 		text: string,
 		agents: AgentRefData[],
 		semanticEvents?: readonly SubagentSemanticFact[],
 		subagentContent?: readonly PersistedSubagentContent[],
+		outcome: Pick<AwaitResult, "interrupted" | "error"> = {},
 	): Promise<AwaitResult> {
 		return {
 			text: (await truncateForModel(text)).text,
 			agents,
+			...(outcome.interrupted === true ? { interrupted: true } : {}),
+			...(outcome.error !== undefined ? { error: outcome.error } : {}),
 			...(semanticEvents?.length ? { semanticEvents } : {}),
 			...(subagentContent && subagentContent.length > 0 ? { subagentContent } : {}),
 		};
@@ -1129,7 +1149,7 @@ class IncomingMessageState {
 		private readonly turns: SessionTurnCoordinator,
 		private readonly onMessage?: (message: RoutedMessage, source: "local" | "uplink") => SubagentSemanticFact,
 		private readonly onResponse?: (event: RoutedMessagePhase, request: RoutedMessage, source: "local" | "uplink") => SubagentSemanticFact,
-		private readonly onPresentation?: (message: RoutedMessage) => PersistedSubagentContent,
+		private readonly onPresentation?: (message: RoutedMessage, source: "local" | "uplink") => PersistedSubagentContent,
 	) {}
 
 	subscribeUplink(port: MessagePort): void {
@@ -1158,7 +1178,7 @@ class IncomingMessageState {
 		}
 		const semantic = this.onMessage?.(message, source);
 		if (message.responseExpected && message.correlationId) this.correlationMessages.set(message.correlationId, { message, source });
-		const presentation = this.onPresentation?.(message);
+		const presentation = this.onPresentation?.(message, source);
 		this.turns.queueNotification(content, source, semantic, presentation ? [presentation] : undefined);
 		if (this.turns.isWaiting) this.turns.resolveWait("message", semantic);
 	}
@@ -1387,7 +1407,7 @@ class SubagentSessionOwner {
 			(event, request, source) => this.publishRoutedMessage(event, {
 				from: this.scopePath(), to: this.pathForEndpoint(request.from, source),
 			}),
-			(message) => this.incomingPresentationContent(message),
+			(message, source) => this.incomingPresentationContent(message, source),
 		);
 		this.startReady = new Promise<void>((resolve, reject) => {
 			this.resolveStartReady = resolve;
@@ -1553,6 +1573,7 @@ class SubagentSessionOwner {
 					...(event.structuredContent !== undefined ? { structuredContent: event.structuredContent } : {}),
 					...(event.details !== undefined ? { details: event.details } : {}),
 					...(event.content !== undefined ? { content: event.content } : {}),
+					...(event.usage !== undefined ? { usage: event.usage } : {}),
 				};
 		const customContent = [
 			this.persistedCustomContent(event.details),
@@ -1571,6 +1592,7 @@ class SubagentSessionOwner {
 			path: this.scopePath(),
 			result,
 			isError: event.isError === true,
+			parameters: event.input,
 			targetPath: this.semanticAdapterTarget(event.toolCallId),
 		});
 		if (events.length === 0) return;
@@ -1898,7 +1920,7 @@ class SubagentSessionOwner {
 		}, this.nativeRefs(event.toolCallId, event.toolCallId ? "tool_call" : "lifecycle"));
 	}
 
-	private incomingPresentationContent(message: RoutedMessage): PersistedSubagentContent {
+	private incomingPresentationContent(message: RoutedMessage, source: "local" | "uplink"): PersistedSubagentContent {
 		return {
 			operationId: `incoming:${this.currentSessionId()}:${++this.incomingPresentationSequence}`,
 			kind: "send",
@@ -1906,9 +1928,12 @@ class SubagentSessionOwner {
 			source: "custom_entry",
 			data: {
 				operation: "send",
-				to: this.scopePath(),
-				request: message.message,
-				response: "",
+				result: {
+					to: this.scopePath(),
+					from: this.pathForEndpoint(message.from, source),
+					message: message.message,
+					responseExpected: message.responseExpected,
+				},
 			},
 		};
 	}
@@ -1927,10 +1952,12 @@ class SubagentSessionOwner {
 			source: "custom_entry",
 			data: {
 				operation: "send",
-				to: [...to],
-				request,
-				response: text,
-				...(response.type === "error" ? { error: response.error } : {}),
+				result: {
+					to: [...to],
+					message: request,
+					response: text,
+					...(response.type === "error" ? { error: response.error } : {}),
+				},
 			},
 		};
 	}
@@ -1974,7 +2001,12 @@ class SubagentSessionOwner {
 				type: "snapshot" as const,
 				...base,
 				state: item.state,
-				data: item.data as SubagentFiniteData,
+				data: normalizeSavedPresentationData({
+					data: item.data as Record<string, unknown>,
+					operation: kind,
+					path: this.scopePath(),
+					toolBacked: "parameters" in item.data || (kind !== "send" && kind !== "respond" && kind !== "completion"),
+				}),
 			};
 			this.semanticEvents.publishPresentation?.(event);
 		}
@@ -2188,7 +2220,7 @@ class SubagentSessionOwner {
 				const delta = semantic.type === "delta"
 					? semantic.data.delta
 					: semantic.type === "start" && semantic.data.operation === "respond"
-						? semantic.data.body
+						? (typeof semantic.data.parameters.message === "string" ? semantic.data.parameters.message : undefined)
 						: undefined;
 				if (!delta) continue;
 				try {
@@ -2252,9 +2284,21 @@ class SubagentSessionOwner {
 	private async handleToolExecutionStart(event: any, ctx: ExtensionContext): Promise<void> {
 		const session = await this.waitForActiveSession();
 		session.turns.trackToolStart(event.toolCallId);
-		if (this.scope.kind !== "root") return;
 		const raw = event as any;
 		const toolName = raw.toolName ?? raw.tool?.name;
+		const argumentsValue = raw.args ?? raw.input;
+		if (typeof toolName === "string" && argumentsValue && typeof argumentsValue === "object" && !Array.isArray(argumentsValue)) {
+			this.activePresentationCalls.add(event.toolCallId);
+			this.recordPresentationEvents(this.semanticAdapter.acceptToolExecutionStart({
+				toolCallId: event.toolCallId,
+				contentIndex: this.toolCallIndexes.get(event.toolCallId) ?? 0,
+				toolName,
+				path: this.scopePath(),
+				targetPath: this.semanticAdapterTarget(event.toolCallId),
+				arguments: argumentsValue,
+			}));
+		}
+		if (this.scope.kind !== "root") return;
 		const current = session.registry.getSnapshot([])!.operational;
 		this.updateRootOperational({
 			lastActivity: toolName
@@ -2581,7 +2625,7 @@ class SubagentSessionOwner {
 			name: "await_agents",
 			label: "Await Agents",
 			exposure: "direct",
-			outputSchema: SpawnResultSchema,
+			outputSchema: AwaitResultSchema,
 			description: "Returns the final output of a completed agent, or the first message sent to you. Use agents to narrow the wait.",
 			promptSnippet: "Wait for named agents to finish or send a message. Omit agents to wait on all.",
 			promptGuidelines: [
@@ -3203,7 +3247,11 @@ class SubagentSessionOwner {
 				invocationId: toolCallId ?? started.eventId,
 				refs,
 			});
-			const output = this.structuredTextResult(result.text, { agents: result.agents }, [started, ...(result.semanticEvents ?? [])]);
+			const output = this.structuredTextResult(result.text, {
+				agents: result.agents,
+				...(result.interrupted === true ? { interrupted: true } : {}),
+				...(result.error !== undefined ? { error: result.error } : {}),
+			}, [started, ...(result.semanticEvents ?? [])]);
 			const subagentContent = result.subagentContent?.filter((item) => item.kind !== "completion") ?? [];
 			if (subagentContent.length === 0) return output;
 			return {

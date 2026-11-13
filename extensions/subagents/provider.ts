@@ -34,6 +34,7 @@ import type {
 	SubagentFiniteEvent,
 } from "@pimote/sdk/subagents";
 import type { SemanticAdapterEvent } from "./semantic-adapter.js";
+import { normalizeSavedPresentationData } from "./presentation-data.js";
 
 /** Opaque provider epoch plus the last ordered event sequence observed in it. */
 export type FeedCursor = Readonly<{
@@ -697,7 +698,7 @@ function isPersistedPresentationContent(value: unknown): value is PersistedSubag
 	return isRecord(value.placement) && typeof value.placement.entryId === "string";
 }
 
-function restoreAwaitSettlements(payload: PersistedSubagentContent, semantic: unknown): PersistedSubagentContent {
+function restoreAwaitResult(payload: PersistedSubagentContent, semantic: unknown): PersistedSubagentContent {
 	if (payload.source !== "tool" || payload.kind !== "await" || payload.data.operation !== "await") return payload;
 	const result = payload.data.result;
 	if (!isRecord(result) || !Array.isArray(result.statuses)) return payload;
@@ -705,8 +706,18 @@ function restoreAwaitSettlements(payload: PersistedSubagentContent, semantic: un
 	const paths = new Set(result.statuses.map((status) => pathKey(status.path)));
 	const restored: SubagentAwaitStatus[] = [];
 	const facts = Array.isArray(semantic) ? semantic : [semantic];
+	let interrupted = result.interrupted;
+	let error = result.error;
 	for (const fact of facts) {
-		if (!isRecord(fact) || fact.kind !== "child_settled" || !isRecord(fact.data) || !Array.isArray(fact.data.statuses)) continue;
+		if (!isRecord(fact) || !isRecord(fact.data)) continue;
+		if (fact.data.invocationId === payload.operationId || fact.data.invocationId === payload.placement.toolCallId) {
+			if (fact.kind === "await_interrupted" && interrupted === undefined) interrupted = true;
+			if (fact.kind === "await_released" && fact.data.reason === "message") {
+				interrupted ??= true;
+				error ??= "Cannot wait: requested agents must receive your response before settling.";
+			}
+		}
+		if (fact.kind !== "child_settled" || !Array.isArray(fact.data.statuses)) continue;
 		for (const status of fact.data.statuses) {
 			if (!isRecord(status) || !validPath(status.path) || status.path.length === 0) continue;
 			const state = status.state;
@@ -723,8 +734,13 @@ function restoreAwaitSettlements(payload: PersistedSubagentContent, semantic: un
 			});
 		}
 	}
-	if (restored.length === 0) return payload;
-	return { ...payload, data: { ...payload.data, result: { ...result, statuses: [...result.statuses, ...restored] } } };
+	if (restored.length === 0 && interrupted === result.interrupted && error === result.error) return payload;
+	return { ...payload, data: { ...payload.data, result: {
+		...result,
+		statuses: [...result.statuses, ...restored],
+		...(interrupted !== undefined ? { interrupted } : {}),
+		...(error !== undefined ? { error } : {}),
+	} } };
 }
 
 /** Provider feed, hierarchy projection, and borrowed runtime lease owner. */
@@ -930,13 +946,15 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			if ("delta" in delta) {
 				return {
 					...prior,
-					...(delta.field === "request" ? { request: prior.request + delta.delta } : { response: prior.response + delta.delta }),
+					...(delta.field === "request"
+						? { parameters: { ...prior.parameters, message: String(prior.parameters.message ?? "") + delta.delta } }
+						: { result: { ...prior.result, response: prior.result.response + delta.delta } }),
 				};
 			}
-			return { ...prior, phase: delta.phase };
+			return { ...prior, result: { ...prior.result, phase: delta.phase } };
 		}
-		if (prior.operation === "respond" && delta.operation === "respond") return { ...prior, body: prior.body + delta.delta };
-		if (prior.operation === "await" && delta.operation === "await") return { ...prior, statuses: delta.statuses };
+		if (prior.operation === "respond" && delta.operation === "respond") return { ...prior, parameters: { ...prior.parameters, message: String(prior.parameters.message ?? "") + delta.delta } };
+		if (prior.operation === "await" && delta.operation === "await") return { ...prior, result: { ...prior.result, statuses: delta.statuses } };
 		return prior;
 	}
 
@@ -1504,6 +1522,13 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		} catch {
 			entries = [];
 		}
+		const toolArguments = new Map<string, unknown>();
+		for (const entry of entries) {
+			if (!isRecord(entry) || !isRecord(entry.message) || !Array.isArray(entry.message.content)) continue;
+			for (const part of entry.message.content) {
+				if (isRecord(part) && part.type === "toolCall" && typeof part.id === "string") toolArguments.set(part.id, part.arguments);
+			}
+		}
 		const saved: Array<{ payload: PersistedSubagentContent; entryId?: string }> = [];
 		for (const entry of entries) {
 			const candidateEntry = isRecord(entry) ? entry : {};
@@ -1518,7 +1543,19 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			for (const candidate of details.subagentContent) {
 				if (!isPersistedPresentationContent(candidate)) continue;
 				if (candidate.kind === "completion" && (candidate.source !== "custom_entry" || !customMessage)) continue;
-				const payload = awaitResult ? restoreAwaitSettlements(candidate, details.semantic) : candidate;
+				const repaired = awaitResult ? restoreAwaitResult(candidate, details.semantic) : candidate;
+				const argumentsValue = toolArguments.get(candidate.source === "tool" ? candidate.placement.toolCallId : candidate.operationId);
+				const toolBacked = candidate.source === "tool" || isRecord(repaired.data.parameters) || argumentsValue !== undefined
+					|| (candidate.kind !== "send" && candidate.kind !== "respond" && candidate.kind !== "completion");
+				const data = normalizeSavedPresentationData({
+					data: repaired.data as unknown as Record<string, unknown>,
+					operation: candidate.kind,
+					path: input.path,
+					toolBacked,
+					arguments: argumentsValue,
+					...(candidate.source === "tool" ? { nativeResult: messageRecord } : {}),
+				});
+				const payload = { ...repaired, data };
 				saved.push({ payload, ...(entryId !== undefined ? { entryId } : {}) });
 			}
 		}

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Check } from "typebox/value";
 import type { AgentPath } from "./agent-path.js";
 import type { AgentSessionRegistry } from "./agent-session-registry.js";
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
@@ -69,8 +70,12 @@ describe("createSubagentsExtension root scope", () => {
 
 		await factory(pi as any);
 
-		const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
+		const tools = pi.registerTool.mock.calls.map(([tool]) => tool);
+		const names = tools.map((tool) => tool.name);
 		expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
+		const awaitAgents = tools.find((tool) => tool.name === "await_agents");
+		expect(Check(awaitAgents.outputSchema, { agents: [], interrupted: true, error: "Cannot wait" })).toBe(true);
+		expect(Check(awaitAgents.outputSchema, { agents: [], interrupted: "true" })).toBe(false);
 	});
 
 	it("waits for session_start instead of constructing state early", async () => {

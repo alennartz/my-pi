@@ -565,7 +565,7 @@ describe("child-scoped extension routing", () => {
 		const [message] = pi.sendMessage.mock.calls;
 		expect(message[0]).toMatchObject({ customType: "subagents", content: expect.stringContaining("continue") });
 		expect((message[0] as any).details?.subagentContent).toHaveLength(1);
-		expect((message[0] as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "send", data: { operation: "send", request: "continue" } });
+		expect((message[0] as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "send", data: { operation: "send", result: expect.objectContaining({ message: "continue" }) } });
 	});
 
 	it("keeps child notifications local after session shutdown and renders the scoped model catalog", async () => {
@@ -877,7 +877,7 @@ describe("semantic facts on native messages", () => {
 			const notification = child.pi.sendMessage.mock.calls.at(-1)?.[0];
 			expect(notification).toMatchObject({ customType: "subagents", content: serializeAgentMessage({ from: "parent", content: reason, responseExpected: false }) });
 			expect((notification as any).details?.subagentContent).toHaveLength(1);
-			expect((notification as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "send", data: { operation: "send", request: reason } });
+			expect((notification as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "send", data: { operation: "send", result: expect.objectContaining({ message: reason }) } });
 			await child.handlers.get("session_shutdown")?.({}, ctx);
 		}
 	});
@@ -1049,11 +1049,17 @@ describe("semantic facts on native messages", () => {
 			expect.objectContaining({ path: ["scout"], output: "scout output", error: "scout failure" }),
 		]) } } });
 		if (interrupted) {
+			expect(result.structuredContent.interrupted).toBe(true);
+			expect(result.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "guard", status: "running" }));
+			expect(awaits[0]).toMatchObject({ data: { result: { interrupted: true, statuses: expect.arrayContaining([expect.objectContaining({ path: ["guard"], state: "running" })]) } } });
 			expect(result.content[0].text).toContain("need a decision");
 			expect(details.subagentContent).toContainEqual(expect.objectContaining({
-				kind: "send", source: "custom_entry", data: { operation: "send", to: [], request: "need a decision", response: "" },
+				kind: "send", source: "custom_entry", data: { operation: "send", result: { to: [], from: ["guard"], message: "need a decision", responseExpected: false } },
 			}));
-			expect(finals).toContainEqual(expect.objectContaining({ kind: "send", data: expect.objectContaining({ request: "need a decision" }) }));
+			expect(finals).toContainEqual(expect.objectContaining({ kind: "send", data: expect.objectContaining({ result: expect.objectContaining({ message: "need a decision" }) }) }));
+		} else {
+			expect(result.structuredContent.interrupted).not.toBe(true);
+			expect(awaits[0]).not.toMatchObject({ data: { result: { interrupted: true } } });
 		}
 	});
 
@@ -1084,6 +1090,9 @@ describe("semantic facts on native messages", () => {
 		const result = await root.tools.get("await_agents")!.execute("refused-await", { agents: ["worker"] }, undefined, undefined, root.ctx);
 		expect(result.content[0].text).toContain("Cannot wait");
 		expect(result.content[0].text).toContain("queued scout output");
+		expect(result.structuredContent.interrupted).toBe(true);
+		expect(result.structuredContent.error).toContain("Cannot wait");
+		expect(result.structuredContent.error).not.toContain(receipt.correlationId);
 		expect(result.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "scout", output: "queued scout output", sessionId: managed.created[1].child.sessionId }));
 		expect((result.details.subagentContent ?? []).filter((item: any) => item.kind === "completion")).toEqual([]);
 		expect(factsIn(result).find((fact) => fact.kind === "await_released")).toMatchObject({ data: { invocationId: "refused-await", reason: "message" } });
@@ -1118,6 +1127,21 @@ describe("semantic facts on native messages", () => {
 		root.worker.hooks.onEvent({ type: "agent_settled" });
 		const notification = root.pi.sendMessage.mock.calls.at(-1)?.[0];
 		expect(factsIn(notification).find((fact) => fact.kind === "completion")).toMatchObject({ data: { delivery: "asynchronous" } });
+	});
+
+	it.each([{}, { agents: ["worker"] }])("starts await from authoritative execution arguments, all-or-named=%j", async (parameters) => {
+		const root = await rootSession();
+		await root.handlers.get("message_update")?.({ type: "message_update", assistantMessageEvent: {
+			type: "toolcall_start", contentIndex: 0, toolCall: { id: "await-deferred", name: "await_agents", arguments: '{"agents":[' },
+		} }, root.ctx);
+		expect(root.presentation.filter((event) => event.kind === "await")).toEqual([]);
+		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "await-deferred", args: parameters }, root.ctx);
+		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "start", kind: "await", data: {
+			operation: "await", parameters: "agents" in parameters ? { agents: [["worker"]] } : {}, result: { statuses: [] },
+		} }));
+		await root.handlers.get("agent_settled")?.({ type: "agent_settled", aborted: true }, root.ctx);
+		const persisted = root.pi.sendMessage.mock.calls.map(([message]) => message).find((message) => message.details?.subagentContent?.some((item: any) => item.operationId === "await-deferred"));
+		expect(persisted.details.subagentContent[0]).toMatchObject({ kind: "await", state: "aborted", data: { parameters: "agents" in parameters ? { agents: [["worker"]] } : {}, result: { statuses: [], interrupted: true } } });
 	});
 
 	it("persists an aborted presentation payload when no tool result arrives", async () => {
@@ -1167,7 +1191,7 @@ describe("semantic facts on native messages", () => {
 			kind: "send",
 			source: "custom_entry",
 			state: "complete",
-			data: { operation: "send", to: ["worker"], request: "question", response: "late answer" },
+			data: { operation: "send", result: { to: ["worker"], message: "question", response: "late answer" } },
 		}));
 	});
 

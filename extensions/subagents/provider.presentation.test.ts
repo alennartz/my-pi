@@ -38,10 +38,10 @@ function session(withSavedOperation: boolean): BorrowedAgentSession {
   return { sessionId: 'worker-session', messages: branch.map((entry) => entry.message), sessionManager: { getBranch: () => branch, getEntries: () => branch } } as unknown as BorrowedAgentSession;
 }
 
-async function rehydratedFinals(entries: readonly unknown[]) {
+async function rehydratedFinals(entries: readonly unknown[], path: readonly string[] = ['owner']) {
   const { provider } = fixture();
   const savedSession = { sessionId: 'saved-session', sessionManager: { getBranch: () => entries } } as unknown as BorrowedAgentSession;
-  await provider.rehydrate({ session: savedSession, path: ['owner'] });
+  await provider.rehydrate({ session: savedSession, path });
   const replay = provider.replay();
   provider.shutdown();
   if (replay.kind !== 'events') throw new Error('Expected replay');
@@ -76,7 +76,7 @@ describe('subagent presentation provider', () => {
     expect(replay.events).toEqual(observed);
     const finalEvents = replay.events.filter((event) => 'type' in event && event.type === 'subagent_snapshot_event');
     expect(finalEvents).toHaveLength(1);
-    expect(finalEvents[0]).toMatchObject({ target: { operationId: 'send-call', path: ['worker'], placement: { toolCallId: 'send-call', contentIndex: 1, entryId: 'assistant-entry' } }, data: { operation: 'send', to: ['worker'], request: 'Check config', response: 'All present' } });
+    expect(finalEvents[0]).toMatchObject({ target: { operationId: 'send-call', path: ['worker'], placement: { toolCallId: 'send-call', contentIndex: 1, entryId: 'assistant-entry' } }, data: { operation: 'send', parameters: { to: ['worker'], message: 'Check config' }, result: { response: 'All present' } } });
     expect(JSON.stringify(finalEvents)).not.toContain('correlationId');
     const sequences = replay.events.map((event) => event.cursor.sequence);
     expect(new Set(sequences).size).toBe(sequences.length);
@@ -91,7 +91,7 @@ describe('subagent presentation provider', () => {
       kind: 'send',
       path,
       placement: { toolCallId: 'same-call', contentIndex: 0 },
-      data: { operation: 'send', to: ['worker'], request: 'check', response: '', phase: 'sending' },
+      data: { operation: 'send', parameters: { to: ['worker'], message: 'check' }, result: { response: '', phase: 'sending' } },
     });
     start([]);
     start(['worker']);
@@ -104,7 +104,7 @@ describe('subagent presentation provider', () => {
       path: [],
       placement: { toolCallId: 'same-call', contentIndex: 0 },
       state: 'complete',
-      data: { operation: 'send', to: ['worker'], request: 'check', response: 'done' },
+      data: { operation: 'send', parameters: { to: ['worker'], message: 'check' }, result: { response: 'done' } },
     });
     expect(provider.snapshot().activeOperations.map((operation) => operation.target.path)).toEqual([['worker']]);
   });
@@ -119,7 +119,7 @@ describe('subagent presentation provider', () => {
       kind: 'send',
       path: [],
       placement: { toolCallId: 'noise', contentIndex: 0 },
-      data: { operation: 'send', to: ['worker'], request: 'noise', response: '', phase: 'sending' },
+      data: { operation: 'send', parameters: { to: ['worker'], message: 'noise' }, result: { response: '', phase: 'sending' } },
     });
     const before = provider.snapshot().cursor;
     await provider.rehydrate({ session: savedSession, path: ['worker'] });
@@ -153,8 +153,8 @@ describe('subagent presentation provider', () => {
     expect(events.filter((event) => event.target.kind === 'completion')).toEqual([]);
     const awaits = events.filter((event) => event.target.kind === 'await');
     expect(awaits).toHaveLength(1);
-    expect(awaits[0]).toMatchObject({ data: awaited.data });
-    if (interrupted) expect(events).toContainEqual(expect.objectContaining({ target: expect.objectContaining({ kind: 'send' }), data: incoming.data }));
+    expect(awaits[0]).toMatchObject({ data: { ...awaited.data, parameters: {} } });
+    if (interrupted) expect(events).toContainEqual(expect.objectContaining({ target: expect.objectContaining({ kind: 'send' }), data: { operation: 'send', result: { to: ['owner'], message: 'need a decision', response: '' } } }));
   });
 
   it('hydrates standalone completions only from actual subagents custom messages', async () => {
@@ -219,7 +219,121 @@ describe('subagent presentation provider', () => {
     const events = await rehydratedFinals([{
       type: 'custom_message', id: 'aborted-entry', customType: 'subagents', details: { subagentContent: [awaited] },
     }]);
-    expect(events).toEqual([expect.objectContaining({ target: expect.objectContaining({ kind: 'await' }), state: 'aborted', data: awaited.data })]);
+    expect(events).toEqual([expect.objectContaining({ target: expect.objectContaining({ kind: 'await' }), state: 'aborted', data: { ...awaited.data, parameters: {} } })]);
+  });
+
+  it.each([{}, { agents: ['worker'] }])('normalizes saved await targets from original arguments across replay: %j', async (parameters) => {
+    const events = await rehydratedFinals([
+      { type: 'message', id: 'call-entry', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'await-targets', name: 'await_agents', arguments: parameters }] } },
+      { type: 'message', id: 'result-entry', message: { role: 'toolResult', toolName: 'await_agents', toolCallId: 'await-targets', details: { subagentContent: [{
+        operationId: 'await-targets', kind: 'await', source: 'tool', state: 'aborted', placement: { toolCallId: 'await-targets', contentIndex: 0 },
+        data: { operation: 'await', result: { statuses: [], interrupted: true } },
+      }] } } },
+    ]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ data: { operation: 'await', parameters: 'agents' in parameters ? { agents: [['owner', 'worker']] } : {}, result: { statuses: [], interrupted: true } } });
+  });
+
+  it.each([
+    ['send', { to: 'worker', message: 'check', expectResponse: true }, { operation: 'send', to: ['owner', 'worker'], request: 'check', response: 'ready', deferred: false, metadata: { publicFlag: false } }],
+    ['respond', { correlationId: 'private', message: 'answer' }, { operation: 'respond', body: 'answer', error: 'refused' }],
+    ['delegation', { agents: [{ id: 'worker', task: 'inspect', persona: 'scout', model: 'smart', cwd: '/repo', channels: ['peer'] }] }, { operation: 'delegation', children: [{ path: ['owner', 'worker'], task: 'inspect', persona: 'scout', status: 'running' }] }],
+    ['interrupt', { agents: ['worker'] }, { operation: 'interrupt', result: { interrupted: [{ path: ['owner', 'worker'], output: 'done' }], pending: [], failed: [], metadata: { publicFlag: false } } }],
+    ['teardown', { agent: 'worker' }, { operation: 'teardown', result: { status: 'removed', affectedAgents: [{ path: ['owner', 'worker'], sessionId: 'saved', usageBaseline: { turns: 0 } }], metadata: { publicFlag: false } } }],
+    ['resurrect', { agents: [{ id: 'worker', sessionId: 'saved', task: 'continue', channels: ['peer'], model: 'smart' }] }, { operation: 'resurrect', result: { affectedAgents: [{ path: ['owner', 'worker'], sessionId: 'saved', state: 'running', metadata: { resumed: true } }], metadata: { publicFlag: false } } }],
+  ] as const)('normalizes saved flat %s payloads using complete original arguments', async (kind, parameters, data) => {
+    const toolName = kind === 'delegation' ? 'subagent' : kind;
+    const events = await rehydratedFinals([
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'saved-operation', name: toolName, arguments: parameters }] } },
+      { type: 'message', message: { role: 'toolResult', toolName, toolCallId: 'saved-operation', details: { subagentContent: [{
+        operationId: 'saved-operation', kind, state: 'complete', source: 'tool', placement: { toolCallId: 'saved-operation', contentIndex: 0 }, data,
+      }] } } },
+    ]);
+    expect(events).toHaveLength(1);
+    const normalized = events[0].data;
+    expect(Object.keys(normalized).sort()).toEqual(['operation', 'parameters', 'result']);
+    expect(normalized).toMatchObject({ operation: kind, parameters: kind === 'send' ? { ...parameters, to: ['owner', 'worker'] }
+      : kind === 'respond' ? { message: 'answer' } : kind === 'interrupt' ? { agents: [['owner', 'worker']] }
+      : kind === 'teardown' ? { agent: ['owner', 'worker'] } : parameters });
+    if (kind === 'send') expect(normalized).toMatchObject({ result: { response: 'ready', deferred: false, metadata: { publicFlag: false } } });
+    if (kind === 'respond') expect(normalized).toMatchObject({ result: { error: 'refused' } });
+    if (kind === 'delegation') expect(normalized).toMatchObject({ result: { children: [{ path: ['owner', 'worker'], status: 'running' }] } });
+    if (kind === 'teardown') expect(normalized).toMatchObject({ result: { affectedAgents: [{ usageBaseline: { turns: 0 } }] } });
+    if (kind === 'resurrect') expect(normalized).toMatchObject({ result: { affectedAgents: [{ metadata: { resumed: true } }] } });
+    expect(JSON.stringify(normalized)).not.toContain('private');
+  });
+
+  it.each(['settled', 'interrupted', 'refused'])('restores known saved await outcomes in the public result: %s', async (outcome) => {
+    const events = await rehydratedFinals([{ type: 'message', message: { role: 'toolResult', toolName: 'await_agents', toolCallId: 'saved-await', details: {
+      semantic: [{ kind: outcome === 'interrupted' ? 'await_interrupted' : 'await_released', data: { invocationId: 'saved-await', reason: outcome === 'settled' ? 'settled' : 'message', correlationId: 'private' } }],
+      subagentContent: [{ operationId: 'saved-await', kind: 'await', source: 'tool', state: 'complete', placement: { toolCallId: 'saved-await', contentIndex: 0 }, data: { operation: 'await', result: { statuses: [] } } }],
+    } } }]);
+    if (outcome === 'settled') expect(events[0].data).toEqual({ operation: 'await', parameters: {}, result: { statuses: [] } });
+    else expect(events[0].data).toMatchObject({ result: { interrupted: true } });
+    if (outcome === 'refused') expect(events[0].data).toMatchObject({ result: { error: expect.stringContaining('Cannot wait') } });
+    expect(JSON.stringify(events[0].data)).not.toContain('private');
+  });
+
+  it('restores saved native tool errors without exposing private reply identifiers', async () => {
+    const events = await rehydratedFinals([
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'saved-reply', name: 'respond', arguments: { correlationId: 'private-reply', message: 'answer' } }] } },
+      { type: 'message', message: { role: 'toolResult', toolName: 'respond', toolCallId: 'saved-reply', isError: true,
+        content: [{ type: 'text', text: 'No recorded origin for "private-reply".' }], details: { subagentContent: [{ operationId: 'saved-reply', kind: 'respond', state: 'error', source: 'tool', placement: { toolCallId: 'saved-reply', contentIndex: 0 }, data: { operation: 'respond', body: 'answer' } }] },
+      } },
+    ]);
+    expect(events[0].data).toMatchObject({ operation: 'respond', parameters: { message: 'answer' }, result: { isError: true, error: 'No recorded origin for "[redacted]".' } });
+    expect(JSON.stringify(events[0].data)).not.toContain('private-reply');
+  });
+
+  it.each(['delegation', 'teardown'])('restores complete public output fields from the native %s result', async (kind) => {
+    const path = ['owner', 'worker'];
+    const details = {
+      agents: [{ id: 'worker', status: 'running', usageBaseline: { turns: 0 }, metadata: { ready: true } }],
+      ...(kind === 'teardown' ? { affectedAgents: [{ path, sessionId: 'saved', state: 'idle', metadata: { retained: true } }] } : {}),
+      metadata: { publicFlag: false, correlation_id: 'private' },
+      subagentContent: [{ operationId: 'saved-output', kind, source: 'tool', state: 'complete', placement: { toolCallId: 'saved-output', contentIndex: 0 },
+        data: kind === 'delegation' ? { operation: kind, children: [{ path, task: 'inspect', persona: 'scout' }] }
+          : { operation: kind, result: { status: 'removed', affectedAgents: [{ path, sessionId: 'saved', state: 'idle' }] } },
+      }],
+    };
+    const events = await rehydratedFinals([{ type: 'message', message: { role: 'toolResult', toolName: kind === 'delegation' ? 'subagent' : kind, toolCallId: 'saved-output', details } }]);
+    expect(events[0].data).toMatchObject({ result: { metadata: { publicFlag: false } } });
+    if (kind === 'delegation') expect(events[0].data).toMatchObject({ result: { children: [{ path, task: 'inspect', persona: 'scout', status: 'running', usageBaseline: { turns: 0 }, metadata: { ready: true } }] } });
+    else expect(events[0].data).toMatchObject({ result: { agents: [{ path, usageBaseline: { turns: 0 } }], affectedAgents: [{ path, metadata: { retained: true } }] } });
+    expect(JSON.stringify(events[0].data)).not.toContain('private');
+  });
+
+  it('preserves canonical root paths and complete parameters through nested-scope hydration round trips', async () => {
+    const parameters = { to: [], message: 'to root', expectResponse: true, metadata: { publicFlag: false } };
+    const data = { operation: 'send', parameters, result: { from: [], response: 'reply', deferred: false, metadata: { source: 'root' } } };
+    const saved = (payloadData: unknown) => [
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'root-send', name: 'send', arguments: { to: 'parent', message: 'to root', expectResponse: true } }] } },
+      { type: 'message', message: { role: 'toolResult', toolName: 'send', toolCallId: 'root-send', details: { subagentContent: [{
+        operationId: 'root-send', kind: 'send', source: 'tool', state: 'complete', placement: { toolCallId: 'root-send', contentIndex: 0 }, data: payloadData,
+      }] } } },
+    ];
+    const first = await rehydratedFinals(saved(data), ['outer', 'inner']);
+    const second = await rehydratedFinals(saved(first[0].data), ['outer', 'inner']);
+    expect(first[0].data).toEqual(data);
+    expect(second[0].data).toEqual(data);
+  });
+
+  it('merges progressive data within the canonical active envelopes', () => {
+    const { provider, publishPresentation } = fixture();
+    const target = { operationId: 'send', kind: 'send' as const, path: [], placement: { toolCallId: 'send', contentIndex: 0 } };
+    publishPresentation({ ...target, type: 'start', data: { operation: 'send', parameters: { to: ['worker'], message: 'check', expectResponse: true }, result: { response: '', phase: 'sending' } } });
+    publishPresentation({ ...target, type: 'delta', data: { operation: 'send', field: 'request', delta: ' config' } });
+    publishPresentation({ ...target, type: 'delta', data: { operation: 'send', field: 'response', delta: 'ready' } });
+    publishPresentation({ ...target, type: 'delta', data: { operation: 'send', phase: 'responding' } });
+    expect(provider.snapshot().activeOperations[0].data).toEqual({ operation: 'send', parameters: { to: ['worker'], message: 'check config', expectResponse: true }, result: { response: 'ready', phase: 'responding' } });
+    publishPresentation({ ...target, operationId: 'respond', kind: 'respond', type: 'start', data: { operation: 'respond', parameters: { message: 'answer' }, result: { accepted: false } } });
+    publishPresentation({ ...target, operationId: 'respond', kind: 'respond', type: 'delta', data: { operation: 'respond', delta: ' now' } });
+    publishPresentation({ ...target, operationId: 'await', kind: 'await', type: 'start', data: { operation: 'await', parameters: { agents: [['worker']] }, result: { statuses: [] } } });
+    publishPresentation({ ...target, operationId: 'await', kind: 'await', type: 'delta', data: { operation: 'await', statuses: [{ path: ['worker'], state: 'running' }] } });
+    expect(provider.snapshot().activeOperations.map((operation) => operation.data)).toEqual(expect.arrayContaining([
+      { operation: 'respond', parameters: { message: 'answer now' }, result: { accepted: false } },
+      { operation: 'await', parameters: { agents: [['worker']] }, result: { statuses: [{ path: ['worker'], state: 'running' }] } },
+    ]));
   });
 
   it('does not invent a presentation operation when the native session has none', async () => {

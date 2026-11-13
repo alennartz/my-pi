@@ -60,8 +60,16 @@ export const SpawnResultSchema = Type.Object({
 	agents: Type.Array(AgentRefSchema),
 });
 
-/** Same shape as spawn/await results: the completion payload rides structuredContent. */
-export const AwaitResultSchema = SpawnResultSchema;
+export interface AwaitResultData extends SpawnResultData {
+	interrupted?: boolean;
+	error?: string;
+}
+
+export const AwaitResultSchema = Type.Object({
+	agents: Type.Array(AgentRefSchema),
+	interrupted: Type.Optional(Type.Boolean({ description: "A message or response requirement interrupted the wait" })),
+	error: Type.Optional(Type.String({ description: "Public reason the wait could not continue" })),
+});
 
 export interface SendResultData {
 	/** The peer's reply, or null when the wait was interrupted (the reply arrives later as a notification). */

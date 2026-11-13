@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { Check } from "typebox/value";
 import type { AgentStatus } from "./agent-set.js";
 import type { AgentCompleteData } from "./messages.js";
 import {
+	AwaitResultSchema,
 	completionDataFor,
 	formatUsageLine,
 	isZeroUsage,
@@ -27,6 +29,15 @@ function statusOf(overrides: Partial<AgentStatus> = {}): AgentStatus {
 		...overrides,
 	};
 }
+
+describe("AwaitResultSchema", () => {
+	it("declares optional interruption and public error fields", () => {
+		expect(Check(AwaitResultSchema, { agents: [] })).toBe(true);
+		expect(Check(AwaitResultSchema, { agents: [], interrupted: true, error: "Cannot wait" })).toBe(true);
+		expect(Check(AwaitResultSchema, { agents: [], interrupted: "true" })).toBe(false);
+		expect(Check(AwaitResultSchema, { agents: [], error: false })).toBe(false);
+	});
+});
 
 describe("lifecycleStatus", () => {
 	it("keeps errored and dead, maps everything else to idle", () => {

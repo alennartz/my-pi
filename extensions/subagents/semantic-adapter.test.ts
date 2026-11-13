@@ -1,94 +1,114 @@
 import { describe, expect, it } from 'vitest';
 import { createSubagentSemanticAdapter } from './semantic-adapter.js';
 
-describe('subagent semantic adapter', () => {
-  it('streams a send request and its response into the same tool-backed operation', () => {
-    const adapter = createSubagentSemanticAdapter();
-    const start = adapter.acceptToolCallDelta({ toolCallId: 'send-call', contentIndex: 1, toolName: 'send', path: [], phase: 'start', delta: '{"to":"worker","message":"Please verify' });
-    const request = adapter.acceptToolCallDelta({ toolCallId: 'send-call', contentIndex: 1, toolName: 'send', path: [], phase: 'delta', delta: ' the config"}' });
-    const response = adapter.acceptResponseProgress('send-call', 'Everything is present.');
-    const end = adapter.acceptToolExecution({ toolCallId: 'send-call', contentIndex: 1, toolName: 'send', path: [], result: { message: 'Everything is present.' } });
+function call(toolName: string, toolCallId = toolName, path: readonly string[] = []) {
+  return { toolName, toolCallId, contentIndex: 0, path };
+}
 
-    expect(start).toContainEqual(expect.objectContaining({ type: 'start', operationId: 'send-call', kind: 'send', placement: { toolCallId: 'send-call', contentIndex: 1 }, data: expect.objectContaining({ operation: 'send', request: 'Please verify' }) }));
-    expect(request).toContainEqual(expect.objectContaining({ type: 'delta', operationId: 'send-call', data: { operation: 'send', field: 'request', delta: ' the config' } }));
-    expect(response).toContainEqual(expect.objectContaining({ type: 'delta', operationId: 'send-call', data: { operation: 'send', field: 'response', delta: 'Everything is present.' } }));
-    expect(end).toContainEqual(expect.objectContaining({ type: 'end', operationId: 'send-call', data: expect.objectContaining({ operation: 'send', request: 'Please verify the config', response: 'Everything is present.' }) }));
-    expect(JSON.stringify([...start, ...request, ...response, ...end])).not.toContain('correlationId');
+describe('subagent semantic adapter', () => {
+  it('streams send prose while retaining complete public parameters and results', () => {
+    const adapter = createSubagentSemanticAdapter();
+    const input = call('send');
+    const start = adapter.acceptToolCallDelta({ ...input, phase: 'start', delta: '{"to":"worker","message":"Please verify' });
+    const request = adapter.acceptToolCallDelta({ ...input, phase: 'delta', delta: ' the config","expectResponse":true}' });
+    adapter.acceptToolCallDelta({ ...input, phase: 'end', delta: '{"to":"worker","message":"Please verify the config","expectResponse":true}' });
+    const response = adapter.acceptResponseProgress('send', 'Everything is present.');
+    const end = adapter.acceptToolExecution({ ...input, result: { response: 'Everything is present.', deferred: false, correlationId: 'private', metadata: { ok: true } } });
+    expect(start).toContainEqual(expect.objectContaining({ type: 'start', data: { operation: 'send', parameters: { to: ['worker'], message: 'Please verify' }, result: { response: '', phase: 'sending' } } }));
+    expect(request).toContainEqual(expect.objectContaining({ data: { operation: 'send', field: 'request', delta: ' the config' } }));
+    expect(response).toContainEqual(expect.objectContaining({ data: { operation: 'send', field: 'response', delta: 'Everything is present.' } }));
+    expect(end).toContainEqual(expect.objectContaining({ type: 'end', data: {
+      operation: 'send', parameters: { to: ['worker'], message: 'Please verify the config', expectResponse: true },
+      result: { response: 'Everything is present.', deferred: false, metadata: { ok: true } },
+    } }));
+    expect(JSON.stringify([...start, ...request, ...response, ...end])).not.toContain('private');
   });
 
-  it('streams a separate respond operation without publishing router metadata', () => {
+  it('keeps respond prose in parameters and excludes private routing identifiers', () => {
     const adapter = createSubagentSemanticAdapter();
-    const start = adapter.acceptToolCallDelta({ toolCallId: 'respond-call', contentIndex: 0, toolName: 'respond', path: ['worker'], phase: 'start', delta: '{"correlationId":"private-id","message":"Every' });
-    const delta = adapter.acceptToolCallDelta({ toolCallId: 'respond-call', contentIndex: 0, toolName: 'respond', path: ['worker'], phase: 'delta', delta: 'thing is present."}' });
-    const end = adapter.acceptToolExecution({ toolCallId: 'respond-call', contentIndex: 0, toolName: 'respond', path: ['worker'], result: {} });
-
-    expect(start).toContainEqual(expect.objectContaining({ type: 'start', operationId: 'respond-call', kind: 'respond', data: { operation: 'respond', body: 'Every' } }));
-    expect(delta).toContainEqual(expect.objectContaining({ type: 'delta', operationId: 'respond-call', data: { operation: 'respond', delta: 'thing is present.' } }));
-    expect(end).toContainEqual(expect.objectContaining({ type: 'end', operationId: 'respond-call', data: expect.objectContaining({ operation: 'respond', body: 'Everything is present.' }) }));
+    const input = call('respond', 'respond', ['worker']);
+    const start = adapter.acceptToolCallDelta({ ...input, phase: 'start', delta: '{"correlationId":"private-id","message":"Every' });
+    expect(adapter.getArgument('respond', 'correlationId')).toBe('private-id');
+    const delta = adapter.acceptToolCallDelta({ ...input, phase: 'delta', delta: 'thing is present."}' });
+    const end = adapter.acceptToolExecution({ ...input, result: { accepted: true, metadata: { correlation_id: 'private-id', source: 'peer' } } });
+    expect(start).toContainEqual(expect.objectContaining({ data: { operation: 'respond', parameters: { message: 'Every' }, result: {} } }));
+    expect(delta).toContainEqual(expect.objectContaining({ data: { operation: 'respond', delta: 'thing is present.' } }));
+    expect(end).toContainEqual(expect.objectContaining({ data: { operation: 'respond', parameters: { message: 'Everything is present.' }, result: { accepted: true, metadata: { source: 'peer' } } } }));
     expect(JSON.stringify([...start, ...delta, ...end])).not.toContain('private-id');
   });
 
-  it('streams await progress and completes with every requested child status', () => {
+  it.each([{}, { agents: ['worker', 'scout'] }])('defers await until authoritative arguments are complete: %j', (parameters) => {
     const adapter = createSubagentSemanticAdapter();
-    const requested = [['worker'], ['scout']];
-    const start = adapter.acceptToolCallDelta({ toolCallId: 'await-call', contentIndex: 2, toolName: 'await_agents', path: [], phase: 'start', delta: '{"agents":["worker","scout"]}' });
-    const worker = { path: ['worker'], state: 'idle', output: 'done' } as const;
-    const scout = { path: ['scout'], state: 'errored', error: 'failed' } as const;
-    const progress = adapter.acceptAwaitProgress('await-call', [worker]);
-    const end = adapter.acceptToolExecution({ toolCallId: 'await-call', contentIndex: 2, toolName: 'await_agents', path: [], result: { agents: [worker, scout] } });
-    expect(start).toContainEqual(expect.objectContaining({ type: 'start', operationId: 'await-call', data: expect.objectContaining({ operation: 'await', requested }) }));
-    expect(progress).toContainEqual(expect.objectContaining({ type: 'delta', operationId: 'await-call', data: { operation: 'await', statuses: [worker] } }));
-    expect(end).toContainEqual(expect.objectContaining({ type: 'end', operationId: 'await-call', data: { operation: 'await', result: { statuses: [worker, scout] } } }));
+    const input = call('await_agents', 'await', ['owner']);
+    expect(adapter.acceptToolCallDelta({ ...input, phase: 'start', delta: '{"agents":[' })).toEqual([]);
+    expect(adapter.acceptToolCallDelta({ ...input, phase: 'delta', delta: '"worker"' })).toEqual([]);
+    const worker = { path: ['owner', 'worker'], state: 'idle', output: 'done' } as const;
+    expect(adapter.acceptAwaitProgress('await', [worker])).toEqual([]);
+    const start = adapter.acceptToolCallDelta({ ...input, phase: 'end', delta: JSON.stringify(parameters) });
+    const normalized = 'agents' in parameters ? { agents: [['owner', 'worker'], ['owner', 'scout']] } : {};
+    expect(start).toContainEqual(expect.objectContaining({ type: 'start', data: { operation: 'await', parameters: normalized, result: { statuses: [worker] } } }));
+    const scout = { path: ['owner', 'scout'], state: 'errored', error: 'failed' } as const;
+    const progress = adapter.acceptAwaitProgress('await', [scout]);
+    expect(progress).toContainEqual(expect.objectContaining({ data: { operation: 'await', statuses: [worker, scout] } }));
+    const end = adapter.acceptToolExecution({ ...input, result: { agents: [worker, scout], interrupted: true, metadata: { reason: 'message' } } });
+    expect(end).toContainEqual(expect.objectContaining({ data: { operation: 'await', parameters: normalized, result: { statuses: [worker, scout], interrupted: true, metadata: { reason: 'message' } } } }));
   });
 
-  it('merges await progress updates without dropping earlier child settlements', () => {
+  it('uses execution-start arguments when no complete await stream event arrives', () => {
     const adapter = createSubagentSemanticAdapter();
-    adapter.acceptToolCallDelta({ toolCallId: 'await-merge', contentIndex: 0, toolName: 'await_agents', path: [], phase: 'start', delta: '{"agents":["worker","scout"]}' });
-    adapter.acceptAwaitProgress('await-merge', [{ path: ['worker'], state: 'idle', output: 'done' }]);
-    const update = adapter.acceptAwaitProgress('await-merge', [{ path: ['scout'], state: 'idle', output: 'ready' }]);
-    expect(update).toContainEqual(expect.objectContaining({
-      data: { operation: 'await', statuses: [
-        { path: ['worker'], state: 'idle', output: 'done' },
-        { path: ['scout'], state: 'idle', output: 'ready' },
-      ] },
-    }));
+    const input = call('await_agents', 'await', ['owner']);
+    adapter.acceptToolCallDelta({ ...input, phase: 'start', delta: '{"agents":[' });
+    const start = adapter.acceptToolExecutionStart({ ...input, arguments: { agents: ['worker'] } });
+    expect(start).toContainEqual(expect.objectContaining({ type: 'start', data: { operation: 'await', parameters: { agents: [['owner', 'worker']] }, result: { statuses: [] } } }));
+    const aborted = adapter.completeToolCall('await');
+    expect(aborted).toContainEqual(expect.objectContaining({ state: 'aborted', data: { operation: 'await', parameters: { agents: [['owner', 'worker']] }, result: { statuses: [], interrupted: true } } }));
   });
 
-  it('emits finite operations only at their terminal snapshot', () => {
-    const adapter = createSubagentSemanticAdapter();
-    expect(adapter.acceptToolCallDelta({ toolCallId: 'delegate-call', contentIndex: 0, toolName: 'subagent', path: [], phase: 'start', delta: '{"agents":[]}' })).toEqual([]);
-    expect(adapter.acceptToolExecution({ toolCallId: 'delegate-call', contentIndex: 0, toolName: 'subagent', path: [], result: { children: [] } })).toContainEqual(expect.objectContaining({ type: 'snapshot', kind: 'delegation' }));
+  it.each([
+    ['subagent', { agents: [{ id: 'worker', task: 'inspect', persona: 'scout', model: 'smart', channels: ['peer'], cwd: '/repo' }] }, { agents: [{ id: 'worker', status: 'running', metadata: { ready: true } }], note: 'spawned' }, 'delegation'],
+    ['fork', { id: 'worker', task: 'inspect' }, { agents: [{ id: 'worker', status: 'running' }], note: 'forked' }, 'delegation'],
+    ['interrupt', { agents: ['worker'] }, { interrupted: [{ id: 'worker', output: 'done', metadata: { acknowledged: true } }], pending: [], failed: [], aborted: true }, 'interrupt'],
+    ['teardown', { agent: 'worker' }, { status: 'removed', affectedAgents: [{ id: 'worker', sessionId: 'saved', state: 'idle', usage: { turns: 1 }, usageBaseline: { turns: 0 } }], notes: ['removed'] }, 'teardown'],
+    ['resurrect', { agents: [{ id: 'worker', sessionId: 'saved', task: 'continue', channels: ['peer'], model: 'smart' }] }, { agents: [{ id: 'worker', sessionId: 'saved', state: 'running', usage: { turns: 0 }, metadata: { resumed: true } }], notes: ['resumed'] }, 'resurrect'],
+  ] as const)('retains complete public inputs and outputs for %s', (toolName, parameters, result, operation) => {
+    const adapter = createSubagentSemanticAdapter({ delegation: () => [{ path: ['owner', 'worker'], task: 'inspect', persona: 'scout' }] });
+    const input = call(toolName, toolName, ['owner']);
+    expect(adapter.acceptToolCallDelta({ ...input, phase: 'end', delta: JSON.stringify(parameters) })).toEqual([]);
+    const [event] = adapter.acceptToolExecution({ ...input, result: { ...result, correlationId: 'private', metadata: { correlation_id: 'private', publicFlag: false } } });
+    expect(event).toMatchObject({ type: 'snapshot', data: { operation, parameters: expect.any(Object), result: { metadata: { publicFlag: false } } } });
+    if (toolName === 'interrupt') expect(event).toMatchObject({ data: { parameters: { agents: [['owner', 'worker']] }, result: { aborted: true, interrupted: [{ path: ['owner', 'worker'], output: 'done', metadata: { acknowledged: true } }] } } });
+    else if (toolName === 'teardown') expect(event).toMatchObject({ data: { parameters: { agent: ['owner', 'worker'] }, result: { notes: ['removed'], affectedAgents: [{ path: ['owner', 'worker'], usageBaseline: { turns: 0 } }] } } });
+    else if (toolName === 'resurrect') expect(event).toMatchObject({ data: { parameters, result: { notes: ['resumed'], affectedAgents: [{ path: ['owner', 'worker'], metadata: { resumed: true } }] } } });
+    else expect(event).toMatchObject({ data: { parameters, result: { children: [{ path: ['owner', 'worker'], task: 'inspect', persona: 'scout', status: 'running' }] } } });
+    expect(JSON.stringify(event)).not.toContain('private');
   });
 
-  it('uses the router-resolved target path for a child send', () => {
+  it('preserves native tool errors without exposing private result metadata', () => {
     const adapter = createSubagentSemanticAdapter();
-    const [start] = adapter.acceptToolCallDelta({
-      toolCallId: 'child-send', contentIndex: 0, toolName: 'send', path: ['child'],
-      targetPath: ['sibling'], phase: 'start', delta: '{"to":"sibling","message":"check"}',
-    });
-    expect(start).toMatchObject({ data: { operation: 'send', to: ['sibling'] } });
-    const [terminal] = adapter.acceptToolExecution({
-      toolCallId: 'child-send', contentIndex: 0, toolName: 'send', path: ['child'],
-      targetPath: ['sibling'], result: { response: 'done' },
-    });
-    expect(terminal).toMatchObject({ data: { operation: 'send', to: ['sibling'] } });
+    const input = call('await_agents', 'failed-await');
+    adapter.acceptToolExecutionStart({ ...input, arguments: { agents: ['worker'] } });
+    const [event] = adapter.acceptToolExecution({ ...input, isError: true, result: {
+      details: { semantic: { correlationId: 'private' } }, content: [{ type: 'text', text: 'Wait cancelled.' }],
+    } });
+    expect(event).toMatchObject({ state: 'error', data: { operation: 'await', parameters: { agents: [['worker']] }, result: { statuses: [], error: 'Wait cancelled.', isError: true } } });
+    expect(JSON.stringify(event)).not.toContain('private');
   });
 
-  it('reads correlation IDs from incomplete accumulated responder arguments and resolves parent paths', () => {
+  it('redacts private identifiers from native routing errors but preserves response prose', () => {
     const adapter = createSubagentSemanticAdapter();
-    adapter.acceptToolCallDelta({ toolCallId: 'respond-parent', contentIndex: 0, toolName: 'respond', path: ['worker'], phase: 'start', delta: '{"correlationId":"corr-' });
-    expect(adapter.getArgument('respond-parent', 'correlationId')).toBe('corr-');
-    const end = adapter.acceptToolExecution({ toolCallId: 'send-parent', contentIndex: 1, toolName: 'send', path: ['worker'], result: { to: 'parent', response: 'done' } });
-    expect(end[0]).toMatchObject({ data: { operation: 'send', to: [] } });
+    const input = call('respond', 'routing-error');
+    adapter.acceptToolExecutionStart({ ...input, arguments: { correlationId: 'private-route', message: 'answer' } });
+    const [event] = adapter.acceptToolExecution({ ...input, isError: true, result: {
+      content: [{ type: 'text', text: 'No recorded response origin for correlation ID "private-route".' }], details: {},
+    } });
+    expect(event).toMatchObject({ data: { parameters: { message: 'answer' }, result: { error: 'No recorded response origin for correlation ID "[redacted]".' } } });
+    expect(JSON.stringify(event)).not.toContain('private-route');
   });
 
-  it('preserves every affected teardown result in one finite snapshot', () => {
-    const affectedAgents = [
-      { path: ['worker'], sessionId: 'worker-session', incarnation: 'worker-incarnation', state: 'idle', usage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 }, output: 'done' },
-      { path: ['scout'], sessionId: 'scout-session', incarnation: 'scout-incarnation', state: 'errored', usage: { input: 3, output: 4, cacheRead: 1, cacheWrite: 0, cost: 0.1, turns: 2 }, error: 'failed' },
-    ];
-    const events = createSubagentSemanticAdapter().acceptToolExecution({ toolCallId: 'teardown-call', contentIndex: 3, toolName: 'teardown', path: [], result: { status: 'removed', affectedAgents } });
-
-    expect(events).toEqual([expect.objectContaining({ type: 'snapshot', operationId: 'teardown-call', kind: 'teardown', placement: { toolCallId: 'teardown-call', contentIndex: 3 }, data: { operation: 'teardown', result: { status: 'removed', affectedAgents } } })]);
+  it('uses router-resolved send targets and preserves parameters on aborted sends', () => {
+    const adapter = createSubagentSemanticAdapter();
+    const input = call('send', 'send', ['child']);
+    adapter.acceptToolCallDelta({ ...input, targetPath: ['sibling'], phase: 'end', delta: '{"to":"sibling","message":"check","expectResponse":true}' });
+    expect(adapter.completeToolCall('send')).toContainEqual(expect.objectContaining({ state: 'aborted', data: { operation: 'send', parameters: { to: ['sibling'], message: 'check', expectResponse: true }, result: { response: '' } } }));
   });
 });
