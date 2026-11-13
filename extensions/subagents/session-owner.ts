@@ -1365,8 +1365,6 @@ class SubagentSessionOwner {
 	private readonly activePresentationCalls = new Set<string>();
 	private readonly completedPresentationCalls = new Set<string>();
 	private readonly publishedCustomPresentation = new Set<string>();
-	/** Custom payloads wait for the containing entry append before publication. */
-	private readonly pendingCustomMessages: PersistedSubagentContent[][] = [];
 	/** Custom payloads returned by a tool wait for the containing native entry id. */
 	private readonly pendingCustomPresentation = new Map<string, readonly PersistedSubagentContent[]>();
 	private readonly activeAwaitOperations = new Set<string>();
@@ -1747,7 +1745,6 @@ class SubagentSessionOwner {
 		this.respondCorrelations.clear();
 		this.delegationFacts.clear();
 		this.publishedCustomPresentation.clear();
-		this.pendingCustomMessages.length = 0;
 		this.pendingCustomPresentation.clear();
 		if (previous.kind !== "active") {
 			this.rejectStart(new Error("Subagents session is shutting down."));
@@ -1951,7 +1948,7 @@ class SubagentSessionOwner {
 		}, this.nativeRefs(undefined, "custom_message"));
 	}
 
-	private publishPersistedPresentationContent(value: unknown, entryId: string): void {
+	private publishPersistedPresentationContent(value: unknown, entryId?: string): void {
 		if (!Array.isArray(value)) return;
 		for (const candidate of value) {
 			if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
@@ -1963,15 +1960,15 @@ class SubagentSessionOwner {
 			if (kind !== "send" && kind !== "respond" && kind !== "await" && kind !== "delegation" && kind !== "completion" && kind !== "interrupt" && kind !== "teardown" && kind !== "resurrect") continue;
 			const operation = (item.data as Record<string, unknown>).operation;
 			if (operation !== kind && operation !== "protocol_error") continue;
-			const key = `${entryId}:${item.operationId}`;
+			const key = `${JSON.stringify(this.scopePath())}:${item.operationId}`;
 			if (this.publishedCustomPresentation.has(key)) continue;
 			this.publishedCustomPresentation.add(key);
-			const placement = Object.freeze({ entryId });
+			const placement = entryId !== undefined ? Object.freeze({ entryId }) : undefined;
 			const base = {
 				operationId: item.operationId,
 				kind,
 				path: this.scopePath(),
-				placement,
+				...(placement !== undefined ? { placement } : {}),
 			} as const;
 			const event = {
 				type: "snapshot" as const,
@@ -1989,8 +1986,7 @@ class SubagentSessionOwner {
 		// A custom message_end callback can run before Pi allocates its entry.
 		// Hold its payload, then resolve placement only from entry_appended.
 		if (event?.type === "message_end" && event.message?.role === "custom" && event.message.customType === "subagents") {
-			const pending = this.persistedCustomContent(event.message.details);
-			if (pending.length > 0) this.pendingCustomMessages.push([...pending]);
+			this.publishPersistedPresentationContent(this.persistedCustomContent(event.message.details));
 		}
 		if (event?.type === "entry_appended" && event.entry?.id) {
 			const entryId = event.entry.id as string;
@@ -2011,10 +2007,7 @@ class SubagentSessionOwner {
 			const customType = message?.customType ?? event.entry.customType;
 			if (customType === "subagents") {
 				const details = message?.details ?? event.entry.details ?? event.entry.data;
-				const current = this.persistedCustomContent(details);
-				const pending = this.pendingCustomMessages.shift() ?? [];
-				const combined = new Map([...pending, ...current].map((item) => [item.operationId, item]));
-				if (combined.size > 0) this.publishPersistedPresentationContent([...combined.values()], entryId);
+				this.publishPersistedPresentationContent(this.persistedCustomContent(details), entryId);
 			}
 		}
 	}

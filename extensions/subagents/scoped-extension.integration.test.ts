@@ -858,7 +858,7 @@ describe("semantic facts on native messages", () => {
 		ctx.sessionManager.getLeafId = () => "root-leaf";
 		await startSession(root.handlers, ctx);
 		await execute(root.tools, "subagent", { agents: [{ id: "worker", task: "inspect", channels: [] }] }, ctx);
-		return { ...root, ctx, published, presentation, worker: managed.created[0] };
+		return { ...root, ctx, bus, published, presentation, worker: managed.created[0] };
 	}
 
 	it("delivers native notifications when the same child session resumes", async () => {
@@ -882,7 +882,7 @@ describe("semantic facts on native messages", () => {
 		}
 	});
 
-	it("publishes custom completion payloads only after the native entry is appended", async () => {
+	it("publishes custom completion payloads at the native message boundary", async () => {
 		const root = await rootSession();
 		const payload = {
 			operationId: "completion-1",
@@ -895,16 +895,12 @@ describe("semantic facts on native messages", () => {
 			type: "message_end",
 			message: { role: "custom", customType: "subagents", details: { subagentContent: [payload] } },
 		}, root.ctx);
-		expect(root.presentation).not.toContainEqual(expect.objectContaining({ operationId: "completion-1" }));
+		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "snapshot", operationId: "completion-1" }));
 		await root.handlers.get("entry_appended")?.({
 			type: "entry_appended",
 			entry: { id: "completion-entry", message: { role: "custom", customType: "subagents", details: { subagentContent: [payload] } } },
 		}, root.ctx);
-		expect(root.presentation).toContainEqual(expect.objectContaining({
-			type: "snapshot",
-			operationId: "completion-1",
-			placement: { entryId: "completion-entry" },
-		}));
+		expect(root.presentation.filter((event) => event.operationId === "completion-1")).toHaveLength(1);
 	});
 
 	it("carries custom payloads from message_end to a later bare append event", async () => {
@@ -918,7 +914,8 @@ describe("semantic facts on native messages", () => {
 		};
 		await root.handlers.get("message_end")?.({ type: "message_end", message: { role: "custom", customType: "subagents", details: { subagentContent: [payload] } } }, root.ctx);
 		await root.handlers.get("entry_appended")?.({ type: "entry_appended", entry: { id: "bare-entry", message: { role: "custom", customType: "subagents" } } }, root.ctx);
-		expect(root.presentation).toContainEqual(expect.objectContaining({ operationId: "bare-custom", type: "snapshot", placement: { entryId: "bare-entry" } }));
+		expect(root.presentation).toContainEqual(expect.objectContaining({ operationId: "bare-custom", type: "snapshot" }));
+		expect(root.presentation.find((event) => event.operationId === "bare-custom")).not.toHaveProperty("placement");
 	});
 
 	it("persists the accepted send fact on the sender's native tool result", async () => {
