@@ -82,6 +82,7 @@ vi.mock("./broker.js", () => ({
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import { SubagentPresentation } from "./session-owner.js";
 import { createSemanticFactBus } from "./semantic-bus.js";
+import type { SemanticAdapterEvent } from "./semantic-adapter.js";
 import type { SubagentSemanticFact } from "./provider.js";
 import { serializeAgentMessage } from "./messages.js";
 import * as agentDiscovery from "./agents.js";
@@ -848,13 +849,15 @@ describe("semantic facts on native messages", () => {
 		const root = makePi();
 		const bus = createSemanticFactBus();
 		const published: SubagentSemanticFact[] = [];
+		const presentation: SemanticAdapterEvent[] = [];
 		bus.subscribe((fact) => published.push(fact));
+		bus.subscribePresentation?.((event) => presentation.push(event));
 		await createSubagentsExtension({ kind: "root", semanticEvents: bus })(root.pi as any);
 		const ctx = makeContext(sessionFile);
 		ctx.sessionManager.getLeafId = () => "root-leaf";
 		await startSession(root.handlers, ctx);
 		await execute(root.tools, "subagent", { agents: [{ id: "worker", task: "inspect", channels: [] }] }, ctx);
-		return { ...root, ctx, published, worker: managed.created[0] };
+		return { ...root, ctx, published, presentation, worker: managed.created[0] };
 	}
 
 	it("delivers native notifications when the same child session resumes", async () => {
@@ -875,6 +878,33 @@ describe("semantic facts on native messages", () => {
 			expect(notification).not.toHaveProperty("details");
 			await child.handlers.get("session_shutdown")?.({}, ctx);
 		}
+	});
+
+	it("publishes custom completion payloads from the terminal native message", async () => {
+		const root = await rootSession();
+		await root.handlers.get("message_end")?.({
+			type: "message_end",
+			message: {
+				role: "custom",
+				customType: "subagents",
+				entryId: "completion-entry",
+				details: {
+					subagentContent: [{
+						operationId: "completion-1",
+						kind: "completion",
+						state: "complete",
+						source: "custom_entry",
+						placement: { entryId: "completion-entry" },
+						data: { operation: "completion", result: { state: "idle", output: "done" } },
+					}],
+				},
+			},
+		}, root.ctx);
+		expect(root.presentation).toContainEqual(expect.objectContaining({
+			type: "snapshot",
+			operationId: "completion-1",
+			placement: { entryId: "completion-entry" },
+		}));
 	});
 
 	it("persists the accepted send fact on the sender's native tool result", async () => {

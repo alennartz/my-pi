@@ -1864,6 +1864,15 @@ class SubagentSessionOwner {
 	private recordNativeEvent(event: any): void {
 		const sessionId = this.currentSessionId();
 		if (!sessionId || sessionId === "unknown") return;
+		if (event?.type === "message_end" && event.message?.role === "custom" && event.message.customType === "subagents") {
+			const entryId = typeof event.message.entryId === "string"
+				? event.message.entryId
+				: this.nativeSessionManager?.getLeafId?.();
+			const details = event.message.details;
+			if (entryId && details && typeof details === "object" && !Array.isArray(details)) {
+				this.publishPersistedPresentationContent((details as Record<string, unknown>).subagentContent, entryId);
+			}
+		}
 		// Keep only exact append and tool-call matches. Do not infer an entry from
 		// the current session leaf: that leaf can belong to an unrelated message.
 		if (event?.type === "entry_appended" && event.entry?.id) {
