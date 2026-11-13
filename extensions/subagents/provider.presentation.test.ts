@@ -3,7 +3,7 @@ import type { AgentSessionRegistry, RegistryEvent } from './agent-session-regist
 import { createSubagentProvider, type BorrowedAgentSession, type SubagentOwnerControlPort } from './provider.js';
 import type { SemanticAdapterEvent } from './semantic-adapter.js';
 
-function fixture() {
+function fixture(historyLimit?: number) {
   const listeners = new Set<(event: RegistryEvent) => void>();
   const presentationListeners = new Set<(event: SemanticAdapterEvent) => void>();
   const registry = {
@@ -15,6 +15,7 @@ function fixture() {
     registry,
     ownerControl,
     presentationEvents: { subscribePresentation(listener) { presentationListeners.add(listener); return () => presentationListeners.delete(listener); } },
+    ...(historyLimit !== undefined ? { historyLimit } : {}),
   });
   return {
     provider,
@@ -96,6 +97,26 @@ describe('subagent presentation provider', () => {
       data: { operation: 'send', to: ['worker'], request: 'check', response: 'done' },
     });
     expect(provider.snapshot().activeOperations.map((operation) => operation.target.path)).toEqual([['worker']]);
+  });
+
+  it('rehydrates persisted content again after bounded presentation history evicts it', async () => {
+    const { provider, publishPresentation } = fixture(1);
+    const savedSession = session(true);
+    await provider.rehydrate({ session: savedSession, path: ['worker'] });
+    publishPresentation({
+      type: 'start',
+      operationId: 'noise',
+      kind: 'send',
+      path: [],
+      placement: { toolCallId: 'noise', contentIndex: 0 },
+      data: { operation: 'send', to: ['worker'], request: 'noise', response: '', phase: 'sending' },
+    });
+    const before = provider.snapshot().cursor;
+    await provider.rehydrate({ session: savedSession, path: ['worker'] });
+    const replay = provider.replay(before);
+    expect(replay.kind).toBe('events');
+    if (replay.kind !== 'events') throw new Error('Expected replay');
+    expect(replay.events).toContainEqual(expect.objectContaining({ type: 'subagent_snapshot_event', target: expect.objectContaining({ operationId: 'send-call', path: ['worker'] }) }));
   });
 
   it('does not invent a presentation operation when the native session has none', async () => {

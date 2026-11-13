@@ -1425,9 +1425,17 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		});
 	}
 
-	function appendPersistedPayload(payload: PersistedSubagentContent, path: AgentPath, entryId: string | undefined): void {
+	function hasRetainedPersistedOperation(path: AgentPath, operationId: string): boolean {
+		return history.some((event) => {
+			if (!isRecord(event) || event.type !== "subagent_snapshot_event") return false;
+			const target = isRecord(event.target) ? event.target : undefined;
+			return target?.operationId === operationId && Array.isArray(target.path) && pathKey(target.path as AgentPath) === pathKey(path);
+		});
+	}
+
+	function appendPersistedPayload(payload: PersistedSubagentContent, path: AgentPath, entryId: string | undefined, force = false): void {
 		const operationKey = `${pathKey(path)}:${payload.operationId}`;
-		if (presentationOperations.has(operationKey)) return;
+		if (presentationOperations.has(operationKey) && !force) return;
 		presentationOperations.add(operationKey);
 		const placement = payload.source === "tool"
 			? Object.freeze({
@@ -1457,7 +1465,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	async function rehydrate(input: { session: BorrowedAgentSession; path: AgentPath }): Promise<void> {
 		if (closed) return;
 		const identity = `${input.session.sessionId}:${pathKey(input.path)}`;
-		if (hydratedSessions.has(identity)) return;
+		const alreadyHydrated = hydratedSessions.has(identity);
 		const manager = input.session.sessionManager;
 		let entries: readonly unknown[] = [];
 		try {
@@ -1478,7 +1486,10 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				saved.push({ payload: candidate, ...(entryId !== undefined ? { entryId } : {}) });
 			}
 		}
-		for (const item of saved) appendPersistedPayload(item.payload, input.path, item.entryId);
+		for (const item of saved) {
+			const force = alreadyHydrated && !hasRetainedPersistedOperation(input.path, item.payload.operationId);
+			appendPersistedPayload(item.payload, input.path, item.entryId, force);
+		}
 		hydratedSessions.add(identity);
 	}
 
