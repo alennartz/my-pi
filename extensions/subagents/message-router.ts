@@ -69,7 +69,7 @@ export interface MessagePort {
 	/** Only the endpoint addressed by the correlation may respond. */
 	respond(correlationId: string, message: string): Promise<void>;
 	/** Forward response-body progress to the blocked sender without completing it. */
-	responseProgress?(correlationId: string, delta: string): Promise<void>;
+	responseProgress(correlationId: string, delta: string): Promise<void>;
 	/** Reject a pending request from its addressed endpoint (optional adapter seam). */
 	reject?(correlationId: string, error: string): Promise<void>;
 	detach(correlationId: string): void;

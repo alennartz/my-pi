@@ -418,10 +418,11 @@ export interface SubagentOwnerControlPort {
 }
 
 export interface SubagentProvider {
-	subscribe(listener: (event: SubagentEvent) => void): () => void;
-	snapshot(): SubagentSnapshot;
+	subscribe(listener: (event: import('@pimote/sdk/subagents').SubagentProviderEvent) => void): () => void;
+	snapshot(): import('@pimote/sdk/subagents').SubagentProviderSnapshot;
 	/** Without a cursor, replay all retained events. */
-	replay(after?: FeedCursor): ReplayResult;
+	replay(after?: FeedCursor): import('@pimote/sdk/subagents').SubagentPresentationReplay;
+	rehydrate(input: { session: BorrowedAgentSession; path: AgentPath }): Promise<void>;
 	acquire(path: AgentPath): Promise<SubagentLease>;
 	teardown(path: AgentPath, incarnation: string): Promise<SubagentTeardownResult>;
 	stop(request: SubagentStopRequest): Promise<void>;

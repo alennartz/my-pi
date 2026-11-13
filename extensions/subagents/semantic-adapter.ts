@@ -1,5 +1,5 @@
 import type { AgentPath } from './agent-path.js';
-import type { SubagentUsage } from './provider.js';
+import type { SubagentStartData, SubagentDeltaData, SubagentEndData, SubagentFiniteData, SubagentAwaitStatus } from '@pimote/sdk/subagents';
 
 export type SemanticOperationKind =
   | 'send'
@@ -35,21 +35,9 @@ export type PiToolExecution = Readonly<{
   isError?: boolean;
 }>;
 
-export type SemanticStartData =
-  | Readonly<{ operation: 'send' | 'respond'; body: string }>
-  | Readonly<{ operation: 'await'; requested: readonly AgentPath[] }>;
-
-export type SemanticDeltaData =
-  | Readonly<{ operation: 'send' | 'respond'; delta: string }>
-  | Readonly<{ operation: 'await'; statuses: readonly unknown[] }>;
-
-export type SemanticEndData =
-  | Readonly<{ operation: 'send' | 'respond' | 'completion'; result: Readonly<{ state: 'idle' | 'errored' | 'dead' | 'stopped'; output?: string; error?: string; usage?: SubagentUsage }> }>
-  | Readonly<{ operation: 'await'; result: Readonly<{ statuses: readonly unknown[]; interrupted?: boolean; error?: string }> }>
-  | Readonly<{ operation: 'teardown'; result: unknown }>
-  | Readonly<{ operation: 'interrupt'; result: unknown }>
-  | Readonly<{ operation: 'resurrect'; result: unknown }>
-  | Readonly<{ operation: 'delegation'; children: readonly unknown[] }>;
+export type SemanticStartData = SubagentStartData;
+export type SemanticDeltaData = SubagentDeltaData;
+export type SemanticEndData = SubagentEndData;
 
 export type SemanticAdapterEvent =
   | Readonly<{
@@ -78,6 +66,15 @@ export type SemanticAdapterEvent =
       data: SemanticEndData;
     }>
   | Readonly<{
+      type: 'snapshot';
+      operationId: string;
+      kind: 'delegation' | 'completion' | 'interrupt' | 'teardown' | 'resurrect';
+      path: AgentPath;
+      placement: SemanticPlacement;
+      state: 'complete' | 'error' | 'aborted';
+      data: SubagentFiniteData;
+    }>
+  | Readonly<{
       type: 'protocol_error';
       operationId: string;
       kind: SemanticOperationKind;
@@ -89,6 +86,8 @@ export type SemanticAdapterEvent =
 export interface SubagentSemanticAdapter {
   acceptToolCallDelta(event: PiToolCallDelta): readonly SemanticAdapterEvent[];
   acceptToolExecution(event: PiToolExecution): readonly SemanticAdapterEvent[];
+  acceptResponseProgress(toolCallId: string, delta: string): readonly SemanticAdapterEvent[];
+  acceptAwaitProgress(toolCallId: string, statuses: readonly SubagentAwaitStatus[]): readonly SemanticAdapterEvent[];
   completeToolCall(toolCallId: string): readonly SemanticAdapterEvent[];
 }
 
