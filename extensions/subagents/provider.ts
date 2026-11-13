@@ -844,7 +844,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		base: Omit<SubagentEvent, "cursor">,
 		deliver = true,
 	): SubagentEvent {
-		const { transcriptPosition: _legacyPosition, ...safeBase } = base as Omit<SubagentEvent, "cursor"> & { transcriptPosition?: unknown };
+		const safeBase = base;
 		const publicData = safeBase.kind === "node_added" || safeBase.kind === "node_updated"
 			? publicNode(safeBase.data as ProviderNode)
 			: safeBase.kind === "node_removed"
