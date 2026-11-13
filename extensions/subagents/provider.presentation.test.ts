@@ -1,16 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentSessionRegistry, RegistryEvent } from './agent-session-registry.js';
 import { createSubagentProvider, type BorrowedAgentSession, type SubagentOwnerControlPort } from './provider.js';
+import type { SemanticAdapterEvent } from './semantic-adapter.js';
 
 function fixture() {
   const listeners = new Set<(event: RegistryEvent) => void>();
+  const presentationListeners = new Set<(event: SemanticAdapterEvent) => void>();
   const registry = {
     listDescendants: () => [],
     subscribe(listener: (event: RegistryEvent) => void) { listeners.add(listener); return () => listeners.delete(listener); },
   } as unknown as AgentSessionRegistry;
   const ownerControl = {} as SubagentOwnerControlPort;
-  const provider = createSubagentProvider({ registry, ownerControl });
-  return { provider, publish: (event: RegistryEvent) => listeners.forEach((listener) => listener(event)) };
+  const provider = createSubagentProvider({
+    registry,
+    ownerControl,
+    presentationEvents: { subscribePresentation(listener) { presentationListeners.add(listener); return () => presentationListeners.delete(listener); } },
+  });
+  return {
+    provider,
+    publish: (event: RegistryEvent) => listeners.forEach((listener) => listener(event)),
+    publishPresentation: (event: SemanticAdapterEvent) => presentationListeners.forEach((listener) => listener(event)),
+  };
 }
 
 function session(withSavedOperation: boolean): BorrowedAgentSession {
@@ -60,6 +70,32 @@ describe('subagent presentation provider', () => {
     const sequences = replay.events.map((event) => event.cursor.sequence);
     expect(new Set(sequences).size).toBe(sequences.length);
     expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
+  });
+
+  it('keeps active operations distinct when root and child paths reuse a tool call ID', () => {
+    const { provider, publishPresentation } = fixture();
+    const start = (path: readonly string[]) => publishPresentation({
+      type: 'start',
+      operationId: 'same-call',
+      kind: 'send',
+      path,
+      placement: { toolCallId: 'same-call', contentIndex: 0 },
+      data: { operation: 'send', to: ['worker'], request: 'check', response: '', phase: 'sending' },
+    });
+    start([]);
+    start(['worker']);
+    expect(provider.snapshot().activeOperations.map((operation) => operation.target.path)).toEqual([[], ['worker']]);
+
+    publishPresentation({
+      type: 'end',
+      operationId: 'same-call',
+      kind: 'send',
+      path: [],
+      placement: { toolCallId: 'same-call', contentIndex: 0 },
+      state: 'complete',
+      data: { operation: 'send', to: ['worker'], request: 'check', response: 'done' },
+    });
+    expect(provider.snapshot().activeOperations.map((operation) => operation.target.path)).toEqual([['worker']]);
   });
 
   it('does not invent a presentation operation when the native session has none', async () => {

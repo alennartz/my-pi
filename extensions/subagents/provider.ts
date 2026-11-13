@@ -899,14 +899,19 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		return prior;
 	}
 
+	function presentationOperationKey(event: Pick<SemanticAdapterEvent, "path" | "operationId">): string {
+		return `${pathKey(event.path)}:${event.operationId}`;
+	}
+
 	function appendPresentationEvent(event: SemanticAdapterEvent, deliver = true): ProviderFeedEvent {
 		const target = presentationTarget(event);
+		const operationKey = presentationOperationKey(event);
 		if (event.type === "end" || event.type === "snapshot") {
-			presentationOperations.add(`${pathKey(event.path)}:${event.operationId}`);
+			presentationOperations.add(operationKey);
 		}
 		if (event.type === "start") {
 			const safeData = freezePresentationValue(stripPrivatePresentation(event.data));
-			activeOperations.set(event.operationId, Object.freeze({ target, data: safeData }));
+			activeOperations.set(operationKey, Object.freeze({ target, data: safeData }));
 			const output = Object.freeze({
 				type: "subagent_start",
 				eventId: `provider:subagent_start:${event.operationId}:${++eventCounter}`,
@@ -920,9 +925,9 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			return output;
 		}
 		if (event.type === "delta") {
-			const active = activeOperations.get(event.operationId);
+			const active = activeOperations.get(operationKey);
 			const safeData = freezePresentationValue(stripPrivatePresentation(event.data));
-			if (active) activeOperations.set(event.operationId, Object.freeze({ ...active, data: freezePresentationValue(mergeActiveData(active.data, safeData)) }));
+			if (active) activeOperations.set(operationKey, Object.freeze({ ...active, data: freezePresentationValue(mergeActiveData(active.data, safeData)) }));
 			const output = Object.freeze({
 				type: "subagent_delta",
 				eventId: `provider:subagent_delta:${event.operationId}:${++eventCounter}`,
@@ -936,7 +941,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			return output;
 		}
 		if (event.type === "end") {
-			activeOperations.delete(event.operationId);
+			activeOperations.delete(operationKey);
 			const output = Object.freeze({
 				type: "subagent_end",
 				eventId: `provider:subagent_end:${event.operationId}:${++eventCounter}`,
@@ -950,7 +955,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			if (deliver && !closed) for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }
 			return output;
 		}
-		activeOperations.delete(event.operationId);
+		activeOperations.delete(operationKey);
 		const output = Object.freeze({
 			type: "subagent_snapshot_event",
 			eventId: `provider:subagent_snapshot_event:${event.operationId}:${++eventCounter}`,

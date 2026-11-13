@@ -35,10 +35,37 @@ describe('subagent semantic adapter', () => {
     const worker = { path: ['worker'], state: 'idle', output: 'done' } as const;
     const scout = { path: ['scout'], state: 'errored', error: 'failed' } as const;
     const progress = adapter.acceptAwaitProgress('await-call', [worker]);
-    const end = adapter.acceptToolExecution({ toolCallId: 'await-call', contentIndex: 2, toolName: 'await_agents', path: [], result: { statuses: [worker, scout] } });
+    const end = adapter.acceptToolExecution({ toolCallId: 'await-call', contentIndex: 2, toolName: 'await_agents', path: [], result: { agents: [worker, scout] } });
     expect(start).toContainEqual(expect.objectContaining({ type: 'start', operationId: 'await-call', data: expect.objectContaining({ operation: 'await', requested }) }));
     expect(progress).toContainEqual(expect.objectContaining({ type: 'delta', operationId: 'await-call', data: { operation: 'await', statuses: [worker] } }));
     expect(end).toContainEqual(expect.objectContaining({ type: 'end', operationId: 'await-call', data: { operation: 'await', result: { statuses: [worker, scout] } } }));
+  });
+
+  it('merges await progress updates without dropping earlier child settlements', () => {
+    const adapter = createSubagentSemanticAdapter();
+    adapter.acceptToolCallDelta({ toolCallId: 'await-merge', contentIndex: 0, toolName: 'await_agents', path: [], phase: 'start', delta: '{"agents":["worker","scout"]}' });
+    adapter.acceptAwaitProgress('await-merge', [{ path: ['worker'], state: 'idle', output: 'done' }]);
+    const update = adapter.acceptAwaitProgress('await-merge', [{ path: ['scout'], state: 'idle', output: 'ready' }]);
+    expect(update).toContainEqual(expect.objectContaining({
+      data: { operation: 'await', statuses: [
+        { path: ['worker'], state: 'idle', output: 'done' },
+        { path: ['scout'], state: 'idle', output: 'ready' },
+      ] },
+    }));
+  });
+
+  it('emits finite operations only at their terminal snapshot', () => {
+    const adapter = createSubagentSemanticAdapter();
+    expect(adapter.acceptToolCallDelta({ toolCallId: 'delegate-call', contentIndex: 0, toolName: 'subagent', path: [], phase: 'start', delta: '{"agents":[]}' })).toEqual([]);
+    expect(adapter.acceptToolExecution({ toolCallId: 'delegate-call', contentIndex: 0, toolName: 'subagent', path: [], result: { children: [] } })).toContainEqual(expect.objectContaining({ type: 'snapshot', kind: 'delegation' }));
+  });
+
+  it('reads correlation IDs from incomplete accumulated responder arguments and resolves parent paths', () => {
+    const adapter = createSubagentSemanticAdapter();
+    adapter.acceptToolCallDelta({ toolCallId: 'respond-parent', contentIndex: 0, toolName: 'respond', path: ['worker'], phase: 'start', delta: '{"correlationId":"corr-' });
+    expect(adapter.getArgument('respond-parent', 'correlationId')).toBe('corr-');
+    const end = adapter.acceptToolExecution({ toolCallId: 'send-parent', contentIndex: 1, toolName: 'send', path: ['worker'], result: { to: 'parent', response: 'done' } });
+    expect(end[0]).toMatchObject({ data: { operation: 'send', to: [] } });
   });
 
   it('preserves every affected teardown result in one finite snapshot', () => {

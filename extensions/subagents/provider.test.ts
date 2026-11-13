@@ -269,7 +269,7 @@ describe("SubagentProvider snapshot and replay", () => {
     unsubscribe();
   });
 
-  it("preserves source transcript positions in live history and cursor replay", () => {
+  it("does not expose legacy source transcript positions in live history or replay", () => {
     const listeners = new Set<(fact: SubagentSemanticFact) => void>();
     const { provider } = setup({
       semanticEvents: { subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
@@ -277,14 +277,13 @@ describe("SubagentProvider snapshot and replay", () => {
     const boundary = provider.snapshot().cursor;
     const fact: SubagentSemanticFact = {
       eventId: "positioned-completion", path: scoutPath, kind: "completion", relatedPiEvents: [],
-      transcriptPosition: { sessionId: "native-child", afterEntryId: "native-leaf" },
       data: { delivery: "asynchronous", status: "idle", output: "answer" },
     };
     for (const listener of listeners) listener(fact);
     for (const replay of [provider.replay(), provider.replay(boundary)]) {
       expect(replay.kind).toBe("events");
       if (replay.kind !== "events") continue;
-      expect(replay.events.find((event) => event.eventId === fact.eventId)?.transcriptPosition).toEqual(fact.transcriptPosition);
+      expect(replay.events.find((event) => event.eventId === fact.eventId)).not.toHaveProperty("transcriptPosition");
     }
   });
 

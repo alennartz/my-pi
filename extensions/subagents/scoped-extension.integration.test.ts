@@ -886,7 +886,6 @@ describe("semantic facts on native messages", () => {
 		});
 		expect(sent?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: "semantic-parent", toolCallId: "send-call", kind: "tool_call" })]));
 		expect(root.published.some((fact) => fact.eventId === sent?.eventId)).toBe(true);
-		expect(sent).toMatchObject({ transcriptPosition: { sessionId: "semantic-parent", afterEntryId: "root-leaf" } });
 	});
 
 	it("attributes child sends to their native session, not the parent router", async () => {
@@ -900,8 +899,8 @@ describe("semantic facts on native messages", () => {
 		const sent = factsIn(result).find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent");
 		expect(sent).toMatchObject({
 			path: ["worker"], data: { from: ["worker"], to: [], text: "progress" },
-			transcriptPosition: { sessionId: root.worker.child.sessionId, afterEntryId: "child-leaf" },
 		});
+		expect(sent).not.toHaveProperty("transcriptPosition");
 		expect(sent?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: root.worker.child.sessionId, toolCallId: "child-send-call", kind: "tool_call" })]));
 		expect(root.published.filter((fact) => fact.kind === "message_thread" && fact.data.phase === "sent" && fact.data.text === "progress").map((fact) => fact.eventId)).toEqual([sent?.eventId]);
 	});
@@ -937,8 +936,8 @@ describe("semantic facts on native messages", () => {
 		const terminal = factsIn(result).find((fact) => fact.kind === "message_thread" && fact.data.phase === "response");
 		expect(terminal).toMatchObject({
 			data: { from: ["worker"], to: [], text: "answer", correlationId },
-			transcriptPosition: { sessionId: root.worker.child.sessionId, afterEntryId: "child-reply-leaf" },
 		});
+		expect(terminal).not.toHaveProperty("transcriptPosition");
 		expect(terminal?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: root.worker.child.sessionId, toolCallId: "response-call", kind: "tool_call" })]));
 		expect(factsIn(responder).map((fact) => fact.eventId)).toContain(terminal?.eventId);
 		expect(root.published.filter((fact) => fact.kind === "message_thread" && fact.data.phase === "response" && fact.data.correlationId === correlationId).map((fact) => fact.eventId)).toEqual([terminal?.eventId]);

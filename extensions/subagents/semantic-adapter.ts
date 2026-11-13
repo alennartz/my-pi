@@ -155,6 +155,7 @@ function pathFrom(value: unknown): AgentPath {
 
 function resolvePath(owner: AgentPath, value: unknown, requested: readonly AgentPath[] = []): AgentPath {
   const candidate = pathFrom(value);
+  if (candidate.length === 1 && candidate[0] === 'parent') return copyPath(owner.slice(0, -1));
   if (candidate.length > 0) {
     const requestedMatch = requested.find((path) => path.length === candidate.length && path.every((part, index) => part === candidate[index]));
     if (requestedMatch) return copyPath(requestedMatch);
@@ -614,8 +615,10 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
 
   function getArgument(toolCallId: string, key: string): string | undefined {
     const state = operations.get(toolCallId);
-    const source = state ? parseJsonObject(state.rawArguments) : undefined;
-    return source && typeof source[key] === 'string' ? source[key] as string : undefined;
+    if (!state) return undefined;
+    const source = parseJsonObject(state.rawArguments);
+    if (source && typeof source[key] === 'string') return source[key] as string;
+    return partialString(state.rawArguments, key);
   }
 
   return { acceptToolCallDelta, acceptToolExecution, acceptResponseProgress, acceptAwaitProgress, completeToolCall, getArgument };
