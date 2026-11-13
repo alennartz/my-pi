@@ -475,7 +475,7 @@ function stripPrivatePresentation<T>(value: T): T {
 	if (!isRecord(value)) return value;
 	const copy: UnknownRecord = {};
 	for (const [key, child] of Object.entries(value)) {
-		if (key === "correlationId" || key === "correlation_id" || key === "pendingCorrelations") continue;
+		if (key === "correlationId" || key === "correlation_id") continue;
 		copy[key] = stripPrivatePresentation(child);
 	}
 	return copy as T;
@@ -574,9 +574,8 @@ function cloneNode(node: ProviderNode): ProviderNode {
 }
 
 function publicNode(node: ProviderNode): ProviderNode {
-	const { pendingCorrelations: _privatePending, ...publicFields } = node as ProviderNode & { pendingCorrelations?: readonly string[] };
 	return Object.freeze({
-		...publicFields,
+		...node,
 		path: copyPath(node.path),
 		channels: Object.freeze([...(node.channels ?? [])]),
 		waitingFor: Object.freeze((node.waitingFor ?? []).map((target) => copyPath(target))),
