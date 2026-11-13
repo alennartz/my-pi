@@ -11,6 +11,7 @@ import { Type } from "typebox";
 import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
 import { answerActivity } from "@pimote/sdk/activity";
 import { registerProvider } from "@pimote/sdk/subagents";
+import type { PersistedSubagentContent, SubagentFiniteData } from "@pimote/sdk/subagents";
 import {
 	getOrCreateSessionTreeStore,
 	registerSessionTreeStore,
@@ -179,10 +180,13 @@ interface SemanticOwnerOptions {
 	publishFact: (kind: SubagentEventKind, path: AgentPath, data: any, refs?: readonly PiEventRef[]) => SubagentSemanticFact;
 }
 
+type DelegationPresentationChild = Readonly<{ path: AgentPath; task: string; persona?: string }>;
+
 interface AwaitResult {
 	text: string;
 	agents: AgentCompleteData[];
 	semanticEvents?: readonly SubagentSemanticFact[];
+	subagentContent?: readonly PersistedSubagentContent[];
 }
 
 interface WaitState {
@@ -384,8 +388,8 @@ class SessionTurnCoordinator {
 	private readonly awaitedInvocations = new Map<string, { invocationId: string; path: AgentPath; refs: readonly PiEventRef[] }>();
 	private completionOperationSequence = 0;
 
-	private completionPresentation(status: AwaitChildStatus, usage?: AgentStatus["usage"]): readonly Record<string, unknown>[] {
-		const state = status.state;
+	private completionPresentation(status: AwaitChildStatus, usage?: AgentStatus["usage"]): readonly PersistedSubagentContent[] {
+		const state = status.state === "errored" || status.state === "dead" || status.state === "stopped" ? status.state : "idle";
 		const terminalState = state === "errored" || state === "dead" ? "error" : state === "stopped" ? "aborted" : "complete";
 		return [{
 			operationId: `completion:${JSON.stringify(status.path)}:${status.sessionId ?? "unknown"}:${++this.completionOperationSequence}`,
@@ -670,7 +674,11 @@ class SessionTurnCoordinator {
 			semanticEvents = [...semanticEvents, finalFact];
 			this.clearAwaitInvocations(state.semantic.requested);
 		}
-		state.resolve({ ...drained, ...(semanticEvents.length > 0 ? { semanticEvents } : {}) });
+		state.resolve({
+			...drained,
+			...(semanticEvents.length > 0 ? { semanticEvents } : {}),
+			...(drained.subagentContent && drained.subagentContent.length > 0 ? { subagentContent: drained.subagentContent } : {}),
+		});
 	}
 
 	/** Interrupt an active await because an incoming routed message arrived. */
@@ -742,7 +750,7 @@ class SessionTurnCoordinator {
 			const released = this.publishAwaitRelease(ids, manager, semantic, [], "message");
 			return this.truncatedWaitResult([drained.text, notice].filter(Boolean).join("\n"), [], [
 				...(drained.semanticEvents ?? []), ...(released ? [released] : []),
-			]);
+			], drained.subagentContent);
 		}
 		if (this.waitState) throw new Error("Another await_agents call is already active.");
 		const requested = ids
@@ -825,6 +833,7 @@ class SessionTurnCoordinator {
 				result.text || "All specified agents have completed. No pending notifications.",
 				agents,
 				result.semanticEvents,
+				result.subagentContent,
 			);
 		} catch (error: any) {
 			if (error?.message === "Aborted") throw new Error("Wait cancelled.");
@@ -955,8 +964,18 @@ class SessionTurnCoordinator {
 		};
 	}
 
-	private async truncatedWaitResult(text: string, agents: AgentCompleteData[], semanticEvents?: readonly SubagentSemanticFact[]): Promise<AwaitResult> {
-		return { text: (await truncateForModel(text)).text, agents, ...(semanticEvents?.length ? { semanticEvents } : {}) };
+	private async truncatedWaitResult(
+		text: string,
+		agents: AgentCompleteData[],
+		semanticEvents?: readonly SubagentSemanticFact[],
+		subagentContent?: readonly PersistedSubagentContent[],
+	): Promise<AwaitResult> {
+		return {
+			text: (await truncateForModel(text)).text,
+			agents,
+			...(semanticEvents?.length ? { semanticEvents } : {}),
+			...(subagentContent && subagentContent.length > 0 ? { subagentContent } : {}),
+		};
 	}
 }
 
@@ -1293,10 +1312,16 @@ class SubagentSessionOwner {
 	private activeSessionId = "unknown";
 	private nativeSessionManager: ExtensionContext["sessionManager"] | undefined;
 	private readonly nativeToolEntries = new Map<string, string>();
-	private readonly semanticAdapter = createSubagentSemanticAdapter();
+	private readonly delegationFacts = new Map<string, readonly DelegationPresentationChild[]>();
+	private readonly semanticAdapter = createSubagentSemanticAdapter({
+		delegation: ({ toolCallId }) => this.delegationFacts.get(toolCallId),
+	});
 	private readonly presentationEvents = new Map<string, SemanticAdapterEvent[]>();
 	private readonly respondCorrelations = new Map<string, string>();
 	private readonly toolCallIndexes = new Map<string, number>();
+	private readonly activePresentationCalls = new Set<string>();
+	private readonly completedPresentationCalls = new Set<string>();
+	private readonly publishedCustomPresentation = new Set<string>();
 	private readonly activeAwaitOperations = new Set<string>();
 	private readonly failedToolFacts = new Map<string, readonly SubagentSemanticFact[]>();
 
@@ -1426,22 +1451,44 @@ class SubagentSessionOwner {
 		}
 	}
 
-	private persistedPresentationContent(toolCallId: string): readonly Record<string, unknown>[] {
+	private persistedPresentationContent(toolCallId: string): readonly PersistedSubagentContent[] {
 		const events = this.presentationEvents.get(toolCallId) ?? [];
 		return events.flatMap((event) => {
-			if (event.type !== "end" && event.type !== "snapshot") return [];
+			if ((event.type !== "end" && event.type !== "snapshot") || !("toolCallId" in event.placement)) return [];
 			return [{
 				operationId: event.operationId,
 				kind: event.kind,
 				state: event.state,
 				data: event.data,
-				source: "tool",
+				source: "tool" as const,
 				placement: {
-					...event.placement,
+					toolCallId: event.placement.toolCallId,
+					contentIndex: event.placement.contentIndex,
 					...(this.nativeToolEntries.get(toolCallId) !== undefined ? { entryId: this.nativeToolEntries.get(toolCallId) } : {}),
 				},
-			}];
+			} satisfies PersistedSubagentContent];
 		});
+	}
+
+	private completePresentationAtToolResult(event: any): void {
+		const result = event.result !== undefined
+			? event.result
+			: {
+					...(event.structuredContent !== undefined ? { structuredContent: event.structuredContent } : {}),
+					...(event.details !== undefined ? { details: event.details } : {}),
+					...(event.content !== undefined ? { content: event.content } : {}),
+				};
+		const events = this.semanticAdapter.acceptToolExecution({
+			toolCallId: event.toolCallId,
+			contentIndex: this.toolCallIndexes.get(event.toolCallId) ?? 0,
+			toolName: event.toolName,
+			path: this.scopePath(),
+			result,
+			isError: event.isError === true,
+		});
+		if (events.length === 0) return;
+		this.recordPresentationEvents(events);
+		this.completedPresentationCalls.add(event.toolCallId);
 	}
 
 	private persistToolResult(event: any): { details: unknown } | undefined {
@@ -1453,9 +1500,13 @@ class SubagentSessionOwner {
 		const prior = event.details && typeof event.details === "object" && !Array.isArray(event.details)
 			? event.details as Record<string, unknown>
 			: {};
+		const priorContent = Array.isArray(prior.subagentContent)
+			? prior.subagentContent as readonly PersistedSubagentContent[]
+			: [];
+		const combinedContent = [...priorContent, ...content];
 		const next = {
 			...prior,
-			...(content.length > 0 ? { subagentContent: content } : {}),
+			...(combinedContent.length > 0 ? { subagentContent: combinedContent } : {}),
 		};
 		if (facts && facts.length > 0) return { details: semanticDetails(next, facts) };
 		if (content.length > 0) return { details: next };
@@ -1599,6 +1650,13 @@ class SubagentSessionOwner {
 		const previous = this.phase;
 		this.phase = { kind: "shutting-down" };
 		this.failedToolFacts.clear();
+		this.completeOutstandingPresentationCalls();
+		this.completedPresentationCalls.clear();
+		this.presentationEvents.clear();
+		this.toolCallIndexes.clear();
+		this.respondCorrelations.clear();
+		this.delegationFacts.clear();
+		this.publishedCustomPresentation.clear();
 		if (previous.kind !== "active") {
 			this.rejectStart(new Error("Subagents session is shutting down."));
 			this.turns.clear();
@@ -1665,6 +1723,7 @@ class SubagentSessionOwner {
 			case "tool_execution_end":
 				return this.handleToolExecutionEnd(event, ctx);
 			case "tool_result":
+				this.completePresentationAtToolResult(event);
 				return this.persistToolResult(event);
 			case "before_agent_start":
 				return this.handleBeforeAgentStart(event, ctx);
@@ -1708,12 +1767,21 @@ class SubagentSessionOwner {
 		const fact: SubagentSemanticFact = {
 			eventId: `${sessionId}:${this.semanticEpoch}:semantic-${++this.semanticSequence}`,
 			path: [...path],
-			transcriptPosition: { sessionId, afterEntryId: this.nativeSessionManager?.getLeafId?.() ?? null },
 			kind: kind as any,
 			data,
 			relatedPiEvents: refs.map((ref) => ({ ...ref })),
 		} as SubagentSemanticFact;
 		this.semanticEvents.publish(fact);
+		if (kind === "delegation") {
+			const toolCallId = refs.find((ref) => ref.toolCallId)?.toolCallId;
+			if (toolCallId && Array.isArray(data?.children)) {
+				this.delegationFacts.set(toolCallId, Object.freeze(data.children.map((child: any) => Object.freeze({
+					path: Object.freeze([...(Array.isArray(child.path) ? child.path : [])]),
+					task: typeof child.task === "string" ? child.task : "",
+					...(typeof child.persona === "string" ? { persona: child.persona } : {}),
+				}))));
+			}
+		}
 		if (kind === "child_settled" && Array.isArray(data?.statuses)) {
 			for (const operationId of this.activeAwaitOperations) {
 				this.recordPresentationEvents(this.semanticAdapter.acceptAwaitProgress(operationId, data.statuses));
@@ -1754,17 +1822,64 @@ class SubagentSessionOwner {
 		}, this.nativeRefs(undefined, "custom_message"));
 	}
 
+	private publishPersistedPresentationContent(value: unknown, entryId: string): void {
+		if (!Array.isArray(value)) return;
+		for (const candidate of value) {
+			if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+			const item = candidate as Record<string, unknown>;
+			if (item.source !== "custom_entry" || typeof item.operationId !== "string") continue;
+			if (item.state !== "complete" && item.state !== "error" && item.state !== "aborted") continue;
+			if (!item.data || typeof item.data !== "object" || Array.isArray(item.data)) continue;
+			const kind = item.kind;
+			if (kind !== "send" && kind !== "respond" && kind !== "await" && kind !== "delegation" && kind !== "completion" && kind !== "interrupt" && kind !== "teardown" && kind !== "resurrect") continue;
+			const operation = (item.data as Record<string, unknown>).operation;
+			if (operation !== kind && operation !== "protocol_error") continue;
+			const key = `${entryId}:${item.operationId}`;
+			if (this.publishedCustomPresentation.has(key)) continue;
+			this.publishedCustomPresentation.add(key);
+			const placement = Object.freeze({ entryId });
+			const base = {
+				operationId: item.operationId,
+				kind,
+				path: this.scopePath(),
+				placement,
+			} as const;
+			const event = ["delegation", "completion", "interrupt", "teardown", "resurrect"].includes(kind)
+				? {
+					type: "snapshot" as const,
+					...base,
+					state: item.state,
+					data: item.data as SubagentFiniteData,
+				}
+				: {
+					type: "end" as const,
+					...base,
+					state: item.state,
+					data: item.data as any,
+				};
+			this.semanticEvents.publishPresentation?.(event);
+		}
+	}
+
 	private recordNativeEvent(event: any): void {
 		const sessionId = this.currentSessionId();
 		if (!sessionId || sessionId === "unknown") return;
 		// Keep only exact append and tool-call matches. Do not infer an entry from
 		// the current session leaf: that leaf can belong to an unrelated message.
 		if (event?.type === "entry_appended" && event.entry?.id) {
+			const entryId = event.entry.id as string;
 			const message = event.entry.message;
-			if (message?.toolCallId) this.nativeToolEntries.set(message.toolCallId, event.entry.id);
+			if (message?.toolCallId) this.nativeToolEntries.set(message.toolCallId, entryId);
 			if (message?.content && Array.isArray(message.content)) {
 				for (const part of message.content) {
-					if (part?.type === "toolCall" && typeof part.id === "string") this.nativeToolEntries.set(part.id, event.entry.id);
+					if (part?.type === "toolCall" && typeof part.id === "string") this.nativeToolEntries.set(part.id, entryId);
+				}
+			}
+			const customType = message?.customType ?? event.entry.customType;
+			if (customType === "subagents") {
+				const details = message?.details ?? event.entry.details ?? event.entry.data;
+				if (details && typeof details === "object" && !Array.isArray(details)) {
+					this.publishPersistedPresentationContent((details as Record<string, unknown>).subagentContent, entryId);
 				}
 			}
 		}
@@ -1842,8 +1957,23 @@ class SubagentSessionOwner {
 		if (this.scope.kind === "root" && error) this.updateRootOperational({ lastError: error });
 	}
 
+	private completeOutstandingPresentationCalls(): void {
+		for (const toolCallId of Array.from(this.activePresentationCalls)) {
+			if (!this.completedPresentationCalls.has(toolCallId)) {
+				this.recordPresentationEvents(this.semanticAdapter.completeToolCall(toolCallId));
+			}
+			this.completedPresentationCalls.delete(toolCallId);
+			this.presentationEvents.delete(toolCallId);
+			this.toolCallIndexes.delete(toolCallId);
+			this.activePresentationCalls.delete(toolCallId);
+			this.respondCorrelations.delete(toolCallId);
+			this.delegationFacts.delete(toolCallId);
+		}
+	}
+
 	private async handleAgentSettled(event: any, ctx: ExtensionContext): Promise<void> {
 		const session = await this.waitForActiveSession();
+		this.completeOutstandingPresentationCalls();
 		this.failedToolFacts.clear();
 		const { rootError } = session.turns.settleRun(event?.aborted === true);
 		if (this.scope.kind === "root") {
@@ -1863,6 +1993,10 @@ class SubagentSessionOwner {
 
 	private recordPresentationEvents(events: readonly SemanticAdapterEvent[]): void {
 		for (const event of events) {
+			if (!("toolCallId" in event.placement)) {
+				this.semanticEvents.publishPresentation?.(event);
+				continue;
+			}
 			const toolCallId = event.placement.toolCallId;
 			const current = this.presentationEvents.get(toolCallId) ?? [];
 			current.push(event);
@@ -1879,12 +2013,16 @@ class SubagentSessionOwner {
 		const toolCallId = typeof toolCall?.id === "string" ? toolCall.id : undefined;
 		const toolName = typeof toolCall?.name === "string" ? toolCall.name : undefined;
 		if (!toolCallId || !toolName) return;
+		this.activePresentationCalls.add(toolCallId);
 		this.toolCallIndexes.set(toolCallId, update.contentIndex);
+		const serializedArguments = typeof toolCall.arguments === "string"
+			? toolCall.arguments
+			: toolCall.arguments && typeof toolCall.arguments === "object"
+				? JSON.stringify(toolCall.arguments)
+				: "";
 		const delta = update.type === "toolcall_delta"
 			? (typeof update.delta === "string" ? update.delta : "")
-			: update.type === "toolcall_end"
-				? (toolCall.arguments && typeof toolCall.arguments === "object" ? JSON.stringify(toolCall.arguments) : "")
-				: (toolCall.arguments && typeof toolCall.arguments === "object" ? JSON.stringify(toolCall.arguments) : "");
+			: serializedArguments;
 		const adapterEvent: PiToolCallDelta = {
 			toolCallId,
 			contentIndex: update.contentIndex,
@@ -1899,12 +2037,11 @@ class SubagentSessionOwner {
 		// Correlation ids are consumed only by the private responder route. The
 		// adapter strips them before publishing typed presentation data.
 		if (toolName === "respond") {
-			const raw = delta;
-			const match = /"correlationId"\s*:\s*"([^"\\]*)/.exec(raw);
-			if (match) this.respondCorrelations.set(toolCallId, match[1]);
-			const correlationId = this.respondCorrelations.get(toolCallId);
+			const correlationId = this.semanticAdapter.getArgument(toolCallId, "correlationId");
+			if (correlationId) this.respondCorrelations.set(toolCallId, correlationId);
+			const activeCorrelationId = this.respondCorrelations.get(toolCallId);
 			for (const semantic of events) {
-				if (!correlationId || semantic.kind !== "respond") continue;
+				if (!activeCorrelationId || semantic.kind !== "respond") continue;
 				const delta = semantic.type === "delta"
 					? semantic.data.delta
 					: semantic.type === "start" && semantic.data.operation === "respond"
@@ -1912,7 +2049,7 @@ class SubagentSessionOwner {
 						: undefined;
 				if (!delta) continue;
 				try {
-					await this.incomingMessages.responseProgress(correlationId, delta);
+					await this.incomingMessages.responseProgress(activeCorrelationId, delta);
 				} catch {
 					// The router owns endpoint lifecycle. A response can finish while
 					// the endpoint detaches, so progress is best effort.
@@ -1990,15 +2127,25 @@ class SubagentSessionOwner {
 
 	private async handleToolExecutionEnd(event: any, ctx: ExtensionContext): Promise<void> {
 		const session = await this.waitForActiveSession();
-		const events = this.semanticAdapter.acceptToolExecution({
-			toolCallId: event.toolCallId,
-			contentIndex: typeof event.contentIndex === "number" ? event.contentIndex : (this.toolCallIndexes.get(event.toolCallId) ?? 0),
-			toolName: event.toolName,
-			path: this.scopePath(),
-			result: event.result,
-			isError: event.isError === true,
-		} satisfies PiToolExecution);
-		this.recordPresentationEvents(events);
+		const hadToolResult = this.completedPresentationCalls.has(event.toolCallId);
+		if (!hadToolResult) {
+			const events = this.semanticAdapter.acceptToolExecution({
+				toolCallId: event.toolCallId,
+				contentIndex: typeof event.contentIndex === "number" ? event.contentIndex : (this.toolCallIndexes.get(event.toolCallId) ?? 0),
+				toolName: event.toolName,
+				path: this.scopePath(),
+				result: event.result,
+				isError: event.isError === true,
+			} satisfies PiToolExecution);
+			this.recordPresentationEvents(events);
+		}
+		this.completedPresentationCalls.delete(event.toolCallId);
+		if (!hadToolResult) {
+			this.presentationEvents.delete(event.toolCallId);
+			this.toolCallIndexes.delete(event.toolCallId);
+		}
+		this.activePresentationCalls.delete(event.toolCallId);
+		this.delegationFacts.delete(event.toolCallId);
 		this.respondCorrelations.delete(event.toolCallId);
 		if (ctx.signal?.aborted) {
 			session.turns.clearPendingTools();
@@ -2901,7 +3048,15 @@ class SubagentSessionOwner {
 				invocationId: toolCallId ?? started.eventId,
 				refs,
 			});
-			return this.structuredTextResult(result.text, { agents: result.agents }, [started, ...(result.semanticEvents ?? [])]);
+			const output = this.structuredTextResult(result.text, { agents: result.agents }, [started, ...(result.semanticEvents ?? [])]);
+			if (!result.subagentContent || result.subagentContent.length === 0) return output;
+			return {
+				...output,
+				details: {
+					...(output.details as Record<string, unknown>),
+					subagentContent: result.subagentContent,
+				},
+			};
 		} finally {
 			this.activeAwaitOperations.delete(toolCallId ?? `${this.currentSessionId()}:await`);
 		}

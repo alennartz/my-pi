@@ -23,6 +23,7 @@ import type {
 	SubagentDeltaData,
 	SubagentOperationKind,
 	SubagentPresentationManifest,
+	SubagentPresentationReplay,
 	SubagentProviderEvent,
 	SubagentProviderSnapshot,
 	SubagentStartData,
@@ -158,7 +159,6 @@ export type SubagentNodeSnapshot = Readonly<{
 	contextFill?: number;
 	channels: readonly string[];
 	waitingFor: readonly AgentPath[];
-	pendingCorrelations: readonly string[];
 	hasSubgroup: boolean;
 	lastOutput?: string;
 	lastError?: string;
@@ -205,22 +205,15 @@ export type SubagentEventData =
 			data: SubagentLifecycleData;
 	  }>;
 
-export type SubagentTranscriptPosition = Readonly<{
-	sessionId: string;
-	afterEntryId: string | null;
-	messageIndex?: number;
-}>;
-
-/** A semantic overlay. Native Pi entries remain the transcript source. */
+/** Private semantic facts used to derive the presentation stream. */
 export type SubagentSemanticFact = Readonly<{
 	eventId: string;
 	path: AgentPath;
 	relatedPiEvents: readonly PiEventRef[];
-	transcriptPosition?: SubagentTranscriptPosition;
 }> &
 	SubagentEventData;
 
-/** A typed live feed event with its provider-owned replay cursor. */
+/** Internal semantic fact event retained for lifecycle replay. */
 export type SubagentEvent = SubagentSemanticFact & Readonly<{ cursor: FeedCursor }>;
 
 export type SubagentState = "running" | "waiting" | "idle" | "errored" | "dead";
@@ -236,22 +229,10 @@ export type SubagentCostBreakdown = Readonly<{
 /** Public usage projection carried by provider snapshots. */
 export type SubagentUsage = Readonly<AgentUsage>;
 
-/** Snapshot boundary for the current provider epoch. */
-export type SubagentSnapshot = Readonly<{
+type HierarchySnapshot = Readonly<{
 	cursor: FeedCursor;
-	nodes: readonly SubagentNodeSnapshot[];
+	nodes: readonly ProviderNode[];
 }>;
-
-export type ReplayResult =
-	| Readonly<{
-			kind: "events";
-			cursor: FeedCursor;
-			events: readonly SubagentEvent[];
-	  }>
-	| Readonly<{
-			kind: "snapshot_required";
-			reason: "epoch_changed" | "history_unavailable";
-	  }>;
 
 export type SubagentTeardownReason = "not_found" | "already_removed" | "removed";
 
@@ -588,25 +569,22 @@ function cloneNode(node: ProviderNode): ProviderNode {
 		path: copyPath(node.path),
 		channels: Object.freeze([...node.channels]),
 		waitingFor: Object.freeze(node.waitingFor.map((target) => copyPath(target))),
-		pendingCorrelations: Object.freeze([...(node.pendingCorrelations ?? [])]),
 		usage: cloneUsage(node.usage),
 	});
 }
 
-/** Remove router-private wait identifiers from the public presentation view. */
 function publicNode(node: ProviderNode): ProviderNode {
-	const copy = {
-		...node,
+	const { pendingCorrelations: _privatePending, ...publicFields } = node as ProviderNode & { pendingCorrelations?: readonly string[] };
+	return Object.freeze({
+		...publicFields,
 		path: copyPath(node.path),
 		channels: Object.freeze([...(node.channels ?? [])]),
 		waitingFor: Object.freeze((node.waitingFor ?? []).map((target) => copyPath(target))),
 		usage: cloneUsage(node.usage),
-	} as Record<string, unknown>;
-	delete copy.pendingCorrelations;
-	return Object.freeze(copy) as ProviderNode;
+	});
 }
 
-function cloneSnapshot(snapshot: SubagentSnapshot): SubagentSnapshot {
+function cloneSnapshot(snapshot: HierarchySnapshot): HierarchySnapshot {
 	return Object.freeze({
 		cursor: Object.freeze({ ...snapshot.cursor }),
 		nodes: Object.freeze(snapshot.nodes.map((node) => cloneNode(node))),
@@ -661,7 +639,6 @@ function nodeFromLifecycle(
 			: {}),
 		channels: sourceChannels(source),
 		waitingFor: Object.freeze([]),
-		pendingCorrelations: Object.freeze([]),
 		hasSubgroup: false,
 		...(lastOutput !== undefined ? { lastOutput } : {}),
 	});
@@ -696,6 +673,26 @@ function isPresentationKind(value: unknown): value is SubagentOperationKind {
 		|| value === "completion" || value === "interrupt" || value === "teardown" || value === "resurrect";
 }
 
+function isPresentationState(value: unknown): value is PersistedSubagentContent["state"] {
+	return value === "complete" || value === "error" || value === "aborted";
+}
+
+function isPersistedPresentationContent(value: unknown): value is PersistedSubagentContent {
+	if (!isRecord(value) || typeof value.operationId !== "string" || !isPresentationKind(value.kind) || !isPresentationState(value.state)) return false;
+	if (value.source !== "tool" && value.source !== "custom_entry") return false;
+	if (!isRecord(value.data)) return false;
+	if (value.data.operation !== value.kind && value.data.operation !== "protocol_error") return false;
+	if (value.source === "tool") {
+		const placement = value.placement;
+		return isRecord(placement)
+			&& typeof placement.toolCallId === "string"
+			&& typeof placement.contentIndex === "number"
+			&& (placement.entryId === undefined || typeof placement.entryId === "string");
+	}
+	if (value.placement === undefined) return true;
+	return isRecord(value.placement) && typeof value.placement.entryId === "string";
+}
+
 /** Provider feed, hierarchy projection, and borrowed runtime lease owner. */
 export function createSubagentProvider(options: SubagentProviderOptions): SubagentProvider & {
 	/** Stop accepting facts and release provider subscriptions. */
@@ -714,6 +711,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	const history: ProviderFeedEvent[] = [];
 	const listeners = new Set<(event: ProviderFeedEvent) => void>();
 	const activeOperations = new Map<string, ActiveSubagentOperation>();
+	const presentationOperations = new Set<string>();
 	const hydratedSessions = new Set<string>();
 	const manifest: SubagentPresentationManifest = Object.freeze({
 		hiddenToolNames: Object.freeze(["send", "respond", "subagent", "fork", "await_agents", "interrupt", "teardown", "resurrect"]),
@@ -814,7 +812,6 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			...(fill !== undefined ? { contextFill: fill } : {}),
 			channels: Object.freeze(Array.isArray(snapshot.channels) ? [...snapshot.channels] : []),
 			waitingFor: projectWaiting(snapshot.path, operational),
-			pendingCorrelations: Object.freeze(Array.isArray(operational.pendingCorrelations) ? [...operational.pendingCorrelations] : []),
 			hasSubgroup: Boolean(operational.hasSubgroup || descendants),
 			...(lastOutput !== undefined ? { lastOutput } : {}),
 			...(lastError !== undefined ? { lastError } : {}),
@@ -847,16 +844,17 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		base: Omit<SubagentEvent, "cursor">,
 		deliver = true,
 	): SubagentEvent {
-		const publicData = base.kind === "node_added" || base.kind === "node_updated"
-			? publicNode(base.data as ProviderNode)
-			: base.kind === "node_removed"
-				? { ...(base.data as { node: ProviderNode; reason: string }), node: publicNode((base.data as { node: ProviderNode }).node) }
-			: base.data;
+		const { transcriptPosition: _legacyPosition, ...safeBase } = base as Omit<SubagentEvent, "cursor"> & { transcriptPosition?: unknown };
+		const publicData = safeBase.kind === "node_added" || safeBase.kind === "node_updated"
+			? publicNode(safeBase.data as ProviderNode)
+			: safeBase.kind === "node_removed"
+				? { ...(safeBase.data as { node: ProviderNode; reason: string }), node: publicNode((safeBase.data as { node: ProviderNode }).node) }
+			: safeBase.data;
 		const event = Object.freeze({
-			...base,
+			...safeBase,
 			data: publicData,
-			path: copyPath(base.path),
-			relatedPiEvents: cloneRefs(base.relatedPiEvents),
+			path: copyPath(safeBase.path),
+			relatedPiEvents: cloneRefs(safeBase.relatedPiEvents),
 			cursor: eventCursor(epoch, ++sequence),
 		}) as SubagentEvent;
 		history.push(event);
@@ -894,7 +892,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 					...(delta.field === "request" ? { request: prior.request + delta.delta } : { response: prior.response + delta.delta }),
 				};
 			}
-			return { ...prior, phase: delta.phase === "responding" ? "responding" : prior.phase };
+			return { ...prior, phase: delta.phase };
 		}
 		if (prior.operation === "respond" && delta.operation === "respond") return { ...prior, body: prior.body + delta.delta };
 		if (prior.operation === "await" && delta.operation === "await") return { ...prior, statuses: delta.statuses };
@@ -903,6 +901,9 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 
 	function appendPresentationEvent(event: SemanticAdapterEvent, deliver = true): ProviderFeedEvent {
 		const target = presentationTarget(event);
+		if (event.type === "end" || event.type === "snapshot") {
+			presentationOperations.add(`${pathKey(event.path)}:${event.operationId}`);
+		}
 		if (event.type === "start") {
 			const safeData = freezePresentationValue(stripPrivatePresentation(event.data));
 			activeOperations.set(event.operationId, Object.freeze({ target, data: safeData }));
@@ -1297,7 +1298,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		});
 	}
 
-	function replay(after?: FeedCursor): ReplayResult {
+	function replay(after?: FeedCursor): SubagentPresentationReplay {
 		const cursor = currentCursor();
 		if (after === undefined) {
 			return Object.freeze({ kind: "events", cursor, events: Object.freeze([...history]) });
@@ -1421,6 +1422,9 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function appendPersistedPayload(payload: PersistedSubagentContent, path: AgentPath, entryId: string | undefined): void {
+		const operationKey = `${pathKey(path)}:${payload.operationId}`;
+		if (presentationOperations.has(operationKey)) return;
+		presentationOperations.add(operationKey);
 		const placement = payload.source === "tool"
 			? Object.freeze({
 				...payload.placement,
@@ -1451,7 +1455,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const identity = `${input.session.sessionId}:${pathKey(input.path)}`;
 		if (hydratedSessions.has(identity)) return;
 		const manager = input.session.sessionManager;
-		let entries: readonly any[] = [];
+		let entries: readonly unknown[] = [];
 		try {
 			entries = manager.getBranch?.() ?? manager.getEntries?.() ?? [];
 		} catch {
@@ -1459,19 +1463,15 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		}
 		const saved: Array<{ payload: PersistedSubagentContent; entryId?: string }> = [];
 		for (const entry of entries) {
-			const message = entry?.message ?? entry;
-			const details = message?.details ?? entry?.details ?? entry?.data;
-			if (!isRecord(details)) continue;
-			const candidates = Array.isArray(details.subagentContent) ? details.subagentContent : [];
-			for (const candidate of candidates) {
-				if (!isRecord(candidate) || typeof candidate.operationId !== "string" || !isPresentationKind(candidate.kind) || typeof candidate.state !== "string") continue;
-				if (candidate.state !== "complete" && candidate.state !== "error" && candidate.state !== "aborted") continue;
-				if (!isRecord(candidate.data) || (candidate.source !== "tool" && candidate.source !== "custom_entry")) continue;
-				if (candidate.data.operation !== candidate.kind && candidate.data.operation !== "protocol_error") continue;
-				if (candidate.source === "tool" && (!isRecord(candidate.placement) || typeof candidate.placement.toolCallId !== "string" || typeof candidate.placement.contentIndex !== "number")) continue;
-				if (candidate.source === "custom_entry" && candidate.placement !== undefined && (!isRecord(candidate.placement) || typeof candidate.placement.entryId !== "string")) continue;
-				const payload = candidate as unknown as PersistedSubagentContent;
-				saved.push({ payload, ...(typeof entry?.id === "string" ? { entryId: entry.id } : {}) });
+			const candidateEntry = isRecord(entry) ? entry : {};
+			const message = isRecord(candidateEntry.message) ? candidateEntry.message : candidateEntry;
+			const messageRecord = isRecord(message) ? message : {};
+			const details = messageRecord.details ?? candidateEntry.details ?? candidateEntry.data;
+			if (!isRecord(details) || !Array.isArray(details.subagentContent)) continue;
+			const entryId = typeof candidateEntry.id === "string" ? candidateEntry.id : undefined;
+			for (const candidate of details.subagentContent) {
+				if (!isPersistedPresentationContent(candidate)) continue;
+				saved.push({ payload: candidate, ...(entryId !== undefined ? { entryId } : {}) });
 			}
 		}
 		for (const item of saved) appendPersistedPayload(item.payload, input.path, item.entryId);

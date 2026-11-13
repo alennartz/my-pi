@@ -17,11 +17,13 @@ export type SemanticOperationKind =
   | 'teardown'
   | 'resurrect';
 
-export type SemanticPlacement = Readonly<{
-  toolCallId: string;
-  contentIndex: number;
-  entryId?: string;
-}>;
+export type SemanticPlacement =
+  | Readonly<{
+      toolCallId: string;
+      contentIndex: number;
+      entryId?: string;
+    }>
+  | Readonly<{ entryId: string }>;
 
 export type PiToolCallDelta = Readonly<{
   toolCallId: string;
@@ -95,10 +97,14 @@ export interface SubagentSemanticAdapter {
   acceptResponseProgress(toolCallId: string, delta: string): readonly SemanticAdapterEvent[];
   acceptAwaitProgress(toolCallId: string, statuses: readonly SubagentAwaitStatus[]): readonly SemanticAdapterEvent[];
   completeToolCall(toolCallId: string): readonly SemanticAdapterEvent[];
+  /** Read one accumulated responder argument after any number of deltas. */
+  getArgument(toolCallId: string, key: string): string | undefined;
 }
 
 export interface SubagentSemanticAdapterOptions {
   readonly operationId?: (input: { toolCallId: string; kind: SemanticOperationKind }) => string;
+  /** Typed delegation facts carry the requested task and canonical child path. */
+  readonly delegation?: (input: { toolCallId: string; path: AgentPath }) => readonly Readonly<{ path: AgentPath; task: string; persona?: string }>[] | undefined;
 }
 
 type OperationState = {
@@ -114,6 +120,7 @@ type OperationState = {
   body: string;
   requested: readonly AgentPath[];
   statuses: readonly SubagentAwaitStatus[];
+  sendPhase: 'sending' | 'waiting' | 'responding';
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -130,12 +137,71 @@ function placement(event: Pick<PiToolCallDelta, 'toolCallId' | 'contentIndex'>):
   return Object.freeze({ toolCallId: event.toolCallId, contentIndex: event.contentIndex });
 }
 
+function finiteKind(kind: SemanticOperationKind): kind is Extract<SemanticOperationKind, 'delegation' | 'completion' | 'interrupt' | 'teardown' | 'resurrect'> {
+  return kind === 'delegation' || kind === 'completion' || kind === 'interrupt' || kind === 'teardown' || kind === 'resurrect';
+}
+
+function pathStartsWith(prefix: AgentPath, value: AgentPath): boolean {
+  return prefix.length <= value.length && prefix.every((part, index) => part === value[index]);
+}
+
 function pathFrom(value: unknown): AgentPath {
   if (Array.isArray(value)) {
     return copyPath(value.filter((part): part is string => typeof part === 'string' && part.length > 0));
   }
   if (typeof value !== 'string' || value.length === 0) return Object.freeze([]);
   return copyPath(value.split('/').filter(Boolean));
+}
+
+function resolvePath(owner: AgentPath, value: unknown, requested: readonly AgentPath[] = []): AgentPath {
+  const candidate = pathFrom(value);
+  if (candidate.length > 0) {
+    const requestedMatch = requested.find((path) => path.length === candidate.length && path.every((part, index) => part === candidate[index]));
+    if (requestedMatch) return copyPath(requestedMatch);
+    if (pathStartsWith(owner, candidate)) return copyPath(candidate);
+    return copyPath([...owner, ...candidate]);
+  }
+  return copyPath(owner);
+}
+
+function awaitState(value: unknown): SubagentAwaitStatus['state'] {
+  return value === 'running' || value === 'waiting' || value === 'idle' || value === 'errored' || value === 'dead' || value === 'stopped'
+    ? value
+    : 'idle';
+}
+
+function normaliseAwaitStatus(value: unknown, owner: AgentPath, requested: readonly AgentPath[], fallbackIndex = 0): SubagentAwaitStatus | undefined {
+  if (!isRecord(value)) return undefined;
+  const rawPath = value.path ?? value.id;
+  const fallbackPath = requested[fallbackIndex] ?? [...owner, ...(typeof value.id === 'string' ? [value.id] : [])];
+  const path = rawPath === undefined ? copyPath(fallbackPath) : resolvePath(owner, rawPath, requested);
+  if (path.length === 0) return undefined;
+  return {
+    path,
+    state: awaitState(value.state ?? value.status),
+    ...(typeof value.output === 'string' ? { output: value.output } : {}),
+    ...(typeof value.error === 'string' ? { error: value.error } : {}),
+    ...(typeof value.sessionId === 'string' ? { sessionId: value.sessionId } : {}),
+  };
+}
+
+function mergeAwaitStatuses(
+  prior: readonly SubagentAwaitStatus[],
+  next: readonly SubagentAwaitStatus[],
+  requested: readonly AgentPath[] = [],
+): readonly SubagentAwaitStatus[] {
+  const merged = new Map<string, SubagentAwaitStatus>();
+  for (const status of prior) merged.set(JSON.stringify(status.path), status);
+  for (const status of next) merged.set(JSON.stringify(status.path), status);
+  const requestedKeys = requested.map((path) => JSON.stringify(path));
+  const orderedKeys = [
+    ...requestedKeys,
+    ...[...merged.keys()].filter((key) => !requestedKeys.includes(key)),
+  ];
+  return Object.freeze(orderedKeys.flatMap((key) => {
+    const status = merged.get(key);
+    return status ? [{ ...status, path: copyPath(status.path) }] : [];
+  }));
 }
 
 function parseJsonObject(raw: string): UnknownRecord | undefined {
@@ -230,15 +296,32 @@ function resultRecord(result: unknown): UnknownRecord {
   return {};
 }
 
-function finiteData(kind: Extract<SemanticOperationKind, 'delegation' | 'completion' | 'interrupt' | 'teardown' | 'resurrect'>, result: unknown, path: AgentPath): SubagentFiniteData {
+function finiteData(
+  kind: Extract<SemanticOperationKind, 'delegation' | 'completion' | 'interrupt' | 'teardown' | 'resurrect'>,
+  result: unknown,
+  path: AgentPath,
+  toolCallId: string,
+  delegation: SubagentSemanticAdapterOptions['delegation'],
+): SubagentFiniteData {
   const source = cleanRouterMetadata(resultRecord(result)) as UnknownRecord;
   if (kind === 'delegation') {
+    const delegated = delegation?.({ toolCallId, path });
+    if (delegated) {
+      return {
+        operation: 'delegation',
+        children: delegated.map((child) => ({
+          path: resolvePath(path, child.path),
+          task: child.task,
+          ...(child.persona !== undefined ? { persona: child.persona } : {}),
+        })),
+      } as SubagentFiniteData;
+    }
     const entries = Array.isArray(source.children)
       ? source.children
       : Array.isArray(source.agents) ? source.agents : [];
     const children = entries.flatMap((entry) => {
       if (!isRecord(entry)) return [];
-      const childPath = pathFrom(entry.path ?? entry.id);
+      const childPath = resolvePath(path, entry.path ?? entry.id);
       const task = typeof entry.task === 'string' ? entry.task : '';
       return [{ path: childPath, task, ...(typeof entry.persona === 'string' ? { persona: entry.persona } : {}) }];
     });
@@ -249,8 +332,8 @@ function finiteData(kind: Extract<SemanticOperationKind, 'delegation' | 'complet
   }
   if (kind === 'interrupt') {
     const target = (value: unknown): UnknownRecord => {
-      if (isRecord(value)) return { ...value, path: pathFrom(value.path ?? value.id) };
-      return { path: pathFrom(value) };
+      if (isRecord(value)) return { ...value, path: resolvePath(path, value.path ?? value.id) };
+      return { path: resolvePath(path, value) };
     };
     return {
       operation: 'interrupt',
@@ -269,7 +352,7 @@ function finiteData(kind: Extract<SemanticOperationKind, 'delegation' | 'complet
       operation: 'resurrect',
       result: {
         affectedAgents: agents.filter(isRecord).map((agent) => ({
-          path: pathFrom(agent.path ?? agent.id),
+          path: resolvePath(path, agent.path ?? agent.id),
           sessionId: typeof agent.sessionId === 'string' ? agent.sessionId : '',
           incarnation: typeof agent.incarnation === 'string' ? agent.incarnation : '',
           state: agent.state === 'running' ? 'running' : 'idle',
@@ -281,7 +364,17 @@ function finiteData(kind: Extract<SemanticOperationKind, 'delegation' | 'complet
     } as SubagentFiniteData;
   }
   const status = source.status === 'already_removed' || source.status === 'not_found' ? source.status : 'removed';
-  const affectedAgents = Array.isArray(source.affectedAgents) ? source.affectedAgents : [];
+  const affectedAgents = (Array.isArray(source.affectedAgents) ? source.affectedAgents : [])
+    .filter(isRecord)
+    .map((agent) => ({
+      path: resolvePath(path, agent.path ?? agent.id),
+      sessionId: typeof agent.sessionId === 'string' ? agent.sessionId : '',
+      incarnation: typeof agent.incarnation === 'string' ? agent.incarnation : '',
+      state: awaitState(agent.state),
+      usage: isRecord(agent.usage) ? agent.usage : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
+      ...(typeof agent.output === 'string' ? { output: agent.output } : {}),
+      ...(typeof agent.error === 'string' ? { error: agent.error } : {}),
+    }));
   return {
     operation: 'teardown',
     result: { status, affectedAgents },
@@ -319,6 +412,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
       body: '',
       requested: Object.freeze([]),
       statuses: Object.freeze([]),
+      sendPhase: 'sending',
     };
     operations.set(event.toolCallId, state);
     return state;
@@ -339,7 +433,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
       return;
     }
     if (state.kind === 'await') {
-      state.requested = partialAgents(state.rawArguments);
+      state.requested = Object.freeze(partialAgents(state.rawArguments).map((value) => resolvePath(state.path, value)));
     }
   }
 
@@ -348,10 +442,10 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
       const source = parseJsonObject(state.rawArguments);
       return {
         operation: 'send',
-        to: pathFrom(source?.to ?? partialString(state.rawArguments, 'to')),
+        to: resolvePath(state.path, source?.to ?? partialString(state.rawArguments, 'to')),
         request: state.request,
         response: state.response,
-        phase: 'sending',
+        phase: state.sendPhase,
       };
     }
     if (state.kind === 'respond') return { operation: 'respond', body: state.body };
@@ -373,12 +467,24 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     const wasStarted = state.started;
     const previousRequest = state.request;
     const previousBody = state.body;
-    updateArguments(state, event.delta);
+    // toolcall_end carries the authoritative complete argument object. It must
+    // replace the streamed buffer, not append a second JSON document.
+    if (event.phase === 'end' && event.delta) {
+      state.rawArguments = event.delta;
+      updateArguments(state, '');
+    } else updateArguments(state, event.delta);
+    if (finiteKind(state.kind)) return [];
     if (event.phase === 'start' || !wasStarted) {
       state.started = true;
       return [{ type: 'start', ...base(state), data: startData(state) }];
     }
-    if (event.phase === 'end') return [];
+    if (event.phase === 'end') {
+      if (state.kind === 'send' && parseJsonObject(state.rawArguments)?.expectResponse === true && state.sendPhase === 'sending') {
+        state.sendPhase = 'waiting';
+        return [{ type: 'delta', ...base(state), data: { operation: 'send', phase: 'waiting' } }];
+      }
+      return [];
+    }
     if (state.kind === 'send') {
       const delta = changedSuffix(previousRequest, state.request, '');
       return delta ? [{ type: 'delta', ...base(state), data: { operation: 'send', field: 'request', delta } }] : [];
@@ -393,7 +499,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
   function endData(state: OperationState, result: unknown): SemanticEndData {
     const source = resultRecord(result);
     if (state.kind === 'send') {
-      const target = pathFrom(source.to ?? source.recipient ?? parseJsonObject(state.rawArguments)?.to ?? partialString(state.rawArguments, 'to'));
+      const target = resolvePath(state.path, source.to ?? source.recipient ?? parseJsonObject(state.rawArguments)?.to ?? partialString(state.rawArguments, 'to'));
       const response = typeof source.message === 'string'
         ? source.message
         : typeof source.response === 'string' ? source.response : state.response;
@@ -412,14 +518,20 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
         ...(typeof source.error === 'string' ? { error: source.error } : {}),
       };
     }
-    const statuses = Array.isArray(source.statuses) ? source.statuses : state.statuses;
-    return { operation: 'await', result: { statuses, ...(source.interrupted === true ? { interrupted: true } : {}), ...(typeof source.error === 'string' ? { error: source.error } : {}) } };
+    const authoritative = Array.isArray(source.agents)
+      ? source.agents
+      : Array.isArray(source.statuses) ? source.statuses : [];
+    const incoming = authoritative
+      .map((value, index) => normaliseAwaitStatus(value, state.path, state.requested, index))
+      .filter((status): status is SubagentAwaitStatus => status !== undefined);
+    if (incoming.length > 0) state.statuses = mergeAwaitStatuses(state.statuses, incoming, state.requested);
+    return { operation: 'await', result: { statuses: state.statuses, ...(source.interrupted === true ? { interrupted: true } : {}), ...(typeof source.error === 'string' ? { error: source.error } : {}) } };
   }
 
   function acceptToolExecution(event: PiToolExecution): readonly SemanticAdapterEvent[] {
     const kind = operationKind(event.toolName);
     if (!kind) return [];
-    if (kind === 'delegation' || kind === 'completion' || kind === 'interrupt' || kind === 'teardown' || kind === 'resurrect') {
+    if (finiteKind(kind)) {
       const state: OperationState = operations.get(event.toolCallId) ?? {
         operationId: options.operationId?.({ toolCallId: event.toolCallId, kind }) ?? event.toolCallId,
         kind,
@@ -427,10 +539,10 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
         placement: placement(event),
         toolName: event.toolName,
         started: false,
-        rawArguments: '', request: '', response: '', body: '', requested: Object.freeze([]), statuses: Object.freeze([]),
+        rawArguments: '', request: '', response: '', body: '', requested: Object.freeze([]), statuses: Object.freeze([]), sendPhase: 'sending',
       };
       operations.delete(event.toolCallId);
-      return [{ type: 'snapshot', ...base(state), state: stateForResult(event.isError, event.result), data: finiteData(kind, event.result, state.path) }];
+      return [{ type: 'snapshot', ...base(state), state: stateForResult(event.isError, event.result), data: finiteData(kind, event.result, state.path, event.toolCallId, options.delegation) }];
     }
 
     const state = operations.get(event.toolCallId) ?? {
@@ -440,7 +552,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
       placement: placement(event),
       toolName: event.toolName,
       started: false,
-      rawArguments: '', request: '', response: '', body: '', requested: Object.freeze([]), statuses: Object.freeze([]),
+      rawArguments: '', request: '', response: '', body: '', requested: Object.freeze([]), statuses: Object.freeze([]), sendPhase: 'sending',
     } as OperationState;
     const source = resultRecord(event.result);
     if (kind === 'send') {
@@ -455,7 +567,12 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
         : typeof source.response === 'string' ? source.response : undefined;
       if (authoritative !== undefined) state.body = authoritative;
     }
-    if (kind === 'await' && Array.isArray(source.statuses)) state.statuses = source.statuses as readonly SubagentAwaitStatus[];
+    if (kind === 'await') {
+      const incoming = (Array.isArray(source.agents) ? source.agents : Array.isArray(source.statuses) ? source.statuses : [])
+        .map((value, index) => normaliseAwaitStatus(value, state.path, state.requested, index))
+        .filter((status): status is SubagentAwaitStatus => status !== undefined);
+      if (incoming.length > 0) state.statuses = mergeAwaitStatuses(state.statuses, incoming, state.requested);
+    }
     operations.delete(event.toolCallId);
     return [{ type: 'end', ...base(state), state: stateForResult(event.isError, event.result), data: endData(state, event.result) }];
   }
@@ -463,14 +580,23 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
   function acceptResponseProgress(toolCallId: string, delta: string): readonly SemanticAdapterEvent[] {
     const state = operations.get(toolCallId);
     if (!state || state.kind !== 'send') return [];
+    const events: SemanticAdapterEvent[] = [];
+    if (state.sendPhase !== 'responding') {
+      state.sendPhase = 'responding';
+      events.push({ type: 'delta', ...base(state), data: { operation: 'send', phase: 'responding' } });
+    }
     state.response += delta;
-    return [{ type: 'delta', ...base(state), data: { operation: 'send', field: 'response', delta } }];
+    if (delta) events.push({ type: 'delta', ...base(state), data: { operation: 'send', field: 'response', delta } });
+    return events;
   }
 
   function acceptAwaitProgress(toolCallId: string, statuses: readonly SubagentAwaitStatus[]): readonly SemanticAdapterEvent[] {
     const state = operations.get(toolCallId);
     if (!state || state.kind !== 'await') return [];
-    state.statuses = Object.freeze(statuses.map((status) => ({ ...status, path: copyPath(status.path) })));
+    const incoming = statuses
+      .map((status, index) => normaliseAwaitStatus(status, state.path, state.requested, index))
+      .filter((status): status is SubagentAwaitStatus => status !== undefined);
+    state.statuses = mergeAwaitStatuses(state.statuses, incoming, state.requested);
     return [{ type: 'delta', ...base(state), data: { operation: 'await', statuses: state.statuses } }];
   }
 
@@ -478,13 +604,19 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     const state = operations.get(toolCallId);
     if (!state) return [];
     operations.delete(toolCallId);
-    if (state.kind === 'delegation' || state.kind === 'completion' || state.kind === 'interrupt' || state.kind === 'teardown' || state.kind === 'resurrect') return [];
+    if (finiteKind(state.kind)) return [{ type: 'snapshot', ...base(state), state: 'aborted', data: finiteData(state.kind, {}, state.path, toolCallId, options.delegation) }];
     return [{ type: 'end', ...base(state), state: 'aborted', data: state.kind === 'send'
-      ? { operation: 'send', to: pathFrom(parseJsonObject(state.rawArguments)?.to), request: state.request, response: state.response }
+      ? { operation: 'send', to: resolvePath(state.path, parseJsonObject(state.rawArguments)?.to), request: state.request, response: state.response }
       : state.kind === 'respond'
         ? { operation: 'respond', body: state.body }
         : { operation: 'await', result: { statuses: state.statuses, interrupted: true } } }];
   }
 
-  return { acceptToolCallDelta, acceptToolExecution, acceptResponseProgress, acceptAwaitProgress, completeToolCall };
+  function getArgument(toolCallId: string, key: string): string | undefined {
+    const state = operations.get(toolCallId);
+    const source = state ? parseJsonObject(state.rawArguments) : undefined;
+    return source && typeof source[key] === 'string' ? source[key] as string : undefined;
+  }
+
+  return { acceptToolCallDelta, acceptToolExecution, acceptResponseProgress, acceptAwaitProgress, completeToolCall, getArgument };
 }
