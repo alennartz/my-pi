@@ -882,31 +882,43 @@ describe("semantic facts on native messages", () => {
 		}
 	});
 
-	it("publishes custom completion payloads from the terminal native message", async () => {
+	it("publishes custom completion payloads only after the native entry is appended", async () => {
 		const root = await rootSession();
+		const payload = {
+			operationId: "completion-1",
+			kind: "completion",
+			state: "complete",
+			source: "custom_entry",
+			data: { operation: "completion", result: { state: "idle", output: "done" } },
+		};
 		await root.handlers.get("message_end")?.({
 			type: "message_end",
-			message: {
-				role: "custom",
-				customType: "subagents",
-				entryId: "completion-entry",
-				details: {
-					subagentContent: [{
-						operationId: "completion-1",
-						kind: "completion",
-						state: "complete",
-						source: "custom_entry",
-						placement: { entryId: "completion-entry" },
-						data: { operation: "completion", result: { state: "idle", output: "done" } },
-					}],
-				},
-			},
+			message: { role: "custom", customType: "subagents", details: { subagentContent: [payload] } },
+		}, root.ctx);
+		expect(root.presentation).not.toContainEqual(expect.objectContaining({ operationId: "completion-1" }));
+		await root.handlers.get("entry_appended")?.({
+			type: "entry_appended",
+			entry: { id: "completion-entry", message: { role: "custom", customType: "subagents", details: { subagentContent: [payload] } } },
 		}, root.ctx);
 		expect(root.presentation).toContainEqual(expect.objectContaining({
 			type: "snapshot",
 			operationId: "completion-1",
 			placement: { entryId: "completion-entry" },
 		}));
+	});
+
+	it("carries custom payloads from message_end to a later bare append event", async () => {
+		const root = await rootSession();
+		const payload = {
+			operationId: "bare-custom",
+			kind: "send",
+			state: "complete",
+			source: "custom_entry",
+			data: { operation: "send", to: ["worker"], request: "question", response: "" },
+		};
+		await root.handlers.get("message_end")?.({ type: "message_end", message: { role: "custom", customType: "subagents", details: { subagentContent: [payload] } } }, root.ctx);
+		await root.handlers.get("entry_appended")?.({ type: "entry_appended", entry: { id: "bare-entry", message: { role: "custom", customType: "subagents" } } }, root.ctx);
+		expect(root.presentation).toContainEqual(expect.objectContaining({ operationId: "bare-custom", type: "snapshot", placement: { entryId: "bare-entry" } }));
 	});
 
 	it("persists the accepted send fact on the sender's native tool result", async () => {
@@ -989,6 +1001,46 @@ describe("semantic facts on native messages", () => {
 		expect(facts.find((fact) => fact.kind === "completion")).toMatchObject({ data: { output: "saved answer", delivery: "awaited", invocationId: "await-call" } });
 	});
 
+	it("publishes await-drained completion payloads after their native entry is allocated", async () => {
+		const root = await rootSession();
+		const waiting = root.tools.get("await_agents")!.execute("await-presentation", { agents: ["worker"] }, undefined, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "done" }] } });
+		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		const result = await waiting;
+		const payload = (result.details as any).subagentContent.find((item: any) => item.kind === "completion");
+		expect(payload).toMatchObject({ source: "custom_entry", kind: "completion" });
+		expect(root.presentation).not.toContainEqual(expect.objectContaining({ operationId: payload.operationId }));
+
+		await root.handlers.get("tool_result")?.({
+			type: "tool_result", toolName: "await_agents", toolCallId: "await-presentation", details: result.details,
+		}, root.ctx);
+		expect(root.presentation).not.toContainEqual(expect.objectContaining({ operationId: payload.operationId }));
+		await root.handlers.get("entry_appended")?.({
+			type: "entry_appended",
+			entry: { id: "await-result-entry", message: { role: "toolResult", toolCallId: "await-presentation", details: result.details } },
+		}, root.ctx);
+		expect(root.presentation).toContainEqual(expect.objectContaining({
+			type: "snapshot", operationId: payload.operationId, placement: { entryId: "await-result-entry" },
+		}));
+	});
+
+	it("returns every requested status when one child settled before await", async () => {
+		const root = await rootSession();
+		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
+		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "worker done" }] } });
+		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		const waiting = root.tools.get("await_agents")!.execute("await-both", { agents: ["worker", "scout"] }, undefined, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		managed.created[1].hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "scout done" }] } });
+		managed.created[1].hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
+		managed.created[1].hooks.onEvent({ type: "agent_settled" });
+		const result = await waiting;
+		expect((result.structuredContent as any).agents.map((agent: any) => agent.id)).toEqual(["worker", "scout"]);
+	});
+
 	it("releases a refused await without leaving a running semantic wait", async () => {
 		const root = await rootSession();
 		const receipt = await root.worker.config.scope.uplink.send({ to: "parent", message: "answer before waiting", expectResponse: true });
@@ -1028,6 +1080,22 @@ describe("semantic facts on native messages", () => {
 		expect(factsIn(notification).find((fact) => fact.kind === "completion")).toMatchObject({ data: { delivery: "asynchronous" } });
 	});
 
+	it("persists an aborted presentation payload when no tool result arrives", async () => {
+		const root = await rootSession();
+		await root.handlers.get("message_update")?.({
+			type: "message_update",
+			assistantMessageEvent: {
+				type: "toolcall_start", contentIndex: 0,
+				toolCall: { id: "aborted-send", name: "send", arguments: '{"to":"worker","message":"cancel me"}' },
+			},
+		}, root.ctx);
+		await root.handlers.get("agent_settled")?.({ type: "agent_settled", aborted: true }, root.ctx);
+		const persisted = root.pi.sendMessage.mock.calls
+			.map(([message]) => message)
+			.find((message) => message.details?.subagentContent?.some((item: any) => item.operationId === "aborted-send"));
+		expect(persisted).toMatchObject({ customType: "subagents", details: { subagentContent: [expect.objectContaining({ state: "aborted", source: "tool", kind: "send" })] } });
+	});
+
 	it("persists a rejected response on the native send error result", async () => {
 		const root = await rootSession();
 		const waiting = root.tools.get("send")!.execute("failed-send", { to: "worker", message: "question", expectResponse: true }, undefined, undefined, root.ctx);
@@ -1055,6 +1123,12 @@ describe("semantic facts on native messages", () => {
 		const notification = root.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("late answer"))?.[0];
 		expect(factsIn(notification)).toEqual([]);
 		expect(notification.content).toContain("late answer");
+		expect(notification.details?.subagentContent).toContainEqual(expect.objectContaining({
+			kind: "send",
+			source: "custom_entry",
+			state: "complete",
+			data: { operation: "send", to: ["worker"], request: "question", response: "late answer" },
+		}));
 	});
 
 	it("persists asynchronous settlement facts with the idle custom message", async () => {

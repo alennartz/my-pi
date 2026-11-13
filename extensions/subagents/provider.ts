@@ -672,6 +672,10 @@ function isPresentationKind(value: unknown): value is SubagentOperationKind {
 		|| value === "completion" || value === "interrupt" || value === "teardown" || value === "resurrect";
 }
 
+function isTopologyKind(value: unknown): value is "node_added" | "node_updated" | "node_removed" | "runtime_replaced" {
+	return value === "node_added" || value === "node_updated" || value === "node_removed" || value === "runtime_replaced";
+}
+
 function isPresentationState(value: unknown): value is PersistedSubagentContent["state"] {
 	return value === "complete" || value === "error" || value === "aborted";
 }
@@ -902,9 +906,11 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		return `${pathKey(event.path)}:${event.operationId}`;
 	}
 
-	function appendPresentationEvent(event: SemanticAdapterEvent, deliver = true): ProviderFeedEvent {
+	function appendPresentationEvent(event: SemanticAdapterEvent, deliver = true): ProviderFeedEvent | undefined {
 		const target = presentationTarget(event);
 		const operationKey = presentationOperationKey(event);
+		if ((event.type === "end" || event.type === "snapshot") && presentationOperations.has(operationKey)) return undefined;
+		if (event.type === "start" && presentationOperations.has(operationKey)) return undefined;
 		if (event.type === "end" || event.type === "snapshot") {
 			presentationOperations.add(operationKey);
 		}
@@ -1095,23 +1101,15 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			const identity = historicalIdentityFor(record, add);
 			const node = nodeFromLifecycle(record, identity.incarnation);
 			historicalNodes.set(key, node);
-			if (record.kind === "resurrect") {
-				appendEvent({
-					eventId: record.recordId,
-					path: node.path,
-					relatedPiEvents: [],
-					kind: "resurrect",
-					data: lifecycleData(record),
-				});
-			} else {
-				appendEvent({
-					eventId: record.recordId,
-					path: node.path,
-					relatedPiEvents: [],
-					kind: record.kind,
-					data: node,
-				});
-			}
+			// Resurrection is a persistence interpretation, not a provider
+			// lifecycle event. Replay exposes the resulting topology only.
+			appendEvent({
+				eventId: record.recordId,
+				path: node.path,
+				relatedPiEvents: [],
+				kind: record.kind === "node_updated" ? "node_updated" : "node_added",
+				data: node,
+			});
 			return;
 		}
 		if (record.kind === "node_removed") {
@@ -1134,13 +1132,8 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			}
 			return;
 		}
-		appendEvent({
-			eventId: record.recordId,
-			path: copyPath(record.path),
-			relatedPiEvents: [],
-			kind: record.kind,
-			data: lifecycleData(record) as SubagentEvent["data"],
-		});
+		// Completion and control records belong to the native transcript or
+		// presentation stream. They must not cross the provider topology replay.
 	}
 
 	function findRegistered(path: AgentPath): RegisteredAgentNode {
@@ -1519,8 +1512,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		? options.registryEvents.subscribe(appendRegistryEvent)
 		: options.registry.subscribe(appendRegistryEvent);
 	if (options.semanticEvents) semanticUnsubscribe = options.semanticEvents.subscribe((fact) => {
-		if (closed) return;
-		if (options.presentationEvents) return;
+		if (closed || options.presentationEvents || !isTopologyKind(fact.kind)) return;
 		const semantic = createSemanticEvent({
 			...fact,
 			path: copyPath(fact.path),

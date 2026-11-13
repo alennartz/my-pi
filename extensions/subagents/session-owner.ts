@@ -408,6 +408,27 @@ class SessionTurnCoordinator {
 		}];
 	}
 
+	private completionAgent(status: AwaitChildStatus): AgentCompleteData {
+		const id = status.path.at(-1) ?? "";
+		return {
+			id,
+			status: status.state === "errored" ? "errored" : status.state === "dead" ? "dead" : "idle",
+			...(status.output !== undefined ? { output: status.output } : {}),
+			...(status.error !== undefined ? { error: status.error } : {}),
+			...(status.sessionId !== undefined ? { sessionId: status.sessionId } : {}),
+		};
+	}
+
+	private mergeCompletionAgents(
+		primary: readonly AgentCompleteData[],
+		additional: readonly AgentCompleteData[],
+	): AgentCompleteData[] {
+		const merged = new Map<string, AgentCompleteData>();
+		for (const agent of primary) merged.set(agent.id, agent);
+		for (const agent of additional) if (!merged.has(agent.id)) merged.set(agent.id, agent);
+		return [...merged.values()];
+	}
+
 	constructor(pi: ExtensionAPI, semantic: SemanticOwnerOptions) {
 		this.semantic = semantic;
 		this.holdGate = this.createHoldGate();
@@ -686,8 +707,13 @@ class SessionTurnCoordinator {
 			semanticEvents = [...semanticEvents, finalFact];
 			this.clearAwaitInvocations(state.semantic.requested);
 		}
+		const agents = this.mergeCompletionAgents(
+			outcome.statuses.map((status) => this.completionAgent(status)),
+			drained.agents,
+		);
 		state.resolve({
 			...drained,
+			agents,
 			...(semanticEvents.length > 0 ? { semanticEvents } : {}),
 			...(drained.subagentContent && drained.subagentContent.length > 0 ? { subagentContent: drained.subagentContent } : {}),
 		});
@@ -840,7 +866,7 @@ class SessionTurnCoordinator {
 					state.abortCleanup = () => signal.removeEventListener("abort", onAbort);
 				}
 			});
-			const agents = result.agents.length > 0 ? result.agents : completionDataFor(ids, manager);
+			const agents = this.mergeCompletionAgents(result.agents, completionDataFor(ids, manager));
 			return this.truncatedWaitResult(
 				result.text || "All specified agents have completed. No pending notifications.",
 				agents,
@@ -1334,11 +1360,17 @@ class SubagentSessionOwner {
 	private readonly presentationEvents = new Map<string, SemanticAdapterEvent[]>();
 	private readonly respondCorrelations = new Map<string, string>();
 	private readonly toolCallIndexes = new Map<string, number>();
+	private readonly routedMessageTargets = new Map<string, AgentPath>();
 	private readonly activePresentationCalls = new Set<string>();
 	private readonly completedPresentationCalls = new Set<string>();
 	private readonly publishedCustomPresentation = new Set<string>();
+	/** Custom payloads wait for the containing entry append before publication. */
+	private readonly pendingCustomMessages: PersistedSubagentContent[][] = [];
+	/** Custom payloads returned by a tool wait for the containing native entry id. */
+	private readonly pendingCustomPresentation = new Map<string, readonly PersistedSubagentContent[]>();
 	private readonly activeAwaitOperations = new Set<string>();
 	private readonly failedToolFacts = new Map<string, readonly SubagentSemanticFact[]>();
+	private presentationSequence = 0;
 
 	constructor(private readonly scope: SubagentScope, private readonly pi: ExtensionAPI) {
 		this.rootControl = scope.kind === "root" ? new RootSubagentControlPort() : undefined;
@@ -1486,6 +1518,34 @@ class SubagentSessionOwner {
 		});
 	}
 
+	private semanticAdapterTarget(toolCallId: string): AgentPath | undefined {
+		const target = this.routedMessageTargets.get(toolCallId);
+		return target ? [...target] : undefined;
+	}
+
+	private persistAbortedPresentation(content: readonly PersistedSubagentContent[]): void {
+		if (content.length === 0) return;
+		try {
+			this.pi.sendMessage(
+				{ customType: "subagents", content: "", display: true, details: { subagentContent: [...content] } },
+				{ deliverAs: "nextTurn" },
+			);
+		} catch {
+			// Native persistence is best effort while the host is shutting down.
+		}
+	}
+
+	private persistedCustomContent(value: unknown): readonly PersistedSubagentContent[] {
+		if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+		const record = value as Record<string, unknown>;
+		const details = record.details && typeof record.details === "object" && !Array.isArray(record.details)
+			? record.details as Record<string, unknown>
+			: record;
+		return Array.isArray(details.subagentContent)
+			? details.subagentContent.filter((item): item is PersistedSubagentContent => Boolean(item && typeof item === "object" && !Array.isArray(item) && (item as any).source === "custom_entry"))
+			: [];
+	}
+
 	private completePresentationAtToolResult(event: any): void {
 		const result = event.result !== undefined
 			? event.result
@@ -1494,6 +1554,16 @@ class SubagentSessionOwner {
 					...(event.details !== undefined ? { details: event.details } : {}),
 					...(event.content !== undefined ? { content: event.content } : {}),
 				};
+		const customContent = [
+			this.persistedCustomContent(event.details),
+			this.persistedCustomContent(event.structuredContent),
+			this.persistedCustomContent(event.result),
+			this.persistedCustomContent(result),
+		].flat();
+		if (customContent.length > 0) {
+			const unique = new Map(customContent.map((item) => [item.operationId, item]));
+			this.pendingCustomPresentation.set(event.toolCallId, [...unique.values()]);
+		}
 		const events = this.semanticAdapter.acceptToolExecution({
 			toolCallId: event.toolCallId,
 			contentIndex: this.toolCallIndexes.get(event.toolCallId) ?? 0,
@@ -1501,6 +1571,7 @@ class SubagentSessionOwner {
 			path: this.scopePath(),
 			result,
 			isError: event.isError === true,
+			targetPath: this.semanticAdapterTarget(event.toolCallId),
 		});
 		if (events.length === 0) return;
 		this.recordPresentationEvents(events);
@@ -1525,7 +1596,7 @@ class SubagentSessionOwner {
 			...(combinedContent.length > 0 ? { subagentContent: combinedContent } : {}),
 		};
 		if (facts && facts.length > 0) return { details: semanticDetails(next, facts) };
-		if (content.length > 0) return { details: next };
+		if (combinedContent.length > 0) return { details: next };
 		return undefined;
 	}
 
@@ -1670,9 +1741,12 @@ class SubagentSessionOwner {
 		this.completedPresentationCalls.clear();
 		this.presentationEvents.clear();
 		this.toolCallIndexes.clear();
+		this.routedMessageTargets.clear();
 		this.respondCorrelations.clear();
 		this.delegationFacts.clear();
 		this.publishedCustomPresentation.clear();
+		this.pendingCustomMessages.length = 0;
+		this.pendingCustomPresentation.clear();
 		if (previous.kind !== "active") {
 			this.rejectStart(new Error("Subagents session is shutting down."));
 			this.turns.clear();
@@ -1840,6 +1914,28 @@ class SubagentSessionOwner {
 		};
 	}
 
+	private deferredSendPresentation(
+		to: AgentPath,
+		request: string,
+		response: RoutedResponse,
+	): PersistedSubagentContent {
+		const isResponse = response.type === "response";
+		const text = isResponse ? response.message : "";
+		return {
+			operationId: `deferred-send:${this.currentSessionId()}:${++this.presentationSequence}`,
+			kind: "send",
+			state: isResponse ? "complete" : "error",
+			source: "custom_entry",
+			data: {
+				operation: "send",
+				to: [...to],
+				request,
+				response: text,
+				...(response.type === "error" ? { error: response.error } : {}),
+			},
+		};
+	}
+
 	private publishIncomingMessage(message: RoutedMessage, source: "local" | "uplink"): SubagentSemanticFact {
 		const from = this.pathForEndpoint(message.from, source);
 		const to = this.scopePath();
@@ -1875,19 +1971,12 @@ class SubagentSessionOwner {
 				path: this.scopePath(),
 				placement,
 			} as const;
-			const event = ["delegation", "completion", "interrupt", "teardown", "resurrect"].includes(kind)
-				? {
-					type: "snapshot" as const,
-					...base,
-					state: item.state,
-					data: item.data as SubagentFiniteData,
-				}
-				: {
-					type: "end" as const,
-					...base,
-					state: item.state,
-					data: item.data as any,
-				};
+			const event = {
+				type: "snapshot" as const,
+				...base,
+				state: item.state,
+				data: item.data as SubagentFiniteData,
+			};
 			this.semanticEvents.publishPresentation?.(event);
 		}
 	}
@@ -1895,21 +1984,23 @@ class SubagentSessionOwner {
 	private recordNativeEvent(event: any): void {
 		const sessionId = this.currentSessionId();
 		if (!sessionId || sessionId === "unknown") return;
+		// A custom message_end callback can run before Pi allocates its entry.
+		// Hold its payload, then resolve placement only from entry_appended.
 		if (event?.type === "message_end" && event.message?.role === "custom" && event.message.customType === "subagents") {
-			const entryId = typeof event.message.entryId === "string"
-				? event.message.entryId
-				: this.nativeSessionManager?.getLeafId?.();
-			const details = event.message.details;
-			if (entryId && details && typeof details === "object" && !Array.isArray(details)) {
-				this.publishPersistedPresentationContent((details as Record<string, unknown>).subagentContent, entryId);
-			}
+			const pending = this.persistedCustomContent(event.message.details);
+			if (pending.length > 0) this.pendingCustomMessages.push([...pending]);
 		}
-		// Native tool entries require exact append matches. A custom message's
-		// terminal event is the append boundary, so its leaf is the containing entry.
 		if (event?.type === "entry_appended" && event.entry?.id) {
 			const entryId = event.entry.id as string;
 			const message = event.entry.message;
 			if (message?.toolCallId && !this.nativeToolEntries.has(message.toolCallId)) this.nativeToolEntries.set(message.toolCallId, entryId);
+			if (message?.toolCallId) {
+				const pending = this.pendingCustomPresentation.get(message.toolCallId);
+				if (pending) {
+					this.publishPersistedPresentationContent(pending, entryId);
+					this.pendingCustomPresentation.delete(message.toolCallId);
+				}
+			}
 			if (message?.content && Array.isArray(message.content)) {
 				for (const part of message.content) {
 					if (part?.type === "toolCall" && typeof part.id === "string" && !this.nativeToolEntries.has(part.id)) this.nativeToolEntries.set(part.id, entryId);
@@ -1918,9 +2009,10 @@ class SubagentSessionOwner {
 			const customType = message?.customType ?? event.entry.customType;
 			if (customType === "subagents") {
 				const details = message?.details ?? event.entry.details ?? event.entry.data;
-				if (details && typeof details === "object" && !Array.isArray(details)) {
-					this.publishPersistedPresentationContent((details as Record<string, unknown>).subagentContent, entryId);
-				}
+				const current = this.persistedCustomContent(details);
+				const pending = this.pendingCustomMessages.shift() ?? [];
+				const combined = new Map([...pending, ...current].map((item) => [item.operationId, item]));
+				if (combined.size > 0) this.publishPersistedPresentationContent([...combined.values()], entryId);
 			}
 		}
 	}
@@ -2001,10 +2093,12 @@ class SubagentSessionOwner {
 		for (const toolCallId of Array.from(this.activePresentationCalls)) {
 			if (!this.completedPresentationCalls.has(toolCallId)) {
 				this.recordPresentationEvents(this.semanticAdapter.completeToolCall(toolCallId));
+				this.persistAbortedPresentation(this.persistedPresentationContent(toolCallId));
 			}
 			this.completedPresentationCalls.delete(toolCallId);
 			this.presentationEvents.delete(toolCallId);
 			this.toolCallIndexes.delete(toolCallId);
+			this.routedMessageTargets.delete(toolCallId);
 			this.activePresentationCalls.delete(toolCallId);
 			this.respondCorrelations.delete(toolCallId);
 			this.delegationFacts.delete(toolCallId);
@@ -2063,11 +2157,25 @@ class SubagentSessionOwner {
 		const delta = update.type === "toolcall_delta"
 			? (typeof update.delta === "string" ? update.delta : "")
 			: serializedArguments;
+		let targetPath: AgentPath | undefined;
+		if (toolName === "send") {
+			try {
+				const parsed = JSON.parse(serializedArguments) as { to?: unknown };
+				if (typeof parsed.to === "string") {
+					const session = this.phase.kind === "active" ? this.phase.session : undefined;
+					const local = session?.manager.getAgentStatus(parsed.to) !== undefined;
+					targetPath = this.pathForEndpoint(parsed.to, local ? "local" : "uplink");
+				}
+			} catch {
+				// The adapter keeps partial arguments private until a route resolves.
+			}
+		}
 		const adapterEvent: PiToolCallDelta = {
 			toolCallId,
 			contentIndex: update.contentIndex,
 			toolName,
 			path: this.scopePath(),
+			...(targetPath !== undefined ? { targetPath } : {}),
 			phase: update.type === "toolcall_start" ? "start" : update.type === "toolcall_end" ? "end" : "delta",
 			delta,
 		};
@@ -2174,6 +2282,7 @@ class SubagentSessionOwner {
 				contentIndex: typeof event.contentIndex === "number" ? event.contentIndex : (this.toolCallIndexes.get(event.toolCallId) ?? 0),
 				toolName: event.toolName,
 				path: this.scopePath(),
+				targetPath: this.semanticAdapterTarget(event.toolCallId),
 				result: event.result,
 				isError: event.isError === true,
 			} satisfies PiToolExecution);
@@ -2187,6 +2296,7 @@ class SubagentSessionOwner {
 		this.activePresentationCalls.delete(event.toolCallId);
 		this.delegationFacts.delete(event.toolCallId);
 		this.respondCorrelations.delete(event.toolCallId);
+		this.routedMessageTargets.delete(event.toolCallId);
 		if (ctx.signal?.aborted) {
 			session.turns.clearPendingTools();
 			return;
@@ -2739,6 +2849,10 @@ class SubagentSessionOwner {
 		}
 		const source = isLocalAgent ? "local" : "uplink";
 		const to = this.pathForEndpoint(params.to, source);
+		if (toolCallId) {
+			this.routedMessageTargets.set(toolCallId, [...to]);
+			this.semanticAdapter.setSendTarget(toolCallId, to);
+		}
 		const sessionId = this.currentSessionId();
 		const tracking: { facts: SubagentSemanticFact[]; correlationId?: string } = { facts: [] };
 		const unsubscribe = this.semanticEvents.subscribe((fact) => {
@@ -2788,7 +2902,13 @@ class SubagentSessionOwner {
 				if (this.phase.kind === "shutting-down") return;
 				const fact = terminalFact(response);
 				const content = response.type === "response" ? response.message : `(no response — ${response.error})`;
-				session.turns.queueNotification(serializeAgentMessage({ from: params.to, content, correlationId, responseExpected: false }), source, fact);
+				const presentation = this.deferredSendPresentation(to, params.message, response);
+				session.turns.queueNotification(
+					serializeAgentMessage({ from: params.to, content, correlationId, responseExpected: false }),
+					source,
+					fact,
+					[presentation],
+				);
 				if (session.turns.isWaiting) session.turns.releaseWait();
 			} finally {
 				unsubscribe();

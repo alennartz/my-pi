@@ -234,44 +234,23 @@ describe("SubagentProvider snapshot and replay", () => {
     unsubscribe();
   });
 
-  it("delivers and replays delegation and communication facts without a view", async () => {
+  it("does not replay legacy semantic lifecycle facts without a presentation source", () => {
     const listeners = new Set<(fact: SubagentSemanticFact) => void>();
     const { provider } = setup({
       semanticEvents: { subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
     });
     const boundary = provider.snapshot().cursor;
-    const observed: SubagentEvent[] = [];
-    let delivered!: () => void;
-    const allDelivered = new Promise<void>((resolve) => { delivered = resolve; });
-    const unsubscribe = provider.subscribe((event) => {
-      observed.push(event);
-      if (event.eventId === "async-completion") delivered();
-    });
-    const common = { from: workerPath, to: scoutPath, correlationId: "corr-1", responseExpected: true };
-    const facts: SubagentSemanticFact[] = [
-      { eventId: "delegate", path: workerPath, kind: "delegation", relatedPiEvents: [], data: { invocationId: "call-1", awaitsResult: true, children: [{ path: scoutPath, task: "Confirm session mutation." }] } },
-      { eventId: "sent", path: scoutPath, kind: "message_thread", relatedPiEvents: [], data: { ...common, phase: "sent", text: "Confirm the callback owner." } },
-      { eventId: "received", path: scoutPath, kind: "message_thread", relatedPiEvents: [], data: { ...common, phase: "received", text: "Confirm the callback owner." } },
-      { eventId: "response", path: scoutPath, kind: "message_thread", relatedPiEvents: [], data: { ...common, from: scoutPath, to: workerPath, phase: "response", text: "The session store." } },
-      { eventId: "failure", path: scoutPath, kind: "message_thread", relatedPiEvents: [], data: { ...common, phase: "failure", text: "Confirm the callback owner.", error: "child unavailable" } },
-      { eventId: "awaited-completion", path: scoutPath, kind: "completion", relatedPiEvents: [], data: { delivery: "awaited", invocationId: "call-1", status: "idle", output: "The session store." } },
-      { eventId: "async-completion", path: scoutPath, kind: "completion", relatedPiEvents: [], data: { delivery: "asynchronous", status: "errored", error: "child unavailable" } },
-    ];
-    for (const fact of facts) for (const listener of listeners) listener(fact);
-    await allDelivered;
-
-    expect(observed.map(({ eventId, kind, data }) => ({ eventId, kind, data }))).toEqual(
-      facts.map(({ eventId, kind, data }) => ({ eventId, kind, data })),
-    );
-    const replay = provider.replay(boundary);
-    expect(replay.kind).toBe("events");
-    if (replay.kind === "events") expect(replay.events).toEqual(observed);
-    unsubscribe();
+    const fact: SubagentSemanticFact = {
+      eventId: "async-completion", path: scoutPath, kind: "completion", relatedPiEvents: [],
+      data: { delivery: "asynchronous", status: "errored", error: "child unavailable" },
+    };
+    for (const listener of listeners) listener(fact);
+    expect(provider.replay(boundary)).toMatchObject({ kind: "events", events: [] });
   });
 
-  it("does not expose legacy source transcript positions in live history or replay", () => {
+  it("keeps topology facts in the provider replay without accepting legacy payloads", () => {
     const listeners = new Set<(fact: SubagentSemanticFact) => void>();
-    const { provider } = setup({
+    const { provider, fixture } = setup({
       semanticEvents: { subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
     });
     const boundary = provider.snapshot().cursor;
@@ -280,11 +259,13 @@ describe("SubagentProvider snapshot and replay", () => {
       data: { delivery: "asynchronous", status: "idle", output: "answer" },
     };
     for (const listener of listeners) listener(fact);
-    for (const replay of [provider.replay(), provider.replay(boundary)]) {
-      expect(replay.kind).toBe("events");
-      if (replay.kind !== "events") continue;
-      expect(replay.events.find((event) => event.eventId === fact.eventId)).not.toHaveProperty("transcriptPosition");
-    }
+    fixture.emit({ type: "node_updated", previous: fixture.worker.snapshot, node: { ...fixture.worker.snapshot, sessionId: "worker-v2" } });
+    const replay = provider.replay(boundary);
+    expect(replay.kind).toBe("events");
+    if (replay.kind !== "events") return;
+    expect(replay.events).toHaveLength(1);
+    expect(replay.events[0]).toMatchObject({ kind: "node_updated", data: { sessionId: "worker-v2" } });
+    expect(replay.events.find((event) => (event as any).eventId === fact.eventId)).toBeUndefined();
   });
 
   it("replays add, removal, and resurrection from existing lifecycle records", async () => {

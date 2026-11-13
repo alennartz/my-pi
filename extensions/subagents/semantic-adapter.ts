@@ -30,6 +30,8 @@ export type PiToolCallDelta = Readonly<{
   contentIndex: number;
   toolName: string;
   path: AgentPath;
+  /** Router-resolved destination for a send start or terminal update. */
+  targetPath?: AgentPath;
   phase: 'start' | 'delta' | 'end';
   delta: string;
 }>;
@@ -39,6 +41,8 @@ export type PiToolExecution = Readonly<{
   contentIndex: number;
   toolName: string;
   path: AgentPath;
+  /** Router-resolved destination for a routed send operation. */
+  targetPath?: AgentPath;
   result: unknown;
   isError?: boolean;
 }>;
@@ -97,6 +101,8 @@ export interface SubagentSemanticAdapter {
   acceptResponseProgress(toolCallId: string, delta: string): readonly SemanticAdapterEvent[];
   acceptAwaitProgress(toolCallId: string, statuses: readonly SubagentAwaitStatus[]): readonly SemanticAdapterEvent[];
   completeToolCall(toolCallId: string): readonly SemanticAdapterEvent[];
+  /** Supply a router-resolved destination before a send reaches its terminal event. */
+  setSendTarget(toolCallId: string, path: AgentPath): void;
   /** Read one accumulated responder argument after any number of deltas. */
   getArgument(toolCallId: string, key: string): string | undefined;
 }
@@ -120,6 +126,7 @@ type OperationState = {
   body: string;
   requested: readonly AgentPath[];
   statuses: readonly SubagentAwaitStatus[];
+  sendTarget?: AgentPath;
   sendPhase: 'sending' | 'waiting' | 'responding';
 };
 
@@ -407,6 +414,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
       placement: placement(event),
       toolName: event.toolName,
       started: false,
+      ...(kind === 'send' && event.targetPath !== undefined ? { sendTarget: copyPath(event.targetPath) } : {}),
       rawArguments: '',
       request: '',
       response: '',
@@ -443,7 +451,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
       const source = parseJsonObject(state.rawArguments);
       return {
         operation: 'send',
-        to: resolvePath(state.path, source?.to ?? partialString(state.rawArguments, 'to')),
+        to: state.sendTarget ?? resolvePath(state.path, source?.to ?? partialString(state.rawArguments, 'to')),
         request: state.request,
         response: state.response,
         phase: state.sendPhase,
@@ -500,7 +508,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
   function endData(state: OperationState, result: unknown): SemanticEndData {
     const source = resultRecord(result);
     if (state.kind === 'send') {
-      const target = resolvePath(state.path, source.to ?? source.recipient ?? parseJsonObject(state.rawArguments)?.to ?? partialString(state.rawArguments, 'to'));
+      const target = state.sendTarget ?? resolvePath(state.path, source.to ?? source.recipient ?? parseJsonObject(state.rawArguments)?.to ?? partialString(state.rawArguments, 'to'));
       const response = typeof source.message === 'string'
         ? source.message
         : typeof source.response === 'string' ? source.response : state.response;
@@ -555,6 +563,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
       started: false,
       rawArguments: '', request: '', response: '', body: '', requested: Object.freeze([]), statuses: Object.freeze([]), sendPhase: 'sending',
     } as OperationState;
+    if (kind === 'send' && event.targetPath !== undefined) state.sendTarget = copyPath(event.targetPath);
     const source = resultRecord(event.result);
     if (kind === 'send') {
       const authoritative = typeof source.message === 'string'
@@ -576,6 +585,11 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     }
     operations.delete(event.toolCallId);
     return [{ type: 'end', ...base(state), state: stateForResult(event.isError, event.result), data: endData(state, event.result) }];
+  }
+
+  function setSendTarget(toolCallId: string, path: AgentPath): void {
+    const state = operations.get(toolCallId);
+    if (state?.kind === 'send') state.sendTarget = copyPath(path);
   }
 
   function acceptResponseProgress(toolCallId: string, delta: string): readonly SemanticAdapterEvent[] {
@@ -607,7 +621,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     operations.delete(toolCallId);
     if (finiteKind(state.kind)) return [{ type: 'snapshot', ...base(state), state: 'aborted', data: finiteData(state.kind, {}, state.path, toolCallId, options.delegation) }];
     return [{ type: 'end', ...base(state), state: 'aborted', data: state.kind === 'send'
-      ? { operation: 'send', to: resolvePath(state.path, parseJsonObject(state.rawArguments)?.to), request: state.request, response: state.response }
+      ? { operation: 'send', to: state.sendTarget ?? resolvePath(state.path, parseJsonObject(state.rawArguments)?.to), request: state.request, response: state.response }
       : state.kind === 'respond'
         ? { operation: 'respond', body: state.body }
         : { operation: 'await', result: { statuses: state.statuses, interrupted: true } } }];
@@ -621,5 +635,5 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     return partialString(state.rawArguments, key);
   }
 
-  return { acceptToolCallDelta, acceptToolExecution, acceptResponseProgress, acceptAwaitProgress, completeToolCall, getArgument };
+  return { acceptToolCallDelta, acceptToolExecution, acceptResponseProgress, acceptAwaitProgress, completeToolCall, setSendTarget, getArgument };
 }

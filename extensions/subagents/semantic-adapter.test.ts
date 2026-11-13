@@ -60,6 +60,19 @@ describe('subagent semantic adapter', () => {
     expect(adapter.acceptToolExecution({ toolCallId: 'delegate-call', contentIndex: 0, toolName: 'subagent', path: [], result: { children: [] } })).toContainEqual(expect.objectContaining({ type: 'snapshot', kind: 'delegation' }));
   });
 
+  it('uses the router-resolved target path for a child send', () => {
+    const adapter = createSubagentSemanticAdapter();
+    adapter.acceptToolCallDelta({
+      toolCallId: 'child-send', contentIndex: 0, toolName: 'send', path: ['child'],
+      targetPath: ['sibling'], phase: 'start', delta: '{"to":"sibling","message":"check"}',
+    });
+    const [terminal] = adapter.acceptToolExecution({
+      toolCallId: 'child-send', contentIndex: 0, toolName: 'send', path: ['child'],
+      targetPath: ['sibling'], result: { response: 'done' },
+    });
+    expect(terminal).toMatchObject({ data: { operation: 'send', to: ['sibling'] } });
+  });
+
   it('reads correlation IDs from incomplete accumulated responder arguments and resolves parent paths', () => {
     const adapter = createSubagentSemanticAdapter();
     adapter.acceptToolCallDelta({ toolCallId: 'respond-parent', contentIndex: 0, toolName: 'respond', path: ['worker'], phase: 'start', delta: '{"correlationId":"corr-' });
