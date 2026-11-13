@@ -262,6 +262,7 @@ export interface SubagentManagerOptions {
 	) => boolean | void;
 	onParentMessage: (port: MessagePort, xml: string, message: RoutedMessage) => void;
 	onMessagePhase?: (event: RoutedMessagePhase) => void;
+	onResponseProgress?: (event: import("./message-router.js").RoutedResponseProgress) => void;
 }
 
 export class SubagentManager {
@@ -285,6 +286,7 @@ export class SubagentManager {
 			onBlockingSendStart: (from, to, correlationId) => this.markAgentWaiting(from, correlationId, to),
 			onBlockingSendEnd: (from, correlationId) => this.clearAgentWaiting(from, correlationId),
 			onMessagePhase: (event) => this.opts.onMessagePhase?.(event),
+			onResponseProgress: (event) => this.opts.onResponseProgress?.(event),
 		});
 		this.parentPort = this.router.connect("parent");
 		this.parentPort.subscribe((message) => this.deliverParentMessage(message));

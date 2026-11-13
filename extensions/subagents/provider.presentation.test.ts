@@ -16,12 +16,13 @@ function fixture() {
 function session(withSavedOperation: boolean): BorrowedAgentSession {
   const saved = {
     operationId: 'send-call', kind: 'send',
+    source: 'tool',
     placement: { toolCallId: 'send-call', contentIndex: 1, entryId: 'assistant-entry' },
     state: 'complete', data: { operation: 'send', to: ['worker'], request: 'Check config', response: 'All present' },
   };
   const branch = withSavedOperation ? [
     { type: 'message', id: 'assistant-entry', message: { role: 'assistant', content: [{ type: 'text', text: 'Before' }, { type: 'toolCall', id: 'send-call', name: 'send', arguments: { to: 'worker', message: 'Check config' } }] } },
-    { type: 'message', id: 'result-entry', message: { role: 'toolResult', toolCallId: 'send-call', toolName: 'send', content: [{ type: 'text', text: 'model output' }], details: { subagentContent: saved } } },
+    { type: 'message', id: 'result-entry', message: { role: 'toolResult', toolCallId: 'send-call', toolName: 'send', content: [{ type: 'text', text: 'model output' }], details: { subagentContent: [saved] } } },
   ] : [];
   return { sessionId: 'worker-session', messages: branch.map((entry) => entry.message), sessionManager: { getBranch: () => branch, getEntries: () => branch } } as unknown as BorrowedAgentSession;
 }

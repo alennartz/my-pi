@@ -11,7 +11,7 @@ import { Type } from "typebox";
 import type { Usage } from "@earendil-works/pi-ai";
 import { formatTokenCount } from "./format.js";
 import { addCostBreakdown, type AgentCostBreakdown } from "./agent-session-registry.js";
-import type { AgentStatus, AgentUsage } from "./agent-set.js";
+import type { AgentState, AgentStatus, AgentUsage } from "./agent-set.js";
 import { modelDisplayName } from "./status-display.js";
 import type { AgentCompleteData } from "./messages.js";
 
@@ -76,26 +76,55 @@ export const SendResultSchema = Type.Object({
 	correlationId: Type.Optional(Type.String()),
 });
 
-export interface InterruptResultData {
-	interrupted: string[];
-	pending: string[];
-	failed: string[];
+export interface InterruptTargetData {
+	path: string[];
+	output?: string;
+	error?: string;
 }
 
-export const InterruptResultSchema = Type.Object({
-	interrupted: Type.Array(Type.String()),
-	pending: Type.Array(Type.String(), { description: "Abort delivered but not yet settled" }),
-	failed: Type.Array(Type.String()),
+export interface InterruptResultData {
+	interrupted: InterruptTargetData[];
+	pending: InterruptTargetData[];
+	failed: InterruptTargetData[];
+}
+
+const InterruptTargetSchema = Type.Object({
+	path: Type.Array(Type.String()),
+	output: Type.Optional(Type.String()),
+	error: Type.Optional(Type.String()),
 });
 
+export const InterruptResultSchema = Type.Object({
+	interrupted: Type.Array(InterruptTargetSchema),
+	pending: Type.Array(InterruptTargetSchema, { description: "Abort delivered but not yet settled" }),
+	failed: Type.Array(InterruptTargetSchema),
+});
+
+export interface ResurrectAgentData {
+	id: string;
+	path: string[];
+	sessionId: string;
+	incarnation: string;
+	state: "idle" | "running";
+	usage: AgentUsage;
+	output?: string;
+	error?: string;
+}
+
 export interface ResurrectResultData {
-	agents: { id: string; sessionId: string }[];
+	agents: ResurrectAgentData[];
 }
 
 export const ResurrectResultSchema = Type.Object({
 	agents: Type.Array(Type.Object({
 		id: Type.String(),
+		path: Type.Array(Type.String()),
 		sessionId: Type.String(),
+		incarnation: Type.String(),
+		state: Type.Union([Type.Literal("idle"), Type.Literal("running")]),
+		usage: UsageSchema,
+		output: Type.Optional(Type.String()),
+		error: Type.Optional(Type.String()),
 	})),
 });
 
@@ -145,8 +174,19 @@ export interface TeardownAgentData {
 	usageBaseline?: AgentUsage;
 }
 
+export interface TeardownAffectedAgentData {
+	path: string[];
+	sessionId: string;
+	incarnation: string;
+	state: AgentState;
+	usage: AgentUsage;
+	output?: string;
+	error?: string;
+}
+
 export interface TeardownResultData {
 	agents: TeardownAgentData[];
+	affectedAgents?: TeardownAffectedAgentData[];
 }
 
 /** Sum the usage summaries that a teardown result reports for its subtree. */
@@ -192,6 +232,22 @@ export function toPiUsage(usage: AgentUsage): Usage {
 	};
 }
 
+const TeardownAffectedAgentSchema = Type.Object({
+	path: Type.Array(Type.String()),
+	sessionId: Type.String(),
+	incarnation: Type.String(),
+	state: Type.Union([
+		Type.Literal("running"),
+		Type.Literal("waiting"),
+		Type.Literal("idle"),
+		Type.Literal("errored"),
+		Type.Literal("dead"),
+	]),
+	usage: UsageSchema,
+	output: Type.Optional(Type.String()),
+	error: Type.Optional(Type.String()),
+});
+
 export const TeardownResultSchema = Type.Object({
 	agents: Type.Array(Type.Object({
 		id: Type.String(),
@@ -200,6 +256,7 @@ export const TeardownResultSchema = Type.Object({
 		usage: UsageSchema,
 		usageBaseline: Type.Optional(UsageSchema, { description: "Pre-attach usage the delta excludes; present only when non-zero" }),
 	})),
+	affectedAgents: Type.Optional(Type.Array(TeardownAffectedAgentSchema)),
 });
 
 export interface ModelRowData {

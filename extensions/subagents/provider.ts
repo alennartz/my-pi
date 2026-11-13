@@ -17,6 +17,21 @@ import {
 	type SubagentLifecycleReader,
 } from "./lifecycle.js";
 import type { ManagedChildSession } from "./managed-child-session.js";
+import type {
+	ActiveSubagentOperation,
+	PersistedSubagentContent,
+	SubagentDeltaData,
+	SubagentOperationKind,
+	SubagentPresentationManifest,
+	SubagentProviderEvent,
+	SubagentProviderSnapshot,
+	SubagentStartData,
+	SubagentStartEvent,
+	SubagentDeltaEvent,
+	SubagentEndEvent,
+	SubagentFiniteEvent,
+} from "@pimote/sdk/subagents";
+import type { SemanticAdapterEvent } from "./semantic-adapter.js";
 
 /** Opaque provider epoch plus the last ordered event sequence observed in it. */
 export type FeedCursor = Readonly<{
@@ -442,6 +457,8 @@ export interface SubagentProviderOptions {
 	parentSessionFile?: string;
 	/** Live semantic facts, independent of child view leases. */
 	semanticEvents?: { subscribe(listener: (fact: SubagentSemanticFact) => void): () => void };
+	/** Private typed presentation facts from the Pi stream adapter. */
+	presentationEvents?: { subscribePresentation?: (listener: (event: SemanticAdapterEvent) => void) => () => void };
 	/** Notify the session turn owner when a child view acquires a lease. */
 	onLeaseAttached?: (path: AgentPath) => void;
 	/** Notify the session turn owner when a child view releases or loses a lease. */
@@ -470,6 +487,29 @@ const DEFAULT_HISTORY_LIMIT = 256;
 
 function isRecord(value: unknown): value is UnknownRecord {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function stripPrivatePresentation<T>(value: T): T {
+	if (Array.isArray(value)) return value.map((child) => stripPrivatePresentation(child)) as T;
+	if (!isRecord(value)) return value;
+	const copy: UnknownRecord = {};
+	for (const [key, child] of Object.entries(value)) {
+		if (key === "correlationId" || key === "correlation_id" || key === "pendingCorrelations") continue;
+		copy[key] = stripPrivatePresentation(child);
+	}
+	return copy as T;
+}
+
+function freezePresentationValue<T>(value: T): T {
+	if (Array.isArray(value)) {
+		for (const child of value) freezePresentationValue(child);
+		return Object.freeze(value) as T;
+	}
+	if (isRecord(value)) {
+		for (const child of Object.values(value)) freezePresentationValue(child);
+		return Object.freeze(value) as T;
+	}
+	return value;
 }
 
 function pathKey(path: AgentPath): string {
@@ -548,9 +588,22 @@ function cloneNode(node: ProviderNode): ProviderNode {
 		path: copyPath(node.path),
 		channels: Object.freeze([...node.channels]),
 		waitingFor: Object.freeze(node.waitingFor.map((target) => copyPath(target))),
-		pendingCorrelations: Object.freeze([...node.pendingCorrelations]),
+		pendingCorrelations: Object.freeze([...(node.pendingCorrelations ?? [])]),
 		usage: cloneUsage(node.usage),
 	});
+}
+
+/** Remove router-private wait identifiers from the public presentation view. */
+function publicNode(node: ProviderNode): ProviderNode {
+	const copy = {
+		...node,
+		path: copyPath(node.path),
+		channels: Object.freeze([...(node.channels ?? [])]),
+		waitingFor: Object.freeze((node.waitingFor ?? []).map((target) => copyPath(target))),
+		usage: cloneUsage(node.usage),
+	} as Record<string, unknown>;
+	delete copy.pendingCorrelations;
+	return Object.freeze(copy) as ProviderNode;
 }
 
 function cloneSnapshot(snapshot: SubagentSnapshot): SubagentSnapshot {
@@ -638,6 +691,11 @@ function eventCursor(epoch: string, sequence: number): FeedCursor {
 	return Object.freeze({ epoch, sequence });
 }
 
+function isPresentationKind(value: unknown): value is SubagentOperationKind {
+	return value === "send" || value === "respond" || value === "await" || value === "delegation"
+		|| value === "completion" || value === "interrupt" || value === "teardown" || value === "resurrect";
+}
+
 /** Provider feed, hierarchy projection, and borrowed runtime lease owner. */
 export function createSubagentProvider(options: SubagentProviderOptions): SubagentProvider & {
 	/** Stop accepting facts and release provider subscriptions. */
@@ -652,8 +710,15 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	let leaseGeneration = 0;
 	let incarnationCounter = 0;
 	let closed = false;
-	const history: SubagentEvent[] = [];
-	const listeners = new Set<(event: SubagentEvent) => void>();
+	type ProviderFeedEvent = SubagentEvent | SubagentProviderEvent;
+	const history: ProviderFeedEvent[] = [];
+	const listeners = new Set<(event: ProviderFeedEvent) => void>();
+	const activeOperations = new Map<string, ActiveSubagentOperation>();
+	const hydratedSessions = new Set<string>();
+	const manifest: SubagentPresentationManifest = Object.freeze({
+		hiddenToolNames: Object.freeze(["send", "respond", "subagent", "fork", "await_agents", "interrupt", "teardown", "resurrect"]),
+		hiddenCustomTypes: Object.freeze(["subagents"]),
+	});
 	const liveNodes = new Map<string, ProviderNode>();
 	const liveIdentity = new Map<string, NodeIdentity>();
 	const retiredIncarnations = new Map<string, Set<string>>();
@@ -665,6 +730,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	const historicalRetired = new Map<string, Set<string>>();
 	let registryUnsubscribe: (() => void) | undefined;
 	let semanticUnsubscribe: (() => void) | undefined;
+	let presentationUnsubscribe: (() => void) | undefined;
 
 	function currentCursor(): FeedCursor {
 		return eventCursor(epoch, sequence);
@@ -781,8 +847,14 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		base: Omit<SubagentEvent, "cursor">,
 		deliver = true,
 	): SubagentEvent {
+		const publicData = base.kind === "node_added" || base.kind === "node_updated"
+			? publicNode(base.data as ProviderNode)
+			: base.kind === "node_removed"
+				? { ...(base.data as { node: ProviderNode; reason: string }), node: publicNode((base.data as { node: ProviderNode }).node) }
+			: base.data;
 		const event = Object.freeze({
 			...base,
+			data: publicData,
 			path: copyPath(base.path),
 			relatedPiEvents: cloneRefs(base.relatedPiEvents),
 			cursor: eventCursor(epoch, ++sequence),
@@ -803,6 +875,93 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 
 	function generatedEventId(kind: SubagentEventKind, path: AgentPath): string {
 		return `provider:${kind}:${pathKey(path)}:${++eventCounter}`;
+	}
+
+	function presentationTarget(event: SemanticAdapterEvent): Readonly<{ operationId: string; kind: SubagentOperationKind; path: AgentPath; placement: SemanticAdapterEvent["placement"] }> {
+		return Object.freeze({
+			operationId: event.operationId,
+			kind: event.kind,
+			path: copyPath(event.path),
+			placement: Object.freeze({ ...event.placement }),
+		});
+	}
+
+	function mergeActiveData(prior: SubagentStartData, delta: SubagentDeltaData): SubagentStartData {
+		if (prior.operation === "send" && delta.operation === "send") {
+			if ("delta" in delta) {
+				return {
+					...prior,
+					...(delta.field === "request" ? { request: prior.request + delta.delta } : { response: prior.response + delta.delta }),
+				};
+			}
+			return { ...prior, phase: delta.phase === "responding" ? "responding" : prior.phase };
+		}
+		if (prior.operation === "respond" && delta.operation === "respond") return { ...prior, body: prior.body + delta.delta };
+		if (prior.operation === "await" && delta.operation === "await") return { ...prior, statuses: delta.statuses };
+		return prior;
+	}
+
+	function appendPresentationEvent(event: SemanticAdapterEvent, deliver = true): ProviderFeedEvent {
+		const target = presentationTarget(event);
+		if (event.type === "start") {
+			const safeData = freezePresentationValue(stripPrivatePresentation(event.data));
+			activeOperations.set(event.operationId, Object.freeze({ target, data: safeData }));
+			const output = Object.freeze({
+				type: "subagent_start",
+				eventId: `provider:subagent_start:${event.operationId}:${++eventCounter}`,
+				target,
+				data: safeData,
+				cursor: eventCursor(epoch, ++sequence),
+			}) as unknown as SubagentStartEvent;
+			history.push(output);
+			while (history.length > historyLimit) history.shift();
+			if (deliver && !closed) for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }
+			return output;
+		}
+		if (event.type === "delta") {
+			const active = activeOperations.get(event.operationId);
+			const safeData = freezePresentationValue(stripPrivatePresentation(event.data));
+			if (active) activeOperations.set(event.operationId, Object.freeze({ ...active, data: freezePresentationValue(mergeActiveData(active.data, safeData)) }));
+			const output = Object.freeze({
+				type: "subagent_delta",
+				eventId: `provider:subagent_delta:${event.operationId}:${++eventCounter}`,
+				target,
+				data: safeData,
+				cursor: eventCursor(epoch, ++sequence),
+			}) as unknown as SubagentDeltaEvent;
+			history.push(output);
+			while (history.length > historyLimit) history.shift();
+			if (deliver && !closed) for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }
+			return output;
+		}
+		if (event.type === "end") {
+			activeOperations.delete(event.operationId);
+			const output = Object.freeze({
+				type: "subagent_end",
+				eventId: `provider:subagent_end:${event.operationId}:${++eventCounter}`,
+				target,
+				state: event.state,
+				data: freezePresentationValue(stripPrivatePresentation(event.data)),
+				cursor: eventCursor(epoch, ++sequence),
+			}) as unknown as SubagentEndEvent;
+			history.push(output);
+			while (history.length > historyLimit) history.shift();
+			if (deliver && !closed) for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }
+			return output;
+		}
+		activeOperations.delete(event.operationId);
+		const output = Object.freeze({
+			type: "subagent_snapshot_event",
+			eventId: `provider:subagent_snapshot_event:${event.operationId}:${++eventCounter}`,
+			target,
+			state: event.state,
+			data: freezePresentationValue(stripPrivatePresentation(event.data)),
+			cursor: eventCursor(epoch, ++sequence),
+		}) as unknown as SubagentFiniteEvent;
+		history.push(output);
+		while (history.length > historyLimit) history.shift();
+		if (deliver && !closed) for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }
+		return output;
 	}
 
 	function appendRegistryEvent(event: RegistryEvent): void {
@@ -1116,16 +1275,25 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		return node;
 	}
 
-	function subscribe(listener: (event: SubagentEvent) => void): () => void {
+	function subscribe(listener: (event: SubagentProviderEvent) => void): () => void {
 		if (closed) return () => {};
-		listeners.add(listener);
-		return () => listeners.delete(listener);
+		listeners.add(listener as unknown as (event: ProviderFeedEvent) => void);
+		return () => listeners.delete(listener as unknown as (event: ProviderFeedEvent) => void);
 	}
 
-	function snapshot(): SubagentSnapshot {
-		return cloneSnapshot({
+	function snapshot(): SubagentProviderSnapshot {
+		const base = cloneSnapshot({
 			cursor: currentCursor(),
 			nodes: Object.freeze(Array.from(liveNodes.values()).map((node) => cloneNode(node))),
+		});
+		return Object.freeze({
+			...base,
+			nodes: Object.freeze(base.nodes.map((node) => publicNode(node))),
+			manifest,
+			activeOperations: Object.freeze(Array.from(activeOperations.values()).map((operation) => Object.freeze({
+				target: Object.freeze({ ...operation.target, path: copyPath(operation.target.path) }),
+				data: operation.data,
+			}))),
 		});
 	}
 
@@ -1252,13 +1420,72 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		});
 	}
 
+	function appendPersistedPayload(payload: PersistedSubagentContent, path: AgentPath, entryId: string | undefined): void {
+		const placement = payload.source === "tool"
+			? Object.freeze({
+				...payload.placement,
+				...(payload.placement.entryId === undefined && entryId !== undefined ? { entryId } : {}),
+			})
+			: (payload.placement?.entryId !== undefined ? Object.freeze({ entryId: payload.placement.entryId }) : entryId !== undefined ? Object.freeze({ entryId }) : undefined);
+		const target = Object.freeze({
+			operationId: payload.operationId,
+			kind: payload.kind,
+			path: copyPath(path),
+			...(placement !== undefined ? { placement } : {}),
+		});
+		const event = Object.freeze({
+			type: "subagent_snapshot_event",
+			eventId: `provider:rehydrate:${payload.operationId}:${++eventCounter}`,
+			target,
+			state: payload.state,
+			data: freezePresentationValue(stripPrivatePresentation(payload.data)),
+			cursor: eventCursor(epoch, ++sequence),
+		}) as unknown as SubagentFiniteEvent;
+		history.push(event);
+		while (history.length > historyLimit) history.shift();
+		if (!closed) for (const listener of Array.from(listeners)) { try { listener(event); } catch {} }
+	}
+
+	async function rehydrate(input: { session: BorrowedAgentSession; path: AgentPath }): Promise<void> {
+		if (closed) return;
+		const identity = `${input.session.sessionId}:${pathKey(input.path)}`;
+		if (hydratedSessions.has(identity)) return;
+		const manager = input.session.sessionManager;
+		let entries: readonly any[] = [];
+		try {
+			entries = manager.getBranch?.() ?? manager.getEntries?.() ?? [];
+		} catch {
+			entries = [];
+		}
+		const saved: Array<{ payload: PersistedSubagentContent; entryId?: string }> = [];
+		for (const entry of entries) {
+			const message = entry?.message ?? entry;
+			const details = message?.details ?? entry?.details ?? entry?.data;
+			if (!isRecord(details)) continue;
+			const candidates = Array.isArray(details.subagentContent) ? details.subagentContent : [];
+			for (const candidate of candidates) {
+				if (!isRecord(candidate) || typeof candidate.operationId !== "string" || !isPresentationKind(candidate.kind) || typeof candidate.state !== "string") continue;
+				if (candidate.state !== "complete" && candidate.state !== "error" && candidate.state !== "aborted") continue;
+				if (!isRecord(candidate.data) || (candidate.source !== "tool" && candidate.source !== "custom_entry")) continue;
+				if (candidate.source === "tool" && (!isRecord(candidate.placement) || typeof candidate.placement.toolCallId !== "string" || typeof candidate.placement.contentIndex !== "number")) continue;
+				if (candidate.source === "custom_entry" && candidate.placement !== undefined && (!isRecord(candidate.placement) || typeof candidate.placement.entryId !== "string")) continue;
+				const payload = candidate as unknown as PersistedSubagentContent;
+				saved.push({ payload, ...(typeof entry?.id === "string" ? { entryId: entry.id } : {}) });
+			}
+		}
+		for (const item of saved) appendPersistedPayload(item.payload, input.path, item.entryId);
+		hydratedSessions.add(identity);
+	}
+
 	function shutdown(): void {
 		if (closed) return;
 		closed = true;
 		registryUnsubscribe?.();
 		semanticUnsubscribe?.();
+		presentationUnsubscribe?.();
 		registryUnsubscribe = undefined;
 		semanticUnsubscribe = undefined;
+		presentationUnsubscribe = undefined;
 		for (const records of Array.from(leases.values())) {
 			for (const record of Array.from(records)) closeLease(record, "unavailable");
 		}
@@ -1288,6 +1515,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		: options.registry.subscribe(appendRegistryEvent);
 	if (options.semanticEvents) semanticUnsubscribe = options.semanticEvents.subscribe((fact) => {
 		if (closed) return;
+		if (options.presentationEvents) return;
 		const semantic = createSemanticEvent({
 			...fact,
 			path: copyPath(fact.path),
@@ -1295,11 +1523,17 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		});
 		appendEvent(semantic as Omit<SubagentEvent, "cursor">);
 	});
+	const presentationSource = options.presentationEvents?.subscribePresentation;
+	if (presentationSource) presentationUnsubscribe = presentationSource((event) => {
+		if (closed) return;
+		appendPresentationEvent(event);
+	});
 
 	return {
 		subscribe,
 		snapshot,
 		replay,
+		rehydrate,
 		acquire,
 		teardown,
 		stop,

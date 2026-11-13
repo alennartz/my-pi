@@ -38,6 +38,8 @@ export type RoutedResponseProgress = {
 	to: string;
 	correlationId: string;
 	delta: string;
+	/** Internal sender tool target. Never crosses the presentation provider seam. */
+	toolCallId?: string;
 };
 
 /** The response observed by the sender of a routed message. */
@@ -129,6 +131,7 @@ export class MessageRouter {
 	private readonly onBlockingSendStart?: MessageRouterOptions["onBlockingSendStart"];
 	private readonly onBlockingSendEnd?: MessageRouterOptions["onBlockingSendEnd"];
 	private readonly onMessagePhase?: MessageRouterOptions["onMessagePhase"];
+	private readonly onResponseProgress?: MessageRouterOptions["onResponseProgress"];
 	private readonly correlationIdFactory: () => string;
 	private nextCorrelationSequence = 0;
 	private closed = false;
@@ -138,6 +141,7 @@ export class MessageRouter {
 		this.onBlockingSendStart = options.onBlockingSendStart;
 		this.onBlockingSendEnd = options.onBlockingSendEnd;
 		this.onMessagePhase = options.onMessagePhase;
+		this.onResponseProgress = options.onResponseProgress;
 		const namespace = randomUUID().split("-").pop()!;
 		this.correlationIdFactory = options.correlationIdFactory ?? (() => {
 			this.nextCorrelationSequence += 1;
@@ -296,6 +300,7 @@ export class MessageRouter {
 				endpoint.semanticPublisher = publishPhase;
 			},
 			respond: (correlationId, message) => this.respondFrom(endpoint, correlationId, message),
+			responseProgress: (correlationId, delta) => this.responseProgressFrom(endpoint, correlationId, delta),
 			reject: (correlationId, error) => this.rejectFrom(endpoint, correlationId, error),
 			detach: (correlationId) => this.detachFrom(endpoint, correlationId),
 			cancel: (correlationId) => this.cancelFrom(endpoint, correlationId),
@@ -404,6 +409,31 @@ export class MessageRouter {
 		}
 
 		this.completePendingResponse(pending, message, toolCallId, publishPhase);
+	}
+
+	private async responseProgressFrom(endpoint: Endpoint, correlationId: string, delta: string): Promise<void> {
+		this.assertEndpointActive(endpoint);
+		if (typeof delta !== "string") throw new Error("Response progress must be a string");
+		const pending = this.pendingCorrelations.get(correlationId);
+		if (!pending) {
+			throw new Error(`No pending request for correlation ID "${correlationId}"`);
+		}
+		if (pending.to !== endpoint.id) {
+			throw new Error(
+				`Endpoint "${endpoint.id}" is not the target for correlation ID "${correlationId}"`,
+			);
+		}
+		try {
+			this.onResponseProgress?.({
+				from: endpoint.id,
+				to: pending.from,
+				correlationId,
+				delta,
+				...(pending.toolCallId !== undefined ? { toolCallId: pending.toolCallId } : {}),
+			});
+		} catch (error) {
+			throw error instanceof Error ? error : new Error(String(error));
+		}
 	}
 
 	private async rejectFrom(endpoint: Endpoint, correlationId: string, error: string): Promise<void> {

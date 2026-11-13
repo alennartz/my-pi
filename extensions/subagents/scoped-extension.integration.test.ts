@@ -538,7 +538,7 @@ describe("child-scoped extension routing", () => {
 		);
 	});
 
-	it("persists semantic IDs without fabricating a native entry from the current leaf", async () => {
+	it("delivers an incoming message without semantic overlay details", async () => {
 		const uplink = makePort("child");
 		const { pi, handlers } = makePi();
 		await createSubagentsExtension({
@@ -562,11 +562,8 @@ describe("child-scoped extension routing", () => {
 		uplink.emit({ from: "parent", message: "continue", responseExpected: false });
 
 		const [message] = pi.sendMessage.mock.calls;
-		const details = (message[0] as { details?: { semanticEvents?: readonly [{ eventId: string; relatedPiEvents: readonly [{ entryId?: string }] }] } }).details;
-		const fact = details?.semanticEvents?.[0];
-		expect(fact?.eventId).toEqual(expect.any(String));
-		expect(fact?.relatedPiEvents[0]).toMatchObject({ kind: "custom_message" });
-		expect(fact?.relatedPiEvents[0]).not.toHaveProperty("entryId");
+		expect(message[0]).toMatchObject({ content: expect.stringContaining("continue") });
+		expect(message[0]).not.toHaveProperty("details");
 	});
 
 	it("keeps child notifications local after session shutdown and renders the scoped model catalog", async () => {
@@ -860,13 +857,11 @@ describe("semantic facts on native messages", () => {
 		return { ...root, ctx, published, worker: managed.created[0] };
 	}
 
-	it("keeps notification IDs unique when the same child session resumes", async () => {
+	it("delivers native notifications when the same child session resumes", async () => {
 		const childRegistry = makeRegistryFake(["worker"]);
 		const ctx = makeContext(path.join(tmpRoot!, "child.jsonl"));
-		const ids: string[] = [];
 		for (const reason of ["new", "resume", "reload"]) {
-			const afterEntryId = reason === "new" ? null : "child-leaf";
-			ctx.sessionManager.getLeafId = () => afterEntryId;
+			ctx.sessionManager.getLeafId = () => reason === "new" ? null : "child-leaf";
 			const child = makePi();
 			const uplink = makePort("worker");
 			await createSubagentsExtension({
@@ -876,16 +871,10 @@ describe("semantic facts on native messages", () => {
 			await child.handlers.get("session_start")?.({ reason }, ctx);
 			uplink.emit({ from: "parent", message: reason, responseExpected: false });
 			const notification = child.pi.sendMessage.mock.calls.at(-1)?.[0];
-			const fact = factsIn(notification)[0];
-			expect(fact).toMatchObject({
-				kind: "message_thread", data: { text: reason },
-				transcriptPosition: { sessionId: "seed-worker", afterEntryId },
-			});
-			expect(fact.relatedPiEvents.every((ref) => ref.entryId === undefined)).toBe(true);
-			ids.push(fact.eventId);
+			expect(notification).toMatchObject({ content: serializeAgentMessage({ from: "parent", content: reason, responseExpected: false }) });
+			expect(notification).not.toHaveProperty("details");
 			await child.handlers.get("session_shutdown")?.({}, ctx);
 		}
-		expect(new Set(ids).size).toBe(ids.length);
 	});
 
 	it("persists the accepted send fact on the sender's native tool result", async () => {
@@ -928,7 +917,7 @@ describe("semantic facts on native messages", () => {
 		await root.tools.get("send")!.execute("parent-body", { to: "worker", message: body, expectResponse: false }, undefined, undefined, root.ctx);
 		for (const [notification, from] of [[root.pi.sendMessage.mock.calls.at(-1)?.[0], "worker"], [child.pi.sendMessage.mock.calls.at(-1)?.[0], "parent"]] as const) {
 			expect(notification.content).toBe(serializeAgentMessage({ from, content: body, responseExpected: false }));
-			expect(factsIn(notification).find((fact) => fact.kind === "message_thread" && fact.data.phase === "received")).toMatchObject({ data: { text: body } });
+			expect(factsIn(notification)).toEqual([]);
 		}
 	});
 
@@ -1033,9 +1022,8 @@ describe("semantic facts on native messages", () => {
 		await root.worker.config.scope.uplink.respond(correlationId, "late answer");
 		await vi.waitFor(() => expect(root.pi.sendMessage.mock.calls.some(([message]) => message.content.includes("late answer"))).toBe(true));
 		const notification = root.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("late answer"))?.[0];
-		const reply = factsIn(notification).find((fact) => fact.kind === "message_thread" && fact.data.phase === "response");
-		expect(reply).toMatchObject({ data: { text: "late answer", correlationId } });
-		expect(root.published.filter((fact) => fact.kind === "message_thread" && fact.data.phase === "response" && fact.data.correlationId === correlationId).map((fact) => fact.eventId)).toEqual([reply?.eventId]);
+		expect(factsIn(notification)).toEqual([]);
+		expect(notification.content).toContain("late answer");
 	});
 
 	it("persists asynchronous settlement facts with the idle custom message", async () => {

@@ -26,6 +26,14 @@ import type { AgentCompleteData } from "./messages.js";
 
 export type NotificationSource = "local" | "uplink";
 
+export type NotificationQueueEntry<Semantic = unknown> = Readonly<{
+	xml: string;
+	source: NotificationSource;
+	data?: AgentCompleteData;
+	semanticEvents: readonly Semantic[];
+	subagentContent?: readonly unknown[];
+}>;
+
 export interface NotificationQueueConfig<Semantic = unknown> {
 	/**
 	 * Called to deliver accumulated notifications to the parent agent.
@@ -39,6 +47,8 @@ export interface NotificationQueueConfig<Semantic = unknown> {
 	 * interrupt. Delivery happens whenever the agent is next prompted.
 	 */
 	deliverDeferred: (content: string, details?: { semanticEvents: readonly Semantic[] }) => void;
+	/** Optional ordered delivery seam for native messages and completion entries. */
+	deliverEntries?: (entries: readonly NotificationQueueEntry<Semantic>[], deferred: boolean) => void;
 
 	/**
 	 * Use steer delivery mode: flush between tool call rounds instead of
@@ -48,13 +58,7 @@ export interface NotificationQueueConfig<Semantic = unknown> {
 	steerDelivery: boolean;
 }
 
-interface QueueEntry<Semantic> {
-	xml: string;
-	source: NotificationSource;
-	/** Structured payload for tool-result consumers; absent for message notifications. */
-	data?: AgentCompleteData;
-	semanticEvents: readonly Semantic[];
-}
+interface QueueEntry<Semantic> extends NotificationQueueEntry<Semantic> {}
 
 export class NotificationQueue<Semantic = unknown> {
 	private entries: QueueEntry<Semantic>[] = [];
@@ -64,9 +68,15 @@ export class NotificationQueue<Semantic = unknown> {
 
 	constructor(private config: NotificationQueueConfig<Semantic>) {}
 
-	queue(xml: string, source: NotificationSource, data?: AgentCompleteData, semantic?: Semantic | readonly Semantic[]): void {
+	queue(
+		xml: string,
+		source: NotificationSource,
+		data?: AgentCompleteData,
+		semantic?: Semantic | readonly Semantic[],
+		subagentContent?: readonly unknown[],
+	): void {
 		const semanticEvents = semantic === undefined ? [] : Array.isArray(semantic) ? semantic : [semantic];
-		this.entries.push({ xml, source, data, semanticEvents: semanticEvents as readonly Semantic[] });
+		this.entries.push({ xml, source, data, semanticEvents: semanticEvents as readonly Semantic[], subagentContent });
 
 		if (this._isWaiting) {
 			return;
@@ -135,6 +145,12 @@ export class NotificationQueue<Semantic = unknown> {
 	deferAll(): void {
 		if (this._isWaiting) return;
 		if (this.entries.length === 0) return;
+		if (this.config.deliverEntries) {
+			const entries = this.entries.map((entry) => ({ ...entry, semanticEvents: [...entry.semanticEvents] }));
+			this.entries.length = 0;
+			this.config.deliverEntries(entries, true);
+			return;
+		}
 		const semanticEvents = this.entries.flatMap((e) => e.semanticEvents);
 		const combined = this.drainAll();
 		this.config.deliverDeferred(
@@ -176,6 +192,12 @@ export class NotificationQueue<Semantic = unknown> {
 		if (this.entries.length === 0) return;
 
 		this.parentBusy = true;
+		if (this.config.deliverEntries) {
+			const entries = this.entries.map((entry) => ({ ...entry, semanticEvents: [...entry.semanticEvents] }));
+			this.entries.length = 0;
+			this.config.deliverEntries(entries, false);
+			return;
+		}
 		const semanticEvents = this.entries.flatMap((e) => e.semanticEvents);
 		const combined = this.entries.map((e) => e.xml).join("\n");
 		this.entries.length = 0;
