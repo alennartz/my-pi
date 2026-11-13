@@ -998,29 +998,63 @@ describe("semantic facts on native messages", () => {
 		expect(facts.find((fact) => fact.kind === "completion")).toMatchObject({ data: { output: "saved answer", delivery: "awaited", invocationId: "await-call" } });
 	});
 
-	it("publishes await-drained completion payloads after their native entry is allocated", async () => {
+	it.each([false, true])("keeps requested and unrequested completions inside await, interrupted=%s", async (interrupted) => {
 		const root = await rootSession();
-		const waiting = root.tools.get("await_agents")!.execute("await-presentation", { agents: ["worker"] }, undefined, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "done" }] } });
-		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
-		root.worker.hooks.onEvent({ type: "agent_settled" });
-		const result = await waiting;
-		const payload = (result.details as any).subagentContent.find((item: any) => item.kind === "completion");
-		expect(payload).toMatchObject({ source: "custom_entry", kind: "completion" });
-		expect(root.presentation).not.toContainEqual(expect.objectContaining({ operationId: payload.operationId }));
-
-		await root.handlers.get("tool_result")?.({
-			type: "tool_result", toolName: "await_agents", toolCallId: "await-presentation", details: result.details,
+		await root.tools.get("subagent")!.execute("spawn-peers", {
+			agents: [{ id: "guard", task: "wait", channels: [] }, { id: "scout", task: "inspect", channels: [] }],
+		}, undefined, undefined, root.ctx);
+		for (const child of managed.created) child.hooks.onEvent({ type: "agent_start" });
+		const args = { agents: ["worker", "guard"] };
+		await root.handlers.get("message_update")?.({
+			type: "message_update", assistantMessageEvent: {
+				type: "toolcall_start", contentIndex: 0,
+				toolCall: { id: "await-presentation", name: "await_agents", arguments: args },
+			},
 		}, root.ctx);
-		expect(root.presentation).not.toContainEqual(expect.objectContaining({ operationId: payload.operationId }));
+		const waiting = root.tools.get("await_agents")!.execute("await-presentation", args, undefined, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		const settle = (child: typeof root.worker, output: string, error?: string) => {
+			child.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: output }] } });
+			child.hooks.onEvent({ type: "agent_end", willRetry: false, messages: error ? [{ role: "assistant", stopReason: "error", errorMessage: error }] : [] });
+			child.hooks.onEvent({ type: "agent_settled" });
+		};
+		settle(managed.created[2], "scout output", "scout failure");
+		settle(root.worker, "worker output");
+		if (interrupted) await managed.created[1].config.scope.uplink.send({ to: "parent", message: "need a decision", expectResponse: false });
+		else settle(managed.created[1], "guard output");
+		const result = await waiting;
+		expect(result.structuredContent.agents).toEqual(expect.arrayContaining([
+			expect.objectContaining({ id: "worker", output: "worker output" }),
+			expect.objectContaining({ id: "scout", output: "scout output", error: "scout failure" }),
+		]));
+		expect(result.content[0].text).toContain("worker output");
+		expect(factsIn(result)).toEqual(expect.arrayContaining([
+			expect.objectContaining({ kind: "completion", data: expect.objectContaining({ output: "scout output" }) }),
+		]));
+		expect((result.details.subagentContent ?? []).filter((item: any) => item.kind === "completion")).toEqual([]);
+		const amendment = await root.handlers.get("tool_result")?.({
+			type: "tool_result", toolName: "await_agents", toolCallId: "await-presentation", ...result,
+		}, root.ctx);
+		const details = amendment?.details ?? result.details;
 		await root.handlers.get("entry_appended")?.({
 			type: "entry_appended",
-			entry: { id: "await-result-entry", message: { role: "toolResult", toolCallId: "await-presentation", details: result.details } },
+			entry: { id: "await-result-entry", message: { role: "toolResult", toolCallId: "await-presentation", details } },
 		}, root.ctx);
-		expect(root.presentation).toContainEqual(expect.objectContaining({
-			type: "snapshot", operationId: payload.operationId, placement: { entryId: "await-result-entry" },
-		}));
+		const finals = root.presentation.filter((event) => event.type === "end" || event.type === "snapshot");
+		expect(finals.filter((event) => event.kind === "completion")).toEqual([]);
+		const awaits = finals.filter((event) => event.kind === "await");
+		expect(awaits).toHaveLength(1);
+		expect(awaits[0]).toMatchObject({ data: { operation: "await", result: { statuses: expect.arrayContaining([
+			expect.objectContaining({ path: ["worker"], output: "worker output" }),
+			expect.objectContaining({ path: ["scout"], output: "scout output", error: "scout failure" }),
+		]) } } });
+		if (interrupted) {
+			expect(result.content[0].text).toContain("need a decision");
+			expect(details.subagentContent).toContainEqual(expect.objectContaining({
+				kind: "send", source: "custom_entry", data: { operation: "send", to: [], request: "need a decision", response: "" },
+			}));
+			expect(finals).toContainEqual(expect.objectContaining({ kind: "send", data: expect.objectContaining({ request: "need a decision" }) }));
+		}
 	});
 
 	it("returns every requested status when one child settled before await", async () => {
@@ -1038,11 +1072,20 @@ describe("semantic facts on native messages", () => {
 		expect((result.structuredContent as any).agents.map((agent: any) => agent.id)).toEqual(["worker", "scout"]);
 	});
 
-	it("releases a refused await without leaving a running semantic wait", async () => {
+	it("retains queued completions when a blocked sender prevents await", async () => {
 		const root = await rootSession();
+		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
+		for (const child of managed.created) child.hooks.onEvent({ type: "agent_start" });
+		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "read", toolCallId: "hold-notifications" }, root.ctx);
 		const receipt = await root.worker.config.scope.uplink.send({ to: "parent", message: "answer before waiting", expectResponse: true });
+		managed.created[1].hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "queued scout output" }] } });
+		managed.created[1].hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
+		managed.created[1].hooks.onEvent({ type: "agent_settled" });
 		const result = await root.tools.get("await_agents")!.execute("refused-await", { agents: ["worker"] }, undefined, undefined, root.ctx);
 		expect(result.content[0].text).toContain("Cannot wait");
+		expect(result.content[0].text).toContain("queued scout output");
+		expect(result.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "scout", output: "queued scout output", sessionId: managed.created[1].child.sessionId }));
+		expect((result.details.subagentContent ?? []).filter((item: any) => item.kind === "completion")).toEqual([]);
 		expect(factsIn(result).find((fact) => fact.kind === "await_released")).toMatchObject({ data: { invocationId: "refused-await", reason: "message" } });
 		await root.tools.get("respond")!.execute("unblock-worker", { correlationId: receipt.correlationId, message: "continue" }, undefined, undefined, root.ctx);
 		await receipt.response;
@@ -1138,6 +1181,15 @@ describe("semantic facts on native messages", () => {
 		const facts = factsIn(notification);
 		expect(facts.some((fact) => fact.kind === "child_settled")).toBe(true);
 		expect(facts.some((fact) => fact.kind === "completion" && fact.data.output === "saved answer")).toBe(true);
+		expect(notification.details.subagentContent).toContainEqual(expect.objectContaining({
+			kind: "completion", source: "custom_entry", data: { operation: "completion", result: expect.objectContaining({ output: "saved answer" }) },
+		}));
+		await root.handlers.get("entry_appended")?.({
+			type: "entry_appended", entry: { id: "async-completion-entry", type: "custom_message", ...notification },
+		}, root.ctx);
+		expect(root.presentation.filter((event) => event.kind === "completion")).toEqual([
+			expect.objectContaining({ type: "snapshot", placement: { entryId: "async-completion-entry" }, data: { operation: "completion", result: expect.objectContaining({ output: "saved answer" }) } }),
+		]);
 	});
 });
 

@@ -20,6 +20,7 @@ import type { ManagedChildSession } from "./managed-child-session.js";
 import type {
 	ActiveSubagentOperation,
 	PersistedSubagentContent,
+	SubagentAwaitStatus,
 	SubagentDeltaData,
 	SubagentOperationKind,
 	SubagentPresentationManifest,
@@ -694,6 +695,36 @@ function isPersistedPresentationContent(value: unknown): value is PersistedSubag
 	}
 	if (value.placement === undefined) return true;
 	return isRecord(value.placement) && typeof value.placement.entryId === "string";
+}
+
+function restoreAwaitSettlements(payload: PersistedSubagentContent, semantic: unknown): PersistedSubagentContent {
+	if (payload.source !== "tool" || payload.kind !== "await" || payload.data.operation !== "await") return payload;
+	const result = payload.data.result;
+	if (!isRecord(result) || !Array.isArray(result.statuses)) return payload;
+	if (result.statuses.some((status) => !isRecord(status) || !validPath(status.path))) return payload;
+	const paths = new Set(result.statuses.map((status) => pathKey(status.path)));
+	const restored: SubagentAwaitStatus[] = [];
+	const facts = Array.isArray(semantic) ? semantic : [semantic];
+	for (const fact of facts) {
+		if (!isRecord(fact) || fact.kind !== "child_settled" || !isRecord(fact.data) || !Array.isArray(fact.data.statuses)) continue;
+		for (const status of fact.data.statuses) {
+			if (!isRecord(status) || !validPath(status.path) || status.path.length === 0) continue;
+			const state = status.state;
+			if (state !== "idle" && state !== "errored" && state !== "dead" && state !== "stopped") continue;
+			const key = pathKey(status.path);
+			if (paths.has(key)) continue;
+			paths.add(key);
+			restored.push({
+				path: copyPath(status.path),
+				state,
+				...(typeof status.output === "string" ? { output: status.output } : {}),
+				...(typeof status.error === "string" ? { error: status.error } : {}),
+				...(typeof status.sessionId === "string" ? { sessionId: status.sessionId } : {}),
+			});
+		}
+	}
+	if (restored.length === 0) return payload;
+	return { ...payload, data: { ...payload.data, result: { ...result, statuses: [...result.statuses, ...restored] } } };
 }
 
 /** Provider feed, hierarchy projection, and borrowed runtime lease owner. */
@@ -1481,9 +1512,14 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			const details = messageRecord.details ?? candidateEntry.details ?? candidateEntry.data;
 			if (!isRecord(details) || !Array.isArray(details.subagentContent)) continue;
 			const entryId = typeof candidateEntry.id === "string" ? candidateEntry.id : undefined;
+			const customMessage = (candidateEntry.type === "custom_message" && candidateEntry.customType === "subagents")
+				|| (messageRecord.role === "custom" && messageRecord.customType === "subagents");
+			const awaitResult = messageRecord.role === "toolResult" && messageRecord.toolName === "await_agents";
 			for (const candidate of details.subagentContent) {
 				if (!isPersistedPresentationContent(candidate)) continue;
-				saved.push({ payload: candidate, ...(entryId !== undefined ? { entryId } : {}) });
+				if (candidate.kind === "completion" && (candidate.source !== "custom_entry" || !customMessage)) continue;
+				const payload = awaitResult ? restoreAwaitSettlements(candidate, details.semantic) : candidate;
+				saved.push({ payload, ...(entryId !== undefined ? { entryId } : {}) });
 			}
 		}
 		for (const item of saved) {

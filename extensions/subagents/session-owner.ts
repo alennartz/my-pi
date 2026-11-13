@@ -787,7 +787,7 @@ class SessionTurnCoordinator {
 				"then call await_agents again if you still need to wait.";
 			const drained = this.queue.drainDetailed();
 			const released = this.publishAwaitRelease(ids, manager, semantic, [], "message");
-			return this.truncatedWaitResult([drained.text, notice].filter(Boolean).join("\n"), [], [
+			return this.truncatedWaitResult([drained.text, notice].filter(Boolean).join("\n"), drained.agents, [
 				...(drained.semanticEvents ?? []), ...(released ? [released] : []),
 			], drained.subagentContent);
 		}
@@ -3204,12 +3204,13 @@ class SubagentSessionOwner {
 				refs,
 			});
 			const output = this.structuredTextResult(result.text, { agents: result.agents }, [started, ...(result.semanticEvents ?? [])]);
-			if (!result.subagentContent || result.subagentContent.length === 0) return output;
+			const subagentContent = result.subagentContent?.filter((item) => item.kind !== "completion") ?? [];
+			if (subagentContent.length === 0) return output;
 			return {
 				...output,
 				details: {
 					...(output.details as Record<string, unknown>),
-					subagentContent: result.subagentContent,
+					subagentContent,
 				},
 			};
 		} finally {
