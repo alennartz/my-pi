@@ -56,7 +56,7 @@ describe("semantic event provenance", () => {
 		expect(semantic.data).toEqual({ sessionId: "child-session" });
 	});
 
-	it("keeps lifecycle references distinct from the semantic overlay kind", () => {
+	it("keeps lifecycle references distinct from the semantic operation kind", () => {
 		const semantic = createSemanticEvent({
 			eventId: "semantic-3",
 			cursor,

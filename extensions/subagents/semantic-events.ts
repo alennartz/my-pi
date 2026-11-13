@@ -31,14 +31,13 @@ function cloneSemanticValue<T>(value: T): T {
 }
 
 /**
- * Build one semantic overlay while retaining every supplied native Pi
- * reference. The native transcript remains authoritative for replay and
- * fallback rendering.
+ * Build one immutable semantic event while retaining every supplied native Pi
+ * reference for persistence and hydration.
  *
  * This constructor is deliberately a pure boundary. It does not derive local
- * ids, collapse paths, rewrite old metadata, or apply model-output
- * truncation. Callers pass root-relative paths and the complete text; native
- * provenance and structured details therefore survive unchanged.
+ * ids, collapse paths, rewrite metadata, or apply model-output truncation.
+ * Callers pass root-relative paths and complete data; native provenance and
+ * structured details therefore survive unchanged.
  */
 export function createSemanticEvent<T extends SemanticEventInput>(input: T): T {
 	return cloneSemanticValue(input);

@@ -539,7 +539,7 @@ describe("child-scoped extension routing", () => {
 		);
 	});
 
-	it("delivers an incoming message without semantic overlay details", async () => {
+	it("delivers an incoming message with a typed presentation payload", async () => {
 		const uplink = makePort("child");
 		const { pi, handlers } = makePi();
 		await createSubagentsExtension({
