@@ -1909,10 +1909,10 @@ class SubagentSessionOwner {
 		if (event?.type === "entry_appended" && event.entry?.id) {
 			const entryId = event.entry.id as string;
 			const message = event.entry.message;
-			if (message?.toolCallId) this.nativeToolEntries.set(message.toolCallId, entryId);
+			if (message?.toolCallId && !this.nativeToolEntries.has(message.toolCallId)) this.nativeToolEntries.set(message.toolCallId, entryId);
 			if (message?.content && Array.isArray(message.content)) {
 				for (const part of message.content) {
-					if (part?.type === "toolCall" && typeof part.id === "string") this.nativeToolEntries.set(part.id, entryId);
+					if (part?.type === "toolCall" && typeof part.id === "string" && !this.nativeToolEntries.has(part.id)) this.nativeToolEntries.set(part.id, entryId);
 				}
 			}
 			const customType = message?.customType ?? event.entry.customType;
