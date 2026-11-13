@@ -75,6 +75,7 @@ import {
 	type StatusResultData,
 	type TeardownAgentData,
 	type TeardownResultData,
+	type AgentRefData,
 	InterruptResultSchema,
 	ModelsResultSchema,
 	ResurrectResultSchema,
@@ -184,7 +185,7 @@ type DelegationPresentationChild = Readonly<{ path: AgentPath; task: string; per
 
 interface AwaitResult {
 	text: string;
-	agents: AgentCompleteData[];
+	agents: AgentRefData[];
 	semanticEvents?: readonly SubagentSemanticFact[];
 	subagentContent?: readonly PersistedSubagentContent[];
 }
@@ -408,11 +409,11 @@ class SessionTurnCoordinator {
 		}];
 	}
 
-	private completionAgent(status: AwaitChildStatus): AgentCompleteData {
+	private completionAgent(status: AwaitChildStatus): AgentRefData {
 		const id = status.path.at(-1) ?? "";
 		return {
 			id,
-			status: status.state === "errored" ? "errored" : status.state === "dead" ? "dead" : "idle",
+			status: status.state,
 			...(status.output !== undefined ? { output: status.output } : {}),
 			...(status.error !== undefined ? { error: status.error } : {}),
 			...(status.sessionId !== undefined ? { sessionId: status.sessionId } : {}),
@@ -420,9 +421,9 @@ class SessionTurnCoordinator {
 	}
 
 	private mergeCompletionAgents(
-		primary: readonly AgentCompleteData[],
-		additional: readonly AgentCompleteData[],
-	): AgentCompleteData[] {
+		primary: readonly AgentRefData[],
+		additional: readonly AgentRefData[],
+	): AgentRefData[] {
 		const merged = new Map<string, AgentCompleteData>();
 		for (const agent of primary) merged.set(agent.id, agent);
 		for (const agent of additional) if (!merged.has(agent.id)) merged.set(agent.id, agent);
@@ -1004,7 +1005,7 @@ class SessionTurnCoordinator {
 
 	private async truncatedWaitResult(
 		text: string,
-		agents: AgentCompleteData[],
+		agents: AgentRefData[],
 		semanticEvents?: readonly SubagentSemanticFact[],
 		subagentContent?: readonly PersistedSubagentContent[],
 	): Promise<AwaitResult> {
