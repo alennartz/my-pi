@@ -1873,8 +1873,8 @@ class SubagentSessionOwner {
 				this.publishPersistedPresentationContent((details as Record<string, unknown>).subagentContent, entryId);
 			}
 		}
-		// Keep only exact append and tool-call matches. Do not infer an entry from
-		// the current session leaf: that leaf can belong to an unrelated message.
+		// Native tool entries require exact append matches. A custom message's
+		// terminal event is the append boundary, so its leaf is the containing entry.
 		if (event?.type === "entry_appended" && event.entry?.id) {
 			const entryId = event.entry.id as string;
 			const message = event.entry.message;
