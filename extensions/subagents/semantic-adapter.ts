@@ -473,6 +473,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
   function acceptToolCallDelta(event: PiToolCallDelta): readonly SemanticAdapterEvent[] {
     const state = ensureOperation(event);
     if (!state) return [];
+    if (state.kind === 'send' && event.targetPath !== undefined) state.sendTarget = copyPath(event.targetPath);
     const wasStarted = state.started;
     const previousRequest = state.request;
     const previousBody = state.body;

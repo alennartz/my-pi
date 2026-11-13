@@ -62,10 +62,11 @@ describe('subagent semantic adapter', () => {
 
   it('uses the router-resolved target path for a child send', () => {
     const adapter = createSubagentSemanticAdapter();
-    adapter.acceptToolCallDelta({
+    const [start] = adapter.acceptToolCallDelta({
       toolCallId: 'child-send', contentIndex: 0, toolName: 'send', path: ['child'],
       targetPath: ['sibling'], phase: 'start', delta: '{"to":"sibling","message":"check"}',
     });
+    expect(start).toMatchObject({ data: { operation: 'send', to: ['sibling'] } });
     const [terminal] = adapter.acceptToolExecution({
       toolCallId: 'child-send', contentIndex: 0, toolName: 'send', path: ['child'],
       targetPath: ['sibling'], result: { response: 'done' },
