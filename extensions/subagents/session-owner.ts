@@ -1323,8 +1323,8 @@ class RootSubagentControlPort implements SubagentOwnerControlPort {
 
 	routeLeaseDetached(pathValue: AgentPath, reason: "released" | "removed" | "unavailable"): void {
 		const coordinator = this.resolveLeaseCoordinator(pathValue).coordinator;
-		if (reason === "released") coordinator.detachLease(pathValue);
-		else coordinator.discardLease(pathValue);
+		if (reason === "removed") coordinator.discardLease(pathValue);
+		else coordinator.detachLease(pathValue);
 	}
 
 	teardown(pathValue: AgentPath, incarnation: string) {
@@ -1709,8 +1709,8 @@ class SubagentSessionOwner {
 					},
 					onLeaseDetached: (path, reason) => {
 						if (ownerControl?.routeLeaseDetached) ownerControl.routeLeaseDetached(path, reason);
-						else if (reason === "released") turns.detachLease(path);
-						else turns.discardLease(path);
+						else if (reason === "removed") turns.discardLease(path);
+						else turns.detachLease(path);
 					},
 
 				});

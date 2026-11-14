@@ -848,6 +848,20 @@ describe("semantic facts on native messages", () => {
 		const sessionFile = path.join(tmpRoot!, "semantic-parent.jsonl");
 		fs.writeFileSync(sessionFile, "");
 		const root = makePi();
+		const listeners = new Map<string, Set<(data: any) => void>>();
+		let provider: any;
+		(root.pi as any).events = {
+			on(name: string, listener: (data: any) => void) {
+				const group = listeners.get(name) ?? new Set();
+				group.add(listener);
+				listeners.set(name, group);
+				return () => group.delete(listener);
+			},
+			emit(name: string, data: any) {
+				if (name === "pimote:subagents:response") provider = data.provider;
+				for (const listener of listeners.get(name) ?? []) listener(data);
+			},
+		};
 		const bus = createSemanticFactBus();
 		const published: SubagentSemanticFact[] = [];
 		const presentation: SemanticAdapterEvent[] = [];
@@ -858,7 +872,7 @@ describe("semantic facts on native messages", () => {
 		ctx.sessionManager.getLeafId = () => "root-leaf";
 		await startSession(root.handlers, ctx);
 		await execute(root.tools, "subagent", { agents: [{ id: "worker", task: "inspect", channels: [] }] }, ctx);
-		return { ...root, ctx, bus, published, presentation, worker: managed.created[0] };
+		return { ...root, ctx, bus, provider, published, presentation, worker: managed.created[0] };
 	}
 
 	it("delivers native notifications when the same child session resumes", async () => {
@@ -982,6 +996,43 @@ describe("semantic facts on native messages", () => {
 		expect(terminal?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: root.worker.child.sessionId, toolCallId: "response-call", kind: "tool_call" })]));
 		expect(factsIn(responder).map((fact) => fact.eventId)).toContain(terminal?.eventId);
 		expect(root.published.filter((fact) => fact.kind === "message_thread" && fact.data.phase === "response" && fact.data.correlationId === correlationId).map((fact) => fact.eventId)).toEqual([terminal?.eventId]);
+	});
+
+	it("waits for a running child when its view becomes unavailable", async () => {
+		const root = await rootSession();
+		const lease = await root.provider.acquire(["worker"]);
+		const waiting = root.tools.get("await_agents")!.execute("wait-unavailable", { agents: ["worker"] }, undefined, undefined, root.ctx);
+		let resolved = false;
+		void waiting.then(() => { resolved = true; });
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		root.worker.child.session = undefined;
+		root.worker.hooks.onRuntimeReplaced({ oldSessionId: root.worker.child.sessionId, newSessionId: "replacement" });
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(resolved).toBe(false);
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		const result = await waiting;
+		expect(result.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "worker", status: "idle" }));
+		await lease.release();
+	});
+
+	it("routes a nested view lease to the owner waiting for that child", async () => {
+		const root = await rootSession();
+		const owner = makePi();
+		await createSubagentsExtension(root.worker.config.scope)(owner.pi as any);
+		const ctx = makeContext(root.worker.child.sessionFile);
+		await startSession(owner.handlers, ctx);
+		await execute(owner.tools, "subagent", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, ctx);
+		const scout = managed.created[1];
+		const lease = await root.provider.acquire(["worker", "scout"]);
+		const waiting = owner.tools.get("await_agents")!.execute("nested-await", { agents: ["scout"] }, undefined, undefined, ctx);
+		let resolved = false;
+		void waiting.then(() => { resolved = true; });
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started" && fact.path.join("/") === "worker")).toBe(true));
+		scout.hooks.onEvent({ type: "agent_settled" });
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(resolved).toBe(false);
+		await lease.release();
+		expect((await waiting).structuredContent.agents).toContainEqual(expect.objectContaining({ id: "scout", status: "idle" }));
 	});
 
 	it("retains awaited settlements and release facts in the await tool result", async () => {
