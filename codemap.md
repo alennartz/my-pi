@@ -328,9 +328,12 @@ Slash-command prompts distributed with the package.
 
 ### Conventions
 
-Repo working rules for this package (`docs/conventions.md`): codebase rules that hold when working in `my-pi` — skill format, raw-TS extensions with no build step, agent definition format, subagents as a local extension. Cross-repo rules (dependency changes, git hooks, tone, initiative) live in `~/.pi/agent/AGENTS.md` and are not repeated here.
+Repo working rules for this package (`docs/conventions.md`): codebase rules that hold when working in `my-pi` — skill format, raw-TS extensions, strict type checking, agent definition format, and subagents as a local extension. The local Pimote SDK loop uses `npm link` without changing the registry dependency or lockfile. Cross-repo rules (dependency changes, git hooks, tone, initiative) live in `~/.pi/agent/AGENTS.md` and are not repeated here.
 
 **Dependencies:** none.
 
 **Files:**
 - `docs/conventions.md`
+- `docs/local-pimote-sdk.md`
+- `scripts/link-pimote-sdk.mjs`
+- `package.json`
