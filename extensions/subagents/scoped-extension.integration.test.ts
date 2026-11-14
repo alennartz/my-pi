@@ -1379,7 +1379,8 @@ describe("semantic facts on native messages", () => {
 		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
 		root.worker.hooks.onEvent({ type: "agent_settled" });
 		const notification = root.pi.sendMessage.mock.calls.at(-1)?.[0];
-		expect(factsIn(notification).find((fact) => fact.kind === "completion")).toMatchObject({ data: { delivery: "asynchronous" } });
+		expect(factsIn(notification)).toEqual([]);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "completion" && fact.data.delivery === "asynchronous")).toBe(true));
 	});
 
 	it.each([{}, { agents: ["worker"] }])("starts await from authoritative execution arguments, all-or-named=%j", async (parameters) => {
@@ -1470,16 +1471,14 @@ describe("semantic facts on native messages", () => {
 		}));
 	});
 
-	it("persists asynchronous settlement facts with the idle custom message", async () => {
+	it("persists asynchronous settlement cards with the idle custom message", async () => {
 		const root = await rootSession();
 		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "saved answer" }] } });
 		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
 		root.worker.hooks.onEvent({ type: "agent_settled" });
 		const notification = root.pi.sendMessage.mock.calls.at(-1)?.[0];
 		expect(notification?.content).toContain("<agent_idle");
-		const facts = factsIn(notification);
-		expect(facts.some((fact) => fact.kind === "child_settled")).toBe(true);
-		expect(facts.some((fact) => fact.kind === "completion" && fact.data.output === "saved answer")).toBe(true);
+		expect(factsIn(notification)).toEqual([]);
 		expect(notification.details.subagentContent).toContainEqual(expect.objectContaining({
 			kind: "completion", source: "custom_entry", data: { operation: "completion", result: expect.objectContaining({ output: "saved answer" }) },
 		}));

@@ -444,14 +444,8 @@ class SessionTurnCoordinator {
 				let completionBatch: typeof entries[number][] = [];
 				const flushCompletionBatch = (): void => {
 					if (completionBatch.length === 0) return;
-					const semanticEvents = completionBatch.flatMap((entry) => entry.semanticEvents);
 					const subagentContent = completionBatch.flatMap((entry) => entry.subagentContent ?? []);
-					const details = semanticEvents.length > 0 || subagentContent.length > 0
-						? {
-							...(semanticEvents.length > 0 ? { semanticEvents } : {}),
-							...(subagentContent.length > 0 ? { subagentContent } : {}),
-						}
-						: undefined;
+					const details = subagentContent.length > 0 ? { subagentContent } : undefined;
 					pi.sendMessage(
 						{ customType: "subagents", content: completionBatch.map((entry) => entry.xml).join("\n"), display: true, ...(details ? { details } : {}) },
 						{ ...(deferred ? { deliverAs: "nextTurn" } : { triggerTurn: true }) },
