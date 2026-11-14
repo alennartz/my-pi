@@ -108,6 +108,7 @@ export type { SemanticFactBus } from "./semantic-bus.js";
 import {
 	createSubagentProvider,
 	type SubagentSemanticFact,
+	type SubagentAwaitChildStatus,
 	type SubagentEventKind,
 	type PiEventRef,
 	type SubagentProvider,
@@ -192,6 +193,8 @@ interface AwaitResult extends AwaitResultData {
 }
 
 interface WaitState {
+	ids: readonly string[];
+	manager: SubagentManager;
 	resolve: (result: AwaitResult) => void;
 	reject: (error: unknown) => void;
 	abortCleanup: (() => void) | null;
@@ -408,17 +411,6 @@ class SessionTurnCoordinator {
 				},
 			},
 		}];
-	}
-
-	private completionAgent(status: AwaitChildStatus): AgentRefData {
-		const id = status.path.at(-1) ?? "";
-		return {
-			id,
-			status: status.state,
-			...(status.output !== undefined ? { output: status.output } : {}),
-			...(status.error !== undefined ? { error: status.error } : {}),
-			...(status.sessionId !== undefined ? { sessionId: status.sessionId } : {}),
-		};
 	}
 
 	private mergeCompletionAgents(
@@ -688,15 +680,17 @@ class SessionTurnCoordinator {
 		this.queue.setWaiting(false);
 		const drained = this.queue.drainDetailed();
 		let semanticEvents = drained.semanticEvents ?? [];
+		const current = this.currentAwaitAgents(state.ids, state.manager);
+		const interrupted = outcome.kind === "interrupted" || outcome.reason === "stop";
 		if (state.semantic) {
 			const reason = outcome.kind === "interrupted" ? "message" : outcome.reason;
 			const finalFact = this.semantic.publishFact(
-				outcome.kind === "interrupted" ? "await_interrupted" : "await_released",
+				interrupted ? "await_interrupted" : "await_released",
 				state.semantic.path,
 				{
 					invocationId: state.semantic.invocationId,
 					requested: state.semantic.requested,
-					statuses: outcome.statuses,
+					statuses: this.currentAwaitStatuses(state.ids, state.manager),
 					reason,
 					...(outcome.kind === "interrupted" ? { message: {
 						from: outcome.message.from, to: outcome.message.to, text: outcome.message.content,
@@ -709,14 +703,11 @@ class SessionTurnCoordinator {
 			semanticEvents = [...semanticEvents, finalFact];
 			this.clearAwaitInvocations(state.semantic.requested);
 		}
-		const agents = this.mergeCompletionAgents(
-			outcome.statuses.map((status) => this.completionAgent(status)),
-			drained.agents,
-		);
+		const agents = this.mergeCompletionAgents(current, drained.agents.filter((agent) => !state.ids.includes(agent.id)));
 		state.resolve({
 			...drained,
 			agents,
-			...(outcome.kind === "interrupted" ? { interrupted: true } : {}),
+			...(interrupted ? { interrupted: true } : {}),
 			...(semanticEvents.length > 0 ? { semanticEvents } : {}),
 			...(drained.subagentContent && drained.subagentContent.length > 0 ? { subagentContent: drained.subagentContent } : {}),
 		});
@@ -788,8 +779,9 @@ class SessionTurnCoordinator {
 				"Call respond for each pending correlation_id (the question arrived as an <agent_message>), " +
 				"then call await_agents again if you still need to wait.";
 			const drained = this.queue.drainDetailed();
-			const released = this.publishAwaitRelease(ids, manager, semantic, [], "message");
-			return this.truncatedWaitResult([drained.text, notice].filter(Boolean).join("\n"), this.mergeCompletionAgents(drained.agents, this.currentAwaitAgents(ids, manager)), [
+			const current = this.currentAwaitAgents(ids, manager);
+			const released = this.publishAwaitRelease(ids, manager, semantic, current, "message");
+			return this.truncatedWaitResult([drained.text, notice].filter(Boolean).join("\n"), this.mergeCompletionAgents(current, drained.agents.filter((agent) => !ids.includes(agent.id))), [
 				...(drained.semanticEvents ?? []), ...(released ? [released] : []),
 			], drained.subagentContent, { interrupted: true, error: `Cannot wait: ${blocked.map((pending) => pending.from).join(", ")} must receive your response before settling.` });
 		}
@@ -806,7 +798,8 @@ class SessionTurnCoordinator {
 		const storedSettlements: StoredChildSettlement[] = [];
 		for (const path of requested) {
 			const stored = this.settledStatuses.get(JSON.stringify(path));
-			if (stored) storedSettlements.push(stored);
+			const live = manager.getAgentStatus(path.at(-1)!);
+			if (stored && live && isSettledState(live.state) && (stored.state === live.state || (stored.state === "stopped" && live.state === "idle"))) storedSettlements.push(stored);
 		}
 		const immediate = resolveExplicitAwait(requested, storedSettlements);
 		for (const settlement of immediate.statuses) gate.settle(settlement);
@@ -820,6 +813,8 @@ class SessionTurnCoordinator {
 		try {
 			const result = await new Promise<AwaitResult>((resolve, reject) => {
 				const state: WaitState = {
+					ids,
+					manager,
 					resolve,
 					reject,
 					abortCleanup: null,
@@ -857,6 +852,7 @@ class SessionTurnCoordinator {
 						this.semantic.publishFact("await_interrupted", state.semantic.path, {
 							invocationId: state.semantic.invocationId,
 							requested: state.semantic.requested,
+							statuses: this.currentAwaitStatuses(ids, manager),
 							reason: "stop",
 						}, state.semantic.refs);
 						this.clearAwaitInvocations(state.semantic.requested);
@@ -869,7 +865,7 @@ class SessionTurnCoordinator {
 					state.abortCleanup = () => signal.removeEventListener("abort", onAbort);
 				}
 			});
-			const agents = this.mergeCompletionAgents(result.agents, this.currentAwaitAgents(ids, manager));
+			const agents = this.mergeCompletionAgents(this.currentAwaitAgents(ids, manager), result.agents.filter((agent) => !ids.includes(agent.id)));
 			return this.truncatedWaitResult(
 				result.text || "All specified agents have completed. No pending notifications.",
 				agents,
@@ -1007,16 +1003,33 @@ class SessionTurnCoordinator {
 	}
 
 	private currentAwaitAgents(ids: readonly string[], manager: SubagentManager): AgentRefData[] {
-		return ids.map((id) => {
+		return ids.flatMap((id) => {
 			const status = manager.getAgentStatus(id);
+			if (!status) return [];
 			const sessionId = manager.getSessionId(id);
-			return {
+			return [{
 				id,
-				status: status?.state ?? "idle",
-				...(status?.lastOutput !== undefined ? { output: status.lastOutput } : {}),
-				...(status?.lastError !== undefined ? { error: status.lastError } : {}),
+				status: status.state,
+				...(status.lastOutput !== undefined ? { output: status.lastOutput } : {}),
+				...(status.lastError !== undefined ? { error: status.lastError } : {}),
 				...(sessionId !== undefined ? { sessionId } : {}),
-			};
+			}];
+		});
+	}
+
+	currentAwaitStatuses(ids: readonly string[], manager: SubagentManager): SubagentAwaitChildStatus[] {
+		return ids.flatMap((id) => {
+			const path = manager.getAgentPath(id);
+			const status = manager.getAgentStatus(id);
+			if (!path || !status) return [];
+			const sessionId = manager.getSessionId(id);
+			return [{
+				path,
+				state: status.state,
+				...(status.lastOutput !== undefined ? { output: status.lastOutput } : {}),
+				...(status.lastError !== undefined ? { error: status.lastError } : {}),
+				...(sessionId !== undefined ? { sessionId } : {}),
+			}];
 		});
 	}
 
@@ -1566,7 +1579,14 @@ class SubagentSessionOwner {
 			: [];
 	}
 
+	private refreshAwaitPresentation(toolCallId: string): void {
+		const { manager, turns } = this.requireActiveSession();
+		const ids = manager.getAgentStatuses().map((status) => status.id);
+		this.recordPresentationEvents(this.semanticAdapter.acceptAwaitLiveStatuses(toolCallId, turns.currentAwaitStatuses(ids, manager)));
+	}
+
 	private completePresentationAtToolResult(event: any): void {
+		if (event.toolName === "await_agents" && event.isError === true) this.refreshAwaitPresentation(event.toolCallId);
 		const result = event.result !== undefined
 			? event.result
 			: {
@@ -1898,6 +1918,9 @@ class SubagentSessionOwner {
 				this.recordPresentationEvents(this.semanticAdapter.acceptAwaitProgress(operationId, data.statuses));
 			}
 		}
+		if ((kind === "await_interrupted" || kind === "await_released") && typeof data?.invocationId === "string" && Array.isArray(data.requested) && Array.isArray(data.statuses)) {
+			this.recordPresentationEvents(this.semanticAdapter.acceptAwaitSnapshot(data.invocationId, data.requested, data.statuses, kind === "await_interrupted" || data.reason === "message"));
+		}
 		return fact;
 	}
 
@@ -2119,6 +2142,7 @@ class SubagentSessionOwner {
 	private completeOutstandingPresentationCalls(): void {
 		for (const toolCallId of Array.from(this.activePresentationCalls)) {
 			if (!this.completedPresentationCalls.has(toolCallId)) {
+				this.refreshAwaitPresentation(toolCallId);
 				this.recordPresentationEvents(this.semanticAdapter.completeToolCall(toolCallId));
 				this.persistAbortedPresentation(this.persistedPresentationContent(toolCallId));
 			}

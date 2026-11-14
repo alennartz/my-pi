@@ -211,6 +211,17 @@ describe('subagent presentation provider', () => {
     expect(JSON.stringify(entries)).toBe(before);
   });
 
+  it('does not restore an obsolete child settlement over an authoritative await snapshot', async () => {
+    const events = await rehydratedFinals([{ type: 'message', message: { role: 'toolResult', toolName: 'await_agents', toolCallId: 'missing-child', details: {
+      semantic: [
+        { kind: 'child_settled', data: { statuses: [{ path: ['owner', 'worker'], state: 'idle' }] } },
+        { kind: 'await_interrupted', data: { invocationId: 'missing-child', requested: [['owner', 'worker']], statuses: [], reason: 'stop' } },
+      ],
+      subagentContent: [{ operationId: 'missing-child', kind: 'await', source: 'tool', state: 'aborted', placement: { toolCallId: 'missing-child', contentIndex: 0 }, data: { operation: 'await', result: { statuses: [], interrupted: true } } }],
+    } } }]);
+    expect(events[0]).toMatchObject({ state: 'aborted', data: { result: { statuses: [], interrupted: true } } });
+  });
+
   it('keeps aborted awaits persisted as custom entries', async () => {
     const awaited = {
       operationId: 'aborted-await', kind: 'await', source: 'custom_entry', state: 'aborted',

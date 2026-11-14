@@ -84,6 +84,7 @@ export interface MessageRouterOptions {
 	correlationIdFactory?: () => string;
 	onBlockingSendStart?: (from: string, to: string, correlationId: string) => void;
 	onBlockingSendEnd?: (from: string, correlationId: string) => void;
+	onMessageDelivery?: (to: string) => void;
 	/** Transport phases feed the owning semantic fact bus. */
 	onMessagePhase?: (event: RoutedMessagePhase) => void;
 	/** Router-local response-body progress; never part of the SDK presentation feed. */
@@ -130,6 +131,7 @@ export class MessageRouter {
 	private readonly edgeCounts = new Map<string, Map<string, number>>();
 	private readonly onBlockingSendStart?: MessageRouterOptions["onBlockingSendStart"];
 	private readonly onBlockingSendEnd?: MessageRouterOptions["onBlockingSendEnd"];
+	private readonly onMessageDelivery?: MessageRouterOptions["onMessageDelivery"];
 	private readonly onMessagePhase?: MessageRouterOptions["onMessagePhase"];
 	private readonly onResponseProgress?: MessageRouterOptions["onResponseProgress"];
 	private readonly correlationIdFactory: () => string;
@@ -140,6 +142,7 @@ export class MessageRouter {
 		this.topology = buildTopology([]);
 		this.onBlockingSendStart = options.onBlockingSendStart;
 		this.onBlockingSendEnd = options.onBlockingSendEnd;
+		this.onMessageDelivery = options.onMessageDelivery;
 		this.onMessagePhase = options.onMessagePhase;
 		this.onResponseProgress = options.onResponseProgress;
 		const namespace = randomUUID().split("-").pop()!;
@@ -509,6 +512,7 @@ export class MessageRouter {
 		correlationId: string | undefined,
 		responseExpected: boolean,
 	): void {
+		this.onMessageDelivery?.(target.id);
 		const routed: RoutedMessage = { from, message, responseExpected };
 		if (correlationId !== undefined) routed.correlationId = correlationId;
 

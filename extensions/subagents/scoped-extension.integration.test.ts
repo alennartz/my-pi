@@ -1063,6 +1063,80 @@ describe("semantic facts on native messages", () => {
 		}
 	});
 
+	it("waits for a new run when a child becomes active before its agent_start event", async () => {
+		const root = await rootSession();
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		root.worker.hooks.onEvent({ type: "tool_execution_start", toolName: "read", args: {} });
+		const waiting = root.tools.get("await_agents")!.execute("await-new-run", { agents: ["worker"] }, undefined, undefined, root.ctx);
+		let resolved = false;
+		void waiting.then(() => { resolved = true; });
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(resolved).toBe(false);
+		root.worker.hooks.onEvent({ type: "agent_start" });
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		expect((await waiting).structuredContent.agents).toContainEqual(expect.objectContaining({ id: "worker", status: "idle" }));
+	});
+
+	it("waits for work sent to an idle child before its next agent_start", async () => {
+		const root = await rootSession();
+		const child = makePi();
+		await createSubagentsExtension(root.worker.config.scope)(child.pi as any);
+		await startSession(child.handlers, makeContext(root.worker.child.sessionFile));
+		const args = { agents: ["worker"] };
+		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "first-wait", args }, root.ctx);
+		const first = root.tools.get("await_agents")!.execute("first-wait", args, undefined, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started" && fact.data.invocationId === "first-wait")).toBe(true));
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "first-wait", ...await first }, root.ctx);
+		await root.tools.get("send")!.execute("restart-worker", { to: "worker", message: "continue", expectResponse: false }, undefined, undefined, root.ctx);
+		expect(child.pi.sendMessage.mock.calls.some(([message]) => message.content.includes("continue"))).toBe(true);
+		const status = await root.tools.get("check_status")!.execute("check-worker", { agent: "worker" }, undefined, undefined, root.ctx);
+		expect(status.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "worker", state: "running" }));
+		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "await-restarted", args }, root.ctx);
+		const waiting = root.tools.get("await_agents")!.execute("await-restarted", args, undefined, undefined, root.ctx);
+		let resolved = false;
+		void waiting.then(() => { resolved = true; });
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started" && fact.data.invocationId === "await-restarted")).toBe(true));
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(resolved).toBe(false);
+		root.worker.hooks.onEvent({ type: "agent_start" });
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		const result = await waiting;
+		expect(result.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "worker", status: "idle" }));
+		await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "await-restarted", ...result }, root.ctx);
+		for (const operationId of ["first-wait", "await-restarted"]) {
+			expect(root.presentation).toContainEqual(expect.objectContaining({ type: "start", kind: "await", operationId }));
+			expect(root.presentation).toContainEqual(expect.objectContaining({ type: "end", kind: "await", operationId, state: "complete" }));
+		}
+	});
+
+	it("reports the current child state when a message interrupts a later wait", async () => {
+		const root = await rootSession();
+		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
+		const args = { agents: ["worker", "scout"] };
+		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "later-wait", args }, root.ctx);
+		const waiting = root.tools.get("await_agents")!.execute("later-wait", args, undefined, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		await root.tools.get("send")!.execute("continue-worker", { to: "worker", message: "continue", expectResponse: false }, undefined, undefined, root.ctx);
+		await managed.created[1].config.scope.uplink.send({ to: "parent", message: "update", expectResponse: false });
+		const result = await waiting;
+		expect(result.structuredContent).toMatchObject({ interrupted: true, agents: expect.arrayContaining([
+			expect.objectContaining({ id: "worker", status: "running" }),
+			expect.objectContaining({ id: "scout", status: "running" }),
+		]) });
+		expect(factsIn(result).find((fact) => fact.kind === "await_interrupted")).toMatchObject({ data: { statuses: expect.arrayContaining([
+			expect.objectContaining({ path: ["worker"], state: "running" }),
+			expect.objectContaining({ path: ["scout"], state: "running" }),
+		]) } });
+		await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "later-wait", ...result }, root.ctx);
+		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "end", operationId: "later-wait", state: "aborted", data: expect.objectContaining({ result: expect.objectContaining({ interrupted: true, statuses: expect.arrayContaining([
+			expect.objectContaining({ path: ["worker"], state: "running" }),
+			expect.objectContaining({ path: ["scout"], state: "running" }),
+		]) }) }) }));
+	});
+
 	it("returns every requested status when one child settled before await", async () => {
 		const root = await rootSession();
 		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
@@ -1087,7 +1161,9 @@ describe("semantic facts on native messages", () => {
 		managed.created[1].hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "queued scout output" }] } });
 		managed.created[1].hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
 		managed.created[1].hooks.onEvent({ type: "agent_settled" });
-		const result = await root.tools.get("await_agents")!.execute("refused-await", { agents: ["worker"] }, undefined, undefined, root.ctx);
+		const args = { agents: ["worker"] };
+		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "refused-await", args }, root.ctx);
+		const result = await root.tools.get("await_agents")!.execute("refused-await", args, undefined, undefined, root.ctx);
 		expect(result.content[0].text).toContain("Cannot wait");
 		expect(result.content[0].text).toContain("queued scout output");
 		expect(result.structuredContent.interrupted).toBe(true);
@@ -1095,7 +1171,10 @@ describe("semantic facts on native messages", () => {
 		expect(result.structuredContent.error).not.toContain(receipt.correlationId);
 		expect(result.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "scout", output: "queued scout output", sessionId: managed.created[1].child.sessionId }));
 		expect((result.details.subagentContent ?? []).filter((item: any) => item.kind === "completion")).toEqual([]);
-		expect(factsIn(result).find((fact) => fact.kind === "await_released")).toMatchObject({ data: { invocationId: "refused-await", reason: "message" } });
+		expect(factsIn(result).find((fact) => fact.kind === "await_released")).toMatchObject({ data: { invocationId: "refused-await", reason: "message", statuses: [expect.objectContaining({ path: ["worker"], state: "waiting" })] } });
+		await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "refused-await", ...result }, root.ctx);
+		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "start", operationId: "refused-await" }));
+		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "end", operationId: "refused-await", state: "aborted", data: expect.objectContaining({ result: expect.objectContaining({ interrupted: true, statuses: expect.arrayContaining([expect.objectContaining({ path: ["worker"], state: "waiting" })]) }) }) }));
 		await root.tools.get("respond")!.execute("unblock-worker", { correlationId: receipt.correlationId, message: "continue" }, undefined, undefined, root.ctx);
 		await receipt.response;
 	});
@@ -1110,6 +1189,32 @@ describe("semantic facts on native messages", () => {
 		expect(result.content[0].text).toContain("need a decision");
 		expect(facts.some((fact) => fact.kind === "message_thread" && fact.data.phase === "received")).toBe(true);
 		expect(facts.find((fact) => fact.kind === "await_interrupted")).toMatchObject({ data: { message: { text: "need a decision", phase: "received" } } });
+	});
+
+	it.each([true, false])("reports live children when an await is cancelled, native result=%s", async (nativeResult) => {
+		const root = await rootSession();
+		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
+		const args = { agents: ["worker", "scout"] };
+		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "stopped-wait", args }, root.ctx);
+		const controller = new AbortController();
+		const waiting = root.tools.get("await_agents")!.execute("stopped-wait", args, controller.signal, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		controller.abort();
+		await expect(waiting).rejects.toThrow("Wait cancelled.");
+		if (nativeResult) {
+			await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "stopped-wait", isError: true, content: [{ type: "text", text: "Wait cancelled." }] }, root.ctx);
+		} else {
+			await root.handlers.get("agent_settled")?.({ type: "agent_settled", aborted: true }, root.ctx);
+		}
+		expect(root.published.find((fact) => fact.kind === "await_interrupted")).toMatchObject({ data: { statuses: expect.arrayContaining([
+			{ path: ["worker"], state: "idle", sessionId: root.worker.child.sessionId },
+			{ path: ["scout"], state: "running", sessionId: managed.created[1].child.sessionId },
+		]) } });
+		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "end", operationId: "stopped-wait", state: "aborted", data: expect.objectContaining({ result: expect.objectContaining({ interrupted: true, statuses: expect.arrayContaining([
+			expect.objectContaining({ path: ["worker"], state: "idle" }),
+			expect.objectContaining({ path: ["scout"], state: "running" }),
+		]) }) }) }));
 	});
 
 	it("persists cancellation facts on the native await error result", async () => {
@@ -1141,7 +1246,7 @@ describe("semantic facts on native messages", () => {
 		} }));
 		await root.handlers.get("agent_settled")?.({ type: "agent_settled", aborted: true }, root.ctx);
 		const persisted = root.pi.sendMessage.mock.calls.map(([message]) => message).find((message) => message.details?.subagentContent?.some((item: any) => item.operationId === "await-deferred"));
-		expect(persisted.details.subagentContent[0]).toMatchObject({ kind: "await", state: "aborted", data: { parameters: "agents" in parameters ? { agents: [["worker"]] } : {}, result: { statuses: [], interrupted: true } } });
+		expect(persisted.details.subagentContent[0]).toMatchObject({ kind: "await", state: "aborted", data: { parameters: "agents" in parameters ? { agents: [["worker"]] } : {}, result: { statuses: [expect.objectContaining({ path: ["worker"], state: "running" })], interrupted: true } } });
 	});
 
 	it("persists an aborted presentation payload when no tool result arrives", async () => {

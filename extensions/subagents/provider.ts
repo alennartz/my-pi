@@ -706,6 +706,13 @@ function restoreAwaitResult(payload: PersistedSubagentContent, semantic: unknown
 	const paths = new Set(result.statuses.map((status) => pathKey(status.path)));
 	const restored: SubagentAwaitStatus[] = [];
 	const facts = Array.isArray(semantic) ? semantic : [semantic];
+	const authoritative = new Set<string>();
+	for (const fact of facts) {
+		if (!isRecord(fact) || !isRecord(fact.data) || (fact.kind !== "await_interrupted" && fact.kind !== "await_released")) continue;
+		if (fact.data.invocationId !== payload.operationId && fact.data.invocationId !== payload.placement.toolCallId) continue;
+		if (!Array.isArray(fact.data.statuses) || !Array.isArray(fact.data.requested)) continue;
+		for (const path of fact.data.requested) if (validPath(path)) authoritative.add(pathKey(path));
+	}
 	let interrupted = result.interrupted;
 	let error = result.error;
 	for (const fact of facts) {
@@ -723,7 +730,7 @@ function restoreAwaitResult(payload: PersistedSubagentContent, semantic: unknown
 			const state = status.state;
 			if (state !== "idle" && state !== "errored" && state !== "dead" && state !== "stopped") continue;
 			const key = pathKey(status.path);
-			if (paths.has(key)) continue;
+			if (paths.has(key) || authoritative.has(key)) continue;
 			paths.add(key);
 			restored.push({
 				path: copyPath(status.path),

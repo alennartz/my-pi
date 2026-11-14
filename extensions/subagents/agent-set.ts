@@ -285,11 +285,23 @@ export class SubagentManager {
 		this.router = new MessageRouter({
 			onBlockingSendStart: (from, to, correlationId) => this.markAgentWaiting(from, correlationId, to),
 			onBlockingSendEnd: (from, correlationId) => this.clearAgentWaiting(from, correlationId),
+			onMessageDelivery: (to) => this.markRecipientActive(to),
 			onMessagePhase: (event) => this.opts.onMessagePhase?.(event),
 			onResponseProgress: (event) => this.opts.onResponseProgress?.(event),
 		});
 		this.parentPort = this.router.connect("parent");
 		this.parentPort.subscribe((message) => this.deliverParentMessage(message));
+	}
+
+	private markRecipientActive(id: string): void {
+		const entry = this.findEntry(id);
+		if (!entry) return;
+		const current = this.operationalFor(entry);
+		if (current.state !== "idle" && current.state !== "errored") return;
+		this.opts.onAgentStart?.(this, id);
+		entry.completionNotified = false;
+		entry.pendingTerminalError = undefined;
+		this.replaceOperational(entry, operationalWith(current, { state: "running", lastError: undefined }));
 	}
 
 	getAgentStatuses(): AgentStatus[] {

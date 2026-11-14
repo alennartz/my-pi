@@ -57,6 +57,8 @@ export interface SubagentSemanticAdapter {
   acceptToolExecution(event: PiToolExecution): readonly SemanticAdapterEvent[];
   acceptResponseProgress(toolCallId: string, delta: string): readonly SemanticAdapterEvent[];
   acceptAwaitProgress(toolCallId: string, statuses: readonly SubagentAwaitStatus[]): readonly SemanticAdapterEvent[];
+  acceptAwaitSnapshot(toolCallId: string, requested: readonly AgentPath[], statuses: readonly SubagentAwaitStatus[], interrupted: boolean): readonly SemanticAdapterEvent[];
+  acceptAwaitLiveStatuses(toolCallId: string, statuses: readonly SubagentAwaitStatus[]): readonly SemanticAdapterEvent[];
   completeToolCall(toolCallId: string): readonly SemanticAdapterEvent[];
   setSendTarget(toolCallId: string, path: AgentPath): void;
   getArgument(toolCallId: string, key: string): string | undefined;
@@ -80,6 +82,7 @@ type OperationState = {
   body: string;
   requested: readonly AgentPath[];
   statuses: readonly SubagentAwaitStatus[];
+  interrupted: boolean;
   sendTarget?: AgentPath;
   sendPhase: 'sending' | 'waiting' | 'responding';
 };
@@ -122,11 +125,12 @@ function operationKind(toolName: string): SemanticOperationKind | undefined {
   return undefined;
 }
 
-function stateForResult(isError: boolean | undefined, value: unknown): 'complete' | 'error' | 'aborted' {
+function stateForResult(kind: SemanticOperationKind, isError: boolean | undefined, value: unknown, interrupted = false): 'complete' | 'error' | 'aborted' {
   const result = publicToolResult(value);
+  if (kind === 'await' && (interrupted || result.interrupted === true)) return 'aborted';
   if (isError || result.isError === true || result.error !== undefined) return 'error';
-  if (result.aborted === true || result.state === 'aborted') return 'aborted';
-  if (result.state === 'error') return 'error';
+  if (result.aborted === true || (kind !== 'await' && result.state === 'aborted')) return 'aborted';
+  if (kind !== 'await' && result.state === 'error') return 'error';
   return 'complete';
 }
 
@@ -141,7 +145,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     const state: OperationState = {
       operationId: options.operationId?.({ toolCallId: event.toolCallId, kind }) ?? event.toolCallId,
       kind, path: [...event.path], placement: { toolCallId: event.toolCallId, contentIndex: event.contentIndex },
-      started: false, rawArguments: '', parameters: {}, request: '', response: '', body: '', requested: [], statuses: [], sendPhase: 'sending',
+      started: false, rawArguments: '', parameters: {}, request: '', response: '', body: '', requested: [], statuses: [], interrupted: false, sendPhase: 'sending',
       ...(event.targetPath !== undefined ? { sendTarget: [...event.targetPath] } : {}),
     };
     operations.set(event.toolCallId, state);
@@ -221,9 +225,12 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
   function finalData(state: OperationState, value: unknown, isError = false): SubagentEndData {
     const source = publicToolResult(value, isError, parseJsonObject(state.rawArguments));
     if (state.kind === 'await') {
+      const hasStatuses = Array.isArray(source.statuses) || Array.isArray(source.agents);
       const statuses = normalizeAwaitStatuses(Array.isArray(source.statuses) ? source.statuses : Array.isArray(source.agents) ? source.agents : [], state.path);
-      state.statuses = mergeAwaitStatuses(state.statuses, statuses, state.requested);
-      return normalizeFinalData({ operation: 'await', path: state.path, parameters: parametersFor(state), result: { ...source, statuses: state.statuses }, toolBacked: true }) as SubagentEndData;
+      const requested = new Set(state.requested.map((path) => JSON.stringify(path)));
+      const prior = hasStatuses ? state.statuses.filter((status) => !requested.has(JSON.stringify(status.path))) : state.statuses;
+      state.statuses = mergeAwaitStatuses(prior, statuses, state.requested);
+      return normalizeFinalData({ operation: 'await', path: state.path, parameters: parametersFor(state), result: { ...source, statuses: state.statuses, ...(state.interrupted ? { interrupted: true } : {}) }, toolBacked: true }) as SubagentEndData;
     }
     const parameters = parametersFor(state);
     const result = state.kind === 'send' && source.response === undefined && source.message === undefined ? { ...source, response: state.response } : source;
@@ -236,11 +243,12 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     if (event.targetPath !== undefined) state.sendTarget = [...event.targetPath];
     if (isPresentationRecord(event.parameters)) updateArguments(state, JSON.stringify(event.parameters), true);
     operations.delete(event.toolCallId);
-    if (finiteKind(state.kind)) return [{ type: 'snapshot', ...base(state), kind: state.kind, state: stateForResult(event.isError, event.result), data: normalizeFinalData({
+    if (finiteKind(state.kind)) return [{ type: 'snapshot', ...base(state), kind: state.kind, state: stateForResult(state.kind, event.isError, event.result), data: normalizeFinalData({
       operation: state.kind, path: state.path, parameters: parametersFor(state), result: publicToolResult(event.result, event.isError, parseJsonObject(state.rawArguments)), toolBacked: true,
       delegation: state.kind === 'delegation' ? options.delegation?.({ toolCallId: event.toolCallId, path: state.path }) : undefined,
     }) as SubagentFiniteData }];
-    return [{ type: 'end', ...base(state), state: stateForResult(event.isError, event.result), data: finalData(state, event.result, event.isError) }];
+    const start = state.kind === 'await' ? startOperation(state) : [];
+    return [...start, { type: 'end', ...base(state), state: stateForResult(state.kind, event.isError, event.result, state.interrupted), data: finalData(state, event.result, event.isError) }];
   }
 
   function acceptResponseProgress(toolCallId: string, delta: string): readonly SemanticAdapterEvent[] {
@@ -261,6 +269,24 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     if (!state || state.kind !== 'await') return [];
     state.statuses = mergeAwaitStatuses(state.statuses, normalizeAwaitStatuses(statuses, state.path), state.requested);
     return state.started ? [{ type: 'delta', ...base(state), kind: 'await', data: { operation: 'await', statuses: state.statuses } }] : [];
+  }
+
+  function acceptAwaitSnapshot(toolCallId: string, requested: readonly AgentPath[], statuses: readonly SubagentAwaitStatus[], interrupted: boolean): readonly SemanticAdapterEvent[] {
+    const state = operations.get(toolCallId);
+    if (!state || state.kind !== 'await') return [];
+    const requestedKeys = new Set(requested.map((path) => JSON.stringify(path)));
+    state.requested = requested;
+    state.statuses = mergeAwaitStatuses(state.statuses.filter((status) => !requestedKeys.has(JSON.stringify(status.path))), normalizeAwaitStatuses(statuses, state.path), requested);
+    state.interrupted = interrupted;
+    return state.started ? [{ type: 'delta', ...base(state), kind: 'await', data: { operation: 'await', statuses: state.statuses } }] : [];
+  }
+
+  function acceptAwaitLiveStatuses(toolCallId: string, statuses: readonly SubagentAwaitStatus[]): readonly SemanticAdapterEvent[] {
+    const state = operations.get(toolCallId);
+    if (!state || state.kind !== 'await') return [];
+    const requested = state.requested.length > 0 ? state.requested : statuses.map((status) => status.path);
+    const keys = new Set(requested.map((path) => JSON.stringify(path)));
+    return acceptAwaitSnapshot(toolCallId, requested, statuses.filter((status) => keys.has(JSON.stringify(status.path))), state.interrupted);
   }
 
   function completeToolCall(toolCallId: string): readonly SemanticAdapterEvent[] {
@@ -285,5 +311,5 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     return state ? partialString(state.rawArguments, key) : undefined;
   }
 
-  return { acceptToolCallDelta, acceptToolExecutionStart, acceptToolExecution, acceptResponseProgress, acceptAwaitProgress, completeToolCall, setSendTarget, getArgument };
+  return { acceptToolCallDelta, acceptToolExecutionStart, acceptToolExecution, acceptResponseProgress, acceptAwaitProgress, acceptAwaitSnapshot, acceptAwaitLiveStatuses, completeToolCall, setSendTarget, getArgument };
 }

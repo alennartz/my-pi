@@ -54,6 +54,33 @@ describe('subagent semantic adapter', () => {
     expect(end).toContainEqual(expect.objectContaining({ data: { operation: 'await', parameters: normalized, result: { statuses: [worker, scout], interrupted: true, metadata: { reason: 'message' } } } }));
   });
 
+  it('represents an await when only its execution result arrives', () => {
+    const adapter = createSubagentSemanticAdapter();
+    const input = call('await_agents', 'result-only');
+    const events = adapter.acceptToolExecution({ ...input, parameters: { agents: ['worker'] }, result: { agents: [{ id: 'worker', status: 'idle' }] } });
+    expect(events).toContainEqual(expect.objectContaining({ type: 'start', operationId: 'result-only', kind: 'await' }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'end', operationId: 'result-only', state: 'complete', data: expect.objectContaining({ result: expect.objectContaining({ statuses: [expect.objectContaining({ path: ['worker'], state: 'idle' })] }) }) }));
+  });
+
+  it('omits unknown await child states and keeps wait outcome independent of child state', () => {
+    const adapter = createSubagentSemanticAdapter();
+    const input = call('await_agents', 'unknown-await');
+    adapter.acceptToolExecutionStart({ ...input, arguments: { agents: ['worker', 'scout'] } });
+    const [event] = adapter.acceptToolExecution({ ...input, result: {
+      state: 'error', agents: [{ id: 'worker', state: 'running' }, { id: 'scout', state: 'mystery' }, { id: 'other' }],
+    } });
+    expect(event).toMatchObject({ state: 'complete', data: { result: { statuses: [{ path: ['worker'], state: 'running' }] } } });
+  });
+
+  it('does not reuse a progress state when a terminal result has no known state', () => {
+    const adapter = createSubagentSemanticAdapter();
+    const input = call('await_agents', 'missing-state');
+    adapter.acceptToolExecutionStart({ ...input, arguments: { agents: ['worker'] } });
+    adapter.acceptAwaitProgress('missing-state', [{ path: ['worker'], state: 'idle' }]);
+    const [event] = adapter.acceptToolExecution({ ...input, result: { agents: [{ id: 'worker' }] } });
+    expect(event).toMatchObject({ data: { result: { statuses: [] } } });
+  });
+
   it('uses execution-start arguments when no complete await stream event arrives', () => {
     const adapter = createSubagentSemanticAdapter();
     const input = call('await_agents', 'await', ['owner']);

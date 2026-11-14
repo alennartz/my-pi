@@ -110,8 +110,8 @@ export function normalizeAwaitStatuses(values: readonly unknown[], owner: AgentP
     const canonicalPath = presentationPath(owner, path ?? id);
     if (canonicalPath.length === 0) return [];
     const candidate = state ?? status;
-    const canonicalState = candidate === 'running' || candidate === 'waiting' || candidate === 'errored' || candidate === 'dead' || candidate === 'stopped' ? candidate : 'idle';
-    return [{ ...fields, path: canonicalPath, state: canonicalState } as SubagentAwaitStatus];
+    if (candidate !== 'running' && candidate !== 'waiting' && candidate !== 'idle' && candidate !== 'errored' && candidate !== 'dead' && candidate !== 'stopped') return [];
+    return [{ ...fields, path: canonicalPath, state: candidate } as SubagentAwaitStatus];
   });
 }
 
