@@ -1,0 +1,3 @@
+# Canonical types are load-bearing: a commit that breaks the strict
+# typecheck does not land.
+npm run typecheck
