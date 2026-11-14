@@ -54,7 +54,6 @@ export interface PeerData {
 
 export interface SubagentIdentityData {
 	id: string;
-	task: string;
 	peers: PeerData[];
 }
 
@@ -170,7 +169,6 @@ export function serializeGroupComplete(data: ActiveAgentsCompleteData): string {
 export function serializeSubagentIdentity(data: SubagentIdentityData): string {
 	const lines: string[] = ["<subagent_identity>"];
 	lines.push(`  <id>${data.id}</id>`);
-	lines.push(`  <task>${data.task}</task>`);
 	lines.push("");
 	lines.push("  <peers>");
 	for (const peer of data.peers) {

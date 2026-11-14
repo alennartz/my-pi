@@ -845,7 +845,7 @@ export class SubagentManager {
 			description:
 				"The orchestrating agent that spawned you. It can see all active agents' status and decides when to add, remove, or redirect work. Send it questions when you need human-level judgment or decisions that affect multiple agents.",
 		});
-		return serializeSubagentIdentity({ id: spec.id, task: spec.task, peers });
+		return serializeSubagentIdentity({ id: spec.id, peers });
 	}
 
 	private initialOperational(spec: AgentSpec): AgentOperationalSnapshot {
