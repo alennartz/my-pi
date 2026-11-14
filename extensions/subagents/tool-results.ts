@@ -35,7 +35,7 @@ const UsageSchema = Type.Object({
 	turns: Type.Number(),
 });
 
-export interface AgentRefData {
+export type AgentRefData = {
 	id: string;
 	status: string;
 	output?: string;
@@ -52,7 +52,7 @@ const AgentRefSchema = Type.Object({
 	sessionId: Type.Optional(Type.String({ description: "Pass to resurrect to bring the agent back online" })),
 });
 
-export interface SpawnResultData {
+export type SpawnResultData = {
 	agents: AgentRefData[];
 }
 
@@ -71,7 +71,7 @@ export const AwaitResultSchema = Type.Object({
 	error: Type.Optional(Type.String({ description: "Public reason the wait could not continue" })),
 });
 
-export interface SendResultData {
+export type SendResultData = {
 	/** The peer's reply, or null when the wait was interrupted (the reply arrives later as a notification). */
 	response: string | null;
 	deferred: boolean;
@@ -84,13 +84,13 @@ export const SendResultSchema = Type.Object({
 	correlationId: Type.Optional(Type.String()),
 });
 
-export interface InterruptTargetData {
+export type InterruptTargetData = {
 	path: string[];
 	output?: string;
 	error?: string;
 }
 
-export interface InterruptResultData {
+export type InterruptResultData = {
 	interrupted: InterruptTargetData[];
 	pending: InterruptTargetData[];
 	failed: InterruptTargetData[];
@@ -108,7 +108,7 @@ export const InterruptResultSchema = Type.Object({
 	failed: Type.Array(InterruptTargetSchema),
 });
 
-export interface ResurrectAgentData {
+export type ResurrectAgentData = {
 	id: string;
 	path: string[];
 	sessionId: string;
@@ -119,7 +119,7 @@ export interface ResurrectAgentData {
 	error?: string;
 }
 
-export interface ResurrectResultData {
+export type ResurrectResultData = {
 	agents: ResurrectAgentData[];
 }
 
@@ -136,7 +136,7 @@ export const ResurrectResultSchema = Type.Object({
 	})),
 });
 
-export interface StatusAgentData {
+export type StatusAgentData = {
 	id: string;
 	state: string;
 	task: string;
@@ -151,6 +151,10 @@ export interface StatusAgentData {
 	hasSubgroup: boolean;
 	waitingFor: string[];
 	usage: AgentUsage;
+}
+
+export type StatusResultData = {
+	agents: StatusAgentData[];
 }
 
 export const StatusResultSchema = Type.Object({
@@ -172,7 +176,7 @@ export const StatusResultSchema = Type.Object({
 	})),
 });
 
-export interface TeardownAgentData {
+export type TeardownAgentData = {
 	id: string;
 	status: LifecycleStatus;
 	sessionId?: string;
@@ -182,7 +186,7 @@ export interface TeardownAgentData {
 	usageBaseline?: AgentUsage;
 }
 
-export interface TeardownAffectedAgentData {
+export type TeardownAffectedAgentData = {
 	path: string[];
 	sessionId: string;
 	incarnation: string;
@@ -192,7 +196,7 @@ export interface TeardownAffectedAgentData {
 	error?: string;
 }
 
-export interface TeardownResultData {
+export type TeardownResultData = {
 	agents: TeardownAgentData[];
 	affectedAgents?: TeardownAffectedAgentData[];
 }
@@ -262,12 +266,12 @@ export const TeardownResultSchema = Type.Object({
 		status: Type.String({ description: "idle when the agent had settled, errored or dead otherwise" }),
 		sessionId: Type.Optional(Type.String({ description: "Pass to resurrect to bring the agent back online" })),
 		usage: UsageSchema,
-		usageBaseline: Type.Optional(UsageSchema, { description: "Pre-attach usage the delta excludes; present only when non-zero" }),
+		usageBaseline: Type.Optional(UsageSchema),
 	})),
 	affectedAgents: Type.Optional(Type.Array(TeardownAffectedAgentSchema)),
 });
 
-export interface ModelRowData {
+export type ModelRowData = {
 	ref: string;
 	contextWindow: number | null;
 	inputCostPerMtok: number | null;
@@ -275,7 +279,7 @@ export interface ModelRowData {
 	cacheReadCostPerMtok: number | null;
 }
 
-export interface ModelsResultData {
+export type ModelsResultData = {
 	models: ModelRowData[];
 }
 

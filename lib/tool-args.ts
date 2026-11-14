@@ -101,6 +101,6 @@ export function dropEmptyOptionals(schema: TSchema, args: unknown): unknown {
 export function registerLooseTool<T extends TSchema>(pi: ExtensionAPI, definition: ToolDefinition<T>): void {
 	pi.registerTool({
 		...definition,
-		prepareArguments: (args: unknown) => dropEmptyOptionals(definition.parameters, args) as Static<T>,
+		prepareArguments: ((args: unknown) => dropEmptyOptionals(definition.parameters, args) as Static<T>) as ToolDefinition<T>["prepareArguments"],
 	});
 }

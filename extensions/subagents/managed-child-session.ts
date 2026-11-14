@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
 	createAgentSessionFromServices,
@@ -12,6 +11,7 @@ import {
 	type AgentSessionEvent,
 	type AgentSessionRuntime,
 	type EventBusController,
+	type PromptOptions,
 	type ExtensionCommandContextActions,
 	type ExtensionError,
 	type LoadExtensionsResult,
@@ -24,6 +24,7 @@ import type { SubagentCapabilities } from "./provider.js";
 import { stripThinkingSuffix } from "./model-tiers.js";
 import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
 import { registerSessionTreeStore } from "./scoped-store.js";
+import { rootExtensionPath } from "./root-extension-path.mts";
 
 export type ChildSessionTarget =
 	| { kind: "new"; cwd: string; sessionDir: string }
@@ -221,10 +222,10 @@ export class ManagedChildSession {
 		const session = this.activeSession;
 		return new Promise<void>((resolve, reject) => {
 			let settled = false;
-			const settlePreflight = (success: boolean): void => {
+			const settlePreflight = (disposition: Parameters<NonNullable<PromptOptions["preflightResult"]>>[0]): void => {
 				if (settled) return;
 				settled = true;
-				if (success) resolve();
+				if (disposition) resolve();
 				else reject(new Error("Prompt rejected by child session"));
 			};
 			let promptResult: Promise<void> | void;
@@ -244,7 +245,7 @@ export class ManagedChildSession {
 			// Observe the complete run even though callers receive preflight promptly.
 			Promise.resolve(promptResult).then(
 				() => {
-					if (!settled) settlePreflight(true);
+					if (!settled) settlePreflight("started");
 				},
 				(error) => {
 					if (!settled) {
@@ -369,7 +370,7 @@ export class ManagedChildSession {
 	}
 }
 
-const ROOT_SUBAGENTS_EXTENSION_PATH = normalizePath(fileURLToPath(new URL("./index.ts", import.meta.url)));
+const ROOT_SUBAGENTS_EXTENSION_PATH = rootExtensionPath;
 const CHILD_SUBAGENTS_EXTENSION_PATH = "<inline:subagents-child>";
 function normalizePath(value: string): string {
 	return value.replaceAll("\\", "/");
@@ -504,7 +505,7 @@ export async function createManagedChildSession(
 			});
 			reportRuntimeDiagnostics(services.diagnostics, hooks);
 			const treeStore = config.scope.registry.getScopedStore?.();
-			const forced = treeStore?.get("forced-model");
+			const forced = treeStore?.get<string>("forced-model");
 			const effectiveModelRef = forced ?? config.modelRef;
 			const modelResult = effectiveModelRef === undefined
 				? undefined

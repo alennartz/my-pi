@@ -40,11 +40,14 @@
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
-    "@pimote/sdk": "^0.16.0-rc.4",
+    "@pimote/sdk": "^0.16.0-rc.5",
     "jiti": "^2.7.0",
     "jsdom": "^29.1.1",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
 }

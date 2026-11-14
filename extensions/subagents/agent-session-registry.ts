@@ -128,6 +128,10 @@ export type RegisteredAgentNode = {
 	readonly session: ManagedChildSession;
 };
 export type AgentRegistryNode = ExternalRootNode | RegisteredAgentNode;
+
+export function isRegisteredAgentNode(node: AgentRegistryNode): node is RegisteredAgentNode {
+	return node.snapshot.ownership === "registry";
+}
 export type CreateAgentNodeRequest = {
 	localId: string;
 	task: string;

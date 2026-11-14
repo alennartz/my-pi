@@ -268,6 +268,10 @@ function summarizeArgs(args: Record<string, any>): string {
 }
 
 /** Model reference for inheriting the active parent session model. */
+function snapshotStateOf(value: unknown): "complete" | "error" | "aborted" | undefined {
+	return value === "complete" || value === "error" || value === "aborted" ? value : undefined;
+}
+
 function modelRefOf(model: { provider?: unknown; id?: unknown } | undefined): string | undefined {
 	if (typeof model?.id !== "string" || model.id.length === 0) return undefined;
 	if (typeof model.provider === "string" && model.provider.length > 0) {
@@ -592,8 +596,8 @@ class SessionTurnCoordinator {
 		return this.queue.drainAll();
 	}
 
-	drainLocal(): string {
-		return this.queue.drainLocal();
+	drainLocal(): void {
+		this.queue.drainLocal();
 	}
 
 	deferAll(): void {
@@ -962,7 +966,7 @@ class SessionTurnCoordinator {
 		ids: readonly string[],
 		manager: SubagentManager,
 		semantic: { invocationId: string; refs: readonly PiEventRef[] } | undefined,
-		agents: readonly AgentCompleteData[],
+		agents: readonly AgentRefData[],
 		reason: "settled" | "detach" | "stop" | "message",
 	): SubagentSemanticFact | undefined {
 		if (!semantic) return;
@@ -1995,7 +1999,8 @@ class SubagentSessionOwner {
 			if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
 			const item = candidate as Record<string, unknown>;
 			if (item.source !== "custom_entry" || typeof item.operationId !== "string") continue;
-			if (item.state !== "complete" && item.state !== "error" && item.state !== "aborted") continue;
+			const state = snapshotStateOf(item.state);
+			if (state === undefined) continue;
 			if (!item.data || typeof item.data !== "object" || Array.isArray(item.data)) continue;
 			const kind = savedPresentationKind(item);
 			if (kind !== "message_received" && kind !== "send" && kind !== "respond" && kind !== "await" && kind !== "delegation" && kind !== "completion" && kind !== "interrupt" && kind !== "teardown" && kind !== "resurrect") continue;
@@ -2014,7 +2019,7 @@ class SubagentSessionOwner {
 			const event = {
 				type: "snapshot" as const,
 				...base,
-				state: item.state,
+				state,
 				data: normalizeSavedPresentationData({
 					data: item.data as Record<string, unknown>,
 					operation: kind === "message_received" ? "send" : kind,
@@ -2088,6 +2093,7 @@ class SubagentSessionOwner {
 				parentPath: null,
 				localId: null,
 				ownership: "external",
+				incarnation: "root",
 				sessionId: stableRootSessionId(ctx, sessionFile),
 				...(sessionFile ? { sessionFile } : {}),
 				cwd: (ctx.sessionManager as { getCwd?: () => string }).getCwd?.() ?? ctx.cwd,
@@ -2232,7 +2238,7 @@ class SubagentSessionOwner {
 			const activeCorrelationId = this.respondCorrelations.get(toolCallId);
 			for (const semantic of events) {
 				if (!activeCorrelationId || semantic.kind !== "respond") continue;
-				const delta = semantic.type === "delta"
+				const delta = semantic.type === "delta" && "delta" in semantic.data
 					? semantic.data.delta
 					: semantic.type === "start" && semantic.data.operation === "respond"
 						? (typeof semantic.data.parameters.message === "string" ? semantic.data.parameters.message : undefined)
@@ -3317,7 +3323,7 @@ class SubagentSessionOwner {
 		}
 		const ids = requested ?? manager.getAgentStatuses().map((status) => status.id);
 		const refs = this.nativeRefs(toolCallId, "tool_call");
-		const requestedPaths = ids.map((id) => manager.getAgentPath(id)).filter((path): path is AgentPath => path !== undefined);
+		const requestedPaths = ids.map((id: string) => manager.getAgentPath(id)).filter((path: AgentPath | undefined): path is AgentPath => path !== undefined);
 		this.activeAwaitOperations.add(toolCallId ?? `${this.currentSessionId()}:await`);
 		const started = this.publishFact("await_started", this.scopePath(), {
 			invocationId: toolCallId ?? `${this.currentSessionId()}:await`,
@@ -3356,7 +3362,7 @@ class SubagentSessionOwner {
 			if (!manager.getAgentStatus(id)) throw new Error(`Unknown agent: "${id}"`);
 		}
 		const ids = requested ?? manager.getAgentStatuses().map((status) => status.id);
-		const results = await Promise.allSettled(ids.map((id) => manager.interrupt(id, { signal })));
+		const results = await Promise.allSettled(ids.map((id: string) => manager.interrupt(id, { signal })));
 		const interrupted: Array<{ path: string[]; output?: string; error?: string }> = [];
 		const pending: Array<{ path: string[]; output?: string; error?: string }> = [];
 		const failed: Array<{ path: string[]; output?: string; error?: string }> = [];
@@ -3369,7 +3375,7 @@ class SubagentSessionOwner {
 		});
 		const lines: string[] = [];
 		const refs = this.nativeRefs(toolCallId, "lifecycle");
-		const facts = ids.map((id, index) => {
+		const facts = ids.map((id: string, index: number) => {
 			const pathValue = manager.getAgentPath(id) ?? childAgentPath(this.scopePath(), id);
 			const result = results[index];
 			const outcome = result.status === "fulfilled" ? result.value : "failed";

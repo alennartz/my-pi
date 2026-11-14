@@ -26,6 +26,7 @@ import {
 	type AgentSessionRegistry,
 	type AgentUsage as RegistryAgentUsage,
 	type CreateAgentNodeRequest,
+	isRegisteredAgentNode,
 } from "./agent-session-registry.js";
 import { resolveChildToolPolicy } from "./child-tool-policy.js";
 import type { PersonaPayload } from "./child-session-marker.js";
@@ -473,7 +474,7 @@ export class SubagentManager {
 	private async interruptUnlocked(agentId: string, options?: { timeoutMs?: number; signal?: AbortSignal }): Promise<InterruptOutcome> {
 		const childPath = childAgentPath(this.opts.ownerPath, agentId);
 		const node = this.opts.registry.get(childPath);
-		if (!node || node.snapshot.ownership !== "registry") {
+		if (!node || !isRegisteredAgentNode(node)) {
 			throw new Error(`Unknown agent: "${agentId}"`);
 		}
 		const state = node.snapshot.operational.state;
@@ -845,6 +846,7 @@ export class SubagentManager {
 			id: "parent",
 			description:
 				"The orchestrating agent that spawned you. It can see all active agents' status and decides when to add, remove, or redirect work. Send it questions when you need human-level judgment or decisions that affect multiple agents.",
+			isDefault: false,
 		});
 		return serializeSubagentIdentity({ id: spec.id, peers });
 	}
@@ -884,7 +886,7 @@ export class SubagentManager {
 
 	private submitInitialTask(entry: AgentEntry): void {
 		const node = this.opts.registry.get(entry.path);
-		if (!node || node.snapshot.ownership !== "registry") return;
+		if (!node || !isRegisteredAgentNode(node)) return;
 		// Every child can have a startup continuation in flight when its session
 		// binds (for example, session-resume's automatic continuation). Queue the
 		// task behind that turn instead of treating the expected busy preflight as
@@ -893,7 +895,7 @@ export class SubagentManager {
 		const streamingBehavior = "followUp" as const;
 		entry.pendingTerminalError = undefined;
 		const submission = node.session.submit(`Task: ${entry.task}`, streamingBehavior);
-		void submission.catch((error) => {
+		void submission.catch((error: unknown) => {
 			// A rejected submit means the task never landed, but the session is
 			// still there: treat it as errored so a send can retry the prompt.
 			if (!this.isActiveEntry(entry)) return;
@@ -1361,7 +1363,7 @@ export class SubagentManager {
 
 	private dropTargetCorrelations(agentId: string): void {
 		for (const [correlationId, targetId] of this.correlationToTarget) {
-			if (targetId === agentId) this.correlationToTarget.delete(correlationId);
+			if (targetId.localId === agentId) this.correlationToTarget.delete(correlationId);
 		}
 	}
 

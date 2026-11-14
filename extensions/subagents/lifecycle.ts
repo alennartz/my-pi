@@ -95,7 +95,7 @@ function stringValue(value: unknown): string | undefined {
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function eventPath(event: Record<string, unknown>, parentPath: AgentPath): AgentPath | undefined {
+function eventPath(event: { readonly path?: unknown; readonly id?: unknown }, parentPath: AgentPath): AgentPath | undefined {
 	const persistedPath = event.path;
 	if (isPath(persistedPath) && persistedPath.length > 0) return [...parentPath, ...persistedPath];
 	const id = stringValue(event.id);
@@ -142,7 +142,7 @@ function dataFor(
 	};
 }
 
-function recordIdFor(event: Record<string, unknown>, index: number): string {
+function recordIdFor(event: { readonly recordId?: unknown; readonly type?: unknown; readonly kind?: unknown }, index: number): string {
 	const persistedId = stringValue(event.recordId);
 	if (persistedId !== undefined) return persistedId;
 	const type = stringValue(event.type) ?? stringValue(event.kind) ?? "record";

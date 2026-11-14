@@ -413,11 +413,18 @@ export interface SubagentOwnerControlPort {
 	routeLeaseDetached?(path: AgentPath, reason: "released" | "removed" | "unavailable"): void;
 }
 
+export type ProviderFeedEvent = SubagentEvent | SubagentProviderEvent;
+
+/** Replay includes retained semantic fact events alongside SDK presentation events. */
+export type ReplayResult =
+	| Readonly<{ kind: "events"; cursor: FeedCursor; events: readonly ProviderFeedEvent[] }>
+	| Readonly<{ kind: "snapshot_required"; reason: "epoch_changed" | "history_unavailable" }>;
+
 export interface SubagentProvider {
 	subscribe(listener: (event: import('@pimote/sdk/subagents').SubagentProviderEvent) => void): () => void;
 	snapshot(): import('@pimote/sdk/subagents').SubagentProviderSnapshot;
 	/** Without a cursor, replay all retained events. */
-	replay(after?: FeedCursor): import('@pimote/sdk/subagents').SubagentPresentationReplay;
+	replay(after?: FeedCursor): ReplayResult;
 	rehydrate(input: { session: BorrowedAgentSession; path: AgentPath }): Promise<void>;
 	acquire(path: AgentPath): Promise<SubagentLease>;
 	teardown(path: AgentPath, incarnation: string): Promise<SubagentTeardownResult>;
@@ -763,7 +770,6 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	let leaseGeneration = 0;
 	let incarnationCounter = 0;
 	let closed = false;
-	type ProviderFeedEvent = SubagentEvent | SubagentProviderEvent;
 	const history: ProviderFeedEvent[] = [];
 	const listeners = new Set<(event: ProviderFeedEvent) => void>();
 	const activeOperations = new Map<string, ActiveSubagentOperation>();
@@ -1022,6 +1028,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			if (deliver && !closed) for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }
 			return output;
 		}
+		if (event.type === "protocol_error") return undefined;
 		activeOperations.delete(operationKey);
 		const output = Object.freeze({
 			type: "subagent_snapshot_event",
@@ -1357,7 +1364,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		});
 	}
 
-	function replay(after?: FeedCursor): SubagentPresentationReplay {
+	function replay(after?: FeedCursor): ReplayResult {
 		const cursor = currentCursor();
 		if (after === undefined) {
 			return Object.freeze({ kind: "events", cursor, events: Object.freeze([...history]) });
@@ -1461,8 +1468,8 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 
 	async function resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult> {
 		if (closed) throw new Error("Subagent provider is shut down");
-		if (!validPath(request.parentPath)) {
-			if (request.parentPath.length !== 0) throw new Error("Invalid resurrection parent path");
+		if (request.parentPath.length !== 0 && !validPath(request.parentPath)) {
+			throw new Error("Invalid resurrection parent path");
 		}
 		if (request.parentPath.length > 0) {
 			const parent = options.registry.get(request.parentPath);
@@ -1482,9 +1489,10 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 
 	function hasRetainedPersistedOperation(path: AgentPath, operationId: string): boolean {
 		return history.some((event) => {
-			if (!isRecord(event) || event.type !== "subagent_snapshot_event") return false;
-			const target = isRecord(event.target) ? event.target : undefined;
-			return target?.operationId === operationId && Array.isArray(target.path) && pathKey(target.path as AgentPath) === pathKey(path);
+			if (!("type" in event) || event.type !== "subagent_snapshot_event") return false;
+			const target = event.target;
+			if (!isRecord(target)) return false;
+			return target.operationId === operationId && Array.isArray(target.path) && pathKey([...target.path] as unknown as AgentPath) === pathKey(path);
 		});
 	}
 
@@ -1552,7 +1560,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				const repaired = awaitResult ? restoreAwaitResult(candidate, details.semantic) : candidate;
 				const kind = savedPresentationKind(repaired as unknown as Record<string, unknown>) as PresentationKind;
 				const argumentsValue = toolArguments.get(candidate.source === "tool" ? candidate.placement.toolCallId : candidate.operationId);
-				const toolBacked = kind !== "message_received" && (candidate.source === "tool" || isRecord(repaired.data.parameters) || argumentsValue !== undefined
+				const toolBacked = kind !== "message_received" && (candidate.source === "tool" || ("parameters" in repaired.data && isRecord(repaired.data.parameters)) || argumentsValue !== undefined
 					|| (kind !== "send" && kind !== "respond" && kind !== "completion"));
 				const data = normalizeSavedPresentationData({
 					data: repaired.data as unknown as Record<string, unknown>,

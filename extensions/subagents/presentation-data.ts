@@ -24,13 +24,18 @@ type TeardownFinal = Extract<SubagentFinalData, { operation: 'teardown' }>;
 type ResurrectFinal = Extract<SubagentFinalData, { operation: 'resurrect' }>;
 type ProtocolErrorFinal = Extract<SubagentFinalData, { operation: 'protocol_error' }>;
 type InterruptTarget = InterruptFinal['result']['interrupted'][number];
-type AffectedAgent = TeardownFinal['result']['affectedAgents'][number];
 
 const AWAIT_STATES = ['running', 'waiting', 'idle', 'errored', 'dead', 'stopped'] as const;
 type AwaitState = (typeof AWAIT_STATES)[number];
+const RESURRECT_STATES = ['idle', 'running'] as const;
+type ResurrectState = (typeof RESURRECT_STATES)[number];
 
 function isAwaitState(value: unknown): value is AwaitState {
 	return typeof value === 'string' && (AWAIT_STATES as readonly string[]).includes(value);
+}
+
+function isResurrectState(value: unknown): value is ResurrectState {
+	return typeof value === 'string' && (RESURRECT_STATES as readonly string[]).includes(value);
 }
 
 const privateIdentifierFields: readonly string[] = Object.freeze(['correlationId', 'correlation_id', 'routerId', 'router_id', 'pendingCorrelations', 'pending_correlations']);
@@ -214,15 +219,24 @@ function decodeChildAgent(value: unknown, owner: AgentPath): SubagentDelegatedCh
 	};
 }
 
-function decodeAffectedAgent(value: unknown, owner: AgentPath): AffectedAgent {
-	if (!isPresentationRecord(value)) return { path: presentationPath(owner, value), sessionId: '', incarnation: 'unknown', state: 'idle', usage: decodeUsage(undefined) };
+function decodeAffectedAgent<S extends AwaitState>(value: unknown, owner: AgentPath, isState: (candidate: unknown) => candidate is S): Readonly<{
+	path: AgentPath;
+	sessionId: string;
+	incarnation: string;
+	state: S;
+	usage: SubagentUsage;
+	usageBaseline?: SubagentUsage;
+	output?: string;
+	error?: string;
+}> {
+	if (!isPresentationRecord(value)) return { path: presentationPath(owner, value), sessionId: '', incarnation: 'unknown', state: 'idle' as S, usage: decodeUsage(undefined) };
 	const { id, path, state, status, usage, usageBaseline, output, error } = value;
 	const candidate = state ?? status;
 	return {
 		path: presentationPath(owner, path ?? id),
 		sessionId: typeof value.sessionId === 'string' ? value.sessionId : '',
 		incarnation: typeof value.incarnation === 'string' ? value.incarnation : 'unknown',
-		state: isAwaitState(candidate) ? candidate : 'idle',
+		state: isState(candidate) ? candidate : 'idle' as S,
 		usage: decodeUsage(usage),
 		...(usageBaseline !== undefined ? { usageBaseline: decodeUsage(usageBaseline) } : {}),
 		...(typeof output === 'string' ? { output } : {}),
@@ -273,14 +287,14 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 		const affectedRaw = Array.isArray(source.affectedAgents) ? source.affectedAgents : Array.isArray(source.agents) ? source.agents : [];
 		const result: TeardownFinal['result'] = {
 			status: source.status === 'already_removed' || source.status === 'not_found' ? source.status : 'removed',
-			affectedAgents: affectedRaw.map((agent) => decodeAffectedAgent(agent, owner)),
+			affectedAgents: affectedRaw.map((agent) => decodeAffectedAgent(agent, owner, isAwaitState)),
 		};
 		return { operation: 'teardown', parameters, result };
 	}
 	if (operation === 'resurrect') {
 		const affectedRaw = Array.isArray(source.affectedAgents) ? source.affectedAgents : Array.isArray(source.agents) ? source.agents : [];
 		const result: ResurrectFinal['result'] = {
-			affectedAgents: affectedRaw.map((agent) => decodeAffectedAgent(agent, owner)),
+			affectedAgents: affectedRaw.map((agent) => decodeAffectedAgent(agent, owner, isResurrectState)),
 		};
 		return { operation: 'resurrect', parameters, result };
 	}
