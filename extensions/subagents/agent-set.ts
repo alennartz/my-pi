@@ -335,9 +335,10 @@ export class SubagentManager {
 	/** Control seam used by the root owner to route guarded mutations. */
 	createControl(
 		resurrect: (request: SubagentResurrectRequest) => Promise<SubagentResurrectResult>,
+		teardown?: (input: { localId: string; incarnation: string }) => Promise<SubagentTeardownResult>,
 	): SubagentManagerControl {
 		return {
-			teardown: (localId, incarnation) => this.teardownGuarded(localId, incarnation),
+			teardown: (localId, incarnation) => (teardown ? teardown({ localId, incarnation }) : this.teardownGuarded(localId, incarnation)),
 			stop: (request) => this.stopGuarded(request),
 			resurrect,
 		};

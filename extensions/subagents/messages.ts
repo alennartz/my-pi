@@ -107,6 +107,30 @@ export function serializeAgentTorndown(data: AgentCompleteData): string {
 	return `${openTag}\n${bodyParts.join("\n")}\n</agent_torn_down>`;
 }
 
+export interface AgentLifecycleNoticeData {
+	id: string;
+	sessionId?: string;
+	task?: string;
+	model?: string;
+}
+
+/** The user brought an agent back from a saved session outside of a tool call. */
+export function serializeAgentResurrected(data: AgentLifecycleNoticeData): string {
+	const sessionAttr = data.sessionId ? ` session_id="${data.sessionId}"` : "";
+	const lines: string[] = [`<agent_resurrected id="${data.id}"${sessionAttr}>`];
+	if (data.task) lines.push(`  <task>${data.task}</task>`);
+	if (data.model) lines.push(`  <model>${data.model}</model>`);
+	lines.push(`  <hint>The user restored this agent from its saved session. It is live again and working on its task.</hint>`);
+	lines.push("</agent_resurrected>");
+	return lines.join("\n");
+}
+
+/** The user removed a live agent manually, outside of a tool call. */
+export function serializeAgentRemoved(data: AgentLifecycleNoticeData): string {
+	const sessionAttr = data.sessionId ? ` session_id="${data.sessionId}"` : "";
+	return `<agent_removed id="${data.id}"${sessionAttr}>\n<hint>The user removed this agent manually. Its saved session stays available through the resurrect tool.</hint>\n</agent_removed>`;
+}
+
 /**
  * Shared group-report serializer for <group_torn_down> and <group_complete>.
  * The two reports differ only in element name and whether not-yet-notified

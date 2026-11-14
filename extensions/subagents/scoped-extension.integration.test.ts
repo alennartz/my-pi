@@ -884,15 +884,29 @@ describe("semantic facts on native messages", () => {
 		await execute(root.tools, "teardown", { agent: "worker" }, root.ctx);
 		const observed: any[] = [];
 		root.provider.subscribe((event: any) => observed.push(event));
-		root.pi.appendEntry.mockImplementation(() => { root.ctx.sessionManager.getLeafId = () => "resurrection-entry"; });
+		root.ctx.sessionManager.getLeafId = () => "resurrection-entry";
+		root.pi.sendMessage.mockClear();
 		await root.provider.resurrect({ parentPath: [], localId: "restored", sessionId: first.sessionId, task: "continue", channels: [] });
 
-		const saved = root.pi.appendEntry.mock.calls.find(([type]) => type === "subagents");
-		expect(saved).toBeDefined();
-		const entry = { type: "custom", id: "resurrection-entry", customType: saved![0], data: saved![1] };
+		const notice = root.pi.sendMessage.mock.calls.find(([message, options]) =>
+			message.customType === "subagents" && options?.deliverAs === "nextTurn");
+		expect(notice).toBeDefined();
+		const [message, options] = notice!;
+		expect(options).toEqual({ deliverAs: "nextTurn" });
+		expect(message.content).toContain("<agent_resurrected");
+		const restoredNode = root.provider.snapshot().nodes.find((node: any) => JSON.stringify(node.path) === JSON.stringify(["restored"]));
+		expect(message.content).toContain(`session_id="${restoredNode.sessionId}"`);
+		const persisted = message.details.subagentContent.find((candidate: any) => candidate.kind === "resurrect");
+		expect(persisted).toMatchObject({ state: "complete", source: "custom_entry" });
+		const entry = {
+			type: "custom_message",
+			id: "resurrection-entry",
+			customType: "subagents",
+			message: { role: "custom", customType: "subagents", content: [{ type: "text", text: message.content }], details: message.details },
+		};
 		expect(observed).toContainEqual(expect.objectContaining({
 			type: "subagent_snapshot_event",
-			target: expect.objectContaining({ kind: "resurrect", path: [], placement: { entryId: entry.id } }),
+			target: expect.objectContaining({ kind: "resurrect", path: [], placement: { entryId: "resurrection-entry" } }),
 			data: expect.objectContaining({ operation: "resurrect", result: expect.objectContaining({ affectedAgents: [expect.objectContaining({ path: ["restored"], sessionId: first.sessionId })] }) }),
 		}));
 
@@ -901,10 +915,34 @@ describe("semantic facts on native messages", () => {
 		const hydrated = restored.replay();
 		expect(hydrated.events).toContainEqual(expect.objectContaining({
 			type: "subagent_snapshot_event",
-			target: expect.objectContaining({ kind: "resurrect", path: [], placement: { entryId: entry.id } }),
+			target: expect.objectContaining({ kind: "resurrect", path: [], placement: { entryId: "resurrection-entry" } }),
 			data: expect.objectContaining({ result: expect.objectContaining({ affectedAgents: [expect.objectContaining({ path: ["restored"], sessionId: first.sessionId })] }) }),
 		}));
 		restored.shutdown();
+	});
+
+	it("notifies the parent once, next turn, when a control teardown removes a child", async () => {
+		const root = await rootSession();
+		root.pi.sendMessage.mockClear();
+		const observed: any[] = [];
+		root.provider.subscribe((event: any) => observed.push(event));
+		const snapshot = root.provider.snapshot().nodes.find((node: any) => JSON.stringify(node.path) === JSON.stringify(["worker"]));
+		await root.provider.teardown(["worker"], snapshot.incarnation);
+
+		const notice = root.pi.sendMessage.mock.calls.find(([message, options]) =>
+			message.customType === "subagents" && options?.deliverAs === "nextTurn");
+		expect(notice).toBeDefined();
+		const [message, options] = notice!;
+		expect(options).toEqual({ deliverAs: "nextTurn" });
+		expect(message.content).toContain("<agent_removed");
+		expect(message.content).toContain("worker");
+		const persisted = message.details.subagentContent.find((candidate: any) => candidate.kind === "teardown");
+		expect(persisted).toMatchObject({ state: "complete", source: "custom_entry" });
+		expect(observed).toContainEqual(expect.objectContaining({
+			type: "subagent_snapshot_event",
+			target: expect.objectContaining({ kind: "teardown", path: [] }),
+			data: expect.objectContaining({ operation: "teardown" }),
+		}));
 	});
 
 	it("delivers native notifications when the same child session resumes", async () => {

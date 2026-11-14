@@ -46,7 +46,7 @@ import {
 import { childAgentPath, type AgentPath } from "./agent-path.js";
 import { excludeModelOnlyTools } from "./child-tool-policy.js";
 import { getPersistencePaths } from "./persistence.js";
-import { serializeAgentComplete, serializeAgentMessage, type AgentCompleteData } from "./messages.js";
+import { serializeAgentComplete, serializeAgentMessage, serializeAgentRemoved, serializeAgentResurrected, type AgentCompleteData } from "./messages.js";
 import { hasLiveBackgroundWork } from "./activity.js";
 import { createStopSequenceManager, type StopSequenceManager } from "./stop-sequences.js";
 import { NotificationQueue } from "./notification-queue.js";
@@ -118,6 +118,7 @@ import type {
 	SubagentLeaseCoordinator,
 	SubagentResurrectRequest,
 	SubagentResurrectResult,
+	SubagentTeardownResult,
 } from "./provider.js";
 
 const USE_STEER_DELIVERY = true;
@@ -1691,7 +1692,10 @@ class SubagentSessionOwner {
 				onMessagePhase: (event) => this.publishRoutedMessage(event),
 				onResponseProgress: (event) => this.acceptResponseProgress(event),
 			});
-			const managerControl = manager.createControl((request) => this.resurrectThroughControl(manager, request, ctx));
+			const managerControl = manager.createControl(
+				(request) => this.resurrectThroughControl(manager, request, ctx),
+				(input) => this.teardownThroughControl(manager, input),
+			);
 			const registryEvents = createRegistryEventSource(registry);
 			registryEventsUnsubscribe = registryEvents.unsubscribe;
 			if (this.scope.kind === "root") {
@@ -3137,15 +3141,72 @@ class SubagentSessionOwner {
 			source: "custom_entry",
 			data: normalizeFinalData({ operation: "resurrect", path: this.scopePath(), parameters: params, result: result.structuredContent, toolBacked: true }),
 		};
-		this.pi.appendEntry("subagents", { subagentContent: [content] });
-		this.publishPersistedPresentationContent([content], ctx.sessionManager.getLeafId() ?? undefined);
 		const pathValue = [...request.parentPath, request.localId];
 		const snapshot = session.registry.getSnapshot(pathValue);
+		this.pi.sendMessage(
+			{
+				customType: "subagents",
+				content: serializeAgentResurrected({ id: request.localId, sessionId: snapshot?.sessionId, task: request.task, model: request.model }),
+				display: true,
+				details: { subagentContent: [content] },
+			},
+			{ deliverAs: "nextTurn" },
+		);
+		this.publishPersistedPresentationContent([content], ctx.sessionManager.getLeafId() ?? undefined);
 		return {
 			path: pathValue,
 			sessionId: snapshot?.sessionId,
 			incarnation: snapshot?.incarnation,
 		};
+	}
+
+	/** Control-initiated teardown: inform the parent turn once, next turn, without triggering one. */
+	private async teardownThroughControl(
+		manager: SubagentManager,
+		input: { localId: string; incarnation: string },
+	): Promise<SubagentTeardownResult> {
+		const result = await manager.teardownGuarded(input.localId, input.incarnation);
+		if (!result.removed) return result;
+		const pathValue = childAgentPath(this.scopePath(), input.localId);
+		const content: PersistedSubagentContent = {
+			operationId: `control-teardown:${this.semanticEpoch}:${++this.presentationSequence}`,
+			kind: "teardown",
+			state: "complete",
+			source: "custom_entry",
+			data: normalizeFinalData({
+				operation: "teardown",
+				path: this.scopePath(),
+				parameters: { agent: input.localId, incarnation: input.incarnation },
+				result: {
+					path: pathValue,
+					sessionId: result.sessionId,
+					incarnation: result.incarnation,
+					outcome: "succeeded",
+					source: "user",
+				},
+				toolBacked: true,
+			}),
+		};
+		this.publishFact("teardown", pathValue, {
+			operation: "teardown",
+			outcome: "succeeded",
+			path: pathValue,
+			sessionId: result.sessionId,
+			output: "Agent removed by user action.",
+		}, this.nativeRefs(undefined, "lifecycle"));
+		this.pi.sendMessage(
+			{
+				customType: "subagents",
+				content: serializeAgentRemoved({ id: input.localId, sessionId: result.sessionId }),
+				display: true,
+				details: { subagentContent: [content] },
+			},
+			{ deliverAs: "nextTurn" },
+		);
+		this.publishPersistedPresentationContent([content]);
+		const session = this.requireActiveSession();
+		session.presentation.refresh(session.manager);
+		return result;
 	}
 
 	private async resurrectAgents(params: any, ctx: ExtensionContext, toolCallId?: string): Promise<any> {
