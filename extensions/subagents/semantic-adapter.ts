@@ -1,6 +1,7 @@
 import type { AgentPath } from './agent-path.js';
 import type {
   SubagentAwaitStatus,
+  SubagentDelegatedChild,
   SubagentDeltaData,
   SubagentEndData,
   SubagentFiniteData,
@@ -46,7 +47,7 @@ export type SemanticEndData = SubagentEndData;
 type SemanticBase = Readonly<{ operationId: string; kind: SemanticOperationKind; path: AgentPath; placement: SemanticPlacement }>;
 export type SemanticAdapterEvent =
   | SemanticBase & Readonly<{ type: 'start'; data: SemanticStartData }>
-  | Omit<SemanticBase, 'kind'> & Readonly<{ type: 'delta'; kind: 'send' | 'respond' | 'await'; data: SemanticDeltaData }>
+  | Omit<SemanticBase, 'kind'> & Readonly<{ type: 'delta'; kind: 'send' | 'respond' | 'await' | 'delegation'; data: SemanticDeltaData }>
   | SemanticBase & Readonly<{ type: 'end'; state: 'complete' | 'error' | 'aborted'; data: SemanticEndData }>
   | Omit<SemanticBase, 'placement' | 'kind'> & Readonly<{ type: 'snapshot'; kind: SemanticOperationKind | 'message_received'; placement?: SemanticPlacement; state: 'complete' | 'error' | 'aborted'; data: SubagentFinalData }>
   | SemanticBase & Readonly<{ type: 'protocol_error'; message: string }>;
@@ -82,6 +83,7 @@ type OperationState = {
   body: string;
   requested: readonly AgentPath[];
   statuses: readonly SubagentAwaitStatus[];
+  delegationChildren: readonly SubagentDelegatedChild[];
   interrupted: boolean;
   sendTarget?: AgentPath;
   sendPhase: 'sending' | 'waiting' | 'responding';
@@ -118,6 +120,97 @@ function partialString(raw: string, key: string): string | undefined {
   catch { return value.replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\\\/g, '\\'); }
 }
 
+function readQuotedString(raw: string, start: number): Readonly<{ value: string; end: number }> | undefined {
+  if (raw[start] !== '"') return undefined;
+  let escaped = false;
+  for (let index = start + 1; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (escaped) { escaped = false; continue; }
+    if (character === '\\') { escaped = true; continue; }
+    if (character !== '"') continue;
+    try {
+      const value: unknown = JSON.parse(raw.slice(start, index + 1));
+      return typeof value === 'string' ? { value, end: index } : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function agentsArrayContentStart(raw: string): number | undefined {
+  let objectDepth = 0;
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (character === '"' && objectDepth === 1) {
+      const key = readQuotedString(raw, index);
+      if (!key) return undefined;
+      let valueStart = key.end + 1;
+      while (/\s/.test(raw[valueStart] ?? '')) valueStart += 1;
+      if (key.value === 'agents' && raw[valueStart] === ':') {
+        valueStart += 1;
+        while (/\s/.test(raw[valueStart] ?? '')) valueStart += 1;
+        if (raw[valueStart] === '[') return valueStart + 1;
+      }
+      index = key.end;
+      continue;
+    }
+    if (character === '{') objectDepth += 1;
+    else if (character === '}') objectDepth -= 1;
+  }
+  return undefined;
+}
+
+function objectSlicesInArray(raw: string, start: number): readonly string[] {
+  const objects: string[] = [];
+  let objectDepth = 0;
+  let objectStart = -1;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === '{') {
+      if (objectDepth === 0) objectStart = index;
+      objectDepth += 1;
+    } else if (character === '}') {
+      objectDepth -= 1;
+      if (objectDepth === 0 && objectStart >= 0) {
+        objects.push(raw.slice(objectStart, index + 1));
+        objectStart = -1;
+      }
+    } else if (character === ']' && objectDepth === 0) {
+      break;
+    }
+  }
+  if (objectStart >= 0) objects.push(raw.slice(objectStart));
+  return objects;
+}
+
+function partialDelegationChildren(raw: string, owner: AgentPath): readonly SubagentDelegatedChild[] {
+  const arrayStart = agentsArrayContentStart(raw);
+  const candidates = arrayStart === undefined ? [raw] : objectSlicesInArray(raw, arrayStart);
+  return candidates.flatMap((candidate) => {
+    const id = partialString(candidate, 'id');
+    if (!id) return [];
+    const persona = partialString(candidate, 'persona');
+    return [{
+      path: [...owner, id],
+      task: partialString(candidate, 'task') ?? '',
+      ...(persona ? { persona } : {}),
+    }];
+  });
+}
+
 function operationKind(toolName: string): SemanticOperationKind | undefined {
   if (toolName === 'await_agents') return 'await';
   if (toolName === 'subagent' || toolName === 'fork') return 'delegation';
@@ -145,7 +238,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     const state: OperationState = {
       operationId: options.operationId?.({ toolCallId: event.toolCallId, kind }) ?? event.toolCallId,
       kind, path: [...event.path], placement: { toolCallId: event.toolCallId, contentIndex: event.contentIndex },
-      started: false, rawArguments: '', parameters: {}, request: '', response: '', body: '', requested: [], statuses: [], interrupted: false, sendPhase: 'sending',
+      started: false, rawArguments: '', parameters: {}, request: '', response: '', body: '', requested: [], statuses: [], delegationChildren: [], interrupted: false, sendPhase: 'sending',
       ...(event.targetPath !== undefined ? { sendTarget: [...event.targetPath] } : {}),
     };
     operations.set(event.toolCallId, state);
@@ -174,6 +267,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
 
   function startData(state: OperationState): SemanticStartData {
     const parameters = parametersFor(state);
+    if (state.kind === 'delegation') return { operation: 'delegation', parameters, result: { children: state.delegationChildren } };
     if (state.kind === 'send') return { operation: 'send', parameters, result: { response: state.response, phase: state.sendPhase } };
     if (state.kind === 'respond') return { operation: 'respond', parameters, result: {} };
     return { operation: 'await', parameters, result: { statuses: state.statuses } };
@@ -184,7 +278,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
   }
 
   function startOperation(state: OperationState): readonly SemanticAdapterEvent[] {
-    if (state.started || finiteKind(state.kind)) return [];
+    if (state.started || (finiteKind(state.kind) && state.kind !== 'delegation')) return [];
     state.started = true;
     return [{ type: 'start', ...base(state), data: startData(state) }];
   }
@@ -195,6 +289,13 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     if (event.targetPath !== undefined) state.sendTarget = [...event.targetPath];
     const previous = state.kind === 'send' ? state.request : state.body;
     updateArguments(state, event.delta, event.phase === 'end' && event.delta.length > 0);
+    if (state.kind === 'delegation') {
+      const children = partialDelegationChildren(state.rawArguments, state.path);
+      if (JSON.stringify(children) === JSON.stringify(state.delegationChildren)) return [];
+      state.delegationChildren = children;
+      if (!state.started) return children.length > 0 ? startOperation(state) : [];
+      return [{ type: 'delta', ...base(state), kind: 'delegation', data: { operation: 'delegation', children } }];
+    }
     if (finiteKind(state.kind)) return [];
     if (state.kind === 'await') return event.phase === 'end' && parseJsonObject(state.rawArguments) !== undefined ? startOperation(state) : [];
     if (!state.started) return startOperation(state);

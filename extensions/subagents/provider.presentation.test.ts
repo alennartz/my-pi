@@ -371,6 +371,12 @@ describe('subagent presentation provider', () => {
     publishPresentation({ ...target, type: 'delta', data: { operation: 'send', field: 'response', delta: 'ready' } });
     publishPresentation({ ...target, type: 'delta', data: { operation: 'send', phase: 'responding' } });
     expect(provider.snapshot().activeOperations[0].data).toEqual({ operation: 'send', parameters: { to: ['worker'], message: 'check config', expectResponse: true }, result: { response: 'ready', phase: 'responding' } });
+    const delegationTarget = { operationId: 'spawn', kind: 'delegation' as const, path: [], placement: { toolCallId: 'spawn', contentIndex: 1 } };
+    publishPresentation({ ...delegationTarget, type: 'start', data: { operation: 'delegation', parameters: {}, result: { children: [{ path: ['worker'], task: 'inspect' }] } } });
+    publishPresentation({ ...delegationTarget, type: 'delta', data: { operation: 'delegation', children: [{ path: ['worker'], task: 'inspect deeply' }] } });
+    expect(provider.snapshot().activeOperations.find((operation) => operation.target.operationId === 'spawn')?.data).toEqual({
+      operation: 'delegation', parameters: {}, result: { children: [{ path: ['worker'], task: 'inspect deeply' }] },
+    });
     publishPresentation({ ...target, operationId: 'respond', kind: 'respond', type: 'start', data: { operation: 'respond', parameters: { message: 'answer' }, result: { accepted: false } } });
     publishPresentation({ ...target, operationId: 'respond', kind: 'respond', type: 'delta', data: { operation: 'respond', delta: ' now' } });
     publishPresentation({ ...target, operationId: 'await', kind: 'await', type: 'start', data: { operation: 'await', parameters: { agents: [['worker']] }, result: { statuses: [] } } });

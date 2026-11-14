@@ -91,6 +91,49 @@ describe('subagent semantic adapter', () => {
     expect(aborted).toContainEqual(expect.objectContaining({ state: 'aborted', data: { operation: 'await', parameters: { agents: [['owner', 'worker']] }, result: { statuses: [], interrupted: true } } }));
   });
 
+  it('streams each delegation task as its argument text arrives', () => {
+    const adapter = createSubagentSemanticAdapter({ delegation: () => [
+      { path: ['owner', 'watcher'], task: 'Tail the log and ping me', persona: 'scout' },
+      { path: ['owner', 'tracer'], task: 'Check ws ordering' },
+    ] });
+    const input = call('subagent', 'spawn', ['owner']);
+    const start = adapter.acceptToolCallDelta({ ...input, phase: 'start', delta: '{"agents":[{"id":"watcher","task":"Tail the log' });
+    expect(start).toContainEqual(expect.objectContaining({
+      type: 'start',
+      kind: 'delegation',
+      data: { operation: 'delegation', parameters: {}, result: { children: [{ path: ['owner', 'watcher'], task: 'Tail the log' }] } },
+    }));
+
+    const more = adapter.acceptToolCallDelta({ ...input, phase: 'delta', delta: ' and ping me","persona":"scout"},{"id":"tracer","task":"Check ws order' });
+    expect(more).toContainEqual(expect.objectContaining({
+      type: 'delta',
+      kind: 'delegation',
+      data: { operation: 'delegation', children: [
+        { path: ['owner', 'watcher'], task: 'Tail the log and ping me', persona: 'scout' },
+        { path: ['owner', 'tracer'], task: 'Check ws order' },
+      ] },
+    }));
+
+    const finalDelta = adapter.acceptToolCallDelta({ ...input, phase: 'delta', delta: 'ing"}]}' });
+    expect(finalDelta).toContainEqual(expect.objectContaining({
+      type: 'delta',
+      data: { operation: 'delegation', children: [
+        { path: ['owner', 'watcher'], task: 'Tail the log and ping me', persona: 'scout' },
+        { path: ['owner', 'tracer'], task: 'Check ws ordering' },
+      ] },
+    }));
+
+    const end = adapter.acceptToolExecution({ ...input, result: { agents: [{ id: 'watcher' }, { id: 'tracer' }] } });
+    expect(end[0]).toMatchObject({
+      type: 'snapshot',
+      kind: 'delegation',
+      data: { operation: 'delegation', result: { children: [
+        { path: ['owner', 'watcher'], task: 'Tail the log and ping me', persona: 'scout' },
+        { path: ['owner', 'tracer'], task: 'Check ws ordering' },
+      ] } },
+    });
+  });
+
   it.each([
     ['subagent', { agents: [{ id: 'worker', task: 'inspect', persona: 'scout', model: 'smart', channels: ['peer'], cwd: '/repo' }] }, { agents: [{ id: 'worker', status: 'running', metadata: { ready: true } }], note: 'spawned' }, 'delegation'],
     ['fork', { id: 'worker', task: 'inspect' }, { agents: [{ id: 'worker', status: 'running' }], note: 'forked' }, 'delegation'],
@@ -100,7 +143,9 @@ describe('subagent semantic adapter', () => {
   ] as const)('retains complete public inputs and outputs for %s', (toolName, parameters, result, operation) => {
     const adapter = createSubagentSemanticAdapter({ delegation: () => [{ path: ['owner', 'worker'], task: 'inspect', persona: 'scout' }] });
     const input = call(toolName, toolName, ['owner']);
-    expect(adapter.acceptToolCallDelta({ ...input, phase: 'end', delta: JSON.stringify(parameters) })).toEqual([]);
+    const argumentEvents = adapter.acceptToolCallDelta({ ...input, phase: 'end', delta: JSON.stringify(parameters) });
+    if (operation === 'delegation') expect(argumentEvents[0]).toMatchObject({ type: 'start', data: { operation: 'delegation' } });
+    else expect(argumentEvents).toEqual([]);
     const [event] = adapter.acceptToolExecution({ ...input, result: { ...result, correlationId: 'private', metadata: { correlation_id: 'private', publicFlag: false } } });
     if (toolName === 'interrupt') expect(event).toMatchObject({ data: { parameters: { agents: [['owner', 'worker']] }, result: { interrupted: [{ path: ['owner', 'worker'], output: 'done' }] } } });
     else if (toolName === 'teardown') expect(event).toMatchObject({ data: { parameters: { agent: ['owner', 'worker'] }, result: { status: 'removed', affectedAgents: [{ path: ['owner', 'worker'], usageBaseline: { turns: 0 } }] } } });

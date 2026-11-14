@@ -954,6 +954,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function mergeActiveData(prior: SubagentStartData, delta: SubagentDeltaData): SubagentStartData {
+		if (prior.operation === "delegation" && delta.operation === "delegation") return { ...prior, result: { children: delta.children } };
 		if (prior.operation === "send" && delta.operation === "send") {
 			if ("delta" in delta) {
 				return {
