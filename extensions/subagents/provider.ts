@@ -19,10 +19,8 @@ import {
 import type { ManagedChildSession } from "./managed-child-session.js";
 import type {
 	ActiveSubagentOperation,
-	PersistedSubagentContent,
 	SubagentAwaitStatus,
 	SubagentDeltaData,
-	SubagentOperationKind,
 	SubagentPresentationManifest,
 	SubagentPresentationReplay,
 	SubagentProviderEvent,
@@ -34,7 +32,7 @@ import type {
 	SubagentFiniteEvent,
 } from "@pimote/sdk/subagents";
 import type { SemanticAdapterEvent } from "./semantic-adapter.js";
-import { normalizeSavedPresentationData } from "./presentation-data.js";
+import { normalizeSavedPresentationData, savedPresentationKind, type PersistedSubagentContent, type PresentationKind } from "./presentation-data.js";
 
 /** Opaque provider epoch plus the last ordered event sequence observed in it. */
 export type FeedCursor = Readonly<{
@@ -669,8 +667,8 @@ function eventCursor(epoch: string, sequence: number): FeedCursor {
 	return Object.freeze({ epoch, sequence });
 }
 
-function isPresentationKind(value: unknown): value is SubagentOperationKind {
-	return value === "send" || value === "respond" || value === "await" || value === "delegation"
+function isPresentationKind(value: unknown): value is PresentationKind {
+	return value === "message_received" || value === "send" || value === "respond" || value === "await" || value === "delegation"
 		|| value === "completion" || value === "interrupt" || value === "teardown" || value === "resurrect";
 }
 
@@ -686,7 +684,8 @@ function isPersistedPresentationContent(value: unknown): value is PersistedSubag
 	if (!isRecord(value) || typeof value.operationId !== "string" || !isPresentationKind(value.kind) || !isPresentationState(value.state)) return false;
 	if (value.source !== "tool" && value.source !== "custom_entry") return false;
 	if (!isRecord(value.data)) return false;
-	if (value.data.operation !== value.kind && value.data.operation !== "protocol_error") return false;
+	if (value.kind === "message_received" && value.source !== "custom_entry") return false;
+	if (value.data.operation !== (value.kind === "message_received" ? "send" : value.kind) && value.data.operation !== "protocol_error") return false;
 	if (value.source === "tool") {
 		const placement = value.placement;
 		return isRecord(placement)
@@ -939,12 +938,12 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		return `provider:${kind}:${pathKey(path)}:${++eventCounter}`;
 	}
 
-	function presentationTarget(event: SemanticAdapterEvent): Readonly<{ operationId: string; kind: SubagentOperationKind; path: AgentPath; placement: SemanticAdapterEvent["placement"] }> {
+	function presentationTarget(event: SemanticAdapterEvent): Readonly<{ operationId: string; kind: PresentationKind; path: AgentPath; placement?: SemanticAdapterEvent["placement"] }> {
 		return Object.freeze({
 			operationId: event.operationId,
 			kind: event.kind,
 			path: copyPath(event.path),
-			placement: Object.freeze({ ...event.placement }),
+			...(event.placement !== undefined ? { placement: Object.freeze({ ...event.placement }) } : {}),
 		});
 	}
 
@@ -1551,18 +1550,19 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				if (!isPersistedPresentationContent(candidate)) continue;
 				if (candidate.kind === "completion" && (candidate.source !== "custom_entry" || !customMessage)) continue;
 				const repaired = awaitResult ? restoreAwaitResult(candidate, details.semantic) : candidate;
+				const kind = savedPresentationKind(repaired as unknown as Record<string, unknown>) as PresentationKind;
 				const argumentsValue = toolArguments.get(candidate.source === "tool" ? candidate.placement.toolCallId : candidate.operationId);
-				const toolBacked = candidate.source === "tool" || isRecord(repaired.data.parameters) || argumentsValue !== undefined
-					|| (candidate.kind !== "send" && candidate.kind !== "respond" && candidate.kind !== "completion");
+				const toolBacked = kind !== "message_received" && (candidate.source === "tool" || isRecord(repaired.data.parameters) || argumentsValue !== undefined
+					|| (kind !== "send" && kind !== "respond" && kind !== "completion"));
 				const data = normalizeSavedPresentationData({
 					data: repaired.data as unknown as Record<string, unknown>,
-					operation: candidate.kind,
+					operation: kind === "message_received" ? "send" : kind,
 					path: input.path,
 					toolBacked,
 					arguments: argumentsValue,
 					...(candidate.source === "tool" ? { nativeResult: messageRecord } : {}),
 				});
-				const payload = { ...repaired, data };
+				const payload = { ...repaired, kind, data } as PersistedSubagentContent;
 				saved.push({ payload, ...(entryId !== undefined ? { entryId } : {}) });
 			}
 		}

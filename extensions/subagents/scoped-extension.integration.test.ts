@@ -565,7 +565,7 @@ describe("child-scoped extension routing", () => {
 		const [message] = pi.sendMessage.mock.calls;
 		expect(message[0]).toMatchObject({ customType: "subagents", content: expect.stringContaining("continue") });
 		expect((message[0] as any).details?.subagentContent).toHaveLength(1);
-		expect((message[0] as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "send", data: { operation: "send", result: expect.objectContaining({ message: "continue" }) } });
+		expect((message[0] as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "message_received", data: { operation: "send", result: { from: [], to: ["child"], message: "continue", responseExpected: false } } });
 	});
 
 	it("keeps child notifications local after session shutdown and renders the scoped model catalog", async () => {
@@ -891,7 +891,7 @@ describe("semantic facts on native messages", () => {
 			const notification = child.pi.sendMessage.mock.calls.at(-1)?.[0];
 			expect(notification).toMatchObject({ customType: "subagents", content: serializeAgentMessage({ from: "parent", content: reason, responseExpected: false }) });
 			expect((notification as any).details?.subagentContent).toHaveLength(1);
-			expect((notification as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "send", data: { operation: "send", result: expect.objectContaining({ message: reason }) } });
+			expect((notification as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "message_received", data: { operation: "send", result: expect.objectContaining({ message: reason }) } });
 			await child.handlers.get("session_shutdown")?.({}, ctx);
 		}
 	});
@@ -915,6 +915,33 @@ describe("semantic facts on native messages", () => {
 			entry: { id: "completion-entry", message: { role: "custom", customType: "subagents", details: { subagentContent: [payload] } } },
 		}, root.ctx);
 		expect(root.presentation.filter((event) => event.operationId === "completion-1")).toHaveLength(1);
+	});
+
+	it("publishes a received message at its native custom-message boundary", async () => {
+		const root = await rootSession();
+		const events: any[] = [];
+		root.provider.subscribe((event: any) => events.push(event));
+		await root.worker.config.scope.uplink.send({ to: "parent", message: "child update", expectResponse: false });
+		const notification = root.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("child update"))?.[0];
+		await root.handlers.get("entry_appended")?.({
+			type: "entry_appended", entry: { id: "received-entry", type: "custom_message", ...notification },
+		}, root.ctx);
+		expect(events).toContainEqual(expect.objectContaining({
+			type: "subagent_snapshot_event", target: { operationId: expect.any(String), kind: "message_received", path: [], placement: { entryId: "received-entry" } },
+			data: { operation: "send", result: { from: ["worker"], to: [], message: "child update", responseExpected: false } },
+		}));
+	});
+
+	it("publishes a received message before the native entry has an ID", async () => {
+		const root = await rootSession();
+		const events: any[] = [];
+		root.provider.subscribe((event: any) => events.push(event));
+		await root.worker.config.scope.uplink.send({ to: "parent", message: "early update", expectResponse: false });
+		const notification = root.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("early update"))?.[0];
+		await root.handlers.get("message_end")?.({ type: "message_end", message: { role: "custom", ...notification } }, root.ctx);
+		const received = events.find((event) => event.type === "subagent_snapshot_event" && event.target.kind === "message_received");
+		expect(received).toMatchObject({ target: { path: [] }, data: { result: { from: ["worker"], message: "early update" } } });
+		expect(received.target).not.toHaveProperty("placement");
 	});
 
 	it("carries custom payloads from message_end to a later bare append event", async () => {
@@ -1105,9 +1132,9 @@ describe("semantic facts on native messages", () => {
 			expect(awaits[0]).toMatchObject({ data: { result: { interrupted: true, statuses: expect.arrayContaining([expect.objectContaining({ path: ["guard"], state: "running" })]) } } });
 			expect(result.content[0].text).toContain("need a decision");
 			expect(details.subagentContent).toContainEqual(expect.objectContaining({
-				kind: "send", source: "custom_entry", data: { operation: "send", result: { to: [], from: ["guard"], message: "need a decision", responseExpected: false } },
+				kind: "message_received", source: "custom_entry", data: { operation: "send", result: { to: [], from: ["guard"], message: "need a decision", responseExpected: false } },
 			}));
-			expect(finals).toContainEqual(expect.objectContaining({ kind: "send", data: expect.objectContaining({ result: expect.objectContaining({ message: "need a decision" }) }) }));
+			expect(finals).toContainEqual(expect.objectContaining({ kind: "message_received", data: expect.objectContaining({ result: expect.objectContaining({ from: ["guard"], message: "need a decision" }) }) }));
 		} else {
 			expect(result.structuredContent.interrupted).not.toBe(true);
 			expect(awaits[0]).not.toMatchObject({ data: { result: { interrupted: true } } });
@@ -1344,10 +1371,32 @@ describe("semantic facts on native messages", () => {
 		expect(factsIn(notification)).toEqual([]);
 		expect(notification.content).toContain("late answer");
 		expect(notification.details?.subagentContent).toContainEqual(expect.objectContaining({
-			kind: "send",
+			kind: "message_received",
 			source: "custom_entry",
 			state: "complete",
-			data: { operation: "send", result: { to: ["worker"], message: "question", response: "late answer" } },
+			data: { operation: "send", result: { from: ["worker"], to: [], message: "late answer", responseExpected: false } },
+		}));
+		await root.handlers.get("entry_appended")?.({ type: "entry_appended", entry: { id: "reply-entry", type: "custom_message", ...notification } }, root.ctx);
+		expect(root.presentation).toContainEqual(expect.objectContaining({
+			kind: "message_received", placement: { entryId: "reply-entry" },
+			data: { operation: "send", result: { from: ["worker"], to: [], message: "late answer", responseExpected: false } },
+		}));
+	});
+
+	it("reports a deferred send failure without inventing an incoming message", async () => {
+		const root = await rootSession();
+		const controller = new AbortController();
+		const waiting = root.tools.get("send")!.execute("deferred-failure", { to: "worker", message: "question", expectResponse: true }, controller.signal, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")).toBe(true));
+		const sent = root.published.find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")!;
+		const correlationId = sent.kind === "message_thread" ? sent.data.correlationId : undefined;
+		controller.abort();
+		await waiting;
+		await root.worker.config.scope.uplink.reject(correlationId, "declined");
+		await vi.waitFor(() => expect(root.pi.sendMessage.mock.calls.some(([message]) => message.content.includes("declined"))).toBe(true));
+		const notification = root.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("declined"))?.[0];
+		expect(notification.details?.subagentContent).toContainEqual(expect.objectContaining({
+			kind: "send", state: "error", data: { operation: "send", result: expect.objectContaining({ message: "question", error: "declined" }) },
 		}));
 	});
 

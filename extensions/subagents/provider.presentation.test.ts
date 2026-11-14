@@ -137,7 +137,7 @@ describe('subagent presentation provider', () => {
     };
     const incoming = {
       operationId: 'incoming-message', kind: 'send', source: 'custom_entry', state: 'complete',
-      data: { operation: 'send', to: ['owner'], request: 'need a decision', response: '' },
+      data: { operation: 'send', result: { from: ['owner', 'worker'], to: ['owner'], message: 'need a decision', responseExpected: false } },
     };
     const awaited = {
       operationId: 'await-call', kind: 'await', source: 'tool', state: 'complete',
@@ -154,7 +154,42 @@ describe('subagent presentation provider', () => {
     const awaits = events.filter((event) => event.target.kind === 'await');
     expect(awaits).toHaveLength(1);
     expect(awaits[0]).toMatchObject({ data: { ...awaited.data, parameters: {} } });
-    if (interrupted) expect(events).toContainEqual(expect.objectContaining({ target: expect.objectContaining({ kind: 'send' }), data: { operation: 'send', result: { to: ['owner'], message: 'need a decision', response: '' } } }));
+    if (interrupted) expect(events).toContainEqual(expect.objectContaining({ target: expect.objectContaining({ kind: 'message_received' }), data: { operation: 'send', result: { from: ['owner', 'worker'], to: ['owner'], message: 'need a decision', responseExpected: false } } }));
+  });
+
+  it('rehydrates received messages without reclassifying outgoing or ambiguous sends', async () => {
+    const entry = (operationId: string, kind: string, source: string, data: unknown) => ({
+      type: 'message', id: `${operationId}-entry`, message: { role: 'custom', customType: 'subagents', details: { subagentContent: [{
+        operationId, kind, source, state: 'complete', data,
+        ...(source === 'tool' ? { placement: { toolCallId: operationId, contentIndex: 0 } } : {}),
+      }] } },
+    });
+    const entries = [
+      entry('legacy-root', 'send', 'custom_entry', { operation: 'send', result: { from: [], to: ['owner'], message: 'from parent', responseExpected: true } }),
+      entry('legacy-child', 'send', 'custom_entry', { operation: 'send', result: { from: ['owner', 'worker'], to: ['owner'], message: 'from worker', responseExpected: false } }),
+      entry('current', 'message_received', 'custom_entry', { operation: 'send', result: { from: ['owner', 'worker'], to: ['owner'], message: 'current' } }),
+      entry('current-parameters', 'message_received', 'custom_entry', { operation: 'send', parameters: {}, result: { from: ['owner', 'worker'], to: ['owner'], message: 'still incoming' } }),
+      entry('old-ambiguous', 'send', 'custom_entry', { operation: 'send', to: ['owner'], request: 'older message', response: '' }),
+      entry('deferred', 'send', 'custom_entry', { operation: 'send', result: { to: ['owner', 'worker'], message: 'question', response: 'answer' } }),
+      entry('aborted', 'send', 'custom_entry', { operation: 'send', parameters: { message: 'question' }, result: { from: ['owner', 'worker'], response: 'answer' } }),
+      entry('tool', 'send', 'tool', { operation: 'send', parameters: { message: 'question' }, result: { from: ['owner', 'worker'], response: 'answer' } }),
+      entry('invalid-from', 'send', 'custom_entry', { operation: 'send', result: { from: [''], message: 'invalid' } }),
+      entry('wrong-operation', 'message_received', 'custom_entry', { operation: 'respond', result: { message: 'invalid' } }),
+      entry('wrong-source', 'message_received', 'tool', { operation: 'send', result: { message: 'invalid' } }),
+    ];
+    const original = JSON.stringify(entries);
+    const events = await rehydratedFinals(entries);
+    const byId = new Map(events.map((event) => [event.target.operationId, event]));
+    for (const id of ['legacy-root', 'legacy-child', 'current', 'current-parameters']) {
+      expect(byId.get(id)).toMatchObject({ target: { kind: 'message_received' }, data: { operation: 'send', result: { message: expect.any(String) } } });
+    }
+    expect(byId.get('legacy-root')).toMatchObject({ target: { placement: { entryId: 'legacy-root-entry' } }, data: { result: { from: [], to: ['owner'], message: 'from parent', responseExpected: true } } });
+    for (const id of ['old-ambiguous', 'deferred', 'aborted', 'tool', 'invalid-from']) {
+      expect(byId.get(id)).toMatchObject({ target: { kind: 'send' } });
+    }
+    expect(byId.has('wrong-operation')).toBe(false);
+    expect(byId.has('wrong-source')).toBe(false);
+    expect(JSON.stringify(entries)).toBe(original);
   });
 
   it('hydrates standalone completions only from actual subagents custom messages', async () => {

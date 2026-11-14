@@ -48,7 +48,7 @@ export type SemanticAdapterEvent =
   | SemanticBase & Readonly<{ type: 'start'; data: SemanticStartData }>
   | Omit<SemanticBase, 'kind'> & Readonly<{ type: 'delta'; kind: 'send' | 'respond' | 'await'; data: SemanticDeltaData }>
   | SemanticBase & Readonly<{ type: 'end'; state: 'complete' | 'error' | 'aborted'; data: SemanticEndData }>
-  | SemanticBase & Readonly<{ type: 'snapshot'; state: 'complete' | 'error' | 'aborted'; data: SubagentFinalData }>
+  | Omit<SemanticBase, 'placement' | 'kind'> & Readonly<{ type: 'snapshot'; kind: SemanticOperationKind | 'message_received'; placement?: SemanticPlacement; state: 'complete' | 'error' | 'aborted'; data: SubagentFinalData }>
   | SemanticBase & Readonly<{ type: 'protocol_error'; message: string }>;
 
 export interface SubagentSemanticAdapter {

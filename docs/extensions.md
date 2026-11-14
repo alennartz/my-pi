@@ -322,8 +322,14 @@ than files:
   root session registers one provider on its EventBus. Pimote presents the
   hierarchy, semantic events, and borrowed child views through that provider.
   Nested managers publish through the root provider and do not register their
-  own providers. The TUI dashboard and idle-reap activity response remain
-  available, while subagent panel cards are not used.
+  own providers. Received messages use the `message_received` presentation
+  kind. On replay, a legacy `send` custom entry is treated as received only
+  when its `send` result has a `from` path and its data has no `parameters`.
+  A path is an array of non-empty strings. The empty array identifies the root.
+  Older entries without a sender remain sends because their direction is
+  ambiguous. Saved session files are not changed. The TUI dashboard and
+  idle-reap activity response remain available, while subagent panel cards are
+  not used.
 - `worktree`: use `/worktree` with `create`, `resume`, or `cleanup` arguments.
 - `session-resume`: detects interrupted sessions automatically. It has a
   developer debug script at `scripts/pi-resume-debug.ts`.

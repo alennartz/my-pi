@@ -1,4 +1,5 @@
 import type {
+  PersistedSubagentContent as SdkPersistedSubagentContent,
   SubagentAwaitStatus,
   SubagentDelegatedChild,
   SubagentFinalData,
@@ -8,6 +9,25 @@ import type {
 import type { AgentPath } from './agent-path.js';
 
 type RecordData = Record<string, unknown>;
+export type PresentationKind = SubagentOperationKind | 'message_received';
+export type PersistedSubagentContent = SdkPersistedSubagentContent | Readonly<{
+  operationId: string;
+  kind: 'message_received';
+  state: 'complete' | 'error' | 'aborted';
+  data: SubagentFinalData;
+  source: 'custom_entry';
+  placement?: Readonly<{ entryId: string }>;
+}>;
+
+export function savedPresentationKind(value: RecordData): unknown {
+  const data = value.data;
+  if (value.kind !== 'send' || value.source !== 'custom_entry' || !isPresentationRecord(data)
+    || data.operation !== 'send' || 'parameters' in data || !isPresentationRecord(data.result)) return value.kind;
+  const from = data.result.from;
+  return Array.isArray(from) && from.every((part) => typeof part === 'string' && part.length > 0)
+    ? 'message_received' : value.kind;
+}
+
 const privateIdentifierFields: readonly string[] = Object.freeze(['correlationId', 'correlation_id', 'routerId', 'router_id', 'pendingCorrelations', 'pending_correlations']);
 
 export function isPresentationRecord(value: unknown): value is RecordData {

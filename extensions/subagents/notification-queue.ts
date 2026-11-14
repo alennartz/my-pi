@@ -22,7 +22,7 @@
  */
 
 import { truncateMiddle } from "../../lib/truncate.ts";
-import type { PersistedSubagentContent } from "@pimote/sdk/subagents";
+import type { PersistedSubagentContent } from "./presentation-data.js";
 import type { AgentCompleteData } from "./messages.js";
 
 export type NotificationSource = "local" | "uplink";

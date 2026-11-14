@@ -11,8 +11,7 @@ import { Type } from "typebox";
 import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
 import { answerActivity } from "@pimote/sdk/activity";
 import { registerProvider } from "@pimote/sdk/subagents";
-import type { PersistedSubagentContent } from "@pimote/sdk/subagents";
-import { normalizeSavedPresentationData } from "./presentation-data.js";
+import { normalizeSavedPresentationData, savedPresentationKind, type PersistedSubagentContent } from "./presentation-data.js";
 import {
 	getOrCreateSessionTreeStore,
 	registerSessionTreeStore,
@@ -1534,7 +1533,7 @@ class SubagentSessionOwner {
 	private persistedPresentationContent(toolCallId: string): readonly PersistedSubagentContent[] {
 		const events = this.presentationEvents.get(toolCallId) ?? [];
 		return events.flatMap((event) => {
-			if ((event.type !== "end" && event.type !== "snapshot") || !("toolCallId" in event.placement)) return [];
+			if ((event.type !== "end" && event.type !== "snapshot") || event.kind === "message_received" || !event.placement || !("toolCallId" in event.placement)) return [];
 			return [{
 				operationId: event.operationId,
 				kind: event.kind,
@@ -1946,7 +1945,7 @@ class SubagentSessionOwner {
 	private incomingPresentationContent(message: RoutedMessage, source: "local" | "uplink"): PersistedSubagentContent {
 		return {
 			operationId: `incoming:${this.currentSessionId()}:${++this.incomingPresentationSequence}`,
-			kind: "send",
+			kind: "message_received",
 			state: "complete",
 			source: "custom_entry",
 			data: {
@@ -1966,22 +1965,16 @@ class SubagentSessionOwner {
 		request: string,
 		response: RoutedResponse,
 	): PersistedSubagentContent {
-		const isResponse = response.type === "response";
-		const text = isResponse ? response.message : "";
+		const operationId = `deferred-send:${this.currentSessionId()}:${++this.presentationSequence}`;
+		if (response.type === "response") {
+			return {
+				operationId, kind: "message_received", state: "complete", source: "custom_entry",
+				data: { operation: "send", result: { from: [...to], to: this.scopePath(), message: response.message, responseExpected: false } },
+			};
+		}
 		return {
-			operationId: `deferred-send:${this.currentSessionId()}:${++this.presentationSequence}`,
-			kind: "send",
-			state: isResponse ? "complete" : "error",
-			source: "custom_entry",
-			data: {
-				operation: "send",
-				result: {
-					to: [...to],
-					message: request,
-					response: text,
-					...(response.type === "error" ? { error: response.error } : {}),
-				},
-			},
+			operationId, kind: "send", state: "error", source: "custom_entry",
+			data: { operation: "send", result: { to: [...to], message: request, response: "", error: response.error } },
 		};
 	}
 
@@ -2006,10 +1999,10 @@ class SubagentSessionOwner {
 			if (item.source !== "custom_entry" || typeof item.operationId !== "string") continue;
 			if (item.state !== "complete" && item.state !== "error" && item.state !== "aborted") continue;
 			if (!item.data || typeof item.data !== "object" || Array.isArray(item.data)) continue;
-			const kind = item.kind;
-			if (kind !== "send" && kind !== "respond" && kind !== "await" && kind !== "delegation" && kind !== "completion" && kind !== "interrupt" && kind !== "teardown" && kind !== "resurrect") continue;
+			const kind = savedPresentationKind(item);
+			if (kind !== "message_received" && kind !== "send" && kind !== "respond" && kind !== "await" && kind !== "delegation" && kind !== "completion" && kind !== "interrupt" && kind !== "teardown" && kind !== "resurrect") continue;
 			const operation = (item.data as Record<string, unknown>).operation;
-			if (operation !== kind && operation !== "protocol_error") continue;
+			if (operation !== (kind === "message_received" ? "send" : kind) && operation !== "protocol_error") continue;
 			const key = `${JSON.stringify(this.scopePath())}:${item.operationId}`;
 			if (this.publishedCustomPresentation.has(key)) continue;
 			this.publishedCustomPresentation.add(key);
@@ -2026,9 +2019,9 @@ class SubagentSessionOwner {
 				state: item.state,
 				data: normalizeSavedPresentationData({
 					data: item.data as Record<string, unknown>,
-					operation: kind,
+					operation: kind === "message_received" ? "send" : kind,
 					path: this.scopePath(),
-					toolBacked: "parameters" in item.data || (kind !== "send" && kind !== "respond" && kind !== "completion"),
+					toolBacked: kind !== "message_received" && ("parameters" in item.data || (kind !== "send" && kind !== "respond" && kind !== "completion")),
 				}),
 			};
 			this.semanticEvents.publishPresentation?.(event);
@@ -2178,7 +2171,7 @@ class SubagentSessionOwner {
 
 	private recordPresentationEvents(events: readonly SemanticAdapterEvent[]): void {
 		for (const event of events) {
-			if (!("toolCallId" in event.placement)) {
+			if (!event.placement || !("toolCallId" in event.placement)) {
 				this.semanticEvents.publishPresentation?.(event);
 				continue;
 			}
