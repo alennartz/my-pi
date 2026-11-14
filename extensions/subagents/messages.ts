@@ -23,12 +23,6 @@ export interface AgentCompleteData {
 	output?: string;
 	error?: string;
 	sessionId?: string;
-	/**
-	 * True iff an <agent_idle> notification was already delivered to the parent
-	 * for this agent (i.e. it idled or crashed on its own). Used by teardown
-	 * serializers to avoid re-emitting output the model has already seen.
-	 */
-	alreadyNotified?: boolean;
 }
 
 const RETRY_HINT = "Its session is still alive: if you have cleared the cause, send it a message to retry. Use teardown + resurrect only if it cannot recover.";
@@ -83,28 +77,15 @@ export function serializeAgentComplete(agent: AgentCompleteData): string {
 
 /**
  * Teardown report for a single agent. Distinct element name from <agent_idle>
- * so the model recognizes the lifecycle event. When the agent already idled
- * (alreadyNotified=true), output is omitted — the model has already seen it
- * via the prior <agent_idle> notification. When an agent is torn down while
- * still running (no prior idle notification), we still surface its last output
- * / error so it isn't lost.
+ * so the model recognizes the lifecycle event. The agent's last output is
+ * never reported: the parent saw it via <agent_idle> when the agent settled,
+ * and a still-running agent's partial output is not worth reporting.
  */
 export function serializeAgentTorndown(data: AgentCompleteData): string {
 	const sessionAttr = data.sessionId ? ` session_id="${data.sessionId}"` : "";
 	const hint = data.sessionId ? `<hint>${RESURRECT_HINT_SINGLE}</hint>` : "";
 	const openTag = `<agent_torn_down id="${data.id}" status="${data.status}"${sessionAttr}>`;
-	if (data.alreadyNotified) {
-		return hint ? `${openTag}\n${hint}\n</agent_torn_down>` : `${openTag}\n</agent_torn_down>`;
-	}
-	// Not yet notified — include body.
-	const bodyParts: string[] = [];
-	if (data.status !== "idle") {
-		if (data.error) bodyParts.push(`<error>${data.error}</error>`);
-	} else {
-		bodyParts.push(data.output ?? "(no output)");
-	}
-	if (hint) bodyParts.push(hint);
-	return `${openTag}\n${bodyParts.join("\n")}\n</agent_torn_down>`;
+	return hint ? `${openTag}\n${hint}\n</agent_torn_down>` : `${openTag}\n</agent_torn_down>`;
 }
 
 export interface AgentLifecycleNoticeData {
@@ -133,13 +114,10 @@ export function serializeAgentRemoved(data: AgentLifecycleNoticeData): string {
 
 /**
  * Shared group-report serializer for <group_torn_down> and <group_complete>.
- * The two reports differ only in element name and whether not-yet-notified
- * agents get their output/error expanded inline (`expandUnnotified`).
+ * The two reports differ only in element name. Entries stay slim
+ * (id/status/session_id): a torn-down agent's last output is never reported.
  */
-function serializeGroupReport(
-	data: ActiveAgentsCompleteData,
-	opts: { elementName: string; expandUnnotified: boolean },
-): string {
+function serializeGroupReport(data: ActiveAgentsCompleteData, opts: { elementName: string }): string {
 	const counts: Record<string, number> = {};
 	for (const a of data.agents) {
 		counts[a.status] = (counts[a.status] || 0) + 1;
@@ -154,18 +132,7 @@ function serializeGroupReport(
 	for (const agent of data.agents) {
 		const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
 		if (agent.sessionId) anySessionId = true;
-		if (!opts.expandUnnotified || agent.alreadyNotified) {
-			lines.push(`  <agent id="${agent.id}" status="${agent.status}"${sessionAttr} />`);
-			continue;
-		}
-		// Not yet notified — include body so output/error isn't lost.
-		lines.push(`  <agent id="${agent.id}" status="${agent.status}"${sessionAttr}>`);
-		if (agent.status !== "idle") {
-			if (agent.error) lines.push(`    <error>${agent.error}</error>`);
-		} else {
-			lines.push(`    <output>${agent.output ?? "(no output)"}</output>`);
-		}
-		lines.push(`  </agent>`);
+		lines.push(`  <agent id="${agent.id}" status="${agent.status}"${sessionAttr} />`);
 	}
 	if (anySessionId) {
 		lines.push(`  <hint>${RESURRECT_HINT_GROUP}</hint>`);
@@ -177,17 +144,16 @@ function serializeGroupReport(
 
 /**
  * Teardown report for the full agent group. Mirrors <group_complete> but uses
- * a distinct element so the model recognizes the lifecycle event. Per-agent
- * entries are slim by default (id/status/session_id) since each agent already
- * had an individual <agent_idle> notification when it settled. For any agent
- * that was torn down before it idled, its last output / error is included.
+ * a distinct element so the model recognizes the lifecycle event. Entries are
+ * slim (id/status/session_id); a torn-down agent's last output is never
+ * reported.
  */
 export function serializeGroupTorndown(data: ActiveAgentsCompleteData): string {
-	return serializeGroupReport(data, { elementName: "group_torn_down", expandUnnotified: true });
+	return serializeGroupReport(data, { elementName: "group_torn_down" });
 }
 
 export function serializeGroupComplete(data: ActiveAgentsCompleteData): string {
-	return serializeGroupReport(data, { elementName: "group_complete", expandUnnotified: false });
+	return serializeGroupReport(data, { elementName: "group_complete" });
 }
 
 export function serializeSubagentIdentity(data: SubagentIdentityData): string {

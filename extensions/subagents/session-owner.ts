@@ -938,8 +938,8 @@ class SessionTurnCoordinator {
 			const stoppedStatus = this.settledStatuses.get(key)!;
 			this.holdGate.stop(path, stoppedStatus);
 			this.activeGate?.stop(path, stoppedStatus);
-			// Stop has no idle notification. Keep completionNotified false so a
-			// later teardown still carries the last output or error.
+			// Stop has no idle notification. A later teardown never reports the
+			// agent's last output, so no notification state is needed here.
 			return false;
 		}
 
@@ -3071,8 +3071,6 @@ class SubagentSessionOwner {
 				incarnation: snapshot.incarnation,
 				state: snapshot.operational.state,
 				usage: snapshot.operational.usage,
-				...(snapshot.operational.lastOutput !== undefined ? { output: snapshot.operational.lastOutput } : {}),
-				...(snapshot.operational.lastError !== undefined ? { error: snapshot.operational.lastError } : {}),
 			}));
 		});
 		for (const entry of reports) {
@@ -3085,7 +3083,6 @@ class SubagentSessionOwner {
 			outcome: "succeeded",
 			path: childAgentPath(this.scopePath(), entry.id),
 			sessionId: entry.sessionId,
-			output: report,
 		}, refs));
 		if (empty) {
 			session.turns.drainLocal();

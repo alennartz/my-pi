@@ -1272,20 +1272,13 @@ export class SubagentManager {
 	}
 
 	private getCompletionReport(): ActiveAgentsCompleteData {
-		const entriesById = new Map(this.entries.map((entry) => [entry.id, entry]));
 		const agents: AgentCompleteData[] = this.opts.registry
 			.listChildren(this.opts.ownerPath)
-			.map((snapshot) => {
-				const entry = entriesById.get(snapshot.localId ?? "");
-				return {
-					id: snapshot.localId ?? "",
-					status: completionStatus(snapshot.operational.state),
-					output: snapshot.operational.lastOutput,
-					error: completionError(snapshot.operational),
-					sessionId: snapshot.sessionId,
-					alreadyNotified: entry?.completionNotified ?? false,
-				};
-			});
+			.map((snapshot) => ({
+				id: snapshot.localId ?? "",
+				status: completionStatus(snapshot.operational.state),
+				sessionId: snapshot.sessionId,
+			}));
 		const usage = this.aggregateUsage();
 		return {
 			agents,
@@ -1334,10 +1327,7 @@ export class SubagentManager {
 		const data: AgentCompleteData = {
 			id: entry.id,
 			status: completionStatus(snapshot.operational.state),
-			output: snapshot.operational.lastOutput,
-			error: completionError(snapshot.operational),
 			sessionId: snapshot.sessionId,
-			alreadyNotified: entry.completionNotified,
 		};
 		const report = serializeAgentTorndown(data);
 
@@ -1603,12 +1593,6 @@ function completionStatus(state: AgentState): AgentCompleteData["status"] {
 	if (state === "errored") return "errored";
 	if (state === "dead") return "dead";
 	return "idle";
-}
-
-function completionError(operational: { state: AgentState; lastError?: string }): string | undefined {
-	if (operational.state === "errored") return operational.lastError || "Child run ended with an error";
-	if (operational.state === "dead") return operational.lastError || "Child runtime became unavailable";
-	return undefined;
 }
 
 function finalAssistantError(messages: unknown): string | undefined {

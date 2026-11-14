@@ -219,6 +219,27 @@ function decodeChildAgent(value: unknown, owner: AgentPath): SubagentDelegatedCh
 	};
 }
 
+function decodeAffectedCore<S extends AwaitState>(value: unknown, owner: AgentPath, isState: (candidate: unknown) => candidate is S): Readonly<{
+	path: AgentPath;
+	sessionId: string;
+	incarnation: string;
+	state: S;
+	usage: SubagentUsage;
+	usageBaseline?: SubagentUsage;
+}> {
+	if (!isPresentationRecord(value)) return { path: presentationPath(owner, value), sessionId: '', incarnation: 'unknown', state: 'idle' as S, usage: decodeUsage(undefined) };
+	const { id, path, state, status, usage, usageBaseline } = value;
+	const candidate = state ?? status;
+	return {
+		path: presentationPath(owner, path ?? id),
+		sessionId: typeof value.sessionId === 'string' ? value.sessionId : '',
+		incarnation: typeof value.incarnation === 'string' ? value.incarnation : 'unknown',
+		state: isState(candidate) ? candidate : 'idle' as S,
+		usage: decodeUsage(usage),
+		...(usageBaseline !== undefined ? { usageBaseline: decodeUsage(usageBaseline) } : {}),
+	};
+}
+
 function decodeAffectedAgent<S extends AwaitState>(value: unknown, owner: AgentPath, isState: (candidate: unknown) => candidate is S): Readonly<{
 	path: AgentPath;
 	sessionId: string;
@@ -229,16 +250,11 @@ function decodeAffectedAgent<S extends AwaitState>(value: unknown, owner: AgentP
 	output?: string;
 	error?: string;
 }> {
-	if (!isPresentationRecord(value)) return { path: presentationPath(owner, value), sessionId: '', incarnation: 'unknown', state: 'idle' as S, usage: decodeUsage(undefined) };
-	const { id, path, state, status, usage, usageBaseline, output, error } = value;
-	const candidate = state ?? status;
+	const core = decodeAffectedCore(value, owner, isState);
+	if (!isPresentationRecord(value)) return core;
+	const { output, error } = value;
 	return {
-		path: presentationPath(owner, path ?? id),
-		sessionId: typeof value.sessionId === 'string' ? value.sessionId : '',
-		incarnation: typeof value.incarnation === 'string' ? value.incarnation : 'unknown',
-		state: isState(candidate) ? candidate : 'idle' as S,
-		usage: decodeUsage(usage),
-		...(usageBaseline !== undefined ? { usageBaseline: decodeUsage(usageBaseline) } : {}),
+		...core,
 		...(typeof output === 'string' ? { output } : {}),
 		...(typeof error === 'string' ? { error } : {}),
 	};
@@ -287,7 +303,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 		const affectedRaw = Array.isArray(source.affectedAgents) ? source.affectedAgents : Array.isArray(source.agents) ? source.agents : [];
 		const result: TeardownFinal['result'] = {
 			status: source.status === 'already_removed' || source.status === 'not_found' ? source.status : 'removed',
-			affectedAgents: affectedRaw.map((agent) => decodeAffectedAgent(agent, owner, isAwaitState)),
+			affectedAgents: affectedRaw.map((agent) => decodeAffectedCore(agent, owner, isAwaitState)),
 		};
 		return { operation: 'teardown', parameters, result };
 	}
