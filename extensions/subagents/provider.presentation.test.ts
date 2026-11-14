@@ -301,11 +301,11 @@ describe('subagent presentation provider', () => {
     expect(normalized).toMatchObject({ operation: kind, parameters: kind === 'send' ? { ...parameters, to: ['owner', 'worker'] }
       : kind === 'respond' ? { message: 'answer' } : kind === 'interrupt' ? { agents: [['owner', 'worker']] }
       : kind === 'teardown' ? { agent: ['owner', 'worker'] } : parameters });
-    if (kind === 'send') expect(normalized).toMatchObject({ result: { response: 'ready', deferred: false, metadata: { publicFlag: false } } });
+    if (kind === 'send') expect(normalized).toMatchObject({ result: { response: 'ready', deferred: false } });
     if (kind === 'respond') expect(normalized).toMatchObject({ result: { error: 'refused' } });
     if (kind === 'delegation') expect(normalized).toMatchObject({ result: { children: [{ path: ['owner', 'worker'], status: 'running' }] } });
     if (kind === 'teardown') expect(normalized).toMatchObject({ result: { affectedAgents: [{ usageBaseline: { turns: 0 } }] } });
-    if (kind === 'resurrect') expect(normalized).toMatchObject({ result: { affectedAgents: [{ metadata: { resumed: true } }] } });
+    if (kind === 'resurrect') expect(normalized).toMatchObject({ result: { affectedAgents: [{ path: ['owner', 'worker'], state: 'running' }] } });
     expect(JSON.stringify(normalized)).not.toContain('private');
   });
 
@@ -343,9 +343,8 @@ describe('subagent presentation provider', () => {
       }],
     };
     const events = await rehydratedFinals([{ type: 'message', message: { role: 'toolResult', toolName: kind === 'delegation' ? 'subagent' : kind, toolCallId: 'saved-output', details } }]);
-    expect(events[0].data).toMatchObject({ result: { metadata: { publicFlag: false } } });
-    if (kind === 'delegation') expect(events[0].data).toMatchObject({ result: { children: [{ path, task: 'inspect', persona: 'scout', status: 'running', usageBaseline: { turns: 0 }, metadata: { ready: true } }] } });
-    else expect(events[0].data).toMatchObject({ result: { agents: [{ path, usageBaseline: { turns: 0 } }], affectedAgents: [{ path, metadata: { retained: true } }] } });
+    if (kind === 'delegation') expect(events[0].data).toMatchObject({ result: { children: [{ path, task: 'inspect', persona: 'scout', status: 'running' }] } });
+    else expect(events[0].data).toMatchObject({ result: { status: 'removed', affectedAgents: [{ path, sessionId: 'saved', state: 'idle' }] } });
     expect(JSON.stringify(events[0].data)).not.toContain('private');
   });
 

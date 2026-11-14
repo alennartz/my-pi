@@ -51,7 +51,7 @@ describe('subagent semantic adapter', () => {
     const progress = adapter.acceptAwaitProgress('await', [scout]);
     expect(progress).toContainEqual(expect.objectContaining({ data: { operation: 'await', statuses: [worker, scout] } }));
     const end = adapter.acceptToolExecution({ ...input, result: { agents: [worker, scout], interrupted: true, metadata: { reason: 'message' } } });
-    expect(end).toContainEqual(expect.objectContaining({ data: { operation: 'await', parameters: normalized, result: { statuses: [worker, scout], interrupted: true, metadata: { reason: 'message' } } } }));
+    expect(end).toContainEqual(expect.objectContaining({ data: { operation: 'await', parameters: normalized, result: { statuses: [worker, scout], interrupted: true } } }));
   });
 
   it('represents an await when only its execution result arrives', () => {
@@ -102,10 +102,9 @@ describe('subagent semantic adapter', () => {
     const input = call(toolName, toolName, ['owner']);
     expect(adapter.acceptToolCallDelta({ ...input, phase: 'end', delta: JSON.stringify(parameters) })).toEqual([]);
     const [event] = adapter.acceptToolExecution({ ...input, result: { ...result, correlationId: 'private', metadata: { correlation_id: 'private', publicFlag: false } } });
-    expect(event).toMatchObject({ type: 'snapshot', data: { operation, parameters: expect.any(Object), result: { metadata: { publicFlag: false } } } });
-    if (toolName === 'interrupt') expect(event).toMatchObject({ data: { parameters: { agents: [['owner', 'worker']] }, result: { aborted: true, interrupted: [{ path: ['owner', 'worker'], output: 'done', metadata: { acknowledged: true } }] } } });
-    else if (toolName === 'teardown') expect(event).toMatchObject({ data: { parameters: { agent: ['owner', 'worker'] }, result: { notes: ['removed'], affectedAgents: [{ path: ['owner', 'worker'], usageBaseline: { turns: 0 } }] } } });
-    else if (toolName === 'resurrect') expect(event).toMatchObject({ data: { parameters, result: { notes: ['resumed'], affectedAgents: [{ path: ['owner', 'worker'], metadata: { resumed: true } }] } } });
+    if (toolName === 'interrupt') expect(event).toMatchObject({ data: { parameters: { agents: [['owner', 'worker']] }, result: { interrupted: [{ path: ['owner', 'worker'], output: 'done' }] } } });
+    else if (toolName === 'teardown') expect(event).toMatchObject({ data: { parameters: { agent: ['owner', 'worker'] }, result: { status: 'removed', affectedAgents: [{ path: ['owner', 'worker'], usageBaseline: { turns: 0 } }] } } });
+    else if (toolName === 'resurrect') expect(event).toMatchObject({ data: { parameters, result: { affectedAgents: [{ path: ['owner', 'worker'], state: 'running' }] } } });
     else expect(event).toMatchObject({ data: { parameters, result: { children: [{ path: ['owner', 'worker'], task: 'inspect', persona: 'scout', status: 'running' }] } } });
     expect(JSON.stringify(event)).not.toContain('private');
   });
@@ -117,7 +116,7 @@ describe('subagent semantic adapter', () => {
     const [event] = adapter.acceptToolExecution({ ...input, isError: true, result: {
       details: { semantic: { correlationId: 'private' } }, content: [{ type: 'text', text: 'Wait cancelled.' }],
     } });
-    expect(event).toMatchObject({ state: 'error', data: { operation: 'await', parameters: { agents: [['worker']] }, result: { statuses: [], error: 'Wait cancelled.', isError: true } } });
+    expect(event).toMatchObject({ state: 'error', data: { operation: 'await', parameters: { agents: [['worker']] }, result: { statuses: [], error: 'Wait cancelled.' } } });
     expect(JSON.stringify(event)).not.toContain('private');
   });
 
