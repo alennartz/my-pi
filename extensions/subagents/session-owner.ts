@@ -11,7 +11,7 @@ import { Type } from "typebox";
 import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
 import { answerActivity } from "@pimote/sdk/activity";
 import { registerProvider } from "@pimote/sdk/subagents";
-import { normalizeSavedPresentationData, savedPresentationKind, type PersistedSubagentContent } from "./presentation-data.js";
+import { normalizeFinalData, normalizeSavedPresentationData, savedPresentationKind, type PersistedSubagentContent } from "./presentation-data.js";
 import {
 	getOrCreateSessionTreeStore,
 	registerSessionTreeStore,
@@ -3120,7 +3120,7 @@ class SubagentSessionOwner {
 	): Promise<SubagentResurrectResult> {
 		const session = this.requireActiveSession();
 		if (session.manager !== manager) throw new Error("Resurrection owner mismatch");
-		await this.resurrectAgents({
+		const params = {
 			agents: [{
 				id: request.localId,
 				sessionId: request.sessionId,
@@ -3128,7 +3128,17 @@ class SubagentSessionOwner {
 				channels: [...request.channels],
 				...(request.model !== undefined ? { model: request.model } : {}),
 			}],
-		}, ctx);
+		};
+		const result = await this.resurrectAgents(params, ctx);
+		const content: PersistedSubagentContent = {
+			operationId: `control-resurrect:${this.semanticEpoch}:${++this.presentationSequence}`,
+			kind: "resurrect",
+			state: "complete",
+			source: "custom_entry",
+			data: normalizeFinalData({ operation: "resurrect", path: this.scopePath(), parameters: params, result: result.structuredContent, toolBacked: true }),
+		};
+		this.pi.appendEntry("subagents", { subagentContent: [content] });
+		this.publishPersistedPresentationContent([content], ctx.sessionManager.getLeafId() ?? undefined);
 		const pathValue = [...request.parentPath, request.localId];
 		const snapshot = session.registry.getSnapshot(pathValue);
 		return {

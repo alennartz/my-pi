@@ -83,7 +83,7 @@ import { createSubagentsExtension, type SubagentScope } from "./scoped-extension
 import { SubagentPresentation } from "./session-owner.js";
 import { createSemanticFactBus } from "./semantic-bus.js";
 import type { SemanticAdapterEvent } from "./semantic-adapter.js";
-import type { SubagentSemanticFact } from "./provider.js";
+import { createSubagentProvider, type SubagentSemanticFact } from "./provider.js";
 import { serializeAgentMessage } from "./messages.js";
 import * as agentDiscovery from "./agents.js";
 import type { AgentPath } from "./agent-path.js";
@@ -309,6 +309,7 @@ function makePi(options: { activeTools?: string[]; registeredTools?: any[] } = {
 		setActiveTools: vi.fn((names: string[]) => { activeTools = names; }),
 		getThinkingLevel: vi.fn(() => "medium"),
 		sendMessage: vi.fn(),
+		appendEntry: vi.fn(),
 	};
 	return { pi, tools, handlers, commands };
 }
@@ -874,6 +875,37 @@ describe("semantic facts on native messages", () => {
 		await execute(root.tools, "subagent", { agents: [{ id: "worker", task: "inspect", channels: [] }] }, ctx);
 		return { ...root, ctx, bus, provider, published, presentation, worker: managed.created[0] };
 	}
+
+	it("records a control resurrection in the parent presentation and restores it", async () => {
+		const root = await rootSession();
+		const first = root.worker.child;
+		fs.mkdirSync(path.dirname(first.sessionFile), { recursive: true });
+		fs.writeFileSync(first.sessionFile, "");
+		await execute(root.tools, "teardown", { agent: "worker" }, root.ctx);
+		const observed: any[] = [];
+		root.provider.subscribe((event: any) => observed.push(event));
+		root.pi.appendEntry.mockImplementation(() => { root.ctx.sessionManager.getLeafId = () => "resurrection-entry"; });
+		await root.provider.resurrect({ parentPath: [], localId: "restored", sessionId: first.sessionId, task: "continue", channels: [] });
+
+		const saved = root.pi.appendEntry.mock.calls.find(([type]) => type === "subagents");
+		expect(saved).toBeDefined();
+		const entry = { type: "custom", id: "resurrection-entry", customType: saved![0], data: saved![1] };
+		expect(observed).toContainEqual(expect.objectContaining({
+			type: "subagent_snapshot_event",
+			target: expect.objectContaining({ kind: "resurrect", path: [], placement: { entryId: entry.id } }),
+			data: expect.objectContaining({ operation: "resurrect", result: expect.objectContaining({ affectedAgents: [expect.objectContaining({ path: ["restored"], sessionId: first.sessionId })] }) }),
+		}));
+
+		const restored = createSubagentProvider({ registry: makeRegistryFake(), ownerControl: {} as any });
+		await restored.rehydrate({ session: { sessionId: "fresh-parent", sessionManager: { getBranch: () => [entry] } } as any, path: [] });
+		const hydrated = restored.replay();
+		expect(hydrated.events).toContainEqual(expect.objectContaining({
+			type: "subagent_snapshot_event",
+			target: expect.objectContaining({ kind: "resurrect", path: [], placement: { entryId: entry.id } }),
+			data: expect.objectContaining({ result: expect.objectContaining({ affectedAgents: [expect.objectContaining({ path: ["restored"], sessionId: first.sessionId })] }) }),
+		}));
+		restored.shutdown();
+	});
 
 	it("delivers native notifications when the same child session resumes", async () => {
 		const childRegistry = makeRegistryFake(["worker"]);
