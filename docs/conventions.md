@@ -10,6 +10,11 @@ Repo working rules for `my-pi`. General rules that hold in every repo (dependenc
 - Agent definitions are Markdown files in `agents/` with YAML frontmatter (name, description, tools, model) and a system prompt body.
 - **Subagents are a local extension** (`extensions/subagents/`), not a built-in pi feature — look there for how they work, not in pi's upstream docs.
 
+## Git hooks
+
+- After installing development dependencies in a checkout, run `npm run hooks:install`.
+- Package installation does not install hooks. The committed `.husky/pre-commit` runs `npm run typecheck`.
+
 ## Cross-repo SDK development
 
 - Use [Local Pimote SDK development](./local-pimote-sdk.md) to link the sibling Pimote SDK during local work. Keep the registry dependency and lockfile unchanged.

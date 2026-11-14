@@ -50,7 +50,7 @@
   "license": "MIT",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "prepare": "husky",
-    "link:pimote-sdk": "node ./scripts/link-pimote-sdk.mjs"
+    "link:pimote-sdk": "node ./scripts/link-pimote-sdk.mjs",
+    "hooks:install": "husky"
   }
 }
