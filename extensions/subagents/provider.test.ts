@@ -101,6 +101,24 @@ function registryFixture(workerSessionFile?: string): {
     workerPath,
     "Confirm session mutation.",
   );
+  const rootSnapshot: AgentNodeSnapshot = {
+    path: [],
+    parentPath: null,
+    localId: null,
+    ownership: "external",
+    incarnation: "root",
+    sessionId: "root-session",
+    cwd: "/workspace",
+    channels: [],
+    operational: {
+      state: "idle",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
+      lastTurnInput: 0,
+      hasSubgroup: true,
+      pendingCorrelations: [],
+      waitingFor: [],
+    },
+  };
   const nodes: AgentRegistryNode[] = [worker, scout];
   const listeners = new Set<(event: RegistryEvent) => void>();
   const emit = (event: RegistryEvent) => {
@@ -109,6 +127,9 @@ function registryFixture(workerSessionFile?: string): {
   const registry = {
     get: vi.fn((path: AgentPath) =>
       nodes.find((item) => samePath(item.snapshot.path, path)),
+    ),
+    getSnapshot: vi.fn((path: AgentPath) =>
+      path.length === 0 ? rootSnapshot : nodes.find((item) => samePath(item.snapshot.path, path))?.snapshot,
     ),
     listDescendants: vi.fn((parent: AgentPath) =>
       nodes
@@ -197,7 +218,8 @@ describe("SubagentProvider snapshot and replay", () => {
     expect(snapshot.nodes.map((node) => node.path)).toEqual(
       expect.arrayContaining([workerPath, scoutPath]),
     );
-    expect(snapshot.nodes.find((node) => samePath(node.path, workerPath))?.contextFill).toBe(25);
+    expect(snapshot.rootCwd).toBe("/workspace");
+    expect(snapshot.nodes.find((node) => samePath(node.path, workerPath))).toMatchObject({ cwd: "/tmp", contextFill: 25 });
   });
 
   it("exposes context fill as an integer percentage within 0–100", () => {

@@ -858,6 +858,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				return false;
 			}
 		})();
+		const cwd = asString(snapshot.cwd);
 		const persona = asString(snapshot.persona);
 		const personaIcon = asString(snapshot.personaIcon);
 		const model = asString(operational.model);
@@ -870,6 +871,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			path: copyPath(snapshot.path),
 			incarnation: identity.incarnation,
 			sessionId: snapshot.sessionId,
+			...(cwd !== undefined ? { cwd } : {}),
 			...(snapshot.task !== undefined ? { task: snapshot.task } : {}),
 			...(persona !== undefined ? { persona } : {}),
 			...(personaIcon !== undefined ? { personaIcon } : {}),
@@ -1354,8 +1356,10 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			cursor: currentCursor(),
 			nodes: Object.freeze(Array.from(liveNodes.values()).map((node) => cloneNode(node))),
 		});
+		const rootCwd = asString(options.registry.getSnapshot?.([])?.cwd);
 		return Object.freeze({
 			...base,
+			...(rootCwd !== undefined ? { rootCwd } : {}),
 			nodes: Object.freeze(base.nodes.map((node) => publicNode(node))),
 			manifest,
 			activeOperations: Object.freeze(Array.from(activeOperations.values()).map((operation) => Object.freeze({
