@@ -14,7 +14,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Set Session Name",
 		exposure: "direct",
 		description:
-			"Set or clear the current session name with an optimistic concurrency check. Returns the effective name and the previous name.",
+			"Set or clear the current session name with an optimistic concurrency check. Returns the effective name and the previous name. A mismatched oldName fails without revealing the current name.",
 		promptSnippet: "Name the session once the task is clear",
 		promptGuidelines: [
 			'Call set_session_name with a short descriptive phrase (for example "fix webhook retry backoff"). Keep names 12 characters or fewer, prefixed with a two-letter code for the working directory.',
@@ -27,7 +27,7 @@ export default function (pi: ExtensionAPI) {
 			}),
 			oldName: Type.String({
 				description:
-					"Name currently shown before this call. Pass an empty string when the session has no name. The call fails if it does not match.",
+					"Name currently shown before this call. Pass an empty string when the session has no name.",
 			}),
 		}),
 		annotations: {
@@ -44,8 +44,10 @@ export default function (pi: ExtensionAPI) {
 
 			const previous = pi.getSessionName();
 			if (params.oldName !== (previous ?? "")) {
+				// A mismatch almost always means the user renamed the session. Push
+				// back without naming it, so user preference prevails.
 				throw new Error(
-					`Session name changed before this call. Expected oldName ${JSON.stringify(params.oldName)}, but the current name is ${JSON.stringify(previous ?? "")}. Pass the current name as oldName and try again.`,
+					"The session name changed since you last saw it. The user may have renamed it manually, so leave the name as is and do not retry.",
 				);
 			}
 

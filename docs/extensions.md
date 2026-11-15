@@ -335,7 +335,8 @@ than files:
   developer debug script at `scripts/pi-resume-debug.ts`.
 - `session-name`: use `set_session_name` with `oldName` set to the current name,
   or `""` when unnamed; names are trimmed, line breaks become spaces, and names
-  are limited to 200 characters.
+  are limited to 200 characters. A mismatched oldName fails without revealing
+  the current name, so a manual rename stands.
 - `print-prompt`: use `/sysprompt` to inspect the last rendered system prompt.
 - `ask-user`: root sessions use `ask_user`.
 - `user-edit`: use `user_edit` to open the built-in editor.
