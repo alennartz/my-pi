@@ -433,15 +433,6 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		}
 	}
 
-	function restoreProviders(ctx: { modelRegistry: ProviderRegistry }): void {
-		const registry = ctx.modelRegistry;
-		const attachedProviders = stateStore(registry);
-		for (const [providerId, state] of attachedProviders) {
-			detachProvider(registry, providerId, state);
-			attachedProviders.delete(providerId);
-		}
-	}
-
 	function restoreStaleProviders(ctx: { modelRegistry: ProviderRegistry }): void {
 		const registry = ctx.modelRegistry;
 		const attachedProviders = stateStore(registry);
@@ -472,7 +463,6 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
-		restoreProviders(ctx);
 		const sessionId = sessionIdOf(ctx.sessionManager);
 		if (!sessionId) return;
 		const store = boundStores.get(sessionId);
