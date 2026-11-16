@@ -112,7 +112,6 @@ The pipeline phase skills are hidden from the model. Only autoflow drives them.
 - **llm-gateway** — registers the `llmgateway` pi provider, refreshes its model catalog, and uses `LLMGATEWAY_API_KEY` for authentication
 - **quota-providers** — attaches quota sources to existing pi providers, with a `/quota` command and status footer. The built-in DevPass source is `extensions/quota-providers/impls/devpass-quota.ts`. Config at `~/.pi/agent/quota-providers.json`.
 - **worktree** — `/worktree` command for git worktree-based branch sessions
-- **session-resume** — detects interrupted sessions and injects resume markers
 - **autoflow-autostart** — opt-in autoflow invocation on the first message of a new session (see above)
 - **session-name** — `set_session_name` tool so the model can name the current session
 - **model-prompt-overlays** — appends `AGENTS.<model>.md` overlays to the system prompt based on the active model

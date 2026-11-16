@@ -141,18 +141,6 @@ Extension that lets a persona file take over a session — a *persona file* is e
 **Files:**
 - `extensions/persona-workspaces/**` — `declaration.ts` (pure `kind: persona` front-matter parsing + strict cwd loader), `host-patch.ts` (self-healing host runtime patch enabling `sections.preamble`: pure exact-string transform + atomic file application), `index.ts` (the `session_start` and `before_agent_start` handlers, tier selection, and the `persona-notice` renderer), `package.json` (pi extension manifest), with colocated tests
 
-### Session Resume
-
-Extension that detects interrupted sessions and injects resume markers so the agent can orient on restart.
-
-**Responsibilities:** idle-state tracking on agent_end, resume detection on session_start, session-resume debug tooling
-
-**Dependencies:** none (standalone extension loaded by pi)
-
-**Files:**
-- `extensions/session-resume/**`
-- `scripts/pi-resume-debug.ts`
-
 ### Session Name
 
 Extension that provides a `set_session_name` LLM tool — lets the model name (or clear) the current session's display name, the same `session_info` mechanism behind `/name` and the session-selector rename. The name shows in session lists and resume pickers. Each session names itself: a subagent's call names its own child session (overriding its agent-path-derived name), never the parent's.

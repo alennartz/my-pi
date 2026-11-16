@@ -888,10 +888,10 @@ export class SubagentManager {
 		const node = this.opts.registry.get(entry.path);
 		if (!node || !isRegisteredAgentNode(node)) return;
 		// Every child can have a startup continuation in flight when its session
-		// binds (for example, session-resume's automatic continuation). Queue the
-		// task behind that turn instead of treating the expected busy preflight as
-		// a runtime failure. The child's lifecycle events remain authoritative for
-		// status while that continuation runs.
+		// binds (for example, a continuation another session-start handler
+		// triggers). Queue the task behind that turn instead of treating the
+		// expected busy preflight as a runtime failure. The child's lifecycle
+		// events remain authoritative for status while that continuation runs.
 		const streamingBehavior = "followUp" as const;
 		entry.pendingTerminalError = undefined;
 		const submission = node.session.submit(`Task: ${entry.task}`, streamingBehavior);

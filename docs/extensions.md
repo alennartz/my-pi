@@ -36,7 +36,7 @@ extension says so.
 | Prompt template creator | `/nprompt <name>` | Project-local `.pi/prompts/<name>.md` |
 
 The remaining extensions have no configuration file. They expose behavior or
-commands: `worktree`, `session-resume`, `session-name`, `print-prompt`,
+commands: `worktree`, `session-name`, `print-prompt`,
 `ask-user`, `user-edit`, `new-prompt`, and the core `subagents` orchestration tools.
 
 ## Autoflow autostart
@@ -331,8 +331,6 @@ than files:
   idle-reap activity response remain available, while subagent panel cards are
   not used.
 - `worktree`: use `/worktree` with `create`, `resume`, or `cleanup` arguments.
-- `session-resume`: detects interrupted sessions automatically. It has a
-  developer debug script at `scripts/pi-resume-debug.ts`.
 - `session-name`: use `set_session_name` with `oldName` set to the current name,
   or `""` when unnamed; names are trimmed, line breaks become spaces, and names
   are limited to 200 characters. A mismatched oldName fails without revealing
