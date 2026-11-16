@@ -264,7 +264,8 @@ export async function showAskUser(
 	// footer row (bottom margin 1). Content taller than maxHeight is still
 	// clipped (from the bottom — the title and options survive), but only
 	// beyond 80% of the terminal — the dialog is bounded to ≤9 options and a
-	// ≤160-char title.
+	// ≤160-char title. `blocked` tells the terminal pi waits on the user (program
+	// status OSC 7501); pi's own dialogs report it for the same reason.
 	const customResult = await ctx.ui.custom<AskUserResult | null | undefined>(
 		(tui, theme, _kb, done) => {
 			const component = new AskUserComponent(tui, theme, title, options, done);
@@ -278,6 +279,7 @@ export async function showAskUser(
 				anchor: "bottom-center",
 				margin: { bottom: 1 },
 			},
+			blocked: { kind: "question", message: title },
 		},
 	);
 

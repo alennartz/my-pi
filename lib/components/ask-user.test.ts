@@ -31,6 +31,7 @@ describe("showAskUser", () => {
 				anchor: "bottom-center",
 				margin: { bottom: 1 },
 			},
+			blocked: { kind: "question", message: "pick one" },
 		});
 	});
 
