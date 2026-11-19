@@ -21,11 +21,25 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+	checkWorkspaceGit,
+	checkWorkspaceRows,
+	createGitProbe,
+	parseWorkspaceRows,
+	type GitProbe,
+	type Result,
+} from "./workspace.ts";
 
-interface Result {
-	passed: boolean;
-	detail: string;
-}
+const checkedPhases = new Set([
+	"test-write",
+	"test-review",
+	"impl-plan",
+	"implement",
+	"review",
+	"handle-review",
+	"manual-test",
+	"cleanup",
+]);
 
 const mockCheckedPhases = new Set([
 	"test-write",
@@ -111,11 +125,26 @@ function checkInteractionMocks(planPath: string, topic: string, cwd: string): Re
 	return null;
 }
 
-export function checkTransitionArtifact(phase: string, topic: string, cwd: string): Result | null {
+export function checkTransitionArtifact(
+	phase: string,
+	topic: string,
+	cwd: string,
+	probe: GitProbe = createGitProbe(),
+): Result | null {
 	const planPath = join(cwd, "docs/plans", `${topic}.md`);
 	const reviewPath = join(cwd, "docs/reviews", `${topic}.md`);
 	const testReviewPath = join(cwd, "docs/reviews", `${topic}-tests.md`);
 	const manualTestPath = join(cwd, "docs/manual-tests", `${topic}.md`);
+
+	if (checkedPhases.has(phase) && existsSync(planPath)) {
+		const rows = parseWorkspaceRows(readFileSync(planPath, "utf-8"));
+		const shapeCheck = checkWorkspaceRows(rows);
+		if (shapeCheck && !shapeCheck.passed) return shapeCheck;
+		if (rows !== null && typeof rows !== "string") {
+			const gitCheck = checkWorkspaceGit(rows, probe);
+			if (!gitCheck.passed) return gitCheck;
+		}
+	}
 
 	if (mockCheckedPhases.has(phase)) {
 		const mockCheck = checkInteractionMocks(planPath, topic, cwd);
@@ -248,21 +277,39 @@ const invokedAsScript =
 	process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (invokedAsScript) {
-	const USAGE = `Usage: npx tsx skills/autoflow/check-transition.ts <phase> <topic>
+	const USAGE = `Usage: npx tsx <path to check-transition.ts> <phase> <topic> [--root <dir>]
 
 Exit codes: 0 passed, 1 failed, 2 usage error / unknown phase.
 
 Phases: test-write, test-review, impl-plan, implement, review, handle-review, manual-test, cleanup.
 (brainstorm and architect are interactive — no check.)`;
 
-	const [, , phase, topic, ...extra] = process.argv;
+	const args = process.argv.slice(2);
+	const positional: string[] = [];
+	let root = process.cwd();
+
+	for (let index = 0; index < args.length; index += 1) {
+		if (args[index] === "--root") {
+			const value = args[index + 1];
+			if (!value) {
+				console.error(USAGE);
+				process.exit(2);
+			}
+			root = value;
+			index += 1;
+			continue;
+		}
+		positional.push(args[index]);
+	}
+
+	const [phase, topic, ...extra] = positional;
 
 	if (!phase || !topic || extra.length > 0) {
 		console.error(USAGE);
 		process.exit(2);
 	}
 
-	const result = checkTransitionArtifact(phase, topic, process.cwd());
+	const result = checkTransitionArtifact(phase, topic, root);
 
 	if (result === null) {
 		console.error(`No transition check defined for phase: ${phase}`);
