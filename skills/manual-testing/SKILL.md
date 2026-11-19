@@ -6,6 +6,10 @@ disable-model-invocation: true
 
 # Manual Testing
 
+## Multi-Repo Workspaces
+
+If a top-level child of this workspace carries `.git`, read `../autoflow/HUB.md` before the first step and follow its obligations for this phase.
+
 ## Overview
 
 Close the outer loop. Automated tests check component contracts; this skill exercises the thing that was built the way its user will — clicking the UI, invoking the CLI, hitting the endpoint, running the flow end-to-end — and fixes what breaks.

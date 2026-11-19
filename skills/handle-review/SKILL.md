@@ -6,6 +6,10 @@ disable-model-invocation: true
 
 # Handle Review
 
+## Multi-Repo Workspaces
+
+If a top-level child of this workspace carries `.git`, read `../autoflow/HUB.md` before the first step and follow its obligations for this phase.
+
 ## Overview
 
 Take a review file and resolve its findings. Fix everything where both the diagnosis and the fix are unambiguous. Escalate the rest to the user. Do all confident fixes first, then present ambiguous findings as a batch.

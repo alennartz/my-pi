@@ -14,6 +14,10 @@ disable-model-invocation: true
 > compile). **If, at the end of this phase, any new test passes, you have failed the
 > phase** — you wrote implementation that must not exist yet. See the Red Gate (step 2.5).
 
+## Multi-Repo Workspaces
+
+If a top-level child of this workspace carries `.git`, read `../autoflow/HUB.md` before the first step and follow its obligations for this phase.
+
 ## Overview
 
 Turn architecture interfaces into real code and write behavioral tests against them — before any implementation exists. Read the architecture's Interfaces subsection, materialize the type definitions and contracts as committed code, then write component-level tests that exercise those interfaces.

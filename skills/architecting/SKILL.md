@@ -6,6 +6,10 @@ disable-model-invocation: true
 
 # Architecting
 
+## Multi-Repo Workspaces
+
+If a top-level child of this workspace carries `.git`, read `../autoflow/HUB.md` before the first step and follow its obligations for this phase.
+
 ## Overview
 
 Turn a direction into a technical shape. Read the codemap, dive into the relevant code, and make architectural decisions through conversation with the user — one decision at a time, grounded in what the codebase actually looks like today.

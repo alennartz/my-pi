@@ -14,6 +14,26 @@ disable-model-invocation: true
 
 Drive the full development workflow pipeline — brainstorm through cleanup — with minimal human intervention. The first two phases (brainstorm, architect) are interactive: you run them directly in conversation with the user. All subsequent phases run autonomously via subagents, with the primary agent orchestrating transitions, validating artifacts, and escalating only when necessary.
 
+## Workspace Shape
+
+Prove the workspace shape once, before brainstorm. List the child repositories at the top level:
+
+```
+find . -maxdepth 1 -mindepth 1 ! -name node_modules ! -name .git \
+  ! -name dist ! -name build ! -name target ! -name .venv \
+  -exec test -e {}/.git \; -print
+```
+
+Output means a multi-repo workspace. So does a `.pimote-hub.json` file, or `pimote:members (managed block)` inside `AGENTS.md`. Prose that calls the project multi-repo is not proof.
+
+**Single-repo workspace:** run every phase below as written. Add nothing to any task string and read no hub document.
+
+**Multi-repo workspace:** resolve this skill's own directory and read its `HUB.md` before brainstorm. Keep its absolute path. Add this line to every phase task string:
+
+```
+Workspace: multi-repo. Read <absolute path to HUB.md> and follow its obligations for this phase. Pass its path to every subagent you spawn.
+```
+
 ## Locating Sibling Phase Skills
 
 Every phase skill this workflow drives (`brainstorming`, `architecting`, `test-writing`, `test-review`, `impl-planning`, `implementing`, `code-review`, `handle-review`, `manual-testing`, `cleanup`) is flagged `disable-model-invocation: true`. In order to invoke them resolve them as follows:
@@ -130,15 +150,17 @@ If an `<agent_message>` interrupt arrives with `response_expected="true"`:
 
 After each subagent goes idle, validate the expected artifact before proceeding.
 
-**To validate:** run the bundled check script via the `bash` tool, from the repo root:
+**To validate:** run the bundled check script via the `bash` tool, from the artifact root (the cwd), resolving the script from this skill's own directory:
 
 ```
-npx tsx skills/autoflow/check-transition.ts <phase> <topic>
+npx tsx <absolute path to this skill's directory>/check-transition.ts <phase> <topic>
 ```
+
+Pass `--root <dir>` when the artifact root is not the cwd.
 
 The script prints `PASS [<phase>] <detail>` or `FAIL [<phase>] <detail>` and exits 0 on pass, 1 on fail, 2 on usage error / unknown phase.
 
-It covers these phases: `test-write`, `test-review`, `impl-plan`, `implement`, `review`, `handle-review`, `manual-test`, `cleanup`. (brainstorm and architect are interactive and have no check.) For the full predicate list, see `skills/autoflow/check-transition.ts`.
+It covers these phases: `test-write`, `test-review`, `impl-plan`, `implement`, `review`, `handle-review`, `manual-test`, `cleanup`. (brainstorm and architect are interactive and have no check.) For the full predicate list, see `check-transition.ts` beside this skill.
 
 When the plan contains `### Interaction Mocks`, the transition check validates every listed HTML path before accepting downstream phases. The cleanup check also rejects a leftover `docs/mocks/<topic>/` directory. Plans without that section have no mock requirement.
 

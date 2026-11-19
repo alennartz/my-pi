@@ -6,6 +6,10 @@ disable-model-invocation: true
 
 # Code Review
 
+## Multi-Repo Workspaces
+
+If a top-level child of this workspace carries `.git`, read `../autoflow/HUB.md` before the first step and follow its obligations for this phase.
+
 ## Overview
 
 Review what was built against what was planned. Read the plan, read the diff, and produce a findings report. Two passes: first check that the plan was faithfully implemented, then check that the code itself is sound.

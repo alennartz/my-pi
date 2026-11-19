@@ -6,6 +6,10 @@ disable-model-invocation: true
 
 # Cleanup
 
+## Multi-Repo Workspaces
+
+If a top-level child of this workspace carries `.git`, read `../autoflow/HUB.md` before the first step and follow its obligations for this phase.
+
 ## Overview
 
 Close out a completed workflow pipeline. Extract lasting value from the working artifacts before deleting them, refresh the codemap, and make sure user-facing documentation still reflects reality.

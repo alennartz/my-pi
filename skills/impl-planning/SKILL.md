@@ -6,6 +6,10 @@ disable-model-invocation: true
 
 # Implementation Planning
 
+## Multi-Repo Workspaces
+
+If a top-level child of this workspace carries `.git`, read `../autoflow/HUB.md` before the first step and follow its obligations for this phase.
+
 ## Overview
 
 Take the architecture in `docs/plans/<topic>.md` and produce concrete, ordered implementation steps. Read the codemap, read the architecture, read the tests, dive into the relevant code, then write steps specific enough to act on without ambiguity.

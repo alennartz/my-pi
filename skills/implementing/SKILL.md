@@ -6,6 +6,10 @@ disable-model-invocation: true
 
 # Implementing
 
+## Multi-Repo Workspaces
+
+If a top-level child of this workspace carries `.git`, read `../autoflow/HUB.md` before the first step and follow its obligations for this phase.
+
 ## Overview
 
 Take a fully planned `docs/plans/<topic>.md` and execute it. For small plans, work through the steps sequentially yourself. For larger plans, become a phase-level orchestrator: group work by module, spawn workers with inter-agent channels, and manage plan status and commits while workers write the code.
