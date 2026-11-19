@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { renderAgentDefinitions, resolvePersonaSkillPaths, type AgentConfig } from "./agents.js";
+import { parseAgentConfig, renderAgentDefinitions, resolvePersonaSkillPaths, type AgentConfig } from "./agents.js";
 
 function agent(overrides: Partial<AgentConfig> = {}): AgentConfig {
 	return {
@@ -27,6 +27,24 @@ describe("shipped agent definitions", () => {
 			model: "cheap",
 		});
 	});
+
+	it("marks each sicko as an explicitly requested audit", () => {
+		for (const name of ["comment-sicko", "spaghetti-sicko", "test-sicko", "documentation-sicko"]) {
+			const content = fs.readFileSync(new URL(`../../agents/${name}.md`, import.meta.url), "utf8");
+			const { frontmatter } = parseFrontmatter<Record<string, string>>(content);
+			expect(frontmatter).toMatchObject({ name, invocation: "explicit" });
+		}
+	});
+});
+
+describe("parseAgentConfig", () => {
+	it("preserves explicit invocation as opt-in metadata", () => {
+		expect(parseAgentConfig(
+			"---\nname: test-sicko\ndescription: Audit tests\ninvocation: explicit\n---\nAudit only.",
+			"package:user",
+			"/agents/test-sicko.md",
+		)).toMatchObject({ invocation: "explicit" });
+	});
 });
 
 describe("renderAgentDefinitions", () => {
@@ -51,6 +69,12 @@ describe("renderAgentDefinitions", () => {
 			}),
 		])).toContain(
 			'  <agent name="reviewer &quot;strict&quot;" source="package:user">Check &lt;files&gt; &amp; report &apos;findings&apos;</agent>',
+		);
+	});
+
+	it("marks explicitly requested personas in the rendered metadata", () => {
+		expect(renderAgentDefinitions([agent({ invocation: "explicit" })])).toContain(
+			'<agent name="scout" source="user" invocation="explicit">Locate code</agent>',
 		);
 	});
 });

@@ -83,10 +83,16 @@ The `subagents` extension provides long-lived subagent orchestration. Its tools 
 
 Subagent calls and agent definitions accept model tier names (`cheap`, `medium`, `smart`, `frontier`). Map tiers to model IDs in `~/.pi/agent/model-tiers.json`, or `.pi/model-tiers.json` for a single project.
 
-Two agent definitions ship with the package:
+Five agent definitions ship with the package:
 
 - `scout` — read-only codebase search
-- `comment-sicko` — a reviewer that savors deleting comments and condemns workaround code
+- `comment-sicko` — opt-in audit for unnecessary comments and workaround code
+- `spaghetti-sicko` — opt-in audit for control-flow knots and coupling
+- `test-sicko` — opt-in audit for brittle or redundant tests
+- `documentation-sicko` — opt-in audit for stale or duplicated documentation
+
+The sicko personas require an explicit request for their narrow audit. Generic
+reviews use a general-purpose subagent.
 
 ### Skills
 

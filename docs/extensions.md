@@ -31,7 +31,7 @@ extension says so.
 | Quota attachments | `~/.pi/agent/quota-providers.json` | Provider IDs, usage-source modules, and quota policy fields |
 | Workspace personas | `<cwd>/AGENTS.md` | `kind`, `name`, `icon`, `description`, `tools`, `model`, `skills`, body |
 | Model prompt overlays | `AGENTS.<model>.md` files | `models` front matter and Markdown body |
-| Subagent definitions | `~/.pi/agent/agents`, `.pi/agents`, package `pi.agents` | `name`, `description`, `icon`, `tools`, `model`, `skills`, body |
+| Subagent definitions | `~/.pi/agent/agents`, `.pi/agents`, package `pi.agents` | `name`, `description`, `icon`, `invocation`, `tools`, `model`, `skills`, body |
 | Web tools | Environment and cache location | `BRAVE_API_KEY`, `PI_CODING_AGENT_DIR` |
 | Prompt template creator | `/nprompt <name>` | Project-local `.pi/prompts/<name>.md` |
 
@@ -278,8 +278,11 @@ skills: codemap
 You investigate the repository and report relevant files.
 ```
 
-Optional fields are `icon`, `tools`, `model`, and `skills`. `icon` is flat text
-for persona presentation and must not contain markup. Each list is
+Optional fields are `icon`, `invocation`, `tools`, `model`, and `skills`.
+`icon` is flat text for persona presentation and must not contain markup. Set
+`invocation: explicit` for a persona that requires an explicit user request for
+its narrow specialty or audit. The orchestrator must not select an explicitly
+marked persona for a generic task that only resembles its scope. Each list is
 comma-separated. The body is the specialist system prompt.
 
 Definitions can come from:
@@ -289,7 +292,10 @@ Definitions can come from:
 - package resources declared by `pi.agents`
 
 More-local definitions with the same `name` replace less-local definitions.
-This package contributes `agents/scout.md`, `agents/comment-sicko.md`, `agents/spaghetti-sicko.md`, and `agents/test-sicko.md`.
+This package contributes `agents/scout.md`, `agents/comment-sicko.md`,
+`agents/spaghetti-sicko.md`, `agents/test-sicko.md`, and
+`agents/documentation-sicko.md`. The four sicko personas are explicitly
+requested auditors, not general-purpose reviewers.
 
 ## Web tools
 

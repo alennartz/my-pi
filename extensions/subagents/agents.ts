@@ -108,6 +108,8 @@ export interface AgentConfig {
 	description: string;
 	/** Optional flat icon text from agent-definition front matter. */
 	icon?: string;
+	/** Mark the persona as opt-in for explicitly requested specialist work. */
+	invocation?: "explicit";
 	tools?: string[];
 	skills?: string[];
 	model?: string;
@@ -201,9 +203,11 @@ export function parseAgentConfig(
 		.map((s: string) => s.trim())
 		.filter(Boolean);
 	const persona = projectPersonaMetadata({ name: frontmatter.name, icon: frontmatter.icon });
+	const invocation = frontmatter.invocation === "explicit" ? "explicit" : undefined;
 
 	return {
 		...persona,
+		...(invocation === undefined ? {} : { invocation }),
 		description: frontmatter.description,
 		tools: tools && tools.length > 0 ? tools : undefined,
 		skills: skills && skills.length > 0 ? skills : undefined,
@@ -376,8 +380,9 @@ function escapeXml(value: string): string {
 export function renderAgentDefinitions(agents: AgentConfig[]): string {
 	const lines = ["<available_agent_definitions>"];
 	for (const agent of agents) {
+		const invocation = agent.invocation === "explicit" ? ' invocation="explicit"' : "";
 		lines.push(
-			`  <agent name="${escapeXml(agent.name)}" source="${escapeXml(agent.source)}">${escapeXml(agent.description)}</agent>`,
+			`  <agent name="${escapeXml(agent.name)}" source="${escapeXml(agent.source)}"${invocation}>${escapeXml(agent.description)}</agent>`,
 		);
 	}
 	lines.push("</available_agent_definitions>");

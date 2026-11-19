@@ -1751,6 +1751,7 @@ describe("root orchestration integration", () => {
 		expect(section).not.toContain("## Available Agent Definitions");
 		expect(section).toContain("Leave `agents[].model` unspecified by default");
 		expect(section).toContain("prefer its name in the `persona` field");
+		expect(section).toContain('A persona marked `invocation="explicit"` is opt-in');
 		expect(section).toContain("| Tier | Use when |");
 		expect(section).toContain("optional guidance");
 		expect(section).not.toContain("Choose a tier");

@@ -4,7 +4,7 @@ Read this reference when an explicit model or specialist persona is under consid
 
 ## Persona precedence
 
-Prefer a matching specialist persona when one is available. Pass its name in `persona`. Use a default general-purpose agent when no matching specialist fits. A persona's model pin wins over an explicit `model` argument. An explicit model fills the gap only when the active persona declares no model.
+Prefer a matching specialist persona when one is available, unless its definition is marked `invocation: explicit`. Pass the chosen name in `persona`. Use an explicitly marked persona only when the user requests its narrow specialty or audit. A generic review does not authorize an opt-in persona. Use a default general-purpose agent when no suitable non-opt-in specialist fits. A persona's model pin wins over an explicit `model` argument. An explicit model fills the gap only when the active persona declares no model.
 
 For reusable persona definitions, read [specialist-design](../specialist-design/SKILL.md).
 

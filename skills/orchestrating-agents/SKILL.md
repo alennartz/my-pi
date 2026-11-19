@@ -55,7 +55,7 @@ After selecting a shape, read only that shape's section in [PATTERNS.md](PATTERN
 
 Start with the smallest topology. The parent is always available, so declare peer channels only for real lateral communication.
 
-Leave `agents[].model` unset unless a deliberate model choice helps. Read [MODEL-SELECTION.md](MODEL-SELECTION.md) before choosing an explicit model or persona. Read [ADVANCED.md](ADVANCED.md) before setting `cwd`, retaining agents across turns, tearing down or resurrecting them, or letting a child spawn descendants.
+Leave `agents[].model` unset unless a deliberate model choice helps. Read [MODEL-SELECTION.md](MODEL-SELECTION.md) before choosing an explicit model or persona. A persona marked `invocation: explicit` is opt-in: use it only when the user explicitly requests its narrow specialty or audit, never for a generic review. Read [ADVANCED.md](ADVANCED.md) before setting `cwd`, retaining agents across turns, tearing down or resurrecting them, or letting a child spawn descendants.
 
 **Complete when:** the pattern, channels, model choices, cwd choices, and lifecycle plan are explicit.
 

@@ -128,6 +128,7 @@ Long-lived in-process subagent orchestration extension — creates and manages S
 - `agents/comment-sicko.md`
 - `agents/spaghetti-sicko.md`
 - `agents/test-sicko.md`
+- `agents/documentation-sicko.md`
 
 ### Persona Workspaces
 
