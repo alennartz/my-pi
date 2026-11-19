@@ -42,14 +42,17 @@ sequenceDiagram
 
 The ten workflow skills and the autoflow orchestration skill that drives them. Autoflow is invoked via the `/skill:autoflow` skill command (or automatically on a new session's first message via the Autoflow Autostart extension); the skills define each phase's behavior and autonomous pipeline execution. A bundled transition-check script (`skills/autoflow/check-transition.ts`) validates phase artifacts between subagent handoffs.
 
-**Responsibilities:** pipeline phase routing, artifact-driven handoffs, context boundary management, autonomous pipeline orchestration, autonomous phase transition validation, brainstorming facilitation, architectural decision-making (with high-fidelity, CSS-styled interactive HTML mocks for UI work that match existing UIs closely, listed in the plan's handoff manifest, consumed by downstream phases, and deleted at cleanup), test writing, test review, implementation planning, dual-mode implementation execution, plan-based code review, review finding resolution, human-style manual testing with a persistent smoke suite, post-workflow cleanup with DR extraction
+**Responsibilities:** pipeline phase routing, artifact-driven handoffs, context boundary management, autonomous pipeline orchestration, autonomous phase transition validation, multi-repo workspace support (the workspace shape is proven once, and only a multi-repo run loads the disclosed hub contract that supplies per-repository baselines, commits, working directories, and the branch precondition), brainstorming facilitation, architectural decision-making (with high-fidelity, CSS-styled interactive HTML mocks for UI work that match existing UIs closely, listed in the plan's handoff manifest, consumed by downstream phases, and deleted at cleanup), test writing, test review, implementation planning, dual-mode implementation execution, plan-based code review, review finding resolution, human-style manual testing with a persistent smoke suite, post-workflow cleanup with DR extraction
 
 **Dependencies:** Skills (decision-records skill delegated from cleanup; autoflow orchestrates the pipeline from brainstorm through cleanup), Subagents (workflow skills delegate to subagents at runtime — scout investigation in architecting/impl-planning, worker orchestration in implementing, parallel fan-out in code review, autonomous phase execution in autoflow)
 
 **Files:**
 - `skills/autoflow/SKILL.md`
+- `skills/autoflow/HUB.md` — the multi-repo contract, disclosed behind a context pointer and read only when the workspace holds more than one repository
+- `skills/autoflow/workspace.ts` — pure `## Workspace` row parsing plus base-commit and detached-`HEAD` reachability predicates over an injected Git probe
 - `skills/autoflow/check-transition.ts`
 - `skills/autoflow/check-transition.test.ts`
+- `skills/autoflow/workspace.test.ts`
 - `skills/brainstorming/SKILL.md`
 - `skills/architecting/SKILL.md`
 - `skills/test-writing/SKILL.md`
