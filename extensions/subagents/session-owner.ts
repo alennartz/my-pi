@@ -3071,6 +3071,9 @@ class SubagentSessionOwner {
 				incarnation: snapshot.incarnation,
 				state: snapshot.operational.state,
 				usage: snapshot.operational.usage,
+				...(snapshot.task !== undefined ? { task: snapshot.task } : {}),
+				channels: [...snapshot.channels],
+				...(snapshot.operational.model !== undefined ? { model: snapshot.operational.model } : {}),
 			}));
 		});
 		for (const entry of reports) {
@@ -3162,9 +3165,22 @@ class SubagentSessionOwner {
 		manager: SubagentManager,
 		input: { localId: string; incarnation: string },
 	): Promise<SubagentTeardownResult> {
+		const pathValue = childAgentPath(this.scopePath(), input.localId);
+		const removed = this.requireActiveSession().registry.getSnapshot(pathValue);
 		const result = await manager.teardownGuarded(input.localId, input.incarnation);
 		if (!result.removed) return result;
-		const pathValue = childAgentPath(this.scopePath(), input.localId);
+		const affectedAgent = removed
+			? {
+				path: [...removed.path],
+				sessionId: removed.sessionId,
+				incarnation: removed.incarnation,
+				state: removed.operational.state,
+				usage: removed.operational.usage,
+				...(removed.task !== undefined ? { task: removed.task } : {}),
+				channels: [...removed.channels],
+				...(removed.operational.model !== undefined ? { model: removed.operational.model } : {}),
+			}
+			: undefined;
 		const content: PersistedSubagentContent = {
 			operationId: `control-teardown:${this.semanticEpoch}:${++this.presentationSequence}`,
 			kind: "teardown",
@@ -3180,6 +3196,7 @@ class SubagentSessionOwner {
 					incarnation: result.incarnation,
 					outcome: "succeeded",
 					source: "user",
+					...(affectedAgent ? { affectedAgents: [affectedAgent] } : {}),
 				},
 				toolBacked: true,
 			}),

@@ -938,6 +938,15 @@ describe("semantic facts on native messages", () => {
 		expect(message.content).toContain("worker");
 		const persisted = message.details.subagentContent.find((candidate: any) => candidate.kind === "teardown");
 		expect(persisted).toMatchObject({ state: "complete", source: "custom_entry" });
+		expect(persisted.data.result.affectedAgents).toEqual([
+			expect.objectContaining({
+				path: ["worker"],
+				sessionId: snapshot.sessionId,
+				task: snapshot.task,
+				channels: [...snapshot.channels],
+				...(snapshot.model !== undefined ? { model: snapshot.model } : {}),
+			}),
+		]);
 		expect(observed).toContainEqual(expect.objectContaining({
 			type: "subagent_snapshot_event",
 			target: expect.objectContaining({ kind: "teardown", path: [] }),

@@ -192,6 +192,9 @@ export type TeardownAffectedAgentData = {
 	incarnation: string;
 	state: AgentState;
 	usage: AgentUsage;
+	task?: string;
+	channels?: string[];
+	model?: string;
 }
 
 export type TeardownResultData = {
@@ -254,6 +257,9 @@ const TeardownAffectedAgentSchema = Type.Object({
 		Type.Literal("dead"),
 	]),
 	usage: UsageSchema,
+	task: Type.Optional(Type.String()),
+	channels: Type.Optional(Type.Array(Type.String())),
+	model: Type.Optional(Type.String()),
 });
 
 export const TeardownResultSchema = Type.Object({

@@ -335,7 +335,7 @@ describe('subagent presentation provider', () => {
     const path = ['owner', 'worker'];
     const details = {
       agents: [{ id: 'worker', status: 'running', usageBaseline: { turns: 0 }, metadata: { ready: true } }],
-      ...(kind === 'teardown' ? { affectedAgents: [{ path, sessionId: 'saved', state: 'idle', metadata: { retained: true } }] } : {}),
+      ...(kind === 'teardown' ? { affectedAgents: [{ path, sessionId: 'saved', state: 'idle', task: 'Continue the review', channels: ['parent', 'scout'], model: 'provider/model', metadata: { retained: true } }] } : {}),
       metadata: { publicFlag: false, correlation_id: 'private' },
       subagentContent: [{ operationId: 'saved-output', kind, source: 'tool', state: 'complete', placement: { toolCallId: 'saved-output', contentIndex: 0 },
         data: kind === 'delegation' ? { operation: kind, children: [{ path, task: 'inspect', persona: 'scout' }] }
@@ -344,7 +344,7 @@ describe('subagent presentation provider', () => {
     };
     const events = await rehydratedFinals([{ type: 'message', message: { role: 'toolResult', toolName: kind === 'delegation' ? 'subagent' : kind, toolCallId: 'saved-output', details } }]);
     if (kind === 'delegation') expect(events[0].data).toMatchObject({ result: { children: [{ path, task: 'inspect', persona: 'scout', status: 'running' }] } });
-    else expect(events[0].data).toMatchObject({ result: { status: 'removed', affectedAgents: [{ path, sessionId: 'saved', state: 'idle' }] } });
+    else expect(events[0].data).toMatchObject({ result: { status: 'removed', affectedAgents: [{ path, sessionId: 'saved', state: 'idle', task: 'Continue the review', channels: ['parent', 'scout'], model: 'provider/model' }] } });
     expect(JSON.stringify(events[0].data)).not.toContain('private');
   });
 

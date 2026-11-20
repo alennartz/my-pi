@@ -225,10 +225,13 @@ function decodeAffectedCore<S extends AwaitState>(value: unknown, owner: AgentPa
 	incarnation: string;
 	state: S;
 	usage: SubagentUsage;
+	task?: string;
+	channels?: readonly string[];
+	model?: string;
 	usageBaseline?: SubagentUsage;
 }> {
 	if (!isPresentationRecord(value)) return { path: presentationPath(owner, value), sessionId: '', incarnation: 'unknown', state: 'idle' as S, usage: decodeUsage(undefined) };
-	const { id, path, state, status, usage, usageBaseline } = value;
+	const { id, path, state, status, usage, usageBaseline, task, channels, model } = value;
 	const candidate = state ?? status;
 	return {
 		path: presentationPath(owner, path ?? id),
@@ -236,6 +239,9 @@ function decodeAffectedCore<S extends AwaitState>(value: unknown, owner: AgentPa
 		incarnation: typeof value.incarnation === 'string' ? value.incarnation : 'unknown',
 		state: isState(candidate) ? candidate : 'idle' as S,
 		usage: decodeUsage(usage),
+		...(typeof task === 'string' ? { task } : {}),
+		...(Array.isArray(channels) ? { channels: channels.filter((channel): channel is string => typeof channel === 'string') } : {}),
+		...(typeof model === 'string' ? { model } : {}),
 		...(usageBaseline !== undefined ? { usageBaseline: decodeUsage(usageBaseline) } : {}),
 	};
 }
