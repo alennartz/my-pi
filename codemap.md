@@ -307,11 +307,12 @@ Canonical extension and configuration reference, including LLM Gateway provider 
 
 Slash-command prompts distributed with the package.
 
-**Responsibilities:** `goal` pursues a user-stated outcome by inferring an evidence-backed operating contract, asking only blocking questions, and iterating until complete or blocked; `tidy` runs repo tidying; `resolve-conflicts` works an in-progress merge/rebase conflict by intent; `experiment` runs a goal-driven experiment campaign (candidate queue, single-variable A/B trials with baseline and keep-or-revert, living experiment log); `sickos` runs Comment, Spaghetti, and Test Sicko reviews concurrently with an optional shared scope override.
+**Responsibilities:** `goal` pursues a user-stated outcome by inferring an evidence-backed operating contract, asking only blocking questions, and iterating until complete or blocked; `tidy` runs repo tidying; `resolve-conflicts` works an in-progress merge/rebase conflict by intent; `experiment` runs a goal-driven experiment campaign (candidate queue, single-variable A/B trials with baseline and keep-or-revert, living experiment log); `sickos` runs Comment, Spaghetti, and Test Sicko reviews concurrently with an optional shared scope override; `feature` guides feature work from problem exploration through cleanup.
 
 **Dependencies:** none.
 
 **Files:**
+- `prompts/feature.md`
 - `prompts/goal.md`
 - `prompts/tidy.md`
 - `prompts/resolve-conflicts.md`
