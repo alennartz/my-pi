@@ -23,11 +23,14 @@ export interface AgentCompleteData {
 	output?: string;
 	error?: string;
 	sessionId?: string;
+	/** This completion replaced an undelivered one, so its content answers nothing. */
+	replaced?: true;
 }
 
 const RETRY_HINT = "Its session is still alive: if you have cleared the cause, send it a message to retry. Use teardown + resurrect only if it cannot recover.";
 const RESURRECT_HINT_SINGLE = "Pass session_id to the resurrect tool to bring this agent back online with its prior conversation.";
 const RESURRECT_HINT_GROUP = "Pass any session_id above to the resurrect tool to bring an agent back online with its prior conversation.";
+const REPLACED_HINT = "This result may not be the one you are waiting for: the user talked to this agent while its earlier result was held, so that earlier result never arrived. Ask the agent to repeat what it meant to send you if you need it.";
 
 export interface UsageData {
 	input: string;
@@ -63,16 +66,17 @@ export function serializeAgentMessage(data: AgentMessageData): string {
 export function serializeAgentComplete(agent: AgentCompleteData): string {
 	const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
 	const hint = agent.sessionId ? `<hint>${RESURRECT_HINT_SINGLE}</hint>\n` : "";
+	const replaced = agent.replaced ? `<note>${REPLACED_HINT}</note>\n` : "";
 	if (agent.status === "errored") {
 		const errorContent = agent.error ? `\n<error>${agent.error}</error>\n` : "";
-		return `<agent_idle id="${agent.id}" status="errored"${sessionAttr}>${errorContent}<hint>${RETRY_HINT}</hint>\n</agent_idle>`;
+		return `<agent_idle id="${agent.id}" status="errored"${sessionAttr}>${errorContent}${replaced}<hint>${RETRY_HINT}</hint>\n</agent_idle>`;
 	}
 	if (agent.status === "dead") {
 		const errorContent = agent.error ? `\n<error>${agent.error}</error>\n` : "";
-		return `<agent_idle id="${agent.id}" status="dead"${sessionAttr}>${errorContent}${hint}</agent_idle>`;
+		return `<agent_idle id="${agent.id}" status="dead"${sessionAttr}>${errorContent}${replaced}${hint}</agent_idle>`;
 	}
 	const output = agent.output ?? "(no output)";
-	return `<agent_idle id="${agent.id}" status="idle"${sessionAttr}>\n${output}\n${hint}</agent_idle>`;
+	return `<agent_idle id="${agent.id}" status="idle"${sessionAttr}>\n${output}\n${replaced}${hint}</agent_idle>`;
 }
 
 /**

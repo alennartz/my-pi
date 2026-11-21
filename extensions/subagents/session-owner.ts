@@ -390,7 +390,6 @@ class SessionTurnCoordinator {
 	private readonly settledStatuses = new Map<string, AwaitChildStatus>();
 	private readonly completionManagers = new Map<string, SubagentManager>();
 	private readonly completionFacts = new Map<string, readonly SubagentSemanticFact[]>();
-	private readonly completionXml = new Map<string, string>();
 	private waitState: WaitState | null = null;
 	private rootRunError: string | undefined;
 	private readonly notifiedTierIssues = new Set<string>();
@@ -551,7 +550,6 @@ class SessionTurnCoordinator {
 		this.settledStatuses.delete(key);
 		this.completionManagers.delete(key);
 		this.completionFacts.delete(key);
-		this.completionXml.delete(key);
 		this.holdGate.start(path);
 		this.activeGate?.start(path);
 	}
@@ -615,11 +613,11 @@ class SessionTurnCoordinator {
 			output: status.output,
 			error: status.error,
 			sessionId: status.sessionId,
+			...(status.replaced ? { replaced: true } : {}),
 		};
 		const facts = this.completionFacts.get(key);
 		manager.markCompletionDelivered(agentId);
-		this.queue.queue(this.completionXml.get(key) ?? serializeAgentComplete(data), "local", data, facts, this.completionPresentation(status, manager.getAgentStatus(agentId)?.usage));
-		this.completionXml.delete(key);
+		this.queue.queue(serializeAgentComplete(data), "local", data, facts, this.completionPresentation(status, manager.getAgentStatus(agentId)?.usage));
 		this.holdGate.start(status.path);
 	}
 
@@ -634,7 +632,6 @@ class SessionTurnCoordinator {
 		this.settledStatuses.clear();
 		this.completionManagers.clear();
 		this.completionFacts.clear();
-		this.completionXml.clear();
 		this.stopSequences.clear();
 	}
 
@@ -945,16 +942,15 @@ class SessionTurnCoordinator {
 		}
 
 		const settled = this.settledStatuses.get(key)!;
-		this.holdGate.settle(settled);
+		const replaced = this.holdGate.settle(settled);
 		this.activeGate?.settle(settled);
 		if ((this.leaseCounts.get(key) ?? 0) > 0) return false;
 
-		let xml = serializeAgentComplete(data);
+		let xml = serializeAgentComplete(replaced ? { ...data, replaced: true } : data);
 		if (allDone) {
 			const total = manager.getAgentStatuses().length;
 			xml += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have settled. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
 		}
-		this.completionXml.set(key, xml);
 		this.queue.queue(xml, "local", data, semanticFacts, this.completionPresentation(settled, status.usage));
 		manager.markCompletionDelivered(agentId);
 		// The notification is no longer held. Clear the persistent gate so a

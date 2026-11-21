@@ -8,6 +8,8 @@ export type AwaitChildStatus = Readonly<{
 	output?: string;
 	error?: string;
 	sessionId?: string;
+	/** This settlement replaced an undelivered one, which the parent never received. */
+	replaced?: true;
 }>;
 
 export type AwaitMessage = Readonly<{
@@ -45,13 +47,19 @@ export interface AwaitGateOptions {
  * is active. A message interrupts the wait without discarding held idle
  * notifications. A parent stop discards them. A child stop is held while a
  * view is open and releases on the last detach without an idle notification.
+ * A held answer the child's next run discards is marked `replaced` on the
+ * settlement that takes its place, because that settlement answers nothing.
  */
 export interface AwaitGate {
 	readonly result: Promise<AwaitOutcome>;
 	/** Start a new child run and clear its previous settlement and held answer. */
 	start(path: AgentPath): void;
 	attach(path: AgentPath): void;
-	settle(status: AwaitChildStatus): void;
+	/**
+	 * Settle a child. Returns true when this settlement replaced an earlier one
+	 * that never reached the parent, so its content is not the awaited answer.
+	 */
+	settle(status: AwaitChildStatus): boolean;
 	message(message: AwaitMessage): void;
 	detach(path: AgentPath): void;
 	/** Stop the parent, or settle one child as stopped when a path is supplied. */
@@ -71,13 +79,21 @@ type AwaitCycle = {
 	parentStopped: boolean;
 };
 
+type HeldSettlement = Readonly<{
+	status: AwaitChildStatus;
+	/** A settlement no delivery has reported yet can be lost to the child's next run. */
+	delivered: boolean;
+}>;
+
 type GateState = {
 	cycle: AwaitCycle;
 	leases: Map<string, number>;
 	settlements: Map<string, AwaitChildStatus>;
 	blocked: Set<string>;
 	/** Settled results held by each viewed child until its last lease detaches. */
-	heldSettlements: Map<string, AwaitChildStatus>;
+	heldSettlements: Map<string, HeldSettlement>;
+	/** Held answers a new run discarded before delivery, so a replacement answers nothing. */
+	displaced: Set<string>;
 };
 
 function createDeferred<T>(): Deferred<T> {
@@ -167,6 +183,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		settlements: new Map(),
 		blocked: new Set(),
 		heldSettlements: new Map(),
+		displaced: new Set(),
 	};
 	const deliverHeldIdle = options.onHeldIdleDelivery;
 
@@ -176,7 +193,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		if (!held) return false;
 		state.heldSettlements.delete(key);
 		// A stop is not a completion. Release the wait, deliver no notification.
-		if (deliverHeldIdle && held.state !== "stopped") deliverHeldIdle(copyStatus(held));
+		if (deliverHeldIdle && held.status.state !== "stopped") deliverHeldIdle(copyStatus(held.status));
 		return true;
 	}
 
@@ -184,6 +201,10 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		const key = pathKey(path);
 		state.settlements.delete(key);
 		state.blocked.delete(key);
+		const held = state.heldSettlements.get(key);
+		// A new run discards a held answer the parent never saw. A stop delivered
+		// nothing on purpose, so it displaces nothing.
+		if (held && !held.delivered && held.status.state !== "stopped") state.displaced.add(key);
 		state.heldSettlements.delete(key);
 	}
 
@@ -194,22 +215,26 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		const status = state.settlements.get(key);
 		if (!status || status.state === "stopped") return;
 		state.blocked.add(key);
-		state.heldSettlements.set(key, status);
+		// A view opened after delivery re-holds a settlement the parent already has.
+		if (!state.heldSettlements.has(key)) state.heldSettlements.set(key, { status, delivered: true });
 	}
 
-	function settle(status: AwaitChildStatus): void {
-		const next = copyStatus(status);
-		const key = pathKey(next.path);
+	function settle(status: AwaitChildStatus): boolean {
+		const key = pathKey(status.path);
+		const held = state.heldSettlements.get(key);
+		const replaced = state.displaced.delete(key) || (held !== undefined && !held.delivered);
+		const next = copyStatus(replaced ? { ...status, replaced: true } : status);
 		state.settlements.set(key, next);
 		state.blocked.delete(key);
 		state.heldSettlements.delete(key);
 
 		if (countLease(state, key) > 0) {
 			state.blocked.add(key);
-			state.heldSettlements.set(key, next);
+			state.heldSettlements.set(key, { status: next, delivered: false });
 		}
 
 		tryRelease(state, state.cycle, "settled");
+		return replaced;
 	}
 
 	function message(incoming: AwaitMessage): void {
@@ -248,6 +273,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 			state.settlements.set(key, stopped);
 			state.blocked.delete(key);
 			state.heldSettlements.delete(key);
+			state.displaced.delete(key);
 			tryRelease(state, state.cycle, "settled");
 			return;
 		}
@@ -260,6 +286,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		}
 		state.heldSettlements.clear();
 		state.blocked.clear();
+		state.displaced.clear();
 		releaseCycle(state, cycle, "stop", []);
 	}
 

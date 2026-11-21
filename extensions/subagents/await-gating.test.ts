@@ -60,6 +60,7 @@ describe("view-aware await gating", () => {
 		const delivery = observeDelivery();
 		const gate = createAwaitGate({ requested: [worker], attached: [worker, worker], onHeldIdleDelivery: delivery.onDelivery });
 		gate.settle(idle("first answer"));
+		gate.start(worker);
 		gate.settle(idle("latest answer"));
 		gate.detach(worker);
 		await expectPending(gate.result);
@@ -67,8 +68,8 @@ describe("view-aware await gating", () => {
 
 		gate.detach(worker);
 		await expect(gate.result).resolves.toMatchObject({ kind: "released", reason: "detach", statuses: [idle("latest answer")] });
-		await expect(delivery.delivered).resolves.toEqual(idle("latest answer"));
-		expect(delivery.statuses).toEqual([idle("latest answer")]);
+		await expect(delivery.delivered).resolves.toMatchObject({ output: "latest answer" });
+		expect(delivery.statuses).toHaveLength(1);
 	});
 
 	it("holds each child's settlement independently and releases errors on that child's final detach", async () => {
@@ -100,13 +101,66 @@ describe("view-aware await gating", () => {
 		const gate = createAwaitGate({ requested: [], attached: [worker, worker], onHeldIdleDelivery: delivery.onDelivery });
 		await expect(gate.result).resolves.toMatchObject({ kind: "released", reason: "settled", statuses: [] });
 		gate.settle(idle("first answer"));
+		gate.start(worker);
 		gate.settle(idle("latest answer"));
 		gate.detach(worker);
 		await expectPending(delivery.delivered);
 
 		gate.detach(worker);
-		await expect(delivery.delivered).resolves.toEqual(idle("latest answer"));
-		expect(delivery.statuses).toEqual([idle("latest answer")]);
+		await expect(delivery.delivered).resolves.toMatchObject({ output: "latest answer" });
+		expect(delivery.statuses).toHaveLength(1);
+	});
+
+	it("marks the answer that replaces a held answer the parent never received", async () => {
+		const delivery = observeDelivery();
+		const gate = createAwaitGate({ requested: [], attached: [worker], onHeldIdleDelivery: delivery.onDelivery });
+		await gate.result;
+		gate.settle(idle("first answer"));
+		gate.start(worker);
+		expect(gate.settle(idle("next answer"))).toBe(true);
+
+		gate.detach(worker);
+		expect(delivery.statuses).toEqual([{ ...idle("next answer"), replaced: true }]);
+	});
+
+	it("marks a replacement for a wait that resolves after the view closes", async () => {
+		const gate = createAwaitGate({ requested: [worker], attached: [worker] });
+		gate.settle(idle("first answer"));
+		gate.start(worker);
+		gate.detach(worker);
+
+		expect(gate.settle(idle("next answer"))).toBe(true);
+		await expect(gate.result).resolves.toMatchObject({
+			kind: "released",
+			statuses: [{ ...idle("next answer"), replaced: true }],
+		});
+	});
+
+	it("does not mark a replacement when the parent received the earlier answer", async () => {
+		const delivery = observeDelivery();
+		const gate = createAwaitGate({ requested: [], attached: [worker], onHeldIdleDelivery: delivery.onDelivery });
+		await gate.result;
+		gate.settle(idle("first answer"));
+		gate.detach(worker);
+		expect(delivery.statuses).toEqual([idle("first answer")]);
+
+		gate.attach(worker);
+		gate.start(worker);
+		expect(gate.settle(idle("next answer"))).toBe(false);
+		gate.detach(worker);
+		expect(delivery.statuses).toEqual([idle("first answer"), idle("next answer")]);
+	});
+
+	it("does not mark a replacement for a stop that delivered nothing", async () => {
+		const delivery = observeDelivery();
+		const gate = createAwaitGate({ requested: [], attached: [worker], onHeldIdleDelivery: delivery.onDelivery });
+		await gate.result;
+		gate.settle({ path: worker, state: "stopped", sessionId: "session-worker" });
+		gate.start(worker);
+
+		expect(gate.settle(idle("next answer"))).toBe(false);
+		gate.detach(worker);
+		expect(delivery.statuses).toEqual([idle("next answer")]);
 	});
 
 	it("counts later attachments and waits for all requested children", async () => {

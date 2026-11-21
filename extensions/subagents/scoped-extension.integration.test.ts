@@ -1330,8 +1330,29 @@ describe("semantic facts on native messages", () => {
 		expect((result.structuredContent as any).agents).toContainEqual(expect.objectContaining({ id: "worker" }));
 	});
 
-	it("retains queued completions when a blocked sender prevents await", async () => {
+	it("tells the parent when a viewed child's held answer was replaced", async () => {
 		const root = await rootSession();
+		const settle = (output: string) => {
+			root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: output }] } });
+			root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
+			root.worker.hooks.onEvent({ type: "agent_settled" });
+		};
+		const lease = await root.provider.acquire(["worker"]);
+		root.pi.sendMessage.mockClear();
+		settle("first answer");
+		// The user talks to the viewed child, so its next run clears the held answer.
+		root.worker.hooks.onEvent({ type: "agent_start" });
+		settle("second answer");
+		expect(root.pi.sendMessage.mock.calls.filter(([message]) => message.content.includes("first answer"))).toEqual([]);
+
+		await lease.release();
+		const notification = root.pi.sendMessage.mock.calls.at(-1)?.[0];
+		expect(notification?.content).toContain("<agent_idle");
+		expect(notification?.content).toContain("second answer");
+		expect(notification?.content).toContain("may not be the one you are waiting for");
+	});
+
+	it("retains queued completions when a blocked sender prevents await", async () => {		const root = await rootSession();
 		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
 		for (const child of managed.created) child.hooks.onEvent({ type: "agent_start" });
 		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "read", toolCallId: "hold-notifications" }, root.ctx);
