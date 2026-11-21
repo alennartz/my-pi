@@ -935,11 +935,12 @@ class SessionTurnCoordinator {
 		this.completionManagers.set(key, manager);
 		this.completionFacts.set(key, semanticFacts);
 		if (stopped) {
+			// A stop is not a completion. An open view holds it, so the parent's
+			// wait stays pending until the last view closes, and the release
+			// delivers no idle notification.
 			const stoppedStatus = this.settledStatuses.get(key)!;
-			this.holdGate.stop(path, stoppedStatus);
-			this.activeGate?.stop(path, stoppedStatus);
-			// Stop has no idle notification. A later teardown never reports the
-			// agent's last output, so no notification state is needed here.
+			this.holdGate.settle(stoppedStatus);
+			this.activeGate?.settle(stoppedStatus);
 			return false;
 		}
 

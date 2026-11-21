@@ -1309,6 +1309,27 @@ describe("semantic facts on native messages", () => {
 		expect((result.structuredContent as any).agents.map((agent: any) => agent.id)).toEqual(["worker", "scout"]);
 	});
 
+	it("keeps a wait pending while a viewed child is stopped", async () => {
+		const root = await rootSession();
+		const args = { agents: ["worker"] };
+		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "viewed-stop", args }, root.ctx);
+		const waiting = root.tools.get("await_agents")!.execute("viewed-stop", args, undefined, undefined, root.ctx);
+		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
+		const node = root.provider.snapshot().nodes.find((candidate: any) => JSON.stringify(candidate.path) === JSON.stringify(["worker"]));
+		const lease = await root.provider.acquire(["worker"]);
+		await root.provider.stop({ path: ["worker"], incarnation: node.incarnation, expectedSessionId: node.sessionId });
+		root.worker.hooks.onEvent({ type: "agent_settled", aborted: true });
+
+		let released = false;
+		void waiting.then(() => { released = true; });
+		for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+		expect(released).toBe(false);
+
+		await lease.release();
+		const result = await waiting;
+		expect((result.structuredContent as any).agents).toContainEqual(expect.objectContaining({ id: "worker" }));
+	});
+
 	it("retains queued completions when a blocked sender prevents await", async () => {
 		const root = await rootSession();
 		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);

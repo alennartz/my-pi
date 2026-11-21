@@ -143,6 +143,20 @@ describe("view-aware await gating", () => {
 		await expect(gate.result).resolves.toMatchObject({ kind: "released", statuses: [status] });
 	});
 
+	it("holds a stop while the view is open and releases it without an idle notification", async () => {
+		const delivery = observeDelivery();
+		const gate = createAwaitGate({ requested: [worker], attached: [worker], onHeldIdleDelivery: delivery.onDelivery });
+		const stopped: AwaitChildStatus = { path: worker, state: "stopped", sessionId: "session-worker" };
+		gate.settle(stopped);
+		await expectPending(gate.result);
+		await expectPending(delivery.delivered);
+
+		gate.detach(worker);
+		await expect(gate.result).resolves.toMatchObject({ kind: "released", reason: "detach", statuses: [stopped] });
+		await expectPending(delivery.delivered);
+		expect(delivery.statuses).toEqual([]);
+	});
+
 	it.each([worker, scout])("interrupts on a message from %j while the view is open and delivers held idle on detach", async (from) => {
 		const delivery = observeDelivery();
 		const gate = createAwaitGate({ requested: [worker], attached: [worker], onHeldIdleDelivery: delivery.onDelivery });

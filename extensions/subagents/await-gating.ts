@@ -43,7 +43,8 @@ export interface AwaitGateOptions {
  * View-aware await and idle notification coordination. The gate continues
  * holding notifications after its result resolves, including when no await
  * is active. A message interrupts the wait without discarding held idle
- * notifications. Stop discards them.
+ * notifications. A parent stop discards them. A child stop is held while a
+ * view is open and releases on the last detach without an idle notification.
  */
 export interface AwaitGate {
 	readonly result: Promise<AwaitOutcome>;
@@ -174,7 +175,8 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		const held = state.heldSettlements.get(key);
 		if (!held) return false;
 		state.heldSettlements.delete(key);
-		if (deliverHeldIdle) deliverHeldIdle(copyStatus(held));
+		// A stop is not a completion. Release the wait, deliver no notification.
+		if (deliverHeldIdle && held.state !== "stopped") deliverHeldIdle(copyStatus(held));
 		return true;
 	}
 
@@ -202,7 +204,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		state.blocked.delete(key);
 		state.heldSettlements.delete(key);
 
-		if (next.state !== "stopped" && countLease(state, key) > 0) {
+		if (countLease(state, key) > 0) {
 			state.blocked.add(key);
 			state.heldSettlements.set(key, next);
 		}
