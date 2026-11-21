@@ -1193,6 +1193,14 @@ describe("semantic facts on native messages", () => {
 			type: "tool_result", toolName: "await_agents", toolCallId: "await-presentation", ...result,
 		}, root.ctx);
 		const details = amendment?.details ?? result.details;
+		if (interrupted) {
+			expect(root.presentation).toContainEqual(expect.objectContaining({
+				type: "snapshot",
+				kind: "message_received",
+				placement: expect.objectContaining({ toolCallId: "await-presentation", contentIndex: 0 }),
+				data: expect.objectContaining({ operation: "send", result: expect.objectContaining({ message: "need a decision" }) }),
+			}));
+		}
 		await root.handlers.get("entry_appended")?.({
 			type: "entry_appended",
 			entry: { id: "await-result-entry", message: { role: "toolResult", toolCallId: "await-presentation", details } },
@@ -1214,6 +1222,7 @@ describe("semantic facts on native messages", () => {
 				kind: "message_received", source: "custom_entry", data: { operation: "send", result: { to: [], from: ["guard"], message: "need a decision", responseExpected: false } },
 			}));
 			expect(finals).toContainEqual(expect.objectContaining({ kind: "message_received", data: expect.objectContaining({ result: expect.objectContaining({ from: ["guard"], message: "need a decision" }) }) }));
+			expect(root.presentation.filter((event) => event.kind === "message_received")).toHaveLength(1);
 		} else {
 			expect(result.structuredContent.interrupted).not.toBe(true);
 			expect(awaits[0]).not.toMatchObject({ data: { result: { interrupted: true } } });

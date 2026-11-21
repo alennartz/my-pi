@@ -1596,8 +1596,8 @@ class SubagentSessionOwner {
 			this.persistedCustomContent(event.result),
 			this.persistedCustomContent(result),
 		].flat();
+		const unique = new Map(customContent.map((item) => [item.operationId, item]));
 		if (customContent.length > 0) {
-			const unique = new Map(customContent.map((item) => [item.operationId, item]));
 			this.pendingCustomPresentation.set(event.toolCallId, [...unique.values()]);
 		}
 		const events = this.semanticAdapter.acceptToolExecution({
@@ -1610,9 +1610,17 @@ class SubagentSessionOwner {
 			parameters: event.input,
 			targetPath: this.semanticAdapterTarget(event.toolCallId),
 		});
-		if (events.length === 0) return;
-		this.recordPresentationEvents(events);
-		this.completedPresentationCalls.add(event.toolCallId);
+		if (events.length > 0) {
+			this.recordPresentationEvents(events);
+			this.completedPresentationCalls.add(event.toolCallId);
+		}
+		if (event.toolName === "await_agents") {
+			const receivedMessages = [...unique.values()].filter((item) => savedPresentationKind(item) === "message_received");
+			this.publishPersistedPresentationContent(receivedMessages, undefined, {
+				toolCallId: event.toolCallId,
+				contentIndex: this.toolCallIndexes.get(event.toolCallId) ?? 0,
+			});
+		}
 	}
 
 	private persistToolResult(event: any): { details: unknown } | undefined {
@@ -1990,7 +1998,11 @@ class SubagentSessionOwner {
 		}, this.nativeRefs(undefined, "custom_message"));
 	}
 
-	private publishPersistedPresentationContent(value: unknown, entryId?: string): void {
+	private publishPersistedPresentationContent(
+		value: unknown,
+		entryId?: string,
+		toolPlacement?: { toolCallId: string; contentIndex: number },
+	): void {
 		if (!Array.isArray(value)) return;
 		for (const candidate of value) {
 			if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
@@ -2006,7 +2018,11 @@ class SubagentSessionOwner {
 			const key = `${JSON.stringify(this.scopePath())}:${item.operationId}`;
 			if (this.publishedCustomPresentation.has(key)) continue;
 			this.publishedCustomPresentation.add(key);
-			const placement = entryId !== undefined ? Object.freeze({ entryId }) : undefined;
+			const placement = entryId !== undefined
+				? Object.freeze({ entryId })
+				: toolPlacement !== undefined
+					? Object.freeze({ ...toolPlacement })
+					: undefined;
 			const base = {
 				operationId: item.operationId,
 				kind,
