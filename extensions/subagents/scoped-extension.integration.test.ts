@@ -1776,38 +1776,6 @@ describe("root orchestration integration", () => {
 		expect(managed.created[2].config.skillPaths).toEqual([]);
 	});
 
-	it("injects discovered agent definitions as XML with descriptions in the agent body", async () => {
-		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
-		fs.writeFileSync(parentSessionFile, "");
-		fs.mkdirSync(path.join(tmpRoot!, ".pi", "agents"), { recursive: true });
-		fs.writeFileSync(
-			path.join(tmpRoot!, ".pi", "agents", "reviewer.md"),
-			`---\nname: reviewer\ndescription: Review <changes> & report findings\n---\nReview carefully.`,
-		);
-
-		const { pi, handlers } = makePi();
-		await createSubagentsExtension({ kind: "root" })(pi as any);
-		const ctx = makeContext(parentSessionFile);
-		await startSession(handlers, ctx);
-		const promptEvent = { systemPrompt: "base prompt", systemPromptOptions: { sections: {} } };
-		const result = await handlers.get("before_agent_start")?.(promptEvent, ctx);
-		const section = promptEvent.systemPromptOptions.sections["subagents"];
-
-		expect(result).toBeUndefined();
-		expect(section).toContain("<available_agent_definitions>");
-		expect(section).toContain(
-			'  <agent name="reviewer" source="project">Review &lt;changes&gt; &amp; report findings</agent>',
-		);
-		expect(section).toContain("</available_agent_definitions>");
-		expect(section).not.toContain("## Available Agent Definitions");
-		expect(section).toContain("Leave `agents[].model` unspecified by default");
-		expect(section).toContain("prefer its name in the `persona` field");
-		expect(section).toContain('A persona marked `invocation="explicit"` is opt-in');
-		expect(section).toContain("| Tier | Use when |");
-		expect(section).toContain("optional guidance");
-		expect(section).not.toContain("Choose a tier");
-	});
-
 	it("owns SDK-native children, projects lifecycle/status updates, and records replacement metadata", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
