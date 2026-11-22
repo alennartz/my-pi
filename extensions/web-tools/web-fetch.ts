@@ -9,6 +9,7 @@ import type { Static } from "typebox";
 import { extractContent } from "./extract.js";
 import { cacheKeyFor, openFetchStore, type FetchStore } from "./fetch-store.js";
 import { findInText } from "./find-text.js";
+import { classifyContentType } from "./content-type.js";
 import { httpFetch, HttpFetchError } from "./http.js";
 import { errorFetchResult, okFetchResult, type FetchResult } from "./types.js";
 import { validateUrl } from "./url-policy.js";
@@ -54,7 +55,7 @@ export const webFetchOutput = Type.Object({
 			effectiveUrl: Type.String({ description: "Final URL after redirects" }),
 			title: Type.Optional(Type.String()),
 			markdown: Type.String({
-				description: "Extracted content (markdown format; plain text for text/plain sources)",
+				description: "Extracted content (markdown format; verbatim text for non-HTML sources)",
 			}),
 			path: Type.Optional(
 				Type.String({ description: "Local file containing the full untruncated fetched page" }),
@@ -96,8 +97,6 @@ const DEFAULT_MAX_CHARS = 8_000;
 const ABSOLUTE_MAX_CHARS = 50_000;
 const BATCH_CONCURRENCY = 4;
 const BATCH_LIMIT = 8;
-
-const ALLOWED_CONTENT_TYPES = ["text/html", "application/xhtml+xml", "text/plain"];
 
 /** Strip markdown formatting down to readable plain text. */
 function stripMarkdownFormatting(md: string): string {
@@ -169,23 +168,24 @@ async function fetchOne(
 		throw err;
 	}
 
-	const contentType = http.contentType.split(";")[0]?.trim() ?? "";
-	if (!ALLOWED_CONTENT_TYPES.some((t) => contentType === t)) {
+	const kind = classifyContentType(http.contentType);
+	if (kind === "binary") {
+		const mediaType = http.contentType.split(";")[0]?.trim() ?? "";
 		return errorFetchResult(
 			url,
 			"bad-content-type",
-			`unsupported content type "${contentType || "unknown"}"`,
+			`unsupported content type "${mediaType || "unknown"}" (only text-like content can be fetched)`,
 		);
 	}
 
 	let markdown: string;
 	let title: string | undefined;
-	if (contentType === "text/plain") {
-		markdown = http.body;
-	} else {
+	if (kind === "html") {
 		const extraction = extractContent(http.body, http.effectiveUrl);
 		markdown = extraction.markdown;
 		title = extraction.title;
+	} else {
+		markdown = http.body;
 	}
 
 	if (markdown.trim().length === 0) {

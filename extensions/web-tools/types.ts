@@ -26,7 +26,7 @@ export interface SearchResponse {
 
 export type FetchErrorCode =
 	| "blocked-url" // failed URL/redirect policy
-	| "bad-content-type" // not html/xhtml/text/plain
+	| "bad-content-type" // binary content, not text-like
 	| "too-large" // exceeded maxBytes
 	| "http-error" // non-retryable HTTP status (4xx other than 429)
 	| "timeout"
@@ -40,7 +40,7 @@ export interface FetchResult {
 	/** Final URL after redirects. */
 	effectiveUrl: string;
 	title?: string;
-	/** Extracted content (markdown format; plain text for text/plain sources). */
+	/** Extracted content (markdown format; verbatim text for non-HTML sources). */
 	markdown: string;
 	/** Local file containing the full untruncated fetched page. */
 	path?: string;

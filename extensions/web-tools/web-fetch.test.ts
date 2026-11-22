@@ -234,6 +234,26 @@ describe("runWebFetch", () => {
 		expect(outcome.details[0].markdown).toContain("plain notes here");
 	});
 
+	it("accepts markdown bodies verbatim", async () => {
+		const body = "# Notes\n\n- one\n- two\n";
+		const fetchImpl = vi.fn(
+			async () => new Response(body, { status: 200, headers: { "content-type": "text/markdown" } }),
+		);
+		const outcome = await runWebFetch({ url: "https://example.com/notes.md" }, deps(fetchImpl));
+		expect(outcome.details[0].status).toBe("ok");
+		expect(outcome.details[0].markdown).toBe(body);
+	});
+
+	it("accepts JSON bodies verbatim", async () => {
+		const body = '{"ok":true,"items":[1,2]}';
+		const fetchImpl = vi.fn(
+			async () => new Response(body, { status: 200, headers: { "content-type": "application/json" } }),
+		);
+		const outcome = await runWebFetch({ url: "https://example.com/api" }, deps(fetchImpl));
+		expect(outcome.details[0].status).toBe("ok");
+		expect(outcome.details[0].markdown).toBe(body);
+	});
+
 	it("strips markdown formatting in text mode", async () => {
 		const fetchImpl = vi.fn(async () => htmlResponse(articleHtml));
 		const outcome = await runWebFetch(

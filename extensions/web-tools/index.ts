@@ -46,7 +46,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Fetch",
 		exposure: "direct",
 		description:
-			"Fetch 1 to 8 URLs as markdown through Readability. Successful results include a path to the full untruncated page on disk. Use offset to continue a page and findText to search it.",
+			"Fetch 1 to 8 URLs as markdown. HTML pages are extracted through Readability; other text-like content (markdown, JSON, plain text) is returned verbatim. Successful results include a path to the full untruncated page on disk. Use offset to continue a page and findText to search it.",
 		promptSnippet: "Fetch URLs you already know, from web_search or the user, as markdown for targeted reading.",
 		parameters: webFetchParameters,
 		outputSchema: webFetchOutput,
