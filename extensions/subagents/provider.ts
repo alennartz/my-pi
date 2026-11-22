@@ -160,7 +160,6 @@ export type SubagentNodeSnapshot = Readonly<{
 	channels: readonly string[];
 	waitingFor: readonly AgentPath[];
 	hasSubgroup: boolean;
-	lastOutput?: string;
 	lastError?: string;
 }>;
 
@@ -629,7 +628,7 @@ function nodeFromLifecycle(
 	const persona = asString(source.personaName) ?? asString(source.agent);
 	const personaIcon = asString(source.personaIcon);
 	const model = asString(status.model);
-	const lastOutput = optionalString(status.lastOutput);
+	const activity = optionalString(status.lastActivity);
 	return cloneNode({
 		path: copyPath(record.path),
 		incarnation,
@@ -646,7 +645,7 @@ function nodeFromLifecycle(
 		channels: sourceChannels(source),
 		waitingFor: Object.freeze([]),
 		hasSubgroup: false,
-		...(lastOutput !== undefined ? { lastOutput } : {}),
+		...(activity !== undefined ? { activity } : {}),
 	});
 }
 
@@ -864,7 +863,6 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const model = asString(operational.model);
 		const thinkingLevel = asString(operational.thinkingLevel);
 		const activity = asString(operational.lastActivity);
-		const lastOutput = optionalString(operational.lastOutput);
 		const lastError = optionalString(operational.lastError);
 		const fill = contextFill(operational.lastTurnInput, operational.contextWindow);
 		return cloneNode({
@@ -884,7 +882,6 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			channels: Object.freeze(Array.isArray(snapshot.channels) ? [...snapshot.channels] : []),
 			waitingFor: projectWaiting(snapshot.path, operational),
 			hasSubgroup: Boolean(operational.hasSubgroup || descendants),
-			...(lastOutput !== undefined ? { lastOutput } : {}),
 			...(lastError !== undefined ? { lastError } : {}),
 		});
 	}

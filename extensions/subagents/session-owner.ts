@@ -58,6 +58,7 @@ import {
 	type AwaitOutcome,
 } from "./await-gating.js";
 import { modelDisplayName } from "./status-display.js";
+import { activityPreview } from "./format.js";
 import { formatOverrideNote } from "./tool-result.js";
 import { truncateForModel } from "../../lib/truncate.ts";
 import {
@@ -2175,7 +2176,6 @@ class SubagentSessionOwner {
 			session.registry.updateOperational([], {
 				...session.registry.getSnapshot([])!.operational,
 				state: rootError ? "errored" : "idle",
-				lastActivity: undefined,
 			});
 		}
 	}
@@ -2288,8 +2288,12 @@ class SubagentSessionOwner {
 			...(costBreakdown !== undefined ? { costBreakdown } : {}),
 		};
 		let lastOutput = operational.lastOutput;
+		let lastText: string | undefined;
 		for (const part of message.content ?? []) {
-			if (part.type === "text") lastOutput = part.text;
+			if (part.type === "text") {
+				lastOutput = part.text;
+				lastText = part.text;
+			}
 		}
 		const model = message.model ?? operational.model;
 		const modelInfo = ctx.modelRegistry.getAvailable().find((candidate: any) =>
@@ -2300,6 +2304,7 @@ class SubagentSessionOwner {
 			model,
 			contextWindow: modelInfo?.contextWindow ?? operational.contextWindow,
 			lastTurnInput: (usage?.input || 0) + (usage?.cacheRead || 0) + (usage?.cacheWrite || 0),
+			...(lastText !== undefined ? { lastActivity: activityPreview(lastText) } : {}),
 			lastOutput,
 		});
 	}

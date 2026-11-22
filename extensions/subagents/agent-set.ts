@@ -57,7 +57,7 @@ import {
 	type RoutedMessagePhase,
 } from "./message-router.js";
 import { parseSessionSnapshot } from "./session-snapshot.js";
-import { formatTokenCount } from "./format.js";
+import { activityPreview, formatTokenCount } from "./format.js";
 import { stripThinkingSuffix } from "./model-tiers.js";
 import {
 	serializeAgentMessage,
@@ -1011,8 +1011,12 @@ export class SubagentManager {
 		const messageModel = typeof message.model === "string" ? message.model : undefined;
 		const messageThinkingLevel = typeof message.thinkingLevel === "string" ? message.thinkingLevel : undefined;
 		let lastOutput = current.lastOutput;
+		let lastText: string | undefined;
 		for (const part of message.content ?? []) {
-			if (part?.type === "text" && typeof part.text === "string") lastOutput = part.text;
+			if (part?.type === "text" && typeof part.text === "string") {
+				lastOutput = part.text;
+				lastText = part.text;
+			}
 		}
 		const input = usage?.input || 0;
 		const cacheRead = usage?.cacheRead || 0;
@@ -1037,6 +1041,7 @@ export class SubagentManager {
 			},
 			model: messageModel ?? current.model,
 			thinkingLevel: messageThinkingLevel ?? current.thinkingLevel,
+			...(lastText !== undefined ? { lastActivity: activityPreview(lastText) } : {}),
 			lastOutput,
 			lastTurnInput: input + cacheRead + cacheWrite,
 			contextWindow: current.contextWindow ?? (messageModel
@@ -1074,7 +1079,6 @@ export class SubagentManager {
 		}
 		this.replaceOperational(entry, operationalWith(current, {
 			state: "idle",
-			lastActivity: undefined,
 			lastError: undefined,
 		}));
 		this.router.agentIdle(entry.id);
@@ -1092,7 +1096,6 @@ export class SubagentManager {
 		entry.pendingTerminalError = undefined;
 		this.replaceOperational(entry, operationalWith(current, {
 			state: "errored",
-			lastActivity: undefined,
 			lastError: error,
 		}));
 		this.router.agentErrored(entry.id, error);
@@ -1112,7 +1115,6 @@ export class SubagentManager {
 		entry.pendingTerminalError = undefined;
 		this.replaceOperational(entry, operationalWith(current, {
 			state: "dead",
-			lastActivity: undefined,
 			lastError: failure,
 		}));
 		this.router.agentUnavailable(entry.id, failure);

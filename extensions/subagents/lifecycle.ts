@@ -6,6 +6,7 @@ import {
 	type PersistencePaths,
 } from "./persistence.js";
 import { parseSessionSnapshot, type SessionSnapshot } from "./session-snapshot.js";
+import { activityPreview } from "./format.js";
 
 /** Durable lifecycle/topology facts projected from my-pi's existing records. */
 export type SubagentLifecycleRecordKind =
@@ -24,6 +25,8 @@ export type SubagentLifecycleStatus = Readonly<{
 	usage: SessionSnapshot["usage"];
 	model?: string;
 	lastOutput?: string;
+	/** Preview of the last thing the child did: its final assistant text. */
+	lastActivity?: string;
 	lastTurnInput: number;
 }>;
 
@@ -114,6 +117,7 @@ function statusFromSnapshot(snapshot: SessionSnapshot): SubagentLifecycleStatus 
 		usage: snapshot.usage,
 		...(snapshot.model !== undefined ? { model: snapshot.model } : {}),
 		...(snapshot.lastOutput !== undefined ? { lastOutput: snapshot.lastOutput } : {}),
+		...(snapshot.lastOutput !== undefined ? { lastActivity: activityPreview(snapshot.lastOutput) } : {}),
 		lastTurnInput: snapshot.lastTurnInput,
 	};
 }

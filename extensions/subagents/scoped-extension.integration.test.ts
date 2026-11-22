@@ -1318,6 +1318,19 @@ describe("semantic facts on native messages", () => {
 		expect((result.structuredContent as any).agents.map((agent: any) => agent.id)).toEqual(["worker", "scout"]);
 	});
 
+	it("merges the child's last action into one activity field that survives settle", async () => {
+		const root = await rootSession();
+		root.worker.hooks.onEvent({ type: "tool_execution_start", toolName: "bash", args: { command: "rg lastActivity src" } });
+		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "final answer\nwith a newline" }] } });
+		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+
+		const node = root.provider.snapshot().nodes.find((candidate: any) => JSON.stringify(candidate.path) === JSON.stringify(["worker"]));
+		expect(node.state).toBe("idle");
+		expect(node.activity).toBe("final answer with a newline");
+		expect(node.lastOutput).toBeUndefined();
+	});
+
 	it("keeps a wait pending while a viewed child is stopped", async () => {
 		const root = await rootSession();
 		const args = { agents: ["worker"] };
