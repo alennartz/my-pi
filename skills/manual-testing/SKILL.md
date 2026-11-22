@@ -14,7 +14,7 @@ If a top-level child of this workspace carries `.git`, read `../autoflow/HUB.md`
 
 Close the outer loop. Automated tests check component contracts; this skill exercises the thing that was built the way its user will — clicking the UI, invoking the CLI, hitting the endpoint, running the flow end-to-end — and fixes what breaks.
 
-The skill is **generic**: it runs in whatever repo autoflow runs in. The "app under test" is whatever this repo produces (web app, CLI, service, library, extension, …). The skill is **incremental**: it maintains a persistent manual test plan and tool collection in the repo, so each run benefits from prior runs and primary user journeys become cheap to smoke-test.
+The skill is **generic**: it runs in whatever repo autoflow runs in. The "app under test" is whatever this repo produces (web app, CLI, service, library, extension, …). The skill is **incremental**: it maintains a persistent manual test plan, a feature map, and a tool collection in the repo, so each run benefits from prior runs and primary user journeys become cheap to smoke-test.
 
 This skill is autonomous. When a manual test fails and the fix is obvious and aligned with the architecture, it fixes and re-runs. It only escalates when a failure reveals an architectural flaw, requires a disproportionately complex fix, or is otherwise ambiguous.
 
@@ -36,6 +36,7 @@ If you need clarification or encounter ambiguity, use `send(to='parent', expectR
 
 - **`tools/manual-test/`** at the repo root — its own module, owned by this skill. Contains:
   - **`PLAN.md`** — the persistent, repo-wide manual test plan. Lists primary user journeys (the high-value happy paths a human would exercise). Each journey: what it is, why it matters, and which tool drives it. Lives indefinitely. Updated as the product evolves.
+  - **`featuremap.md`** — the persistent feature map. One entry per user-facing feature: what it is, how users reach it, and what proves it works (a journey in `PLAN.md`, a tool, or a test). `PLAN.md` holds the journeys that get drilled; the map holds the full inventory. An entry with no proof is a visible gap.
   - **`README.md`** — index of available tools: purpose, invocation, inputs/outputs, prerequisites.
   - **Tools themselves** — bespoke, reusable, parameterized. No one-shot scripts hard-coded to a single topic.
 - **Per-topic artifact at `docs/manual-tests/<topic>.md`** — thin. Records what this run did; the bulk of "what to test" lives in `PLAN.md`, not here.
@@ -49,7 +50,7 @@ If you need clarification or encounter ambiguity, use `send(to='parent', expectR
 2. **Read `docs/plans/<topic>.md`** — the plan (architecture + steps). If the plan contains `### Interaction Mocks`, read every listed HTML file. Use the approved mocks as the interaction oracle for the flows and states you exercise. If it doesn't exist, tell the user and stop.
 3. **Read `docs/brainstorms/<topic>.md`** if it exists — original intent and user-facing scenarios.
 4. **Read `docs/reviews/<topic>.md`** and `docs/reviews/<topic>-tests.md` if they exist — findings that shape what to test or deliberately avoid.
-5. **Read `tools/manual-test/PLAN.md` and `tools/manual-test/README.md`** if they exist. Everything you need to know about this repo's primary user journeys and existing tooling is there.
+5. **Read `tools/manual-test/PLAN.md`, `tools/manual-test/featuremap.md`, and `tools/manual-test/README.md`** if they exist. Everything you need to know about this repo's user-facing features, primary user journeys, and existing tooling is there.
 6. **Identify what this repo produces** and how a human exercises it (browser, CLI, HTTP client, VS Code host, …). If genuinely unclear, ask the parent agent.
 7. **Treat focus hints as a seed, not a fence.** Hints from the orchestrator or user point at what matters most — they do not enumerate the full test scope. For each hint, identify the immediately adjacent flow concerns and add the obvious ones to *Topic-Specific Tests*: what triggered this surface, what cleans up after it, what sibling surfaces share state with it, what state is left behind. The brainstorm and plan are the authority on scope; hints sharpen focus within that scope, they don't replace it.
 
@@ -59,8 +60,9 @@ If `tools/manual-test/PLAN.md` does not exist, you're establishing the persisten
 
 1. Figure out the repo's primary user journeys — the high-value happy paths that, if broken, would represent an unacceptable regression. Derive them from the codemap, existing user-facing docs (READMEs), and the brainstorm/plan for this topic. Keep the list focused; "primary" is the operative word.
 2. Write `tools/manual-test/PLAN.md` with a section per journey: what it is, why it matters, the tool that drives it (may be TBD for journeys whose tools you'll build this run).
-3. Create `tools/manual-test/README.md` with an initial index (may be empty if no tools exist yet).
-4. Commit: `chore: bootstrap manual-test plan and tooling`.
+3. Write `tools/manual-test/featuremap.md`. One entry per user-facing feature: what it is, how users reach it, and what proves it works. Derive features from the codemap, READMEs, and the brainstorm/plan. Point each proof at its journey in `PLAN.md`, a tool, or a test. Write "none" where nothing yet proves the feature.
+4. Create `tools/manual-test/README.md` with an initial index (may be empty if no tools exist yet).
+5. Commit: `chore: bootstrap manual-test plan, feature map, and tooling`.
 
 On subsequent runs `PLAN.md` already exists — skip bootstrap and use what's there.
 
@@ -107,6 +109,12 @@ two-sentence fix note for cleanup's DR consideration.
 
 Journeys added to, modified in, or retired from `tools/manual-test/PLAN.md`
 this run. Empty if the persistent plan was unchanged.
+
+## Feature Map Updates
+
+Features added to, changed in, proved, or retired from
+`tools/manual-test/featuremap.md` this run. Empty if the feature map was
+unchanged.
 
 ## Open Issues
 
@@ -175,7 +183,7 @@ Record a one-line verdict per journey: **looks coherent** or **looks off because
 
 Keep iterating until every item is `pass`, `fixed-inline`, or logged in *Open Issues* with a clear reason.
 
-### 6. Update the Persistent Plan
+### 6. Update the Persistent Plan and Feature Map
 
 If this topic introduced, materially changed, or retired a primary user journey, update `tools/manual-test/PLAN.md` accordingly:
 
@@ -185,19 +193,30 @@ If this topic introduced, materially changed, or retired a primary user journey,
 
 Not every topic-specific test belongs in `PLAN.md`. Promote only genuine primary journeys — the plan stays focused. Record every change in the artifact's *Plan Updates* section.
 
+Update `tools/manual-test/featuremap.md` in the same pass:
+
+- **Added feature** — capability this topic ships, with its reach and proof.
+- **Changed feature** — reach or behavior moved. Refresh the entry.
+- **Proved feature** — this run produced evidence for a feature whose proof was "none". Link it.
+- **Retired feature** — remove the entry.
+
+Record every change in the artifact's *Feature Map Updates* section.
+
 ### 7. Finalize
 
 1. Verify *Tools* reflects reality and `tools/manual-test/README.md` lists every tool.
 2. Verify *Harness Limitations* is populated or explicitly empty.
 3. Verify *Results* has an entry for every item in Smoke Suite and Topic-Specific Tests, with a coherence verdict where applicable.
 4. Verify *Plan Updates* is populated or explicitly empty.
-5. Verify *Open Issues* is populated or explicitly empty.
-5. Commit: `docs: manual-testing results for <topic>` — artifact + `PLAN.md` updates + final README edits. Inline-fix commits from step 4 stay as their own commits.
+5. Verify *Feature Map Updates* is populated or explicitly empty.
+6. Verify *Open Issues* is populated or explicitly empty.
+7. Commit: `docs: manual-testing results for <topic>` — artifact + `PLAN.md` and `featuremap.md` updates + final README edits. Inline-fix commits from step 4 stay as their own commits.
 
 ## Key Principles
 
 - **Persistent plan, cheap smoke.** The expensive part (enumerating journeys, building tools) is paid once. Every run amortizes it.
 - **Primary journeys only in `PLAN.md`.** The plan's value is focus. Topic-specific edge cases live in the per-topic artifact, not the persistent plan.
+- **Every feature names its proof.** The feature map links each user-facing feature to evidence that it works. Entries without evidence are visible gaps, not hidden assumptions.
 - **Accumulate tooling, don't discard it.** Generalize instead of fork, document every tool, extend over replace.
 - **Fix inline when obvious, escalate when structural.** The bar is architectural viability, complexity, or ambiguity — not ordinary bugs.
 - **Conformance is not coherence.** Element-level checks confirm the parts exist; the coherence pass confirms the whole holds together against user-facing intent. Both are required for UI-bearing journeys.
