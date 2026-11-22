@@ -863,6 +863,7 @@ export class SubagentManager {
 				usage: { ...snapshot.usage },
 				model: parsedModel?.model,
 				thinkingLevel: parsedModel?.thinking,
+				...(snapshot.lastOutput !== undefined ? { lastActivity: activityPreview(snapshot.lastOutput) } : {}),
 				lastOutput: snapshot.lastOutput,
 				lastTurnInput: snapshot.lastTurnInput,
 				contextWindow: parsedModel?.model ? this.opts.resolveContextWindow(parsedModel.model) : undefined,

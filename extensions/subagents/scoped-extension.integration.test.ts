@@ -2091,6 +2091,54 @@ describe("root orchestration integration", () => {
 		]);
 	});
 
+	it("seeds a restored idle child's activity from its last assistant text", async () => {
+		const rootSessionFile = path.join(tmpRoot!, "root.jsonl");
+		const workerSessionFile = path.join(tmpRoot!, "root.subagents", "sessions", "worker.jsonl");
+		fs.mkdirSync(path.dirname(workerSessionFile), { recursive: true });
+		fs.writeFileSync(rootSessionFile, "");
+		fs.writeFileSync(workerSessionFile, JSON.stringify({
+			type: "message",
+			message: {
+				role: "assistant",
+				model: "provider/model",
+				content: [{ type: "text", text: "restored answer\nsecond line" }],
+				usage: { input: 10, output: 4, cacheRead: 0, cacheWrite: 0, cost: { total: 0.01 } },
+			},
+		}));
+		appendAgentAdded(ensurePersistence(rootSessionFile), {
+			id: "worker",
+			kind: "agent",
+			task: "restore worker",
+			channels: [],
+			sessionFile: workerSessionFile,
+			sessionId: "worker-session",
+		});
+
+		const root = makePi();
+		let provider: any;
+		const listeners = new Map<string, Set<(data: any) => void>>();
+		(root.pi as any).events = {
+			on(name: string, listener: (data: any) => void) {
+				const group = listeners.get(name) ?? new Set();
+				group.add(listener);
+				listeners.set(name, group);
+				return () => group.delete(listener);
+			},
+			emit(name: string, data: any) {
+				if (name === "pimote:subagents:response") provider = data.provider;
+				for (const listener of listeners.get(name) ?? []) listener(data);
+			},
+		};
+		await createSubagentsExtension({ kind: "root" })(root.pi as any);
+		await root.handlers.get("session_start")?.({ reason: "resume" }, makeContext(rootSessionFile));
+		await vi.waitFor(() => expect(managed.created).toHaveLength(1));
+
+		const node = provider.snapshot().nodes.find((candidate: any) => JSON.stringify(candidate.path) === JSON.stringify(["worker"]));
+		expect(node.state).toBe("idle");
+		expect(node.activity).toBe("restored answer second line");
+		expect(node.lastOutput).toBeUndefined();
+	});
+
 	it("refuses to await an agent already blocked on the parent's response", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
