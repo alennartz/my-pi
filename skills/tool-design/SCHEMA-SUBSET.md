@@ -4,6 +4,8 @@ Pi validates a tool's arguments locally with pi-schema, and the same schema trav
 
 A keyword pi validates locally can still fail at the provider. When the two conflict, build from this subset and enforce the rule in `execute`.
 
+pi sends the schema essentially verbatim. Its Gemini path drops meta keywords and rewrites `const` as `enum`; no other conversion happens. pi-schema validates arguments locally before `execute`, so a declared constraint binds even where the provider ignores it.
+
 Compiled from provider documentation, November 2026.
 
 ## Safe keywords
@@ -20,7 +22,7 @@ Compiled from provider documentation, November 2026.
 | `anyOf` | Object schemas, below the root |
 | `$defs` / `$ref` | Root-level `$defs`, pointers like `#/$defs/Name`, non-recursive |
 
-Use nothing else. Unsupported keywords reject the whole request on strict providers (OpenAI, xAI) and vanish without warning elsewhere (Gemini declarations, llama.cpp).
+Use nothing beyond this table and the value constraints below. Unsupported structural keywords reject the whole request on strict providers (OpenAI, xAI) and vanish without warning elsewhere (Gemini declarations, llama.cpp).
 
 ## Rules
 
@@ -30,8 +32,9 @@ Use nothing else. Unsupported keywords reject the whole request on strict provid
 - **Closed objects.** `additionalProperties: false` everywhere. Model a key-value map as an array of `{key, value}` objects.
 - **Unions.** `anyOf` of complete object schemas, never at the root. `oneOf`, `allOf`, and `not` fail somewhere on every path.
 - **References.** Keep `$defs` at the root. Allow one level of self-reference at most. No external refs, no nested `$defs`.
-- **No value constraints in the wire schema.** Omit `minimum`, `maximum`, `pattern`, `minLength`, `maxLength`, `format`, `minItems`, `maxItems`, `default`, and `examples`. Enforce them in `execute` and state them in the description.
-- **Describe.** Put meaning in `description` on the tool and on each property. Express machine-readable structure with `enum` instead of `pattern`.
+- **Value constraints.** `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, `minItems`/`maxItems`, and `format` are safe to declare. No major provider rejects them; OpenAI strict enforces them, Gemini declarations and Anthropic ignore them, and pi-schema still validates locally. Two narrow exceptions sit outside the big providers: `pattern` and `format` fail on Cerebras, `minLength`/`maxLength` fail on DeepSeek strict. Keep `format` values to each provider's documented set.
+- **Describe.** Put meaning in `description` on the tool and on each property. Express machine-readable structure with `enum` instead of `pattern` where you can.
+- **Strip annotations.** `default`, `examples`, `title`, and `deprecated` are not load-bearing anywhere. State defaults and examples in the description instead.
 
 ## Provider transforms
 
