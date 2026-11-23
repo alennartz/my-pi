@@ -1778,7 +1778,13 @@ describe("root orchestration integration", () => {
 			`---\nname: skilled\ndescription: Has skills\nskills: debugging\n---\nWork.`,
 		);
 		const { pi, tools, handlers } = makePi();
-		pi.getCommands.mockReturnValue([{ name: "skill:debugging", source: "skill", path: "/skills/debugging/SKILL.md" }]);
+		pi.getCommands.mockReturnValue([
+			{
+				name: "skill:debugging",
+				source: "skill",
+				sourceInfo: { path: "/skills/debugging/SKILL.md", source: "local", scope: "user", origin: "top-level" },
+			},
+		]);
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
 		await startSession(handlers, ctx);
@@ -2206,7 +2212,11 @@ describe("root orchestration integration", () => {
 		const { pi, tools, handlers } = makePi();
 		pi.getActiveTools.mockReturnValue(["read", "mcp__external__custom", "ask_user"]);
 		pi.getCommands.mockReturnValue([
-			{ name: "skill:debugging", source: "skill", path: "/skills/debugging/SKILL.md" },
+			{
+				name: "skill:debugging",
+				source: "skill",
+				sourceInfo: { path: "/skills/debugging/SKILL.md", source: "local", scope: "user", origin: "top-level" },
+			},
 		]);
 		pi.getThinkingLevel.mockReturnValue("xhigh");
 		await createSubagentsExtension({ kind: "root" })(pi as any);
@@ -2534,7 +2544,13 @@ describe("root orchestration integration", () => {
 		fs.writeFileSync(path.join(tmpRoot!, ".pi", "agents", "reviewer.md"), `---\nname: reviewer\ndescription: Review changes\ntools: send\nskills: debugging\nmodel: pinned/model\n---\nReview carefully.`);
 
 		const { pi, tools, handlers } = makePi();
-		pi.getCommands.mockReturnValue([{ name: "skill:debugging", source: "skill", path: "/skills/debugging/SKILL.md" }]);
+		pi.getCommands.mockReturnValue([
+			{
+				name: "skill:debugging",
+				source: "skill",
+				sourceInfo: { path: "/skills/debugging/SKILL.md", source: "local", scope: "user", origin: "top-level" },
+			},
+		]);
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile, {
 			modelRegistry: {

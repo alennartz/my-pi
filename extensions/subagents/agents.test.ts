@@ -80,10 +80,11 @@ describe("renderAgentDefinitions", () => {
 });
 
 describe("resolvePersonaSkillPaths", () => {
+	const userSource = { source: "local", scope: "user" as const, origin: "top-level" as const };
 	const commands = [
-		{ name: "skill:debugging", source: "skill", path: "/skills/debugging/SKILL.md" },
-		{ name: "skill:review", source: "skill", path: "/skills/review/SKILL.md" },
-		{ name: "plain", source: "project", path: "/commands/plain.md" },
+		{ name: "skill:debugging", source: "skill" as const, sourceInfo: { ...userSource, path: "/skills/debugging/SKILL.md" } },
+		{ name: "skill:review", source: "skill" as const, sourceInfo: { ...userSource, path: "/skills/review/SKILL.md" } },
+		{ name: "plain", source: "prompt" as const, sourceInfo: { ...userSource, path: "/commands/plain.md" } },
 	];
 
 	it("resolves declared names in order under the fatal policy", () => {

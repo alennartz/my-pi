@@ -11,7 +11,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager, type SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 
 export interface RegularAgentSpec {
 	kind: "agent";
@@ -389,19 +389,13 @@ export function renderAgentDefinitions(agents: AgentConfig[]): string {
 	return lines.join("\n");
 }
 
-export interface CommandInfo {
-	name: string;
-	source: string;
-	path?: string;
-}
-
 /**
  * Resolve skill names to filesystem paths using pi.getCommands() output.
  * Throws if any skill name doesn't resolve.
  */
 export function resolveSkillPaths(
 	skillNames: string[],
-	commands: CommandInfo[],
+	commands: SlashCommandInfo[],
 ): string[] {
 	const skillCommands = commands.filter((c) => c.source === "skill");
 	const paths: string[] = [];
@@ -409,11 +403,12 @@ export function resolveSkillPaths(
 	for (const name of skillNames) {
 		// Skills are prefixed with "skill:" in the commands list
 		const cmd = skillCommands.find((c) => c.name === `skill:${name}` || c.name === name);
-		if (!cmd?.path) {
+		const cmdPath = cmd?.sourceInfo?.path;
+		if (!cmdPath) {
 			const available = skillCommands.map((c) => c.name.replace(/^skill:/, "")).join(", ");
 			throw new Error(`Skill "${name}" not found. Available skills: ${available || "none"}`);
 		}
-		paths.push(cmd.path);
+		paths.push(cmdPath);
 	}
 
 	return paths;
@@ -439,7 +434,7 @@ export type SkillFailurePolicy = "fatal" | "subset";
  */
 export function resolvePersonaSkillPaths(
 	skillNames: string[],
-	commands: CommandInfo[],
+	commands: SlashCommandInfo[],
 	failure: SkillFailurePolicy,
 ): { skillPaths: string[]; dropped: string[] } {
 	if (failure === "fatal") {

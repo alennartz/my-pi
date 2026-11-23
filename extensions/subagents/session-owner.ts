@@ -2858,8 +2858,8 @@ class SubagentSessionOwner {
 			}
 		} else {
 			skillPaths = commands
-				.filter((command: any) => command.source === "skill" && command.path)
-				.map((command: any) => command.path!);
+				.filter((command) => command.source === "skill")
+				.map((command) => command.sourceInfo.path);
 		}
 		let model: string | undefined;
 		let thinkingLevel = this.pi.getThinkingLevel() as string;
