@@ -24,6 +24,7 @@ Pi validates tool arguments with `@earendil-works/pi-schema`.
 - Derive TypeScript types with `Static` from the same schema. Do not duplicate the schema in a separate type.
 - Keep constraints in JSON Schema. Enforce rules that JSON Schema cannot express in `execute`.
 - Expect Pi to coerce loosely typed tool arguments before `execute`, then report pi-schema validation errors when the result remains invalid.
+- The same schema travels to the model's provider, and providers support different keyword sets. Build every wire schema from the portable subset in [SCHEMA-SUBSET.md](SCHEMA-SUBSET.md).
 
 ## Field roles
 

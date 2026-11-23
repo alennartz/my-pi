@@ -92,6 +92,7 @@ Standalone utility skills not tied to the workflow pipeline.
 - `skills/codebase-design/DESIGN-IT-TWICE.md`
 - `skills/improve-code/SKILL.md`
 - `skills/tool-design/SKILL.md`
+- `skills/tool-design/SCHEMA-SUBSET.md` — the portable JSON Schema keyword subset that compiles across all major providers, per-provider transforms, and provider failure shapes; reached through a context pointer in SKILL.md
 - `docs/decisions/**`
 
 ### Web Tools
