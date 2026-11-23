@@ -294,7 +294,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 			const prior = normalized.find((entry) => JSON.stringify(entry.path) === JSON.stringify(child.path));
 			return { ...(prior ?? {}), ...child, path: [...child.path] };
 		}) : normalized;
-		const result: DelegationFinal['result'] = { children };
+		const result: DelegationFinal['result'] = { children, ...(typeof source.error === 'string' ? { error: source.error } : {}) };
 		return { operation: 'delegation', parameters, result };
 	}
 	if (operation === 'interrupt') {
@@ -302,6 +302,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 			interrupted: (Array.isArray(source.interrupted) ? source.interrupted : []).map((entry) => decodeInterruptTarget(entry, owner)),
 			pending: (Array.isArray(source.pending) ? source.pending : []).map((entry) => decodeInterruptTarget(entry, owner)),
 			failed: (Array.isArray(source.failed) ? source.failed : []).map((entry) => decodeInterruptTarget(entry, owner)),
+			...(typeof source.error === 'string' ? { error: source.error } : {}),
 		};
 		return { operation: 'interrupt', parameters, result };
 	}
@@ -310,6 +311,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 		const result: TeardownFinal['result'] = {
 			status: source.status === 'already_removed' || source.status === 'not_found' ? source.status : 'removed',
 			affectedAgents: affectedRaw.map((agent) => decodeAffectedCore(agent, owner, isAwaitState)),
+			...(typeof source.error === 'string' ? { error: source.error } : {}),
 		};
 		return { operation: 'teardown', parameters, result };
 	}
@@ -317,6 +319,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 		const affectedRaw = Array.isArray(source.affectedAgents) ? source.affectedAgents : Array.isArray(source.agents) ? source.agents : [];
 		const result: ResurrectFinal['result'] = {
 			affectedAgents: affectedRaw.map((agent) => decodeAffectedAgent(agent, owner, isResurrectState)),
+			...(typeof source.error === 'string' ? { error: source.error } : {}),
 		};
 		return { operation: 'resurrect', parameters, result };
 	}
@@ -431,6 +434,11 @@ export function normalizeSavedPresentationData(input: Readonly<{
 	return mergeFinalData(native, saved);
 }
 
+function mergedError(native: Readonly<{ error?: string }>, saved: Readonly<{ error?: string }>): Readonly<{ error?: string }> {
+	const error = native.error ?? saved.error;
+	return typeof error === 'string' ? { error } : {};
+}
+
 function mergeFinalData(native: SubagentFinalData, saved: SubagentFinalData): SubagentFinalData {
 	if (native.operation !== saved.operation) return saved;
 	if (saved.operation === 'delegation' && native.operation === 'delegation') {
@@ -443,7 +451,7 @@ function mergeFinalData(native: SubagentFinalData, saved: SubagentFinalData): Su
 			}),
 			...native.result.children.filter((child) => !savedChildren.some((entry) => JSON.stringify(entry.path) === JSON.stringify(child.path))),
 		];
-		const result: DelegationFinal['result'] = { children };
+		const result: DelegationFinal['result'] = { children, ...mergedError(native.result, saved.result) };
 		return { operation: 'delegation', parameters: saved.parameters, result };
 	}
 	if (saved.operation === 'teardown' && native.operation === 'teardown') {
@@ -459,6 +467,7 @@ function mergeFinalData(native: SubagentFinalData, saved: SubagentFinalData): Su
 		const result: TeardownFinal['result'] = {
 			status: saved.result.status !== undefined ? saved.result.status : native.result.status,
 			affectedAgents,
+			...mergedError(native.result, saved.result),
 		};
 		return { operation: 'teardown', parameters: saved.parameters, result };
 	}
@@ -472,7 +481,7 @@ function mergeFinalData(native: SubagentFinalData, saved: SubagentFinalData): Su
 			}),
 			...native.result.affectedAgents.filter((agent) => !savedAffected.some((entry) => JSON.stringify(entry.path) === JSON.stringify(agent.path))),
 		];
-		const result: ResurrectFinal['result'] = { affectedAgents };
+		const result: ResurrectFinal['result'] = { affectedAgents, ...mergedError(native.result, saved.result) };
 		return { operation: 'resurrect', parameters: saved.parameters, result };
 	}
 	if (saved.operation === 'await' && native.operation === 'await') {

@@ -165,6 +165,17 @@ describe('subagent semantic adapter', () => {
     expect(JSON.stringify(event)).not.toContain('private');
   });
 
+  it.each(['delegation', 'interrupt', 'teardown', 'resurrect'] as const)('carries the failure text of a failed %s call', (operation) => {
+    const toolName = operation === 'delegation' ? 'subagent' : operation;
+    const adapter = createSubagentSemanticAdapter();
+    const input = call(toolName, `failed-${operation}`);
+    adapter.acceptToolExecutionStart({ ...input, arguments: operation === 'delegation' ? { agents: [{ id: 'worker', task: 'inspect' }] } : { agents: ['worker'] } });
+    const [event] = adapter.acceptToolExecution({ ...input, isError: true, result: {
+      content: [{ type: 'text', text: 'Persona "nope" not found.' }],
+    } });
+    expect(event).toMatchObject({ state: 'error', data: { operation, result: { error: 'Persona "nope" not found.' } } });
+  });
+
   it('redacts private identifiers from native routing errors but preserves response prose', () => {
     const adapter = createSubagentSemanticAdapter();
     const input = call('respond', 'routing-error');
