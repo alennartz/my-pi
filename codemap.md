@@ -15,6 +15,7 @@ graph LR
   SessionName
   Worktree
   ModelPromptOverlays
+  GeminiXhigh["Gemini xhigh"]
   QuotaProviders["Quota Providers"] --> Subagents
   QuotaProviders --> QuotaProviderImplementations["Quota Provider Implementations"]
   LLMGatewayProvider["LLM Gateway Provider"]
@@ -289,6 +290,27 @@ Extension that discovers AGENTS.*.md overlay files, matches them against the act
 
 **Files:**
 - `extensions/model-prompt-overlays/**`
+
+### Gemini xhigh thinking level
+
+Extension that lets a Google model run at pi's `xhigh` thinking level on the
+native Google APIs. pi-ai's Google thinking map stops at `high`, so it rejects
+a model whose `thinkingLevelMap` names a level above it. Gemini 4 models accept
+`XHIGH`. A `models.json` `modelOverrides` entry maps `xhigh` to `high` to keep
+the resolver on its own path, and this extension lifts the request to `XHIGH`
+for xhigh sessions only.
+
+**Responsibilities:** request-level rewrite of the Google thinking level from
+`HIGH` to `XHIGH` when the session runs at xhigh, over both Google payload
+shapes (SDK `config`, REST `generationConfig`); pass-through for every other
+level, API, and payload
+
+**Dependencies:** pi's documented `before_provider_request` hook and
+`models.json` `modelOverrides`
+
+**Files:**
+- `extensions/gemini-xhigh/index.ts`
+- `extensions/gemini-xhigh/index.test.ts`
 
 ### My-pi Documentation
 
