@@ -32,11 +32,11 @@ export default function (pi: ExtensionAPI) {
 			let content: string;
 			try {
 				content = await readFile(absolutePath, "utf8");
-			} catch (err: any) {
-				if (err.code === "ENOENT") {
+			} catch (error: any) {
+				if (error.code === "ENOENT") {
 					content = "";
 				} else {
-					throw err;
+					throw error;
 				}
 			}
 

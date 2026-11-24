@@ -87,12 +87,12 @@ describe("setting names", () => {
 
 	it("rejects a stale old name without changing or revealing the session", async () => {
 		const { state } = setup("manual rename");
-		const error = await tool.execute("t1", { name: "model rename", oldName: "" }).then(
+		const failure = await tool.execute("t1", { name: "model rename", oldName: "" }).then(
 			() => null,
-			(e: Error) => e,
+			(error: Error) => error,
 		);
-		expect(error?.message).toMatch(/leave the name as is/);
-		expect(error?.message).not.toContain("manual rename");
+		expect(failure?.message).toMatch(/leave the name as is/);
+		expect(failure?.message).not.toContain("manual rename");
 		expect(state.name).toBe("manual rename");
 		expect(state.appends).toEqual([]);
 	});

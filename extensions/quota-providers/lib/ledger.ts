@@ -40,11 +40,11 @@ function acquireLockSync(lockPath: string): boolean {
         fd = undefined;
       }
       return true;
-    } catch (err) {
+    } catch (error) {
       if (fd !== undefined) {
         try { closeSync(fd); } catch { /* ignore */ }
       }
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
         // Unexpected error — proceed without lock rather than blocking indefinitely.
         return false;
       }
@@ -132,8 +132,8 @@ export function appendLedgerEntry(
 export function readLedger(path: string): LedgerEntry[] {
   try {
     return parseLedger(readFileSync(path, { encoding: "utf8" }));
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {return [];}
-    throw err;
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {return [];}
+    throw error;
   }
 }

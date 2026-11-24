@@ -49,8 +49,8 @@ export function parseAutoflowConfig(raw: string): ParsedAutoflowConfig {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(raw);
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
+	} catch (error) {
+		const msg = error instanceof Error ? error.message : String(error);
 		return {
 			...defaults(),
 			warning: `autoflow: failed to parse ${CONFIG_FILE_NAME}: ${msg}. Autostart stays disabled.`,

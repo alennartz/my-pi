@@ -51,7 +51,6 @@ export default defineConfig({
     'typescript/require-array-sort-compare': 'off',
     'typescript/unbound-method': 'off',
     'typescript/use-unknown-in-catch-callback-variable': 'off',
-    'unicorn/catch-error-name': 'off',
     'unicorn/consistent-function-scoping': 'off',
     'unicorn/prefer-single-call': 'off',
     // Harness scripts export helpers and run main under an entry guard.

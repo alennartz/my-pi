@@ -27,8 +27,8 @@ export function parseQuotaAttachments(
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(raw);
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
+	} catch (error) {
+		const msg = error instanceof Error ? error.message : String(error);
 		warnings.push(`quota-providers: failed to parse config JSON: ${msg}`);
 		return { attachments: [], warnings };
 	}

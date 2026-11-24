@@ -78,9 +78,9 @@ describe("resolveAgentCwds", () => {
 		).toThrow(/worker-2/);
 		try {
 			resolveAgentCwds([{ id: "worker-2", cwd: missing }], tmpRoot);
-		} catch (err: any) {
-			expect(err.message).toContain("worker-2");
-			expect(err.message).toContain(missing);
+		} catch (error: any) {
+			expect(error.message).toContain("worker-2");
+			expect(error.message).toContain(missing);
 		}
 	});
 
@@ -98,9 +98,9 @@ describe("resolveAgentCwds", () => {
 		try {
 			resolveAgentCwds([{ id: "x", cwd: "missing-rel" }], tmpRoot);
 			throw new Error("expected resolveAgentCwds to throw");
-		} catch (err: any) {
-			expect(err.message).toContain("x");
-			expect(err.message).toContain(expectedAbs);
+		} catch (error: any) {
+			expect(error.message).toContain("x");
+			expect(error.message).toContain(expectedAbs);
 		}
 	});
 

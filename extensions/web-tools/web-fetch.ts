@@ -163,11 +163,11 @@ async function fetchOne(
 	let http;
 	try {
 		http = await httpFetch(url, { fetchImpl: deps.fetchImpl, signal: deps.signal });
-	} catch (err) {
-		if (err instanceof HttpFetchError) {
-			return errorFetchResult(url, err.code, err.message);
+	} catch (error) {
+		if (error instanceof HttpFetchError) {
+			return errorFetchResult(url, error.code, error.message);
 		}
-		throw err;
+		throw error;
 	}
 
 	const kind = classifyContentType(http.contentType);

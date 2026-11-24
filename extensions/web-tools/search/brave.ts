@@ -53,8 +53,8 @@ export async function braveSearch(params: BraveSearchParams): Promise<SearchResp
 			},
 			signal: params.signal,
 		});
-	} catch (err) {
-		throw new Error(`Brave search request failed: ${err instanceof Error ? err.message : err}`);
+	} catch (error) {
+		throw new Error(`Brave search request failed: ${error instanceof Error ? error.message : error}`);
 	}
 
 	if (!response.ok) {

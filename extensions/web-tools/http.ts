@@ -224,11 +224,11 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 					headers,
 					signal,
 				});
-			} catch (err) {
+			} catch (error) {
 				clearTimeout(timer);
-				if (opts.signal?.aborted) {throw err;} // caller cancellation propagates
+				if (opts.signal?.aborted) {throw error;} // caller cancellation propagates
 				const code = timedOut.value ? "timeout" : "network";
-				const message = `${code} on ${currentUrl}: ${err instanceof Error ? err.message : String(err)}`;
+				const message = `${code} on ${currentUrl}: ${error instanceof Error ? error.message : String(error)}`;
 				if (attempt < maxAttempts) {
 					await sleep(backoffDelayMs(attempt));
 					continue;

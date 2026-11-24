@@ -1157,8 +1157,8 @@ async function main() {
 			if (!wanted(id)) {continue;}
 			try {
 				await fn(root, agentDir, probeOut);
-			} catch (e) {
-				check(`${id}_error`, false, String(e && e.stack ? e.stack : e));
+			} catch (error) {
+				check(`${id}_error`, false, String(error && error.stack ? error.stack : error));
 			}
 		}
 	} finally {

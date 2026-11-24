@@ -555,8 +555,8 @@ async function main() {
 			checks.E_defaultModel = !!models.tier && models.tier.includes(DEFAULT_MODEL);
 			checks.E_unconfiguredNotice = res.notices.some((n) => /unconfigured/i.test(n));
 		}
-	} catch (e) {
-		checks.error = String(e && e.stack ? e.stack : e);
+	} catch (error) {
+		checks.error = String(error && error.stack ? error.stack : error);
 	} finally {
 		if (!KEEP && !opt("workdir", null)) {
 			try {

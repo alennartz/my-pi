@@ -457,8 +457,8 @@ async function main() {
 				`LLM produced ${observed.nestingObserved ? "nested" : "flat"} topology while --nested was ${observed.nestingRequested ? "requested" : "not requested"}; subgroup was checked against the persisted worker log.`,
 			);
 		}
-	} catch (e) {
-		checks.error = String(e && e.stack ? e.stack : e);
+	} catch (error) {
+		checks.error = String(error && error.stack ? error.stack : error);
 	} finally {
 		if (cleanup) {
 			try {
