@@ -59,12 +59,13 @@ export function stateDetail(status: AgentStatus): string {
 			return status.waitingFor.length > 0
 				? `waiting → ${status.waitingFor.join(", ")}`
 				: "waiting for response";
-		case "errored":
+		case "errored": {
 			if (!status.lastError) {return "errored";}
 			const error = status.lastError.length > MAX_DETAIL_LENGTH
 				? `${status.lastError.slice(0, MAX_DETAIL_LENGTH)}…`
 				: status.lastError;
 			return `errored: ${error}`;
+		}
 		case "idle":
 		case "dead":
 			return status.state;
