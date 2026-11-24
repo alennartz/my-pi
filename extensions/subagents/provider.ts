@@ -737,6 +737,76 @@ function restoreAwaitResult(payload: PersistedSubagentContent, semantic: unknown
 	} } };
 }
 
+function projectWaiting(path: AgentPath, operational: AgentNodeSnapshot["operational"]): readonly AgentPath[] {
+	const resolved: AgentPath[] = [];
+	for (const target of operational.waitingForPaths ?? []) {
+		if (validPath(target)) {resolved.push(copyPath(target));}
+	}
+	const waitingIds = Array.isArray(operational.waitingFor) ? operational.waitingFor : [];
+	const known = resolved.length;
+	for (let index = known; index < waitingIds.length; index++) {
+		const localId = waitingIds[index];
+		if (typeof localId !== "string" || localId.length === 0) {continue;}
+		const target = localId === "parent"
+			? path.slice(0, -1)
+			: [...path.slice(0, -1), localId];
+		resolved.push(copyPath(target));
+	}
+	return Object.freeze(resolved);
+}
+
+function presentationTarget(event: SemanticAdapterEvent): Readonly<{ operationId: string; kind: PresentationKind; path: AgentPath; placement?: SemanticAdapterEvent["placement"] }> {
+	return Object.freeze({
+		operationId: event.operationId,
+		kind: event.kind,
+		path: copyPath(event.path),
+		...(event.placement !== undefined ? { placement: Object.freeze({ ...event.placement }) } : {}),
+	});
+}
+
+function mergeActiveData(prior: SubagentStartData, delta: SubagentDeltaData): SubagentStartData {
+	if (prior.operation === "delegation" && delta.operation === "delegation") {return { ...prior, result: { children: delta.children } };}
+	if (prior.operation === "send" && delta.operation === "send") {
+		if ("delta" in delta) {
+			return {
+				...prior,
+				...(delta.field === "request"
+					? { parameters: { ...prior.parameters, message: String(prior.parameters.message ?? "") + delta.delta } }
+					: { result: { ...prior.result, response: prior.result.response + delta.delta } }),
+			};
+		}
+		return { ...prior, result: { ...prior.result, phase: delta.phase } };
+	}
+	if (prior.operation === "respond" && delta.operation === "respond") {return { ...prior, parameters: { ...prior.parameters, message: String(prior.parameters.message ?? "") + delta.delta } };}
+	if (prior.operation === "await" && delta.operation === "await") {return { ...prior, result: { ...prior.result, statuses: delta.statuses } };}
+	return prior;
+}
+
+function presentationOperationKey(event: Pick<SemanticAdapterEvent, "path" | "operationId">): string {
+	return `${pathKey(event.path)}:${event.operationId}`;
+}
+
+function borrow(node: RegisteredAgentNode): { session: BorrowedAgentSession; capabilities: SubagentCapabilities } {
+	let session: AgentSession;
+	try {
+		session = node.session.session;
+	} catch (error) {
+		throw new Error(`Subagent runtime is unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+	}
+	if (!session) {throw new Error("Subagent runtime is unavailable");}
+	let capabilities: SubagentCapabilities = EMPTY_CAPABILITIES;
+	try {
+		const candidate = (node.session as ManagedChildSession & { capabilities?: SubagentCapabilities }).capabilities;
+		if (candidate) {capabilities = candidate;}
+	} catch (error) {
+		throw new Error(`Subagent capabilities are unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+	}
+	return {
+		session,
+		capabilities,
+	};
+}
+
 /** Provider feed, hierarchy projection, and borrowed runtime lease owner. */
 export function createSubagentProvider(options: SubagentProviderOptions): SubagentProvider & {
 	/** Stop accepting facts and release provider subscriptions. */
@@ -810,24 +880,6 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		for (const operationKey of activeOperations.keys()) {
 			if (operationKey.startsWith(prefix)) {activeOperations.delete(operationKey);}
 		}
-	}
-
-	function projectWaiting(path: AgentPath, operational: AgentNodeSnapshot["operational"]): readonly AgentPath[] {
-		const resolved: AgentPath[] = [];
-		for (const target of operational.waitingForPaths ?? []) {
-			if (validPath(target)) {resolved.push(copyPath(target));}
-		}
-		const waitingIds = Array.isArray(operational.waitingFor) ? operational.waitingFor : [];
-		const known = resolved.length;
-		for (let index = known; index < waitingIds.length; index++) {
-			const localId = waitingIds[index];
-			if (typeof localId !== "string" || localId.length === 0) {continue;}
-			const target = localId === "parent"
-				? path.slice(0, -1)
-				: [...path.slice(0, -1), localId];
-			resolved.push(copyPath(target));
-		}
-		return Object.freeze(resolved);
 	}
 
 	function projectNode(snapshot: AgentNodeSnapshot, identity: NodeIdentity): ProviderNode {
@@ -923,37 +975,6 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 
 	function generatedEventId(kind: SubagentEventKind, path: AgentPath): string {
 		return `provider:${kind}:${pathKey(path)}:${++eventCounter}`;
-	}
-
-	function presentationTarget(event: SemanticAdapterEvent): Readonly<{ operationId: string; kind: PresentationKind; path: AgentPath; placement?: SemanticAdapterEvent["placement"] }> {
-		return Object.freeze({
-			operationId: event.operationId,
-			kind: event.kind,
-			path: copyPath(event.path),
-			...(event.placement !== undefined ? { placement: Object.freeze({ ...event.placement }) } : {}),
-		});
-	}
-
-	function mergeActiveData(prior: SubagentStartData, delta: SubagentDeltaData): SubagentStartData {
-		if (prior.operation === "delegation" && delta.operation === "delegation") {return { ...prior, result: { children: delta.children } };}
-		if (prior.operation === "send" && delta.operation === "send") {
-			if ("delta" in delta) {
-				return {
-					...prior,
-					...(delta.field === "request"
-						? { parameters: { ...prior.parameters, message: String(prior.parameters.message ?? "") + delta.delta } }
-						: { result: { ...prior.result, response: prior.result.response + delta.delta } }),
-				};
-			}
-			return { ...prior, result: { ...prior.result, phase: delta.phase } };
-		}
-		if (prior.operation === "respond" && delta.operation === "respond") {return { ...prior, parameters: { ...prior.parameters, message: String(prior.parameters.message ?? "") + delta.delta } };}
-		if (prior.operation === "await" && delta.operation === "await") {return { ...prior, result: { ...prior.result, statuses: delta.statuses } };}
-		return prior;
-	}
-
-	function presentationOperationKey(event: Pick<SemanticAdapterEvent, "path" | "operationId">): string {
-		return `${pathKey(event.path)}:${event.operationId}`;
 	}
 
 	function appendPresentationEvent(event: SemanticAdapterEvent, deliver = true): ProviderFeedEvent | undefined {
@@ -1199,27 +1220,6 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			throw new Error(`Unknown subagent path ${JSON.stringify(path)}`);
 		}
 		return node;
-	}
-
-	function borrow(node: RegisteredAgentNode): { session: BorrowedAgentSession; capabilities: SubagentCapabilities } {
-		let session: AgentSession;
-		try {
-			session = node.session.session;
-		} catch (error) {
-			throw new Error(`Subagent runtime is unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-		}
-		if (!session) {throw new Error("Subagent runtime is unavailable");}
-		let capabilities: SubagentCapabilities = EMPTY_CAPABILITIES;
-		try {
-			const candidate = (node.session as ManagedChildSession & { capabilities?: SubagentCapabilities }).capabilities;
-			if (candidate) {capabilities = candidate;}
-		} catch (error) {
-			throw new Error(`Subagent capabilities are unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-		}
-		return {
-			session,
-			capabilities,
-		};
 	}
 
 	function notifyLease(record: LeaseRecord, event: SubagentLeaseEvent): void {

@@ -53,8 +53,6 @@ export default defineConfig({
     'typescript/no-unsafe-member-access': 'off',
     'typescript/no-unsafe-return': 'off',
     'typescript/no-unsafe-type-assertion': 'off',
-    // Helpers stay beside their single call site.
-    'unicorn/consistent-function-scoping': 'off',
     // Harness scripts export helpers and run main under an entry guard.
     'unicorn/prefer-top-level-await': 'off',
   },

@@ -49,6 +49,25 @@ async function rehydratedFinals(entries: readonly unknown[], path: readonly stri
   return replay.events.filter((event) => 'type' in event && event.type === 'subagent_snapshot_event');
 }
 
+const entry = (operationId: string, kind: string, source: string, data: unknown) => ({
+  type: 'message', id: `${operationId}-entry`, message: { role: 'custom', customType: 'subagents', details: { subagentContent: [{
+    operationId, kind, source, state: 'complete', data,
+    ...(source === 'tool' ? { placement: { toolCallId: operationId, contentIndex: 0 } } : {}),
+  }] } },
+});
+
+const completion = (operationId: string) => ({
+  operationId, kind: 'completion', source: 'custom_entry', state: 'complete',
+  data: { operation: 'completion', result: { state: 'idle', output: operationId } },
+});
+
+const saved = (payloadData: unknown) => [
+  { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'root-send', name: 'send', arguments: { to: 'parent', message: 'to root', expectResponse: true } }] } },
+  { type: 'message', message: { role: 'toolResult', toolName: 'send', toolCallId: 'root-send', details: { subagentContent: [{
+    operationId: 'root-send', kind: 'send', source: 'tool', state: 'complete', placement: { toolCallId: 'root-send', contentIndex: 0 }, data: payloadData,
+  }] } } },
+];
+
 describe('subagent presentation provider', () => {
   it('exposes an epoch-stable manifest that consumers cannot mutate', () => {
     const { provider } = fixture();
@@ -159,12 +178,6 @@ describe('subagent presentation provider', () => {
   });
 
   it('rehydrates received messages without reclassifying outgoing or ambiguous sends', async () => {
-    const entry = (operationId: string, kind: string, source: string, data: unknown) => ({
-      type: 'message', id: `${operationId}-entry`, message: { role: 'custom', customType: 'subagents', details: { subagentContent: [{
-        operationId, kind, source, state: 'complete', data,
-        ...(source === 'tool' ? { placement: { toolCallId: operationId, contentIndex: 0 } } : {}),
-      }] } },
-    });
     const entries = [
       entry('legacy-root', 'send', 'custom_entry', { operation: 'send', result: { from: [], to: ['owner'], message: 'from parent', responseExpected: true } }),
       entry('legacy-child', 'send', 'custom_entry', { operation: 'send', result: { from: ['owner', 'worker'], to: ['owner'], message: 'from worker', responseExpected: false } }),
@@ -194,10 +207,6 @@ describe('subagent presentation provider', () => {
   });
 
   it('hydrates standalone completions only from actual subagents custom messages', async () => {
-    const completion = (operationId: string) => ({
-      operationId, kind: 'completion', source: 'custom_entry', state: 'complete',
-      data: { operation: 'completion', result: { state: 'idle', output: operationId } },
-    });
     const events = await rehydratedFinals([
       { type: 'custom_message', id: 'native-entry', customType: 'subagents', details: { subagentContent: [completion('native')] } },
       { type: 'message', id: 'nested-entry', message: { role: 'custom', customType: 'subagents', details: { subagentContent: [completion('nested')] } } },
@@ -352,12 +361,6 @@ describe('subagent presentation provider', () => {
   it('preserves canonical root paths and complete parameters through nested-scope hydration round trips', async () => {
     const parameters = { to: [], message: 'to root', expectResponse: true, metadata: { publicFlag: false } };
     const data = { operation: 'send', parameters, result: { from: [], response: 'reply', deferred: false, metadata: { source: 'root' } } };
-    const saved = (payloadData: unknown) => [
-      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'root-send', name: 'send', arguments: { to: 'parent', message: 'to root', expectResponse: true } }] } },
-      { type: 'message', message: { role: 'toolResult', toolName: 'send', toolCallId: 'root-send', details: { subagentContent: [{
-        operationId: 'root-send', kind: 'send', source: 'tool', state: 'complete', placement: { toolCallId: 'root-send', contentIndex: 0 }, data: payloadData,
-      }] } } },
-    ];
     const first = await rehydratedFinals(saved(data), ['outer', 'inner']);
     const second = await rehydratedFinals(saved(first[0].data), ['outer', 'inner']);
     expect(first[0].data).toEqual(data);

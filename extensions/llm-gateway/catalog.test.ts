@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { buildProviderModelConfigs } from "./catalog.js";
 
+const provider = (efforts?: string[]) => ({
+	streaming: true,
+	tools: true,
+	reasoning: true,
+	...(efforts ? { reasoning_efforts: efforts } : {}),
+	pricing: { prompt: "1e-6", completion: "2e-6" },
+});
+
+const mapFor = (providers: unknown[]) => {
+	const entries = buildProviderModelConfigs([{
+		id: "m",
+		supported_parameters: ["stream", "tools", "reasoning"],
+		providers,
+	}]);
+	return entries[0]?.thinkingLevelMap;
+};
+
 describe("buildProviderModelConfigs", () => {
 	it("keeps canonical model ids with streaming+tools support and per-field median prices", () => {
 		const entries = buildProviderModelConfigs([
@@ -175,21 +192,6 @@ describe("buildProviderModelConfigs", () => {
 	});
 
 	describe("thinkingLevelMap", () => {
-		const provider = (efforts?: string[]) => ({
-			streaming: true,
-			tools: true,
-			reasoning: true,
-			...(efforts ? { reasoning_efforts: efforts } : {}),
-			pricing: { prompt: "1e-6", completion: "2e-6" },
-		});
-		const mapFor = (providers: unknown[]) => {
-			const entries = buildProviderModelConfigs([{
-				id: "m",
-				supported_parameters: ["stream", "tools", "reasoning"],
-				providers,
-			}]);
-			return entries[0]?.thinkingLevelMap;
-		};
 
 		it("leaves pi's default levels when no provider declares reasoning_efforts", () => {
 			expect(mapFor([provider(), provider()])).toBeUndefined();

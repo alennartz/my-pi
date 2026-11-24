@@ -11,6 +11,9 @@ function noExpand(pathValue: string): string {
 	return pathValue;
 }
 
+const expandHome = (pathValue: string): string =>
+	pathValue.startsWith("~/") ? path.join("/home/user", pathValue.slice(2)) : pathValue;
+
 function makeRaw(providers: Record<string, unknown>): string {
 	return JSON.stringify({ providers });
 }
@@ -77,9 +80,6 @@ describe("parseQuotaAttachments", () => {
 	});
 
 	it("expands ~ in source module paths via the expandHome callback", () => {
-		const expandHome = (pathValue: string) =>
-			pathValue.startsWith("~/") ? path.join("/home/user", pathValue.slice(2)) : pathValue;
-
 		const raw = makeRaw({ myProvider: { module: "~/providers/source.ts" } });
 		const { attachments } = parseQuotaAttachments(raw, expandHome);
 		expect(attachments[0].modulePath).toBe("/home/user/providers/source.ts");

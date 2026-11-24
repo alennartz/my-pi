@@ -168,19 +168,19 @@ const gitAvailable = (() => {
 	}
 })();
 
-describe.skipIf(!gitAvailable)("createGitProbe", () => {
-	function initRepo(path: string): string {
-		mkdirSync(path, { recursive: true });
-		execFileSync("git", ["-C", path, "init", "-q"]);
-		execFileSync("git", [
-			"-C", path,
-			"-c", "user.email=t@example.com",
-			"-c", "user.name=T",
-			"commit", "-q", "--allow-empty", "-m", "init",
-		]);
-		return execFileSync("git", ["-C", path, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-	}
+function initRepo(path: string): string {
+	mkdirSync(path, { recursive: true });
+	execFileSync("git", ["-C", path, "init", "-q"]);
+	execFileSync("git", [
+		"-C", path,
+		"-c", "user.email=t@example.com",
+		"-c", "user.name=T",
+		"commit", "-q", "--allow-empty", "-m", "init",
+	]);
+	return execFileSync("git", ["-C", path, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+}
 
+describe.skipIf(!gitAvailable)("createGitProbe", () => {
 	it("recognises a real commit and rejects a fabricated hash", () => {
 		const repoPath = join(testDir, "repo");
 		const head = initRepo(repoPath);

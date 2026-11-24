@@ -129,21 +129,21 @@ describe("parsePersonaDeclaration", () => {
 	});
 });
 
-describe("loadWorkspacePersona", () => {
-	function workspaceWith(fileContents: string | Record<string, string>): string {
-		const dir = mkdtempSync(join(tmpdir(), "persona-workspaces-"));
-		if (typeof fileContents === "string") {
-			writeFileSync(join(dir, "AGENTS.md"), fileContents);
-		} else {
-			for (const [rel, contents] of Object.entries(fileContents)) {
-				const target = join(dir, rel);
-				mkdirSync(join(target, ".."), { recursive: true });
-				writeFileSync(target, contents);
-			}
+function workspaceWith(fileContents: string | Record<string, string>): string {
+	const dir = mkdtempSync(join(tmpdir(), "persona-workspaces-"));
+	if (typeof fileContents === "string") {
+		writeFileSync(join(dir, "AGENTS.md"), fileContents);
+	} else {
+		for (const [rel, contents] of Object.entries(fileContents)) {
+			const target = join(dir, rel);
+			mkdirSync(join(target, ".."), { recursive: true });
+			writeFileSync(target, contents);
 		}
-		return dir;
 	}
+	return dir;
+}
 
+describe("loadWorkspacePersona", () => {
 	it("loads the persona declared by the cwd's own AGENTS.md", () => {
 		const cwd = workspaceWith(agentsMd(["kind: persona", "name: scout"], "You are a scout."));
 

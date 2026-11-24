@@ -86,26 +86,27 @@ describe("test-write transition check", () => {
 
 // ─── Interaction Mocks: linked HTML artifacts ──────────────────────────────
 
+function writePlanWithMock(mockPath: string) {
+	writeFileSync(
+		join(testDir, "docs/plans/my-topic.md"),
+		[
+			"# Plan: my-topic",
+			"",
+			"## Architecture",
+			"",
+			"### Interaction Mocks",
+			"",
+			`- \`${mockPath}\` — approved interaction contract for the primary flow`,
+			"",
+			"## Tests",
+			"",
+			"Test details.",
+			"",
+		].join("\n"),
+	);
+}
+
 describe("Interaction Mocks transition checks", () => {
-	function writePlanWithMock(mockPath: string) {
-		writeFileSync(
-			join(testDir, "docs/plans/my-topic.md"),
-			[
-				"# Plan: my-topic",
-				"",
-				"## Architecture",
-				"",
-				"### Interaction Mocks",
-				"",
-				`- \`${mockPath}\` — approved interaction contract for the primary flow`,
-				"",
-				"## Tests",
-				"",
-				"Test details.",
-				"",
-			].join("\n"),
-		);
-	}
 
 	it("passes when every linked mock file exists", () => {
 		setupDirs();

@@ -1191,6 +1191,10 @@ class IncomingMessageState {
 	}
 }
 
+const fmtCost = (value: number | null): string => value === null ? "-" : value.toFixed(2);
+
+const toData = (statuses: AgentStatus[]): StatusResultData => ({ agents: statuses.map(statusData) });
+
 function pathKey(pathValue: AgentPath): string {
 	return JSON.stringify(pathValue);
 }
@@ -2643,7 +2647,6 @@ class SubagentSessionOwner {
 				cacheReadCostPerMtok: typeof model?.cost?.cacheRead === "number" ? model.cost.cacheRead : null,
 			})).sort((a, b) => a.ref.localeCompare(b.ref)),
 		};
-		const fmtCost = (value: number | null) => value === null ? "-" : value.toFixed(2);
 		const lines = [
 			"| provider/id | context window | input $/Mtok | output $/Mtok | cacheRead $/Mtok |",
 			"| --- | --- | --- | --- | --- |",
@@ -3001,7 +3004,6 @@ class SubagentSessionOwner {
 	private checkStatus(params: any): { content: { type: "text"; text: string }[]; details: StatusResultData; structuredContent: StatusResultData } {
 		const { manager } = this.requireActiveSession();
 		if (!manager.hasAgents()) {throw new Error("No agents running.");}
-		const toData = (statuses: AgentStatus[]): StatusResultData => ({ agents: statuses.map(statusData) });
 		if (params.agent) {
 			const status = manager.getAgentStatus(params.agent);
 			if (!status) {throw new Error(`Unknown agent: "${params.agent}"`);}

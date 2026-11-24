@@ -138,6 +138,10 @@ const GENERIC_PREAMBLES = [
 ];
 const CHILD_IDENTITY = "<subagent_identity>";
 
+function turned(rec) {
+	return Boolean(rec) && assistantTexts(sessionEntries(rec.sessionFile)).length >= 1;
+}
+
 function hasGenericPreamble(text) {
 	return GENERIC_PREAMBLES.some((marker) => text.includes(marker));
 }
@@ -792,8 +796,6 @@ async function D1(root, agentDir, probeOut) {
 			const zeta = m.get("zeta-child");
 			const eta = m.get("eta-child");
 			const fxc = m.get("fx-child");
-			const turned = (rec) =>
-				rec && assistantTexts(sessionEntries(rec.sessionFile)).length >= 1;
 			return zeta && eta && fxc && turned(zeta) && turned(eta) && turned(fxc) ? m : undefined;
 		}, 120_000, 1000);
 		check("j1_children_live", !!agents, { ids: agents ? [...agents.keys()] : [] });

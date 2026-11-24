@@ -97,11 +97,12 @@ import { AgentSessionRegistry } from "./agent-session-registry.js";
 import type { AgentNodeSnapshot, RegistryEvent } from "./agent-session-registry.js";
 import type { MessagePort, RoutedMessage, SendReceipt } from "./message-router.js";
 
+const key = (agentPath: AgentPath): string => JSON.stringify(agentPath);
+
 /** Minimal live-registry fixture for recursive manager integration. */
 function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 	const nodes = new Map<string, any>();
 	const listeners = new Set<(event: RegistryEvent) => void>();
-	const key = (agentPath: AgentPath) => JSON.stringify(agentPath);
 	const livePaths = new Set<string>([key([])]);
 	const publish = (event: RegistryEvent) => {
 		for (const listener of listeners) {listener(event);}
@@ -845,43 +846,44 @@ describe("child-scoped extension routing", () => {
 	});
 });
 
+function factsIn(result: { details?: { semantic?: SubagentSemanticFact | readonly SubagentSemanticFact[]; semanticEvents?: readonly SubagentSemanticFact[] } }): readonly SubagentSemanticFact[] {
+	const facts = result.details?.semantic ?? result.details?.semanticEvents ?? [];
+	return Array.isArray(facts) ? facts : [facts as SubagentSemanticFact];
+}
+
+
+async function rootSession() {
+	const sessionFile = path.join(tmpRoot!, "semantic-parent.jsonl");
+	fs.writeFileSync(sessionFile, "");
+	const root = makePi();
+	const listeners = new Map<string, Set<(data: any) => void>>();
+	let provider: any;
+	(root.pi as any).events = {
+		on(name: string, listener: (data: any) => void) {
+			const group = listeners.get(name) ?? new Set();
+			group.add(listener);
+			listeners.set(name, group);
+			return () => group.delete(listener);
+		},
+		emit(name: string, data: any) {
+			if (name === "pimote:subagents:response") {provider = data.provider;}
+			for (const listener of listeners.get(name) ?? []) {listener(data);}
+		},
+	};
+	const bus = createSemanticFactBus();
+	const published: SubagentSemanticFact[] = [];
+	const presentation: SemanticAdapterEvent[] = [];
+	bus.subscribe((fact) => published.push(fact));
+	bus.subscribePresentation?.((event) => presentation.push(event));
+	await createSubagentsExtension({ kind: "root", semanticEvents: bus })(root.pi as any);
+	const ctx = makeContext(sessionFile);
+	ctx.sessionManager.getLeafId = () => "root-leaf";
+	await startSession(root.handlers, ctx);
+	await execute(root.tools, "subagent", { agents: [{ id: "worker", task: "inspect", channels: [] }] }, ctx);
+	return { ...root, ctx, bus, provider, published, presentation, worker: managed.created[0] };
+}
+
 describe("semantic facts on native messages", () => {
-	function factsIn(result: { details?: { semantic?: SubagentSemanticFact | readonly SubagentSemanticFact[]; semanticEvents?: readonly SubagentSemanticFact[] } }): readonly SubagentSemanticFact[] {
-		const facts = result.details?.semantic ?? result.details?.semanticEvents ?? [];
-		return Array.isArray(facts) ? facts : [facts as SubagentSemanticFact];
-	}
-
-	async function rootSession() {
-		const sessionFile = path.join(tmpRoot!, "semantic-parent.jsonl");
-		fs.writeFileSync(sessionFile, "");
-		const root = makePi();
-		const listeners = new Map<string, Set<(data: any) => void>>();
-		let provider: any;
-		(root.pi as any).events = {
-			on(name: string, listener: (data: any) => void) {
-				const group = listeners.get(name) ?? new Set();
-				group.add(listener);
-				listeners.set(name, group);
-				return () => group.delete(listener);
-			},
-			emit(name: string, data: any) {
-				if (name === "pimote:subagents:response") {provider = data.provider;}
-				for (const listener of listeners.get(name) ?? []) {listener(data);}
-			},
-		};
-		const bus = createSemanticFactBus();
-		const published: SubagentSemanticFact[] = [];
-		const presentation: SemanticAdapterEvent[] = [];
-		bus.subscribe((fact) => published.push(fact));
-		bus.subscribePresentation?.((event) => presentation.push(event));
-		await createSubagentsExtension({ kind: "root", semanticEvents: bus })(root.pi as any);
-		const ctx = makeContext(sessionFile);
-		ctx.sessionManager.getLeafId = () => "root-leaf";
-		await startSession(root.handlers, ctx);
-		await execute(root.tools, "subagent", { agents: [{ id: "worker", task: "inspect", channels: [] }] }, ctx);
-		return { ...root, ctx, bus, provider, published, presentation, worker: managed.created[0] };
-	}
-
 	it("records a control resurrection in the parent presentation and restores it", async () => {
 		const root = await rootSession();
 		const first = root.worker.child;

@@ -199,6 +199,9 @@ type AttachedProvider = {
 	providerConfig?: ProviderConfig;
 };
 
+const sessionIdOf = (manager: object): string | undefined =>
+	(manager as { getSessionId?: () => string }).getSessionId?.call(manager);
+
 type ProviderStateStores = WeakMap<object, Map<string, AttachedProvider>>;
 type RefreshHooks = WeakMap<object, { afterRefresh: () => void; generation: number }>;
 
@@ -280,9 +283,6 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	let treeStore: SessionTreeStore | undefined;
 	let fallbackSessionId: string | undefined;
 	const boundStores = new Map<string, SessionTreeStore>();
-
-	const sessionIdOf = (manager: object): string | undefined =>
-		(manager as { getSessionId?: () => string }).getSessionId?.call(manager);
 
 	function bindTreeStore(ctx: { sessionManager: object }, preferFallback: boolean): void {
 		const store = getOrCreateSessionTreeStore(ctx.sessionManager);

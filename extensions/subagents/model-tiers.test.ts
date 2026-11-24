@@ -6,6 +6,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TIER_NAMES, TIERS_UNCONFIGURED_MESSAGE, findAvailableModel, isTierName, loadTierConfig, renderTierTable, resolveDeclaredModelRef, resolveModelRef, stripThinkingSuffix, isThinkingLevel } from './model-tiers.js';
 import type { TierConfig } from './model-tiers.js';
 
+// Helpers
+
+function writeConfig(filePath: string, content: string): void {
+	fs.mkdirSync(path.dirname(filePath), { recursive: true });
+	fs.writeFileSync(filePath, content);
+}
+
+const always = (): boolean => true;
+const never = (): boolean => false;
+const alwaysAvailable = (): boolean => true;
+const neverAvailable = (): boolean => false;
+
 // isTierName
 
 describe("isTierName", () => {
@@ -49,11 +61,6 @@ describe("loadTierConfig", () => {
 			fs.rmSync(tmpRoot, { recursive: true, force: true });
 		} catch {}
 	});
-
-	function writeConfig(filePath: string, content: string): void {
-		fs.mkdirSync(path.dirname(filePath), { recursive: true });
-		fs.writeFileSync(filePath, content);
-	}
 
 	function load(): TierConfig {
 		return loadTierConfig({ globalPath, projectPath });
@@ -118,9 +125,6 @@ describe("loadTierConfig", () => {
 // resolveModelRef
 
 describe("resolveModelRef", () => {
-	const always = () => true;
-	const never = () => false;
-
 	it("resolves a configured tier to its model id when the model is available", () => {
 		const result = resolveModelRef("smart", { smart: "claude-opus-4-8" }, always);
 		expect(result.model).toBe("claude-opus-4-8");
@@ -269,9 +273,6 @@ describe("stripThinkingSuffix", () => {
 // resolveModelRef — suffix-aware behavior
 
 describe("resolveModelRef — suffix-aware", () => {
-	const alwaysAvailable = () => true;
-	const neverAvailable = () => false;
-
 	it("resolves a tier configured with a suffixed value to the full suffixed string when the model part is available", () => {
 		const result = resolveModelRef("smart", { smart: "anthropic/claude-opus-4-8:xhigh" }, (ref) => ref === "anthropic/claude-opus-4-8");
 		expect(result.model).toBe("anthropic/claude-opus-4-8:xhigh");

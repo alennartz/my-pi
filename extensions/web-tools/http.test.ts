@@ -247,9 +247,9 @@ describe("httpFetch", () => {
 	});
 });
 
-describe("parseRetryAfterMs", () => {
-	const now = () => Date.parse("2026-09-18T12:00:00Z");
+const now = () => Date.parse("2026-09-18T12:00:00Z");
 
+describe("parseRetryAfterMs", () => {
 	it("parses delay-seconds", () => {
 		expect(parseRetryAfterMs("30", now)).toBe(30_000);
 		expect(parseRetryAfterMs("0", now)).toBe(0);
