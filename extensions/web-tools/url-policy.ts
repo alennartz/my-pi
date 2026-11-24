@@ -42,7 +42,7 @@ function isPrivateIpv4(octets: number[]): boolean {
 }
 
 function isPrivateIpv6(host: string): boolean {
-	let h = host.toLowerCase().replaceAll(/^\[|\]$/g, "");
+	const h = host.toLowerCase().replaceAll(/^\[|\]$/g, "");
 
 	// IPv4-mapped, dotted form: ::ffff:a.b.c.d — before URL parsing canonicalizes it.
 	const mappedDotted = h.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);

@@ -24,7 +24,6 @@ export default defineConfig({
     'no-promise-executor-return': 'off',
     'no-unused-vars': 'off',
     'no-useless-assignment': 'off',
-    'prefer-const': 'off',
     'prefer-object-has-own': 'off',
     'preserve-caught-error': 'off',
     'quality/no-array-filter-map': 'off',

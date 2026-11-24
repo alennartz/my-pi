@@ -239,6 +239,8 @@ function spawnPhase(sessionDir, workCwd) {
 		let parentSessionFile;
 		let settled = false;
 		let stderr = "";
+		// The interval callback clears this handle, so the binding needs let.
+		// oxlint-disable-next-line prefer-const
 		let poll;
 		const fail = (error) => {
 			if (settled) {return;}

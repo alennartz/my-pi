@@ -217,7 +217,6 @@ describe("AgentSessionRegistry atomic creation and snapshots", () => {
 	});
 
 	it("makes a constructing child path observable only after its node commits", async () => {
-		let registry: AgentSessionRegistry;
 		let becameLive: boolean | undefined;
 		let snapshotWhenLive: AgentNodeSnapshot | undefined;
 		const createSession = vi.fn(async (config: any) => {
@@ -227,7 +226,7 @@ describe("AgentSessionRegistry atomic creation and snapshots", () => {
 			});
 			return fakeSession(config.path.join("/"));
 		});
-		registry = new AgentSessionRegistry({
+		const registry = new AgentSessionRegistry({
 			root: rootSnapshot(),
 			dependencies: dependencies(),
 			createSession,

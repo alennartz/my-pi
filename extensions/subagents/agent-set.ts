@@ -471,7 +471,7 @@ export class SubagentManager {
 		this.assertSpawnableIds(agents);
 
 		const firstStart = !this.hasAgents();
-		let createdEntries: AgentEntry[] = [];
+		const createdEntries: AgentEntry[] = [];
 
 		try {
 			this.ensureSessionDirectory();

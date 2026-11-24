@@ -179,6 +179,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 			const createdNodes: any[] = [];
 			for (const request of requests) {
 				const childPath = [...parentPath, request.localId];
+				// oxlint-disable-next-line prefer-const
 				let node: any;
 				const childHooks = {
 					onEvent: (event: any) => request.hooks.onEvent(event),
