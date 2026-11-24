@@ -159,7 +159,9 @@ describe("ManagedChildSession lifecycle and legacy compatibility", () => {
 		try {
 			await Promise.race([
 				settledRun,
-				new Promise<void>((resolve) => setTimeout(resolve, 500)),
+				new Promise<void>((resolve) => {
+					setTimeout(resolve, 500);
+				}),
 			]);
 			expect(diagnostics).not.toEqual(expect.arrayContaining([expect.stringMatching(/session has not started/i)]));
 		} finally {

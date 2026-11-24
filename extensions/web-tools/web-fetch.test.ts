@@ -280,7 +280,9 @@ describe("mapWithConcurrency", () => {
 	it("preserves input order under concurrency", async () => {
 		const items = [5, 1, 3, 2, 4];
 		const out = await mapWithConcurrency(items, 2, async (n) => {
-			await new Promise((r) => setTimeout(r, n * 5));
+			await new Promise((r) => {
+				setTimeout(r, n * 5);
+			});
 			return n * 10;
 		});
 		expect(out).toEqual([50, 10, 30, 20, 40]);
@@ -293,7 +295,9 @@ describe("mapWithConcurrency", () => {
 		await mapWithConcurrency(items, 3, async (n) => {
 			active++;
 			peak = Math.max(peak, active);
-			await new Promise((r) => setTimeout(r, 10));
+			await new Promise((r) => {
+				setTimeout(r, 10);
+			});
 			active--;
 			return n;
 		});

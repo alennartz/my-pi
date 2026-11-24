@@ -195,7 +195,9 @@ describe("quota provider review follow-up", () => {
 		};
 		await events.get("session_start")?.({}, ctx);
 		cleanups.push(() => cleanFirstSession(events, ctx));
-		await new Promise((resolve) => setTimeout(resolve, 25));
+		await new Promise((resolve) => {
+			setTimeout(resolve, 25);
+		});
 
 		writeFileSync(modelsPath, JSON.stringify(models("replacement", "anthropic-messages")));
 		await registry.refresh({ allowNetwork: false });
@@ -220,7 +222,9 @@ describe("quota provider review follow-up", () => {
 			if (!context.allowNetwork) {return [model("initial", "dynamic-provider")];}
 			return [model(refreshed ? "refreshed" : "initial", "dynamic-provider")];
 		});
-		await new Promise((resolve) => setTimeout(resolve, 25));
+		await new Promise((resolve) => {
+			setTimeout(resolve, 25);
+		});
 		refreshed = true;
 
 		await attachment.registry.refresh({ providers: ["dynamic-provider"], allowNetwork: true, force: true });
@@ -243,15 +247,21 @@ describe("quota provider review follow-up", () => {
 				}, { once: true });
 			});
 		});
-		await new Promise((resolve) => setTimeout(resolve, 25));
+		await new Promise((resolve) => {
+			setTimeout(resolve, 25);
+		});
 
 		const first = attachment.registry.refresh({ providers: ["overlap-provider"], allowNetwork: true, force: true });
 		for (let index = 0; index < 100 && calls < 1; index += 1) {
-			await new Promise((resolve) => setTimeout(resolve, 0));
+			await new Promise((resolve) => {
+				setTimeout(resolve, 0);
+			});
 		}
 		const second = attachment.registry.refresh({ providers: ["overlap-provider"], allowNetwork: true, force: true });
 		for (let index = 0; index < 100 && calls < 2; index += 1) {
-			await new Promise((resolve) => setTimeout(resolve, 0));
+			await new Promise((resolve) => {
+				setTimeout(resolve, 0);
+			});
 		}
 		if (calls < 2) {throw new Error("overlapping refreshes did not start");}
 

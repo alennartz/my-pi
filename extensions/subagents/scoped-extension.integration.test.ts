@@ -1117,7 +1117,9 @@ describe("semantic facts on native messages", () => {
 		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
 		root.worker.child.session = undefined;
 		root.worker.hooks.onRuntimeReplaced({ oldSessionId: root.worker.child.sessionId, newSessionId: "replacement" });
-		await new Promise<void>((resolve) => setImmediate(resolve));
+		await new Promise<void>((resolve) => {
+			setImmediate(resolve);
+		});
 		expect(resolved).toBe(false);
 		root.worker.hooks.onEvent({ type: "agent_settled" });
 		const result = await waiting;
@@ -1139,7 +1141,9 @@ describe("semantic facts on native messages", () => {
 		void waiting.then(() => { resolved = true; });
 		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started" && fact.path.join("/") === "worker")).toBe(true));
 		scout.hooks.onEvent({ type: "agent_settled" });
-		await new Promise<void>((resolve) => setImmediate(resolve));
+		await new Promise<void>((resolve) => {
+			setImmediate(resolve);
+		});
 		expect(resolved).toBe(false);
 		await lease.release();
 		expect((await waiting).structuredContent.agents).toContainEqual(expect.objectContaining({ id: "scout", status: "idle" }));
@@ -1241,7 +1245,9 @@ describe("semantic facts on native messages", () => {
 		let resolved = false;
 		void waiting.then(() => { resolved = true; });
 		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		await new Promise<void>((resolve) => setImmediate(resolve));
+		await new Promise<void>((resolve) => {
+			setImmediate(resolve);
+		});
 		expect(resolved).toBe(false);
 		root.worker.hooks.onEvent({ type: "agent_start" });
 		root.worker.hooks.onEvent({ type: "agent_settled" });
@@ -1268,7 +1274,9 @@ describe("semantic facts on native messages", () => {
 		let resolved = false;
 		void waiting.then(() => { resolved = true; });
 		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started" && fact.data.invocationId === "await-restarted")).toBe(true));
-		await new Promise<void>((resolve) => setImmediate(resolve));
+		await new Promise<void>((resolve) => {
+			setImmediate(resolve);
+		});
 		expect(resolved).toBe(false);
 		root.worker.hooks.onEvent({ type: "agent_start" });
 		root.worker.hooks.onEvent({ type: "agent_settled" });
@@ -2177,7 +2185,9 @@ describe("root orchestration integration", () => {
 
 		const settled = await Promise.race([
 			execute(tools, "await_agents", {}, ctx).then((result: any) => result.content[0].text),
-			new Promise<string>((resolve) => setTimeout(() => resolve("WAIT DID NOT RETURN"), 100)),
+			new Promise<string>((resolve) => {
+				setTimeout(() => resolve("WAIT DID NOT RETURN"), 100);
+			}),
 		]);
 		expect(settled).toContain("worker");
 		expect(settled).toContain("corr-blocked");

@@ -19,7 +19,6 @@ export default defineConfig({
     'import/no-namespace': 'off',
     'no-console': 'off',
     'no-empty': ['error', { allowEmptyCatch: true }],
-    'no-promise-executor-return': 'off',
     'quality/no-array-filter-map': 'off',
     'quality/no-chained-type-assertions': 'off',
     // Conditional spreads mark optional properties under exactOptionalPropertyTypes.

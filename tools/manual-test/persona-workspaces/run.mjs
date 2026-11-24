@@ -200,7 +200,9 @@ function killGroup(proc) {
 }
 
 function sleep(ms) {
-	return new Promise((r) => setTimeout(r, ms));
+	return new Promise((r) => {
+		setTimeout(r, ms);
+	});
 }
 
 async function waitFor(pred, ms, every = 300) {

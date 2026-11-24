@@ -365,8 +365,12 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 		// separate merge run, so the local agentRunning flag cannot go stale.
 		await ctx.waitForIdle();
 		// Arm BOTH barriers before firing so we can't miss `agent_start`.
-		const startBarrier = new Promise<void>((resolve) => startWaiters.push(resolve));
-		const endBarrier = new Promise<void>((resolve) => endWaiters.push(resolve));
+		const startBarrier = new Promise<void>((resolve) => {
+			startWaiters.push(resolve);
+		});
+		const endBarrier = new Promise<void>((resolve) => {
+			endWaiters.push(resolve);
+		});
 		pi.sendUserMessage(message);
 		await startBarrier;
 		await endBarrier;
