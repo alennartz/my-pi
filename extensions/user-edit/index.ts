@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { stringField } from "../subagents/narrow.js";
 import { Type } from "typebox";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
@@ -32,8 +33,8 @@ export default function (pi: ExtensionAPI) {
 			let content: string;
 			try {
 				content = await readFile(absolutePath, "utf8");
-			} catch (error: any) {
-				if (error.code === "ENOENT") {
+			} catch (error: unknown) {
+				if (stringField(error, "code") === "ENOENT") {
 					content = "";
 				} else {
 					throw error;

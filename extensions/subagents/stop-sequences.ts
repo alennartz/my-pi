@@ -7,6 +7,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { asRecord } from "./narrow.js";
+import { required } from "../../lib/required.ts";
 
 export interface StopSequenceManager {
 	/** Add sequences that persist until explicitly removed. */
@@ -34,7 +36,7 @@ export function createStopSequenceManager(pi: ExtensionAPI): StopSequenceManager
 		const sequences = [...persistent, ...oneShot];
 		oneShot = [];
 
-		return applyStopSequences(event.payload as any, model.api, sequences);
+		return applyStopSequences(required(asRecord(event.payload), "request payload"), model.api, sequences);
 	});
 
 	return {
@@ -54,7 +56,7 @@ export function createStopSequenceManager(pi: ExtensionAPI): StopSequenceManager
 	};
 }
 
-export function applyStopSequences(payload: any, api: string, sequences: string[]): any {
+export function applyStopSequences(payload: Record<string, unknown>, api: string, sequences: string[]): Record<string, unknown> {
 	switch (api) {
 		// Anthropic
 		case "anthropic-messages":
@@ -78,22 +80,20 @@ export function applyStopSequences(payload: any, api: string, sequences: string[
 		// Google family
 		case "google-generative-ai":
 		case "google-vertex":
-		case "google-gemini-cli":
-			payload.generationConfig ??= {};
-			payload.generationConfig.stopSequences = mergeUnique(
-				payload.generationConfig.stopSequences,
-				sequences,
-			);
+		case "google-gemini-cli": {
+			const generationConfig = asRecord(payload.generationConfig) ?? {};
+			generationConfig.stopSequences = mergeUnique(generationConfig.stopSequences, sequences);
+			payload.generationConfig = generationConfig;
 			break;
+		}
 
 		// Bedrock (Anthropic-style under the hood)
-		case "bedrock-converse-stream":
-			payload.additionalModelRequestFields ??= {};
-			payload.additionalModelRequestFields.stop_sequences = mergeUnique(
-				payload.additionalModelRequestFields.stop_sequences,
-				sequences,
-			);
+		case "bedrock-converse-stream": {
+			const requestFields = asRecord(payload.additionalModelRequestFields) ?? {};
+			requestFields.stop_sequences = mergeUnique(requestFields.stop_sequences, sequences);
+			payload.additionalModelRequestFields = requestFields;
 			break;
+		}
 
 		default:
 			// Unknown API — try the OpenAI-style `stop` field as a best guess.
@@ -104,7 +104,8 @@ export function applyStopSequences(payload: any, api: string, sequences: string[
 	return payload;
 }
 
-function appendStopInstruction(existing: string | null | undefined, sequences: string[]): string {
+function appendStopInstruction(value: unknown, sequences: string[]): string {
+	const existing = typeof value === "string" ? value : undefined;
 	const markers = sequences.map((s) => `- ${s}`).join("\n");
 	const instruction = [
 		"System-delivered notification markers (not assistant output):",
@@ -115,8 +116,9 @@ function appendStopInstruction(existing: string | null | undefined, sequences: s
 	return existing && existing.trim().length > 0 ? `${existing}\n\n${instruction}` : instruction;
 }
 
-function mergeUnique(existing: string[] | undefined, additions: string[]): string[] {
-	if (!existing || existing.length === 0) {return additions;}
+function mergeUnique(value: unknown, additions: string[]): string[] {
+	const existing = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+	if (existing.length === 0) {return additions;}
 	const set = new Set(existing);
 	for (const s of additions) {set.add(s);}
 	return [...set];

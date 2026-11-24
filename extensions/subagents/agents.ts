@@ -13,6 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager } from '@earendil-works/pi-coding-agent';
 import type { SlashCommandInfo } from '@earendil-works/pi-coding-agent';
+import { asRecord, stringArrayField } from "./narrow.js";
 
 export interface RegularAgentSpec {
 	kind: "agent";
@@ -301,14 +302,14 @@ export async function discoverPackageAgents(cwd: string): Promise<{ user: AgentC
 	for (const [baseDir, scope] of baseDirScope) {
 		// Read package.json for pi.agents
 		const pkgJsonPath = path.join(baseDir, "package.json");
-		let pkgJson: any;
+		let pkgJson: unknown;
 		try {
 			pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf8"));
 		} catch {
 			continue;
 		}
 
-		const agentDirs: string[] = pkgJson?.pi?.agents;
+		const agentDirs = stringArrayField(asRecord(pkgJson)?.["pi"], "agents");
 		if (!Array.isArray(agentDirs) || agentDirs.length === 0) {continue;}
 
 		const source: AgentConfig["source"] = scope === "project" ? "package:project" : "package:user";
