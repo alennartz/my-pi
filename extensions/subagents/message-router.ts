@@ -139,7 +139,7 @@ export class MessageRouter {
 		this.onMessageDelivery = options.onMessageDelivery;
 		this.onMessagePhase = options.onMessagePhase;
 		this.onResponseProgress = options.onResponseProgress;
-		const namespace = randomUUID().split("-").pop()!;
+		const namespace = randomUUID().split("-").pop() ?? randomUUID();
 		this.correlationIdFactory = options.correlationIdFactory ?? (() => {
 			this.nextCorrelationSequence += 1;
 			return `corr-${namespace}-${this.nextCorrelationSequence}`;

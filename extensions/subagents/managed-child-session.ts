@@ -539,8 +539,9 @@ export async function createManagedChildSession(
 			sessionManager: initial.sessionManager,
 			sessionStartEvent: { type: "session_start", reason: initial.reason },
 		});
-		managed = new ManagedChildSession(runtime, bindingsBySession, hooks);
-		runtime.setRebindSession((session) => managed!.bindSession(session, true));
+		const session = new ManagedChildSession(runtime, bindingsBySession, hooks);
+		managed = session;
+		runtime.setRebindSession((next) => session.bindSession(next, true));
 		await managed.bindSession(runtime.session, false);
 		live = true;
 		return managed;

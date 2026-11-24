@@ -36,6 +36,7 @@ import { modelDisplayName } from "./status-display.js";
 import { activityPreview } from "./format.js";
 import { formatOverrideNote } from "./tool-result.js";
 import { truncateForModel } from "../../lib/truncate.ts";
+import { required } from "../../lib/required.ts";
 import { formatUsageLine, isZeroUsage, lifecycleStatus, statusData, sumAgentUsage, toPiUsage, AwaitResultSchema, InterruptResultSchema, ModelsResultSchema, ResurrectResultSchema, SendResultSchema, SpawnResultSchema, StatusResultSchema, TeardownResultSchema } from './tool-results.js';
 import type { AwaitResultData, InterruptResultData, ModelsResultData, ResurrectResultData, SendResultData, StatusResultData, TeardownAgentData, TeardownResultData, AgentRefData } from './tool-results.js';
 import { loadWorkspacePersona } from "../persona-workspaces/declaration.ts";
@@ -158,7 +159,7 @@ function createSessionEnvironment(
 	})));
 	const cachedModels: readonly { provider: string; id: string }[] = Object.freeze(modelCatalog
 		.filter((model) => Boolean(model.provider && model.id))
-		.map((model) => Object.freeze({ provider: model.provider!, id: model.id! })));
+		.flatMap((model) => model.provider && model.id ? [Object.freeze({ provider: model.provider, id: model.id })] : []));
 	return Object.freeze({
 		packageAgents: frozenPackages,
 		cachedModels,
@@ -739,7 +740,7 @@ class SessionTurnCoordinator {
 		const storedSettlements: StoredChildSettlement[] = [];
 		for (const path of requested) {
 			const stored = this.settledStatuses.get(JSON.stringify(path));
-			const live = manager.getAgentStatus(path.at(-1)!);
+			const live = manager.getAgentStatus(required(path.at(-1), "agent local id"));
 			if (stored && live && isSettledState(live.state) && (stored.state === live.state || (stored.state === "stopped" && live.state === "idle"))) {storedSettlements.push(stored);}
 		}
 		const immediate = resolveExplicitAwait(requested, storedSettlements);
@@ -881,13 +882,13 @@ class SessionTurnCoordinator {
 			// A stop is not a completion. An open view holds it, so the parent's
 			// wait stays pending until the last view closes, and the release
 			// delivers no idle notification.
-			const stoppedStatus = this.settledStatuses.get(key)!;
+			const stoppedStatus = required(this.settledStatuses.get(key), "settled status");
 			this.holdGate.settle(stoppedStatus);
 			this.activeGate?.settle(stoppedStatus);
 			return false;
 		}
 
-		const settled = this.settledStatuses.get(key)!;
+		const settled = required(this.settledStatuses.get(key), "settled status");
 		const replaced = this.holdGate.settle(settled);
 		this.activeGate?.settle(settled);
 		if ((this.leaseCounts.get(key) ?? 0) > 0) {return false;}
@@ -1278,7 +1279,7 @@ class RootSubagentControlPort implements SubagentOwnerControlPort {
 
 	teardown(pathValue: AgentPath, incarnation: string) {
 		const owner = this.resolveOwner(pathValue);
-		return owner.control.teardown(pathValue.at(-1)!, incarnation);
+		return owner.control.teardown(required(pathValue.at(-1), "agent local id"), incarnation);
 	}
 
 	stop(request: SubagentStopRequest): Promise<void> {
@@ -2127,7 +2128,7 @@ class SubagentSessionOwner {
 		const { rootError } = session.turns.settleRun(event?.aborted === true);
 		if (this.scope.kind === "root") {
 			session.registry.updateOperational([], {
-				...session.registry.getSnapshot([])!.operational,
+				...required(session.registry.getSnapshot([]), "root snapshot").operational,
 				state: rootError ? "errored" : "idle",
 			});
 		}
@@ -2225,7 +2226,7 @@ class SubagentSessionOwner {
 		const { registry } = await this.waitForActiveSession();
 		const message = event.message;
 		const usage = message.usage;
-		const operational = registry.getSnapshot([])!.operational;
+		const operational = required(registry.getSnapshot([]), "root snapshot").operational;
 		const prior = operational.usage;
 		const costBreakdown = addCostBreakdown(
 			prior.costBreakdown,
@@ -2291,7 +2292,7 @@ class SubagentSessionOwner {
 			}));
 		}
 		if (this.scope.kind !== "root") {return;}
-		const current = session.registry.getSnapshot([])!.operational;
+		const current = required(session.registry.getSnapshot([]), "root snapshot").operational;
 		this.updateRootOperational({
 			lastActivity: toolName
 				? `${toolName}(${summarizeArgs(raw.args ?? raw.input ?? {})})`.replaceAll(/[\r\n]+/g, " ")

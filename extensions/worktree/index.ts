@@ -14,6 +14,7 @@ import type {
 	WorktreeInfo,
 } from "./contracts.ts";
 import { createWorktreeController } from "./controller.ts";
+import { required } from "../../lib/required.ts";
 
 function listGitBranches(cwd: string): string[] {
 	try {
@@ -88,7 +89,7 @@ function parseWorktreeList(output: string): WorktreeInfo[] {
 	pushCurrent();
 
 	return entries.map((entry, index) => ({
-		path: entry.path!,
+		path: required(entry.path, "worktree path"),
 		branch: entry.branch ?? "",
 		isMain: index === 0,
 	}));

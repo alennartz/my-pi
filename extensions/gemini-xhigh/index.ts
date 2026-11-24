@@ -38,9 +38,10 @@ export function applyXhighThinkingLevel(
 	const request = payload as { config?: ThinkingConfigOwner; generationConfig?: ThinkingConfigOwner } & ThinkingConfigOwner;
 	let changed = false;
 	for (const owner of [request.config, request.generationConfig, request]) {
-		const level = owner?.thinkingConfig?.thinkingLevel;
-		if (level === "HIGH" || level === "high") {
-			owner.thinkingConfig!.thinkingLevel = "XHIGH";
+		const thinkingConfig = owner?.thinkingConfig;
+		const level = thinkingConfig?.thinkingLevel;
+		if ((level === "HIGH" || level === "high") && thinkingConfig) {
+			thinkingConfig.thinkingLevel = "XHIGH";
 			changed = true;
 		}
 	}

@@ -5,6 +5,7 @@ import type { ChildSessionConfig, ChildSessionHooks, ManagedChildSession, Manage
 import type { MessagePort } from "./message-router.js";
 import { createSessionTreeStore } from "./scoped-store.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
+import { required } from "../../lib/required.ts";
 import type { SubagentOwnerControlPort } from "./provider.js";
 import type { SemanticFactBus } from "./semantic-bus.js";
 
@@ -398,7 +399,7 @@ export class AgentSessionRegistry {
 				};
 				const managed = await this.createSession(config, this.dependencies, decoratedHooks);
 				const sessionObject: any = (managed as any).session;
-				const current = this.nodes.get(pathKey)?.snapshot ?? this.stagedSnapshots.get(pathKey)!;
+				const current = required(this.nodes.get(pathKey)?.snapshot ?? this.stagedSnapshots.get(pathKey), "staged snapshot");
 				const sessionId = (managed as any).sessionId ?? sessionObject?.sessionId ?? current.sessionId;
 				const sessionFile = (managed as any).sessionFile ?? sessionObject?.sessionFile;
 				const manager = sessionObject?.sessionManager;
@@ -424,7 +425,7 @@ export class AgentSessionRegistry {
 			for (let index = 0; index < paths.length; index++) {
 				const path = paths[index];
 				const pathKey = key(path);
-				this.nodes.set(pathKey, staged.get(pathKey)!);
+				this.nodes.set(pathKey, required(staged.get(pathKey), "staged node"));
 				this.usageBaselines.set(pathKey, { ...requests[index].initialOperational.usage });
 			}
 			for (const path of paths) {
@@ -433,7 +434,7 @@ export class AgentSessionRegistry {
 				this.releaseReservation(pathKey, true);
 			}
 			for (const path of paths) {
-				const node = this.nodes.get(key(path))!;
+				const node = required(this.nodes.get(key(path)), "committed node");
 				this.emit({ type: "node_added", node: node.snapshot });
 			}
 			return created.map((node) => this.publicNode(node));

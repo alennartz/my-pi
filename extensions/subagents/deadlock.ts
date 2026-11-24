@@ -1,3 +1,4 @@
+import { required } from "../../lib/required.ts";
 /**
  * Directed graph of pending blocking sends for deadlock detection.
  *
@@ -46,7 +47,7 @@ export class DeadlockGraph {
 		const stack = [to];
 
 		while (stack.length > 0) {
-			const current = stack.pop()!;
+			const current = required(stack.pop(), "cycle stack entry");
 			if (current === from) {return true;}
 			if (visited.has(current)) {continue;}
 			visited.add(current);

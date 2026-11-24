@@ -36,6 +36,7 @@ import { activityPreview, formatTokenCount } from "./format.js";
 import { stripThinkingSuffix } from "./model-tiers.js";
 import { serializeAgentMessage, serializeAgentTorndown, serializeGroupTorndown, serializeSubagentIdentity } from './messages.js';
 import type { ActiveAgentsCompleteData, AgentCompleteData } from './messages.js';
+import { required } from "../../lib/required.ts";
 
 /**
  * Capability fields of one persona file — a workspace declaration or a
@@ -487,7 +488,7 @@ export class SubagentManager {
 
 			const requests: CreateAgentNodeRequest[] = [];
 			for (const spec of agents) {
-				const entry = this.createEntry(spec, ports.get(spec.id)!, agents);
+				const entry = this.createEntry(spec, required(ports.get(spec.id), "agent port"), agents);
 				createdEntries.push(entry);
 				this.pendingEntries.add(entry);
 				requests.push(this.createNodeRequest(spec, agentConfigs, entry, agents));
@@ -694,7 +695,7 @@ export class SubagentManager {
 		const agentConfig = spec.kind === "agent" && spec.agent
 			? agentConfigs.find((candidate) => candidate.name === spec.agent)
 			: undefined;
-		const sessionDir = this.sessionDir!;
+		const sessionDir = required(this.sessionDir, "session directory");
 		const target = this.sessionTarget(spec, sessionDir);
 		const identityXml = this.identityPrompt(spec, agentConfigs, entry.channels, batch);
 		const skillPaths = this.skillPathsFor(spec);
@@ -749,7 +750,7 @@ export class SubagentManager {
 				getCapabilities: ({ session }) => createChildCapabilities(session),
 				onShutdownRequested: () => this.markRuntimeDead(entry, "Child runtime became unavailable"),
 			},
-			initialOperational: entry.provisionalOperational!,
+			initialOperational: required(entry.provisionalOperational, "provisional operational state"),
 		};
 	}
 

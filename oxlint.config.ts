@@ -42,8 +42,6 @@ export default defineConfig({
     'typescript/array-type': ['error', { default: 'array' }],
     // Pi event and tool payloads are untyped per event name at the SDK boundary.
     'typescript/no-explicit-any': 'off',
-    // Assertions mark invariants that construction already checks.
-    'typescript/no-non-null-assertion': 'off',
     // Any values enter at untyped SDK boundaries.
     'typescript/no-unsafe-argument': 'off',
     'typescript/no-unsafe-assignment': 'off',

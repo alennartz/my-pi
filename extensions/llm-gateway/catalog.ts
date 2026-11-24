@@ -1,4 +1,5 @@
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
+import { required } from "../../lib/required.ts";
 
 const PER_TOKEN_TO_PER_MILLION = 1_000_000;
 const DEFAULT_CONTEXT_WINDOW = 128_000;
@@ -153,7 +154,7 @@ function agreedEfforts(eligibleProviders: GatewayProvider[]): string[] | undefin
 		agreed = agreed === undefined
 			? declared
 			: declared.filter((value) =>
-				agreed!.some((kept) => normalizeEffort(kept) === normalizeEffort(value)));
+				required(agreed, "agreed effort list").some((kept) => normalizeEffort(kept) === normalizeEffort(value)));
 	}
 	return agreed;
 }
@@ -249,14 +250,14 @@ export function buildProviderModelConfigs(records: unknown[]): ProviderModelConf
 		const inputRate = medianRate(prices, "prompt");
 		const outputRate = medianRate(prices, "completion");
 		if (inputRate === undefined || outputRate === undefined) {continue;}
-		const input = perMillion(inputRate)!;
-		const output = perMillion(outputRate)!;
-		const cacheRead = perMillion(medianRate(prices, "input_cache_read") ?? inputRate)!;
+		const input = required(perMillion(inputRate), "input rate");
+		const output = required(perMillion(outputRate), "output rate");
+		const cacheRead = required(perMillion(medianRate(prices, "input_cache_read") ?? inputRate), "cache-read rate");
 		// Pi exposes one cache-write rate. Prefer the gateway's default write tier;
 		// use the 1-hour tier only when no eligible provider reports the default.
-		const cacheWrite = perMillion(
+		const cacheWrite = required(perMillion(
 			medianRate(prices, "input_cache_write") ?? medianRate(prices, "input_cache_write_1h") ?? inputRate,
-		)!;
+		), "cache-write rate");
 		const contextWindow = positiveNumber(model.context_length) ?? DEFAULT_CONTEXT_WINDOW;
 		// DevPass cannot pin providers: a request may land on any eligible one,
 		// and max_tokens above a provider's cap is rejected (or makes the model

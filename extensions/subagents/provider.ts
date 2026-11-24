@@ -30,6 +30,7 @@ import type {
 import type { SemanticAdapterEvent } from "./semantic-adapter.js";
 import { normalizeSavedPresentationData, savedPresentationKind } from './presentation-data.js';
 import type { PersistedSubagentContent, PresentationKind } from './presentation-data.js';
+import { required } from "../../lib/required.ts";
 
 /** Opaque provider epoch plus the last ordered event sequence observed in it. */
 export type FeedCursor = Readonly<{
@@ -814,7 +815,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 } {
 	const epoch = randomUUID();
 	const historyLimit = Number.isInteger(options.historyLimit) && (options.historyLimit ?? 0) > 0
-		? options.historyLimit!
+		? required(options.historyLimit, "history limit")
 		: DEFAULT_HISTORY_LIMIT;
 	let sequence = 0;
 	let eventCounter = 0;
