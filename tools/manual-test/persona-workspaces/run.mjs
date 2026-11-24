@@ -236,7 +236,7 @@ function rpcSession({ cwd, agentDir, extraArgs = [], probeOut }) {
 	s.stderr = () => stderr;
 	s.waitEvent = (pred, ms = TIMEOUT) =>
 		waitFor(() => events.find((e) => pred(e)) || undefined, ms, 200);
-	s.request = async (cmd, pred, ms = 20000) => {
+	s.request = async (cmd, pred, ms = 20_000) => {
 		const id = `r${++s.id}`;
 		s.send({ ...cmd, id });
 		return s.waitEvent((e) => e.type === "response" && e.id === id && pred(e), ms);
@@ -244,7 +244,7 @@ function rpcSession({ cwd, agentDir, extraArgs = [], probeOut }) {
 	// Retry idempotent commands until the process is up AND the model registry
 	// has resolved the session model (an unresolved registry reports id
 	// "unknown" — prompts sent then hang and declared pins cannot bind).
-	s.ready = async (cmd = { type: "get_state" }, ms = 90000) => {
+	s.ready = async (cmd = { type: "get_state" }, ms = 90_000) => {
 		const id = `init`;
 		const deadline = Date.now() + ms;
 		for (;;) {
@@ -461,7 +461,7 @@ function makeAgentDir(root) {
 					// account's real (ahead-of-budget) spend pace cannot block the
 					// provider calls these checks make. The quota feature is out of
 					// scope here; hard-cap policy is unchanged.
-					lookaheadHours: 876000,
+					lookaheadHours: 876_000,
 				},
 			},
 		}),
@@ -793,7 +793,7 @@ async function D1(root, agentDir, probeOut) {
 			const turned = (rec) =>
 				rec && assistantTexts(sessionEntries(rec.sessionFile)).length >= 1;
 			return zeta && eta && fxc && turned(zeta) && turned(eta) && turned(fxc) ? m : undefined;
-		}, 120000, 1000);
+		}, 120_000, 1000);
 		check("j1_children_live", !!agents, { ids: agents ? [...agents.keys()] : [] });
 		if (!agents) {return;}
 
@@ -847,7 +847,7 @@ async function D1(root, agentDir, probeOut) {
 				JSON.stringify(sessionEntries(fxFile)).includes("PONG2")
 					? true
 					: undefined,
-			150000,
+			150_000,
 			1000,
 		);
 		check("j1_messaging", !!messaging, {});
@@ -984,7 +984,7 @@ async function D2(root, agentDir, probeOut) {
 			const z = zeta2 ? assistantTexts(sessionEntries(zeta2.sessionFile)).join(" ") : "";
 			const f = forkRec ? assistantTexts(sessionEntries(forkRec.sessionFile)).join(" ") : "";
 			return z.includes("ACK2") && f.includes("ACK3") ? true : undefined;
-		}, 120000, 1000);
+		}, 120_000, 1000);
 
 		const zetaV2 = payloads(probeOut).find(
 			(x) => x.sys.includes("WS-BODY-44") && x.sys.includes(CHILD_IDENTITY) && x.tools.length === 3,
@@ -1087,9 +1087,9 @@ async function R7(root, agentDir, probeOut) {
 		const reloadResponse = await s.request(
 			{ type: "prompt", message: "/pw-reload" },
 			(event) => event.success === true,
-			60000,
+			60_000,
 		);
-		const postReload = await s.request({ type: "get_state" }, (event) => event.success === true, 20000);
+		const postReload = await s.request({ type: "get_state" }, (event) => event.success === true, 20_000);
 		check("r7_reload_dispatched", reloadResponse?.success === true, {
 			disposition: reloadResponse?.data?.disposition,
 			modelAfterReload: postReload?.data?.model?.id,

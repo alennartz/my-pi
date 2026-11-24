@@ -175,7 +175,7 @@ function makeAgentDir(root, name, { global, project, trust = "always" }) {
 						billingCycleAnchor: "2026-11-01T13:33:00.000Z",
 						bypassAllowed: true,
 						enforceHardCap: false,
-						lookaheadHours: 876000,
+						lookaheadHours: 876_000,
 					},
 				},
 			}),

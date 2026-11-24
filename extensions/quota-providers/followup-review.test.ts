@@ -23,8 +23,8 @@ function model(id: string, provider: string) {
 		reasoning: false,
 		input: ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 8_192,
-		maxTokens: 1_024,
+		contextWindow: 8192,
+		maxTokens: 1024,
 	} as any;
 }
 
@@ -70,7 +70,7 @@ function makePi(registry: ModelRegistry) {
 function configureQuota(dir: string, providerId: string) {
 	writeFileSync(join(dir, "quota-providers.json"), JSON.stringify({
 		providers: {
-			[providerId]: { module: source, maxPollSeconds: 3_600, enforceHardCap: true },
+			[providerId]: { module: source, maxPollSeconds: 3600, enforceHardCap: true },
 		},
 	}));
 	const cacheDir = join(dir, "cache", "quota-providers", providerId);

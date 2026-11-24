@@ -138,7 +138,7 @@ describe("httpFetch", () => {
 		await httpFetch("https://example.com/a", opts);
 		// Fixed clock is 12:00:00Z → 10s delay
 		expect(opts.sleeps.length).toBe(1);
-		expect(opts.sleeps[0]).toBeGreaterThanOrEqual(9_000);
+		expect(opts.sleeps[0]).toBeGreaterThanOrEqual(9000);
 		expect(opts.sleeps[0]).toBeLessThanOrEqual(10_000);
 	});
 
@@ -255,7 +255,7 @@ describe("parseRetryAfterMs", () => {
 	});
 
 	it("parses HTTP-dates relative to now", () => {
-		expect(parseRetryAfterMs("Fri, 18 Sep 2026 12:00:05 GMT", now)).toBe(5_000);
+		expect(parseRetryAfterMs("Fri, 18 Sep 2026 12:00:05 GMT", now)).toBe(5000);
 		// dates in the past clamp to zero
 		expect(parseRetryAfterMs("Fri, 18 Sep 2026 11:00:00 GMT", now)).toBe(0);
 	});

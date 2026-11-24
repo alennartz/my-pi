@@ -30,7 +30,7 @@ test("parses displayed model and usage independently", () => {
 	].join("\n"));
 	assert.equal(detail.model, "gpt-4o-mini");
 	assert.equal(detail.thinkingLevel, "off");
-	assert.equal(detail.inputTotal, 21782);
+	assert.equal(detail.inputTotal, 21_782);
 	assert.equal(detail.output, 116);
 	assert.equal(detail.turns, 4);
 });

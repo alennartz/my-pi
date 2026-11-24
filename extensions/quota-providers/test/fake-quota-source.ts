@@ -10,7 +10,7 @@ const source: QuotaSource = {
 				quota: 100,
 				windowStart: 0,
 				windowEnd: 10_000,
-				asOf: 9_000,
+				asOf: 9000,
 			}],
 			modelLimitIds: {
 				"premium-model": ["monthly", "premium-weekly"],

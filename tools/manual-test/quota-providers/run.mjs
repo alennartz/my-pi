@@ -130,7 +130,7 @@ function rpcSession({ cwd, agentDir, transportFile, extraArgs = [] }) {
 		await sleep(750);
 		const deadline = Date.now() + TIMEOUT;
 		for (;;) {
-			const response = await state.request({ type: "get_state" }, () => true, Math.min(3_000, Math.max(1, deadline - Date.now())));
+			const response = await state.request({ type: "get_state" }, () => true, Math.min(3000, Math.max(1, deadline - Date.now())));
 			if (response?.data?.model?.id && response.data.model.id !== "unknown") {return response;}
 			if (Date.now() >= deadline) {throw new Error("pi RPC session did not resolve a model");}
 			await sleep(500);
@@ -169,7 +169,7 @@ function modelRecord(provider, id) {
 		reasoning: false,
 		input: ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 8_192,
+		contextWindow: 8192,
 		maxTokens: 256,
 	};
 }
@@ -423,7 +423,7 @@ function checkRunner(root) {
 	const cache = path.join(dir, "usage.json");
 	const ledger = path.join(dir, "ledger.jsonl");
 	const now = Date.now();
-	fs.writeFileSync(source, `export default { getUsage: async () => ({ snapshots: [{ limitId: "monthly", label: "Monthly", spend: 3, quota: 10, windowStart: ${now - 1000}, windowEnd: ${now + 86400000}, asOf: ${now} }], modelLimitIds: { premium: ["premium-weekly"] } }) };\n`);
+	fs.writeFileSync(source, `export default { getUsage: async () => ({ snapshots: [{ limitId: "monthly", label: "Monthly", spend: 3, quota: 10, windowStart: ${now - 1000}, windowEnd: ${now + 86_400_000}, asOf: ${now} }], modelLimitIds: { premium: ["premium-weekly"] } }) };\n`);
 	writeJson(config, { providers: { attached: { module: source, billingCycleAnchor: "2026-01-01T00:00:00.000Z", lookaheadHours: 0 } } });
 	fs.writeFileSync(ledger, [
 		JSON.stringify({ timestamp: now - 1, cost: 7, quotaLimitIds: ["monthly"] }),

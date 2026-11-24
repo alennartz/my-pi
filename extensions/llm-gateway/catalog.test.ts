@@ -9,7 +9,7 @@ describe("buildProviderModelConfigs", () => {
 				display_name: "Coding Model",
 				architecture: { input_modalities: ["text", "image"] },
 				context_length: 131_072,
-				max_output: 8_192,
+				max_output: 8192,
 				supported_parameters: ["stream", "tools", "reasoning"],
 				providers: [
 					{
@@ -71,11 +71,11 @@ describe("buildProviderModelConfigs", () => {
 			input: ["text", "image"],
 			inputLimits: {
 				images: {
-					resize: { maxWidth: 2_000, maxHeight: 2_000, maxBytes: 4_718_592, jpegQuality: 80 },
+					resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4_718_592, jpegQuality: 80 },
 				},
 			},
 			contextWindow: 131_072,
-			maxTokens: 8_192,
+			maxTokens: 8192,
 			cost: {
 				input: 2,
 				output: 6,
@@ -120,7 +120,7 @@ describe("buildProviderModelConfigs", () => {
 				{
 					streaming: true,
 					tools: true,
-					max_output: 8_192,
+					max_output: 8192,
 					pricing: { prompt: "1e-6", completion: "2e-6" },
 				},
 				{
@@ -132,13 +132,13 @@ describe("buildProviderModelConfigs", () => {
 				{
 					streaming: true,
 					tools: false,
-					max_output: 1_024,
+					max_output: 1024,
 					pricing: { prompt: "1e-6", completion: "2e-6" },
 				},
 			],
 		}]);
 
-		expect(entries[0].maxTokens).toBe(8_192);
+		expect(entries[0].maxTokens).toBe(8192);
 	});
 
 	it("derives the output cap from providers and uses pi's default when unknown", () => {
@@ -155,7 +155,7 @@ describe("buildProviderModelConfigs", () => {
 					{
 						streaming: true,
 						tools: true,
-						max_output: 8_000,
+						max_output: 8000,
 						pricing: { prompt: "1e-6", completion: "2e-6" },
 					},
 				],
@@ -170,7 +170,7 @@ describe("buildProviderModelConfigs", () => {
 			},
 		]);
 
-		expect(entries[0].maxTokens).toBe(8_000);
+		expect(entries[0].maxTokens).toBe(8000);
 		expect(entries[1].maxTokens).toBe(16_384);
 	});
 

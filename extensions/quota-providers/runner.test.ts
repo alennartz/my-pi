@@ -73,7 +73,7 @@ describe("runner.mjs — usage", () => {
 		quota: 100,
 		windowStart: Date.now() - 86_400_000,
 		windowEnd: Date.now() + 86_400_000,
-		asOf: Date.now() - 5_000,
+		asOf: Date.now() - 5000,
 	};
 
 	function runUsage(maxPollSeconds = 300): RunResult {
@@ -90,8 +90,8 @@ describe("runner.mjs — usage", () => {
 
 	it("writes snapshots and prunes ledger entries through the earliest asOf", () => {
 		writeConfig(configPath, { usage: snapshot });
-		const oldEntry = JSON.stringify({ timestamp: snapshot.asOf - 1_000, cost: 0.05 });
-		const newEntry = JSON.stringify({ timestamp: snapshot.asOf + 1_000, cost: 0.07 });
+		const oldEntry = JSON.stringify({ timestamp: snapshot.asOf - 1000, cost: 0.05 });
+		const newEntry = JSON.stringify({ timestamp: snapshot.asOf + 1000, cost: 0.07 });
 		writeFileSync(ledgerPath, `${oldEntry}\n${newEntry}\n`, "utf8");
 
 		const result = runUsage();

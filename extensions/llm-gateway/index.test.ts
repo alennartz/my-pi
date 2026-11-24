@@ -15,7 +15,7 @@ function storedModel() {
 	return {
 		id: "stored-model", name: "Stored model", provider: "llmgateway",
 		baseUrl: "https://api.llmgateway.io/v1", api: "openai-completions",
-		input: ["text"], reasoning: false, contextWindow: 16_000, maxTokens: 2_000,
+		input: ["text"], reasoning: false, contextWindow: 16_000, maxTokens: 2000,
 		cost: { input: 1, output: 2, cacheRead: 1, cacheWrite: 1 },
 	};
 }
@@ -24,7 +24,7 @@ function catalogResponse() {
 	return new Response(JSON.stringify({ data: [
 		{
 			id: "coding-model", display_name: "Coding model", context_length: 131_072,
-			max_output: 8_192, architecture: { input_modalities: ["text", "image"] },
+			max_output: 8192, architecture: { input_modalities: ["text", "image"] },
 			supported_parameters: ["reasoning"],
 			providers: [{ streaming: true, tools: true, reasoning: true, pricing: {
 				prompt: "0.000001", completion: "0.000004", input_cache_read: "0.0000005", input_cache_write: "0.000002",
@@ -67,13 +67,13 @@ describe("LLM Gateway provider registration", () => {
 		const models = await config.refreshModels({ stored: undefined, allowNetwork: true, force: false, signal: new AbortController().signal, publish });
 		expect(models).toEqual([expect.objectContaining({
 			id: "coding-model", name: "Coding model", input: ["text", "image"], reasoning: true,
-			contextWindow: 131_072, maxTokens: 8_192,
+			contextWindow: 131_072, maxTokens: 8192,
 			cost: { input: 1, output: 4, cacheRead: 0.5, cacheWrite: 2 },
 		})]);
 		const stored = await store.read("llmgateway");
 		expect(stored).toMatchObject({ checkedAt: NOW, models: [expect.objectContaining({
 			id: "coding-model", name: "Coding model", provider: "llmgateway", baseUrl: "https://api.llmgateway.io/v1", api: "openai-completions",
-			input: ["text", "image"], reasoning: true, contextWindow: 131_072, maxTokens: 8_192,
+			input: ["text", "image"], reasoning: true, contextWindow: 131_072, maxTokens: 8192,
 			cost: { input: 1, output: 4, cacheRead: 0.5, cacheWrite: 2 },
 		})] });
 

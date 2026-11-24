@@ -95,7 +95,7 @@ export interface WebFetchDeps {
 	extractionOptsHash?: string;
 }
 
-const DEFAULT_MAX_CHARS = 8_000;
+const DEFAULT_MAX_CHARS = 8000;
 const ABSOLUTE_MAX_CHARS = 50_000;
 const BATCH_CONCURRENCY = 4;
 const BATCH_LIMIT = 8;

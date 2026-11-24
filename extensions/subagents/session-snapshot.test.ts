@@ -115,14 +115,14 @@ describe("parseSessionSnapshot — malformed lines", () => {
 describe("parseSessionSnapshot — cumulative usage", () => {
 	it("sums usage across every assistant message", () => {
 		const file = writeSession([
-			assistantLine({ model: "m1", text: "a", usage: { input: 2, output: 408, cacheRead: 40475, cacheWrite: 2086, cost: 0.0434 } }),
+			assistantLine({ model: "m1", text: "a", usage: { input: 2, output: 408, cacheRead: 40_475, cacheWrite: 2086, cost: 0.0434 } }),
 			userLine("more"),
 			assistantLine({ model: "m1", text: "b", usage: { input: 3, output: 100, cacheRead: 50, cacheWrite: 10, cost: 0.01 } }),
 		]);
 		const snap = parseSessionSnapshot(file);
 		expect(snap.usage.input).toBe(5);
 		expect(snap.usage.output).toBe(508);
-		expect(snap.usage.cacheRead).toBe(40525);
+		expect(snap.usage.cacheRead).toBe(40_525);
 		expect(snap.usage.cacheWrite).toBe(2096);
 		expect(snap.usage.cost).toBeCloseTo(0.0534, 6);
 		expect(snap.usage.turns).toBe(2);
@@ -279,10 +279,10 @@ describe("parseSessionSnapshot — lastTurnInput", () => {
 	it("derives lastTurnInput from the last assistant turn as input + cacheRead + cacheWrite", () => {
 		const file = writeSession([
 			assistantLine({ model: "m1", text: "a", usage: { input: 1, cacheRead: 1, cacheWrite: 1 } }),
-			assistantLine({ model: "m1", text: "b", usage: { input: 2, cacheRead: 40475, cacheWrite: 2086 } }),
+			assistantLine({ model: "m1", text: "b", usage: { input: 2, cacheRead: 40_475, cacheWrite: 2086 } }),
 		]);
 		const snap = parseSessionSnapshot(file);
-		expect(snap.lastTurnInput).toBe(2 + 40475 + 2086);
+		expect(snap.lastTurnInput).toBe(2 + 40_475 + 2086);
 	});
 
 	it("excludes output tokens from lastTurnInput", () => {
@@ -308,7 +308,7 @@ describe("parseSessionSnapshot — non-assistant noise", () => {
 		const file = writeSession([
 			{ type: "session", id: "abc" },
 			userLine("question"),
-			toolResultLine("x".repeat(10000)),
+			toolResultLine("x".repeat(10_000)),
 			{ type: "model_change", model: "noise-model" },
 			assistantLine({ model: "real-model", text: "real answer", usage: { input: 3, output: 4 } }),
 			toolResultLine("y".repeat(5000)),

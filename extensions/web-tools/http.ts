@@ -51,7 +51,7 @@ const DEFAULT_MAX_REDIRECTS = 5;
 const DEFAULT_MAX_RETRIES = 2;
 
 const BACKOFF_BASE_MS = 500;
-const BACKOFF_CAP_MS = 8_000;
+const BACKOFF_CAP_MS = 8000;
 const RETRY_AFTER_CAP_MS = 30_000;
 
 const REQUEST_HEADERS: Record<string, string> = {
