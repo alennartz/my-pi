@@ -42,6 +42,7 @@ export default defineConfig({
     // Pi event and tool payloads are untyped per event name at the SDK boundary.
     'typescript/no-explicit-any': 'off',
     'typescript/no-floating-promises': 'off',
+    // Assertions mark invariants that construction already checks.
     'typescript/no-non-null-assertion': 'off',
     'typescript/no-unsafe-argument': 'off',
     'typescript/no-unsafe-assignment': 'off',
