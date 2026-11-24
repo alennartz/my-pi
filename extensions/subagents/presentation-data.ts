@@ -8,8 +8,9 @@ import type {
 	SubagentUsage,
 } from '@pimote/sdk/subagents';
 import type { AgentPath } from './agent-path.js';
-import { isJsonObject, toJsonProjection } from './narrow.js';
+import { isJsonArray, isJsonObject, toJsonProjection } from './narrow.js';
 import type { JsonObject } from './narrow.js';
+import type { JsonValue } from '@earendil-works/pi-ai';
 
 type RecordData = JsonObject;
 export type PresentationKind = SubagentOperationKind;
@@ -61,11 +62,16 @@ export function finalDataJson(data: SubagentFinalData): JsonObject {
 	return isJsonObject(projected) ? projected : {};
 }
 
+/** Whether a value is a presentation record already typed as JSON. */
+function isJsonRecord(value: JsonValue): value is RecordData {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function isPresentationRecord(value: unknown): value is RecordData {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-export function savedPresentationKind(value: RecordData): unknown {
+export function savedPresentationKind(value: RecordData): JsonValue {
 	const data = value.data;
 	if (value.kind !== 'send' || value.source !== 'custom_entry' || !isPresentationRecord(data)
 		|| data.operation !== 'send' || 'parameters' in data || !isPresentationRecord(data.result)) {return value.kind;}
@@ -85,12 +91,16 @@ function argumentRecord(value: unknown): RecordData | undefined {
 	}
 }
 
-export function cleanPresentationValue(value: unknown): unknown {
-	if (Array.isArray(value)) {return value.map(cleanPresentationValue);}
-	if (!isPresentationRecord(value)) {return value;}
-	return Object.fromEntries(Object.entries(value)
-		.filter(([key]) => !privateIdentifierFields.includes(key) && !['toolCallId', 'semantic', 'semanticEvents', 'subagentContent'].includes(key))
-		.map(([key, child]) => [key, cleanPresentationValue(child)]));
+export function cleanPresentationValue(value: JsonValue): JsonValue {
+	if (isJsonArray(value)) {return value.map((child) => cleanPresentationValue(child));}
+	if (!isJsonRecord(value)) {return value;}
+	const cleaned: JsonObject = {};
+	for (const key of Object.keys(value)) {
+		if (privateIdentifierFields.includes(key)) {continue;}
+		if (['toolCallId', 'semantic', 'semanticEvents', 'subagentContent'].includes(key)) {continue;}
+		cleaned[key] = cleanPresentationValue(value[key]);
+	}
+	return cleaned;
 }
 
 export function presentationPath(owner: AgentPath, value: unknown): AgentPath {
@@ -109,12 +119,17 @@ function privateIdentifiers(value: unknown): readonly string[] {
 		: privateIdentifiers(child));
 }
 
-function redactErrors(value: unknown, identifiers: readonly string[]): unknown {
-	if (Array.isArray(value)) {return value.map((child) => redactErrors(child, identifiers));}
-	if (!isPresentationRecord(value)) {return value;}
-	return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, key === 'error' && typeof child === 'string'
-		? identifiers.reduce((text, id) => text.replaceAll(id, '[redacted]'), child)
-		: redactErrors(child, identifiers)]));
+function redactErrors(value: JsonValue, identifiers: readonly string[]): JsonValue {
+	if (isJsonArray(value)) {return value.map((child) => redactErrors(child, identifiers));}
+	if (!isJsonRecord(value)) {return value;}
+	const redacted: JsonObject = {};
+	for (const key of Object.keys(value)) {
+		const child = value[key];
+		redacted[key] = key === 'error' && typeof child === 'string'
+			? identifiers.reduce((text, id) => text.replaceAll(id, '[redacted]'), child)
+			: redactErrors(child, identifiers);
+	}
+	return redacted;
 }
 
 /**

@@ -6,7 +6,7 @@ import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import quotaExtension from "./index.js";
 import { getOrCreateSessionTreeStore, registerSessionTreeStore } from "../subagents/scoped-store.js";
-type Handler = (...args: any[]) => unknown;
+type Handler = (...args: any[]) => void;
 
 const source = join(import.meta.dirname, "test/fake-quota-source.ts");
 const dirs: string[] = [];
@@ -67,8 +67,8 @@ async function setup(origin: "builtin" | "models.json" | "legacy" | "native", sn
 	await quotaExtension(pi as any);
 	const manager = { getSessionId: () => `session-${dir}` };
 	const ctx = { modelRegistry: registry, sessionManager: manager, hasUI: false, ui: { notify: vi.fn(), setStatus: vi.fn() }, model: model("standard", id) };
-	await events.get("session_start")?.({}, ctx);
-	cleanups.push(async () => { await events.get("session_shutdown")?.({}, ctx); });
+	events.get("session_start")?.({}, ctx);
+	cleanups.push(async () => { events.get("session_shutdown")?.({}, ctx); });
 	return { id, registry, native, other, before, events, commands, ctx, cacheDir };
 }
 
@@ -113,25 +113,25 @@ describe("quota attachments through the provider registry", () => {
 
 	it("uses cached membership when recording local spend", async () => {
 		const { id, registry, events, ctx } = await setup("native", [{ ...snapshot(0), quota: 100 }, snapshot(0, "pool")], { premium: ["pool"] });
-		await events.get("message_end")?.({ message: { role: "assistant", provider: id, model: "premium", timestamp: Date.now(), usage: { cost: { total: 6 } } } }, ctx);
+		events.get("message_end")?.({ message: { role: "assistant", provider: id, model: "premium", timestamp: Date.now(), usage: { cost: { total: 6 } } } }, ctx);
 		expect(() => stream(registry, id, "premium")).toThrow(/quota/i);
 		expect(stream(registry, id, "standard")).toBe("native-result");
 	});
 
 	it("bypasses soft limits but not enforced hard limits", async () => {
 		const soft = await setup("native", [snapshot(6)]);
-		await soft.commands.get("quota").handler("bypass on", soft.ctx);
+		soft.commands.get("quota").handler("bypass on", soft.ctx);
 		const child = { getSessionId: () => `${soft.ctx.sessionManager.getSessionId()}-child` };
 		registerSessionTreeStore(child, getOrCreateSessionTreeStore(soft.ctx.sessionManager));
 		const childCtx = { ...soft.ctx, sessionManager: child };
-		await soft.events.get("agent_start")?.({}, childCtx);
+		soft.events.get("agent_start")?.({}, childCtx);
 		expect(stream(soft.registry, soft.id, "standard", child.getSessionId())).toBe("native-result");
 		const other = { getSessionId: () => `${soft.ctx.sessionManager.getSessionId()}-other` };
 		const otherCtx = { ...soft.ctx, sessionManager: other };
-		await soft.events.get("session_start")?.({}, otherCtx);
+		soft.events.get("session_start")?.({}, otherCtx);
 		expect(() => stream(soft.registry, soft.id, "standard", other.getSessionId())).toThrow(/quota/i);
-		await soft.events.get("session_shutdown")?.({}, childCtx);
-		await soft.events.get("session_shutdown")?.({}, otherCtx);
+		soft.events.get("session_shutdown")?.({}, childCtx);
+		soft.events.get("session_shutdown")?.({}, otherCtx);
 		const hard = await setup("native", [snapshot(10)]);
 		await hard.commands.get("quota").handler("bypass on", hard.ctx);
 		expect(() => stream(hard.registry, hard.id, "standard", hard.ctx.sessionManager.getSessionId())).toThrow(/quota/i);

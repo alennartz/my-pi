@@ -84,3 +84,18 @@ export function toJsonProjection(value: unknown): JsonValue {
 	}
 	return record;
 }
+
+/** Parse JSON text into a validated value, or undefined when it is not JSON. */
+export function parseJsonValue(text: string): JsonValue | undefined {
+	try {
+		const parsed: unknown = JSON.parse(text);
+		return isJsonValue(parsed) ? parsed : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Whether a JSON value is an array of JSON values. */
+export function isJsonArray(value: JsonValue): value is readonly JsonValue[] {
+	return Array.isArray(value);
+}

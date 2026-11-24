@@ -17,6 +17,7 @@ import type { ManagedChildSession } from "./managed-child-session.js";
 import type {
 	ActiveSubagentOperation,
 	SubagentAwaitStatus,
+	SubagentCapabilities as SdkSubagentCapabilities,
 	SubagentDeltaData,
 	SubagentPresentationManifest,
 	SubagentProviderEvent,
@@ -292,28 +293,8 @@ export type SubagentOperation =
 	| "state"
 	| "meta";
 
-export interface SubagentCapabilities {
-	/** Explicitly admitted identity-preserving operations. */
-	readonly operations?: readonly SubagentOperation[];
-	/** Whether the child renderer can expose a view. */
-	readonly renderer?: Readonly<{ visible?: boolean; [key: string]: unknown }>;
-	/** Child-local model resolution and settings. */
-	readonly resolveModel?: (provider: string, modelId: string) => Promise<unknown> | unknown;
-	readonly getSettings?: () => unknown;
-	/** Native bash admission and dispatch. */
-	readonly nativeBash?: Readonly<{
-		admitted?: boolean;
-		execute?: (...args: readonly unknown[]) => Promise<unknown> | unknown;
-		abort?: (...args: readonly unknown[]) => Promise<void> | void;
-		[key: string]: unknown;
-	}>;
-	readonly executeBash?: (...args: readonly unknown[]) => Promise<unknown> | unknown;
-	/** Filtered command and argument-completion descriptors. */
-	readonly getCommands?: (...args: readonly unknown[]) => Promise<unknown> | unknown;
-	readonly completeArgs?: (...args: readonly unknown[]) => Promise<unknown> | unknown;
-	readonly completeFileRefs?: (...args: readonly unknown[]) => Promise<unknown> | unknown;
-	readonly [key: string]: unknown;
-}
+/** Capability fields a child session exposes (owned by the SDK). */
+export type SubagentCapabilities = SdkSubagentCapabilities;
 
 /** Minimal session-manager projection exposed beside a borrowed native session. */
 export type BorrowedSessionManager = Pick<

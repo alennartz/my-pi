@@ -57,7 +57,7 @@ beforeAll(() => {
 	hostDirState.dir = dir;
 });
 
-type Handler = (...args: any[]) => unknown;
+type Handler = (...args: any[]) => void;
 
 function setup() {
 	const handlers = new Map<string, Handler[]>();
@@ -92,21 +92,21 @@ describe("/sysprompt", () => {
 		const agentStart = handlers.get("agent_start")?.[0];
 		if (!agentStart) {throw new Error("agent_start snapshot handler was not registered");}
 
-		await agentStart({}, {
+		agentStart({}, {
 			getSystemPrompt: () => renderedPrompt,
 		});
 		const latestPrompt = `${renderedPrompt}\n\nlatest turn`;
-		await agentStart({}, {
+		agentStart({}, {
 			getSystemPrompt: () => latestPrompt,
 		});
-		await command.handler("", commandCtx());
+		command.handler("", commandCtx());
 
 		expect(pi.appendEntry).toHaveBeenCalledWith("print-prompt", { text: latestPrompt });
 	});
 
 	it("falls back to the current system prompt before any agent run", async () => {
 		const { command, pi } = setup();
-		await command.handler("", commandCtx());
+		command.handler("", commandCtx());
 
 		expect(pi.appendEntry).toHaveBeenCalledWith("print-prompt", { text: "base prompt" });
 	});
@@ -115,7 +115,7 @@ describe("/sysprompt", () => {
 		const { command, pi } = setup();
 		const base =
 			"You are a coding assistant running inside pi, a coding agent harness.\n\n<tools>\n- read\n</tools>";
-		await command.handler("", commandCtx({
+		command.handler("", commandCtx({
 			getSystemPrompt: () => base,
 			getSystemPromptOptions: () => ({}),
 			cwd: "/repo/pm-workspace",
@@ -137,7 +137,7 @@ describe("/sysprompt", () => {
 		const manager = {};
 		markSubagentChildSession(manager, { name: "scout", body: "Read-only search specialist." });
 
-		await command.handler("", commandCtx({
+		command.handler("", commandCtx({
 			getSystemPrompt: () => "generic preamble\n\n<rules>\n- be concise\n</rules>",
 			getSystemPromptOptions: () => ({}),
 			sessionManager: manager,
@@ -151,7 +151,7 @@ describe("/sysprompt", () => {
 	it("projects the persona as a stacked section on an unpatched host", async () => {
 		hostDirState.dir = mkdtempSync(join(tmpdir(), "print-prompt-host-plain-"));
 		const { command, pi } = setup();
-		await command.handler("", commandCtx({
+		command.handler("", commandCtx({
 			getSystemPrompt: () => "You are a coding assistant running inside pi.\n\n<tools>\n- read\n</tools>",
 			getSystemPromptOptions: () => ({}),
 			cwd: "/repo/pm-workspace",
@@ -165,7 +165,7 @@ describe("/sysprompt", () => {
 
 	it("leaves the base prompt alone when an explicit --system-prompt outranks the persona", async () => {
 		const { command, pi } = setup();
-		await command.handler("", commandCtx({
+		command.handler("", commandCtx({
 			getSystemPromptOptions: () => ({ customPrompt: "user's own prompt" }),
 			cwd: "/repo/pm-workspace",
 		}));

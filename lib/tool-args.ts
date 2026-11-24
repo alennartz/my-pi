@@ -29,6 +29,7 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Static, TSchema } from "typebox";
 import type { JsonValue } from "@earendil-works/pi-ai";
+import { toJsonProjection } from "../extensions/subagents/narrow.js";
 
 function isPlainObject(value: unknown): value is Record<string, JsonValue> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -60,12 +61,12 @@ function isEmptyForType(schema: unknown, value: unknown): boolean {
 	return false;
 }
 
-function normalizeNode(schema: unknown, value: unknown): unknown {
+function normalizeNode(schema: unknown, value: unknown): JsonValue {
 	if (isPlainObject(value)) {
 		const s = isPlainObject(schema) ? schema : {};
 		const properties = isPlainObject(s.properties) ? s.properties : undefined;
 		const required = new Set<string>(Array.isArray(s.required) ? s.required : []);
-		const entries: [string, unknown][] = [];
+		const entries: [string, JsonValue][] = [];
 		for (const [key, item] of Object.entries(value)) {
 			const propertySchema = properties?.[key];
 			// Undeclared keys pass through untouched; schema validation owns them.
@@ -81,17 +82,17 @@ function normalizeNode(schema: unknown, value: unknown): unknown {
 	if (Array.isArray(value)) {
 		const items = isPlainObject(schema) ? schema.items : undefined;
 		// Tuple item schemas are positional; leave them alone.
-		if (!isPlainObject(items) || Array.isArray(items)) {return value;}
+		if (!isPlainObject(items) || Array.isArray(items)) {return toJsonProjection(value);}
 		return value.map((item) => normalizeNode(items, item));
 	}
-	return value;
+	return toJsonProjection(value);
 }
 
 /**
  * Drop optional properties whose value is the degenerate default of their
  * type. Returns a new object; the input is never mutated.
  */
-export function dropEmptyOptionals(schema: TSchema, args: unknown): unknown {
+export function dropEmptyOptionals(schema: TSchema, args: unknown): JsonValue {
 	return normalizeNode(schema, args);
 }
 

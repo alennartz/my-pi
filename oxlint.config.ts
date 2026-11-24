@@ -38,7 +38,6 @@ export default defineConfig({
     'typescript/no-unsafe-return': 'off',
     'typescript/no-unsafe-type-assertion': 'off',
     // Boundary parsers return unknown so callers must narrow.
-    'quality/no-unknown-returns': 'off',
     'typescript/array-type': ['error', { default: 'array' }],
   },
 });

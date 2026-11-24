@@ -6,7 +6,7 @@ import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import quotaExtension from "./index.js";
 import { wrapProviderWithQuota } from "./lib/provider-wrapper.js";
-type Handler = (...args: any[]) => unknown;
+type Handler = (...args: any[]) => void;
 
 const source = join(import.meta.dirname, "test/fake-quota-source.ts");
 const dirs: string[] = [];
@@ -114,8 +114,8 @@ async function createDynamicAttachment(
 		ui: { notify: vi.fn(), setStatus: vi.fn() },
 		model: model("initial", providerId),
 	};
-	await events.get("session_start")?.({}, ctx);
-	cleanups.push(async () => { await events.get("session_shutdown")?.({}, ctx); });
+	events.get("session_start")?.({}, ctx);
+	cleanups.push(async () => { events.get("session_shutdown")?.({}, ctx); });
 	return { dir, registry, events, ctx };
 }
 
@@ -143,13 +143,13 @@ async function createNativeAttachment(providerId: string, marker: string) {
 		ui: { notify: vi.fn(), setStatus: vi.fn() },
 		model: model("standard", providerId),
 	};
-	await events.get("session_start")?.({}, ctx);
-	cleanups.push(async () => { await events.get("session_shutdown")?.({}, ctx); });
+	events.get("session_start")?.({}, ctx);
+	cleanups.push(async () => { events.get("session_shutdown")?.({}, ctx); });
 	return { dir, registry, native, events, ctx };
 }
 
 async function cleanFirstSession(events: Map<string, Handler>, ctx: any): Promise<void> {
-	await events.get("session_shutdown")?.({}, ctx);
+	events.get("session_shutdown")?.({}, ctx);
 }
 
 afterEach(async () => {
@@ -193,7 +193,7 @@ describe("quota provider review follow-up", () => {
 			ui: { notify: vi.fn(), setStatus: vi.fn() },
 			model: model("first", providerId),
 		};
-		await events.get("session_start")?.({}, ctx);
+		events.get("session_start")?.({}, ctx);
 		cleanups.push(() => cleanFirstSession(events, ctx));
 		await new Promise((resolve) => {
 			setTimeout(resolve, 25);
@@ -279,8 +279,8 @@ describe("quota provider review follow-up", () => {
 		const first = await createNativeAttachment("shared-provider", "first");
 		const second = await createNativeAttachment("shared-provider", "second");
 
-		await first.events.get("agent_start")?.({}, first.ctx);
-		await second.events.get("agent_start")?.({}, second.ctx);
+		first.events.get("agent_start")?.({}, first.ctx);
+		second.events.get("agent_start")?.({}, second.ctx);
 
 		expect((first.registry.getProvider("shared-provider") as any).marker).toBe("first");
 		expect((second.registry.getProvider("shared-provider") as any).marker).toBe("second");
@@ -295,16 +295,16 @@ describe("quota provider review follow-up", () => {
 			{ sessionId: second.ctx.sessionManager.getSessionId() } as any,
 		)).toThrow(/quota/i);
 
-		await first.events.get("session_shutdown")?.({}, first.ctx);
+		first.events.get("session_shutdown")?.({}, first.ctx);
 		expect((second.registry.getProvider("shared-provider") as any).marker).toBe("second");
-		await second.events.get("session_shutdown")?.({}, second.ctx);
+		second.events.get("session_shutdown")?.({}, second.ctx);
 	});
 
 	it("rebuilds the attachment around an external provider replacement", async () => {
 		const attachment = await createNativeAttachment("replaceable-provider", "original");
 		const replacement = nativeProvider("replaceable-provider", "replacement");
 		attachment.registry.registerProvider(replacement);
-		await attachment.events.get("agent_start")?.({}, attachment.ctx);
+		attachment.events.get("agent_start")?.({}, attachment.ctx);
 
 		expect((attachment.registry.getProvider("replaceable-provider") as any).marker).toBe("replacement");
 		expect(() => attachment.registry.getProvider("replaceable-provider")!.streamSimple(

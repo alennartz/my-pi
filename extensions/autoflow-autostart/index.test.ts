@@ -12,7 +12,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 import autoflowAutostart from "./index.ts";
 import { markSubagentChildSession } from "../subagents/child-session-marker.ts";
 
-type Handler = (event: unknown, ctx: any) => unknown;
+type Handler = (event: unknown, ctx: any) => void;
 
 function setup(agentDir: string) {
 	agentDirState.dir = agentDir;
@@ -44,47 +44,47 @@ function agentDirWithConfig(config: unknown): string {
 describe("autoflow autostart", () => {
 	it("rewrites the first message of a new session into an autoflow invocation", async () => {
 		const s = setup(agentDirWithConfig({ autoStart: true }));
-		await s.sessionStart({ type: "session_start", reason: "startup" });
+		s.sessionStart({ type: "session_start", reason: "startup" });
 
-		const result = await s.input({ type: "input", text: "build me a thing", source: "interactive" });
+		const result = s.input({ type: "input", text: "build me a thing", source: "interactive" });
 
 		expect(result).toEqual({ action: "transform", text: "/skill:autoflow build me a thing", images: undefined });
 	});
 
 	it("passes attached images through the rewrite", async () => {
 		const s = setup(agentDirWithConfig({ autoStart: true }));
-		await s.sessionStart({ type: "session_start", reason: "startup" });
+		s.sessionStart({ type: "session_start", reason: "startup" });
 		const images = [{ type: "image", data: "abc", mimeType: "image/png" }];
 
-		const result = await s.input({ type: "input", text: "what is this?", images, source: "interactive" });
+		const result = s.input({ type: "input", text: "what is this?", images, source: "interactive" });
 
 		expect(result).toEqual({ action: "transform", text: "/skill:autoflow what is this?", images });
 	});
 
 	it("fires only once per session", async () => {
 		const s = setup(agentDirWithConfig({ autoStart: true }));
-		await s.sessionStart({ type: "session_start", reason: "startup" });
+		s.sessionStart({ type: "session_start", reason: "startup" });
 
-		await s.input({ type: "input", text: "first", source: "interactive" });
-		const second = await s.input({ type: "input", text: "second", source: "interactive" });
+		s.input({ type: "input", text: "first", source: "interactive" });
+		const second = s.input({ type: "input", text: "second", source: "interactive" });
 
 		expect(second).toEqual({ action: "continue" });
 	});
 
 	it("honors a configured invocation command", async () => {
 		const s = setup(agentDirWithConfig({ autoStart: true, command: "/flow" }));
-		await s.sessionStart({ type: "session_start", reason: "startup" });
+		s.sessionStart({ type: "session_start", reason: "startup" });
 
-		const result = await s.input({ type: "input", text: "go", source: "interactive" });
+		const result = s.input({ type: "input", text: "go", source: "interactive" });
 
 		expect(result).toEqual({ action: "transform", text: "/flow go", images: undefined });
 	});
 
 	it("does nothing when the opt-in is absent", async () => {
 		const s = setup(agentDirWithConfig(undefined));
-		await s.sessionStart({ type: "session_start", reason: "startup" });
+		s.sessionStart({ type: "session_start", reason: "startup" });
 
-		const result = await s.input({ type: "input", text: "build me a thing", source: "interactive" });
+		const result = s.input({ type: "input", text: "build me a thing", source: "interactive" });
 
 		expect(result).toEqual({ action: "continue" });
 	});
@@ -92,9 +92,9 @@ describe("autoflow autostart", () => {
 	it("does nothing for a resumed session", async () => {
 		const s = setup(agentDirWithConfig({ autoStart: true }));
 		const ctx = { sessionManager: { getEntries: () => [{ type: "message" }] }, ui: { notify: s.notify } };
-		await s.sessionStart({ type: "session_start", reason: "resume" }, ctx);
+		s.sessionStart({ type: "session_start", reason: "resume" }, ctx);
 
-		const result = await s.input({ type: "input", text: "build me a thing", source: "interactive" });
+		const result = s.input({ type: "input", text: "build me a thing", source: "interactive" });
 
 		expect(result).toEqual({ action: "continue" });
 	});
@@ -105,9 +105,9 @@ describe("autoflow autostart", () => {
 			sessionManager: { getEntries: () => [{ type: "custom", customType: "session-idle" }] },
 			ui: { notify: s.notify },
 		};
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctx);
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctx);
 
-		const result = await s.input({ type: "input", text: "build me a thing", source: "interactive" });
+		const result = s.input({ type: "input", text: "build me a thing", source: "interactive" });
 
 		expect(result).toEqual({
 			action: "transform",
@@ -120,24 +120,24 @@ describe("autoflow autostart", () => {
 		const s = setup(agentDirWithConfig({ autoStart: true }));
 		const childSessionManager = { getEntries: () => [] };
 		markSubagentChildSession(childSessionManager);
-		await s.sessionStart({ type: "session_start", reason: "startup" }, {
+		s.sessionStart({ type: "session_start", reason: "startup" }, {
 			sessionManager: childSessionManager,
 			ui: { notify: s.notify },
 		});
 
-		const result = await s.input({ type: "input", text: "do the task", source: "rpc" });
+		const result = s.input({ type: "input", text: "do the task", source: "rpc" });
 
 		expect(result).toEqual({ action: "continue" });
 	});
 
 	it("lets the user invoke autoflow themselves as the first message", async () => {
 		const s = setup(agentDirWithConfig({ autoStart: true }));
-		await s.sessionStart({ type: "session_start", reason: "startup" });
+		s.sessionStart({ type: "session_start", reason: "startup" });
 
-		const result = await s.input({ type: "input", text: "/skill:autoflow build it", source: "interactive" });
+		const result = s.input({ type: "input", text: "/skill:autoflow build it", source: "interactive" });
 
 		expect(result).toEqual({ action: "continue" });
-		const next = await s.input({ type: "input", text: "and also this", source: "interactive" });
+		const next = s.input({ type: "input", text: "and also this", source: "interactive" });
 		expect(next).toEqual({ action: "continue" });
 	});
 
@@ -146,7 +146,7 @@ describe("autoflow autostart", () => {
 		writeFileSync(join(dir, "autoflow.json"), "{nope");
 		const s = setup(dir);
 
-		await s.sessionStart({ type: "session_start", reason: "startup" });
+		s.sessionStart({ type: "session_start", reason: "startup" });
 
 		expect(s.notify).toHaveBeenCalledTimes(1);
 		expect(s.notify.mock.calls[0][1]).toBe("warning");

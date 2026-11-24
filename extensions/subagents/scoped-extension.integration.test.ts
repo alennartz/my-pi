@@ -373,6 +373,7 @@ async function execute(tools: Map<string, RegisteredTool>, name: string, params:
 
 async function startSession(handlers: Map<string, (...args: any[]) => any>, ctx: unknown): Promise<void> {
 	await handlers.get("session_start")?.({ reason: "new" }, ctx);
+	await new Promise((resolve) => { setTimeout(resolve, 0); });
 }
 
 let tmpRoot: string | undefined;

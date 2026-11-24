@@ -15,7 +15,10 @@ import { markSubagentChildSession } from "../subagents/child-session-marker.ts";
 import { resolveChildToolPolicy } from "../subagents/child-tool-policy.ts";
 import type { JsonValue } from "@earendil-works/pi-ai";
 
-type Handler = (event: unknown, ctx: any) => unknown;
+type Handler = (event: unknown, ctx: any) => void;
+
+/** Drain fire-and-forget session-start work before asserting. */
+const flushMicrotasks = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
 
 const WORKSPACE_FRONT_MATTER = ["kind: persona", "name: workspace-lead"];
 const WORKSPACE_BODY = "You are the workspace lead.";
@@ -102,7 +105,8 @@ function setup() {
 		setModel,
 		setActiveTools,
 		setThinkingLevel,
-		sessionStart: (event: unknown, ctx: unknown) => handlers.get("session_start")!(event, ctx),
+		sessionStart: (event: unknown, ctx: unknown) => { handlers.get("session_start")!(event, ctx); },
+		drainSessionStart: () => Promise.resolve(),
 		beforeAgentStart: (event: unknown, ctx: unknown) =>
 			handlers.get("before_agent_start")!(event, ctx),
 	};
@@ -157,10 +161,11 @@ describe("prompt binding", () => {
 	it("binds the workspace persona body as the system prompt preamble", async () => {
 		const s = setup();
 		const cwd = personaWorkspace();
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		await flushMicrotasks();
 
 		const event = agentStartEvent();
-		await s.beforeAgentStart(event, ctxFor(cwd));
+		s.beforeAgentStart(event, ctxFor(cwd));
 
 		expect(event.systemPromptOptions.sections.preamble).toContain(WORKSPACE_BODY);
 	});
@@ -168,12 +173,13 @@ describe("prompt binding", () => {
 	it("stacks the persona as a custom section on an unpatched host", async () => {
 		const s = setup();
 		const cwd = personaWorkspace();
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		await flushMicrotasks();
 		unpatchedHost();
 
 		const event = agentStartEvent();
 		const ctx = ctxFor(cwd);
-		await s.beforeAgentStart(event, ctx);
+		s.beforeAgentStart(event, ctx);
 
 		expect(event.systemPromptOptions.sections.persona).toContain(WORKSPACE_BODY);
 		expect(event.systemPromptOptions.sections.preamble).toBeUndefined();
@@ -187,12 +193,13 @@ describe("prompt binding", () => {
 	it("stacks on the first run that writes the host patch", async () => {
 		const s = setup();
 		const cwd = personaWorkspace();
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		await flushMicrotasks();
 		usePatchableUnpatchedHost();
 
 		const event = agentStartEvent();
 		const ctx = ctxFor(cwd);
-		await s.beforeAgentStart(event, ctx);
+		s.beforeAgentStart(event, ctx);
 
 		expect(event.systemPromptOptions.sections.persona).toContain(WORKSPACE_BODY);
 		expect(event.systemPromptOptions.sections.preamble).toBeUndefined();
@@ -209,7 +216,7 @@ describe("prompt binding", () => {
 		markSubagentChildSession(sessionManager, { name: "scout", body: "Spawned scout body." });
 
 		const event = agentStartEvent();
-		await s.beforeAgentStart(event, ctxFor(cwd, { sessionManager }));
+		s.beforeAgentStart(event, ctxFor(cwd, { sessionManager }));
 
 		expect(event.systemPromptOptions.sections.preamble).toContain("Spawned scout body.");
 	});
@@ -218,7 +225,8 @@ describe("prompt binding", () => {
 		const s = setup();
 		const cwd = personaWorkspace();
 		const sourcePath = join(cwd, "AGENTS.md");
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		await flushMicrotasks();
 
 		const event = agentStartEvent({
 			contextFiles: [
@@ -226,7 +234,7 @@ describe("prompt binding", () => {
 				{ path: "/elsewhere/NOTES.md", content: "notes" },
 			],
 		});
-		await s.beforeAgentStart(event, ctxFor(cwd));
+		s.beforeAgentStart(event, ctxFor(cwd));
 
 		expect(event.systemPromptOptions.contextFiles.map((file: { path: string }) => file.path)).toEqual([
 			"/elsewhere/NOTES.md",
@@ -236,13 +244,14 @@ describe("prompt binding", () => {
 	it("takes effect at the next run when the workspace declaration changes mid-session", async () => {
 		const s = setup();
 		const cwd = personaWorkspace();
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		await flushMicrotasks();
 
 		const first = agentStartEvent();
-		await s.beforeAgentStart(first, ctxFor(cwd));
+		s.beforeAgentStart(first, ctxFor(cwd));
 		writeFileSync(join(cwd, "AGENTS.md"), `---\nkind: persona\nname: workspace-lead\n---\n\nSecond body.\n`);
 		const second = agentStartEvent();
-		await s.beforeAgentStart(second, ctxFor(cwd));
+		s.beforeAgentStart(second, ctxFor(cwd));
 
 		expect(first.systemPromptOptions.sections.preamble).toContain(WORKSPACE_BODY);
 		expect(second.systemPromptOptions.sections.preamble).toContain("Second body.");
@@ -251,10 +260,11 @@ describe("prompt binding", () => {
 	it("yields to an explicit --system-prompt and touches nothing", async () => {
 		const s = setup();
 		const cwd = personaWorkspace();
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		await flushMicrotasks();
 
 		const event = agentStartEvent({ customPrompt: "The user's own prompt." });
-		const result = await s.beforeAgentStart(event, ctxFor(cwd));
+		const result = s.beforeAgentStart(event, ctxFor(cwd));
 
 		expect(event.systemPromptOptions.customPrompt).toBe("The user's own prompt.");
 		expect(event.systemPromptOptions.contextFiles).toEqual([{ path: "/elsewhere/NOTES.md", content: "notes" }]);
@@ -265,10 +275,11 @@ describe("prompt binding", () => {
 	it("mutates nothing in a plain session", async () => {
 		const s = setup();
 		const cwd = plainDirectory();
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		await flushMicrotasks();
 
 		const event = agentStartEvent();
-		const result = await s.beforeAgentStart(event, ctxFor(cwd));
+		const result = s.beforeAgentStart(event, ctxFor(cwd));
 
 		expect(event.systemPromptOptions.customPrompt).toBeUndefined();
 		expect(event.systemPromptOptions.contextFiles).toEqual([{ path: "/elsewhere/NOTES.md", content: "notes" }]);
@@ -287,7 +298,7 @@ describe("prompt binding", () => {
 		markSubagentChildSession(sessionManager, { name: "scout", body: "Spawned scout body." });
 
 		const event = agentStartEvent();
-		await s.beforeAgentStart(event, ctxFor(cwd, { sessionManager }));
+		s.beforeAgentStart(event, ctxFor(cwd, { sessionManager }));
 
 		expect(event.systemPromptOptions.sections.preamble).toContain("Spawned scout body.");
 	});
@@ -299,7 +310,7 @@ describe("prompt binding", () => {
 		markSubagentChildSession(sessionManager, { name: "scout", body: "Spawned scout body." });
 
 		const event = agentStartEvent();
-		const result = (await s.beforeAgentStart(event, ctxFor(cwd, { sessionManager }))) as
+		const result = (s.beforeAgentStart(event, ctxFor(cwd, { sessionManager }))) as
 			| { message?: { customType?: string; content?: unknown; details?: { condition?: string } } }
 			| undefined;
 
@@ -317,10 +328,11 @@ describe("override notices", () => {
 		const s = setup();
 		const cwd = personaWorkspace();
 		const transcript = transcriptSessionManager();
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { sessionManager: transcript.sessionManager }));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { sessionManager: transcript.sessionManager }));
+		await flushMicrotasks();
 
 		const event = agentStartEvent();
-		const result = await s.beforeAgentStart(event, ctxFor(cwd, { sessionManager: transcript.sessionManager }));
+		const result = s.beforeAgentStart(event, ctxFor(cwd, { sessionManager: transcript.sessionManager }));
 
 		expect(result).toBeUndefined();
 		expect(event.systemPromptOptions.sections.preamble).toContain(WORKSPACE_BODY);
@@ -332,13 +344,14 @@ describe("override notices", () => {
 		const transcript = transcriptSessionManager();
 		markSubagentChildSession(transcript.sessionManager, { name: "scout", body: "Spawned scout body." });
 		const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager });
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctx);
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctx);
+		await flushMicrotasks();
 
-		const first = (await s.beforeAgentStart(agentStartEvent(), ctx)) as
+		const first = (s.beforeAgentStart(agentStartEvent(), ctx)) as
 			| { message?: unknown }
 			| undefined;
 		if (first?.message) {transcript.ingest(first.message);}
-		const second = (await s.beforeAgentStart(agentStartEvent(), ctx)) as
+		const second = (s.beforeAgentStart(agentStartEvent(), ctx)) as
 			| { message?: unknown }
 			| undefined;
 
@@ -352,9 +365,10 @@ describe("override notices", () => {
 			const cwd = personaWorkspace();
 			const transcript = transcriptSessionManager();
 			const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager });
-			await s.sessionStart({ type: "session_start", reason }, ctx);
+			s.sessionStart({ type: "session_start", reason }, ctx);
+			await flushMicrotasks();
 
-			const result = await s.beforeAgentStart(agentStartEvent(), ctx);
+			const result = s.beforeAgentStart(agentStartEvent(), ctx);
 
 			expect(result, `reason=${reason}`).toBeUndefined();
 		}
@@ -367,10 +381,11 @@ describe("override notices", () => {
 		markSubagentChildSession(transcript.sessionManager, { name: "scout", body: "Spawned scout body." });
 		transcript.ingest({ customType: "persona-notice", content: "Persona override: earlier override notice" });
 		const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager });
-		await s.sessionStart({ type: "session_start", reason: "resume" }, ctx);
+		s.sessionStart({ type: "session_start", reason: "resume" }, ctx);
+		await flushMicrotasks();
 
 		const event = agentStartEvent();
-		const result = await s.beforeAgentStart(event, ctx);
+		const result = s.beforeAgentStart(event, ctx);
 
 		expect(result).toBeUndefined();
 		expect(event.systemPromptOptions.sections.preamble).toContain(WORKSPACE_BODY);
@@ -384,10 +399,11 @@ describe("skills filter", () => {
 			["kind: persona", "name: workspace-lead", "skills: alpha"],
 			WORKSPACE_BODY,
 		);
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		await flushMicrotasks();
 
 		const event = agentStartEvent();
-		await s.beforeAgentStart(event, ctxFor(cwd));
+		s.beforeAgentStart(event, ctxFor(cwd));
 
 		expect(event.systemPromptOptions.skills.map((skill: { name: string }) => skill.name)).toEqual([
 			"alpha",
@@ -397,10 +413,11 @@ describe("skills filter", () => {
 	it("leaves the skill list untouched when the declaration lists none", async () => {
 		const s = setup();
 		const cwd = personaWorkspace();
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
+		await flushMicrotasks();
 
 		const event = agentStartEvent();
-		await s.beforeAgentStart(event, ctxFor(cwd));
+		s.beforeAgentStart(event, ctxFor(cwd));
 
 		expect(event.systemPromptOptions.skills.map((skill: { name: string }) => skill.name)).toEqual([
 			"alpha",
@@ -420,7 +437,8 @@ describe("front-matter binding at session start", () => {
 				WORKSPACE_BODY,
 			);
 
-			await s.sessionStart({ type: "session_start", reason }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+			s.sessionStart({ type: "session_start", reason }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+			await flushMicrotasks();
 
 			expect(s.setModel, `reason=${reason}`).toHaveBeenCalledTimes(1);
 			expect(s.setModel, `reason=${reason}`).toHaveBeenCalledWith(
@@ -436,7 +454,8 @@ describe("front-matter binding at session start", () => {
 			WORKSPACE_BODY,
 		);
 
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+		await flushMicrotasks();
 
 		expect(s.setModel).toHaveBeenCalledWith(expect.objectContaining({ id: "work-model" }));
 		expect(s.setThinkingLevel).toHaveBeenCalledWith("high");
@@ -452,7 +471,8 @@ describe("front-matter binding at session start", () => {
 			WORKSPACE_BODY,
 		);
 
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+		await flushMicrotasks();
 
 		expect(s.setModel).toHaveBeenCalledWith(expect.objectContaining({ id: "work-model" }));
 	});
@@ -464,7 +484,8 @@ describe("front-matter binding at session start", () => {
 			WORKSPACE_BODY,
 		);
 
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+		await flushMicrotasks();
 
 		expect(s.setActiveTools).toHaveBeenCalledWith(
 			resolveChildToolPolicy({ kind: "persona", tools: ["read", "bash"] }).allowedTools,
@@ -486,8 +507,9 @@ describe("front-matter binding at session start", () => {
 			transcript.entries.push({ type: "message", message: { role: "user", content: "earlier turn" } });
 			const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager, models: AVAILABLE_MODELS });
 
-			await s.sessionStart({ type: "session_start", reason }, ctx);
-			const result = await s.beforeAgentStart(agentStartEvent(), ctx);
+			s.sessionStart({ type: "session_start", reason }, ctx);
+			await flushMicrotasks();
+			const result = s.beforeAgentStart(agentStartEvent(), ctx);
 
 			expect(s.setModel, label).toHaveBeenCalledWith(expect.objectContaining({ id: "work-model" }));
 			expect(s.setThinkingLevel, label).toHaveBeenCalledWith("high");
@@ -508,8 +530,9 @@ describe("front-matter binding at session start", () => {
 		transcript.ingest({ customType: "persona-notice", content: "Persona takeover: earlier boot notice" });
 		const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager, models: AVAILABLE_MODELS });
 
-		await s.sessionStart({ type: "session_start", reason: "fork" }, ctx);
-		const result = await s.beforeAgentStart(agentStartEvent(), ctx);
+		s.sessionStart({ type: "session_start", reason: "fork" }, ctx);
+		await flushMicrotasks();
+		const result = s.beforeAgentStart(agentStartEvent(), ctx);
 
 		expect(s.setModel).toHaveBeenCalledWith(expect.objectContaining({ id: "work-model" }));
 		expect(s.setActiveTools).toHaveBeenCalledWith(
@@ -525,8 +548,9 @@ describe("front-matter binding at session start", () => {
 		transcript.entries.push({ type: "message", message: { role: "user", content: "earlier turn" } });
 		const ctx = ctxFor(cwd, { sessionManager: transcript.sessionManager });
 
-		await s.sessionStart({ type: "session_start", reason: "fork" }, ctx);
-		const result = await s.beforeAgentStart(agentStartEvent(), ctx);
+		s.sessionStart({ type: "session_start", reason: "fork" }, ctx);
+		await flushMicrotasks();
+		const result = s.beforeAgentStart(agentStartEvent(), ctx);
 
 		expect(result).toBeUndefined();
 	});
@@ -535,7 +559,8 @@ describe("front-matter binding at session start", () => {
 		const s = setup();
 		const cwd = personaWorkspace();
 
-		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+		s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd, { models: AVAILABLE_MODELS }));
+		await flushMicrotasks();
 
 		expect(s.setModel).not.toHaveBeenCalled();
 		expect(s.setActiveTools).not.toHaveBeenCalled();

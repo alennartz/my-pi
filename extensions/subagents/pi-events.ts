@@ -26,6 +26,7 @@ import type {
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { asRecord, numberField, stringField } from "./narrow.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 /** A session entry the runtime appends, emitted outside the SDK union. */
 export type EntryAppendedEvent = {
@@ -83,7 +84,7 @@ export type PiEventHandlers = {
 export function onUnlistedEvent(
 	api: ExtensionAPI,
 	eventName: "entry_appended",
-	handler: (event: EntryAppendedEvent, ctx: ExtensionContext) => unknown,
+	handler: (event: EntryAppendedEvent, ctx: ExtensionContext) => void,
 ): void {
 	const registrar: { on(name: string, callback: typeof handler): void } = api as unknown as {
 		on(name: string, callback: typeof handler): void;
@@ -167,8 +168,9 @@ export type ToolCallUpdateView = {
 };
 
 /** Read one element of an unknown array value. */
-function pickIndex(value: unknown, index: number): unknown {
-	return Array.isArray(value) ? value[index] : undefined;
+function pickIndex(value: unknown, index: number): JsonValue | undefined {
+	const element: JsonValue | undefined = Array.isArray(value) ? value[index] : undefined;
+	return element;
 }
 
 /** Read a streamed tool-call part, or undefined for any other update. */

@@ -2452,13 +2452,13 @@ class SubagentSessionOwner {
 		registrar.on("tool_execution_start", async (event, ctx) => this.handlePiEvent("tool_execution_start", event, ctx));
 		registrar.on("tool_execution_end", async (event, ctx) => this.handlePiEvent("tool_execution_end", event, ctx));
 		registrar.on("tool_result", async (event, ctx) => this.handlePiEvent("tool_result", event, ctx));
-		registrar.on("session_start", async (event, ctx) => this.handlePiEvent("session_start", event, ctx));
+		registrar.on("session_start", (event, ctx) => { void this.handlePiEvent("session_start", event, ctx); });
 		registrar.on("before_agent_start", async (event, ctx) => this.handlePiEvent("before_agent_start", event, ctx));
 		registrar.on("session_shutdown", async (event, ctx) => this.handlePiEvent("session_shutdown", event, ctx));
 		// The host emits this native persistence event for direct session
 		// subscribers. Keep the handler registered when the host exposes it so
 		// provenance can use the appended entry rather than the prior leaf.
-		onUnlistedEvent(registrar, "entry_appended", async (event, ctx) => this.handlePiEvent("entry_appended", event, ctx));
+		onUnlistedEvent(registrar, "entry_appended", (event, ctx) => { void this.handlePiEvent("entry_appended", event, ctx); });
 	}
 
 	private registerCommand(): void {

@@ -5,7 +5,7 @@ import { InMemoryModelsStore } from "@earendil-works/pi-ai";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import quotaExtension from "./index.js";
-type Handler = (...args: any[]) => unknown;
+type Handler = (...args: any[]) => void;
 
 const quotaSource = join(import.meta.dirname, "test/fake-quota-source.ts");
 const tempDirs: string[] = [];
@@ -110,12 +110,12 @@ async function createQuotaSession(registry: ModelRegistry, id: string, dir: stri
 		ui: { notify: vi.fn(), setStatus: vi.fn() },
 		model: chatModel("gen-model", "genetec"),
 	};
-	await events.get("session_start")?.({}, ctx);
+	events.get("session_start")?.({}, ctx);
 	let active = true;
 	const shutdown = async () => {
 		if (!active) {return;}
 		active = false;
-		await events.get("session_shutdown")?.({}, ctx);
+		events.get("session_shutdown")?.({}, ctx);
 	};
 	cleanups.push(shutdown);
 	return { events, ctx, shutdown };
@@ -158,7 +158,7 @@ describe("quota provider lifecycle on a shared runtime", () => {
 		const secondSession = await createQuotaSession(secondRegistry, "second-session", dir);
 		await settleRuntime(runtime);
 
-		await firstSession.events.get("agent_start")?.({}, firstSession.ctx);
+		firstSession.events.get("agent_start")?.({}, firstSession.ctx);
 		await settleRuntime(runtime);
 		await firstSession.shutdown();
 

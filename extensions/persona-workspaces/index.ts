@@ -54,15 +54,17 @@ import type {
 	BeforeAgentStartEventResult,
 	ExtensionAPI,
 	ExtensionContext,
+	SessionEntry,
+	SessionHeader,
 	SessionManager,
 	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 
 /** The session-manager surface the persona projection reads. */
 type SessionManagerSurface = Pick<SessionManager, "getCwd"> & {
-	getHeader?: () => unknown;
-	getBranch?: () => unknown[];
-	getEntries?: () => unknown[];
+	getHeader?: () => SessionHeader | null;
+	getBranch?: () => readonly SessionEntry[];
+	getEntries?: () => readonly SessionEntry[];
 };
 import { Box, Text } from "@earendil-works/pi-tui";
 import { loadWorkspacePersona } from "./declaration.ts";

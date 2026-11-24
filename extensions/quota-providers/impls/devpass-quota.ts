@@ -1,5 +1,6 @@
 import type { QuotaSource, ImplContext, UsageSnapshot } from "../lib/types.js";
 import type { JsonValue } from "@earendil-works/pi-ai";
+import { parseJsonValue } from "../../subagents/narrow.js";
 
 const API_BASE_URL = "https://api.llmgateway.io/v1";
 const API_KEY_ENV = "LLMGATEWAY_API_KEY";
@@ -38,7 +39,7 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-async function fetchGatewayJson(path: string, signal?: AbortSignal): Promise<unknown> {
+async function fetchGatewayJson(path: string, signal?: AbortSignal): Promise<JsonValue> {
 	if (signal?.aborted) {
 		throw new DOMException("devpass quota: operation aborted", "AbortError");
 	}
@@ -52,7 +53,9 @@ async function fetchGatewayJson(path: string, signal?: AbortSignal): Promise<unk
 	if (!response.ok) {
 		throw new Error(`devpass quota: GET ${path} failed (${response.status} ${response.statusText})`);
 	}
-	return response.json();
+	const body = parseJsonValue(await response.text());
+	if (body === undefined) {throw new Error(`devpass quota: GET ${path} returned invalid JSON`);}
+	return body;
 }
 
 function asRecord(value: unknown): Record<string, JsonValue> | undefined {

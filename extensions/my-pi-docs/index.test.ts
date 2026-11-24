@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import myPiDocs, { EXTENSION_DOCS_PATH, EXTENSION_DOCS_SECTION } from "./index.ts";
 
-type Handler = (event: any, ctx: any) => unknown;
+type Handler = (event: any, ctx: any) => void;
 
 function setup() {
 	const handlers = new Map<string, Handler[]>();

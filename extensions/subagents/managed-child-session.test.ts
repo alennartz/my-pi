@@ -519,16 +519,16 @@ describe("ManagedChildSession prompt, event, and shutdown behavior", () => {
 		await expect(child.submit("blocked")).rejects.toThrow("preflight rejected");
 
 		let resolveRun!: () => void;
-		let observeRejection: ((error: Error) => unknown) | undefined;
+		let observeRejection: ((error: Error) => void) | undefined;
 		const run = new Promise<void>((resolve) => {
 			resolveRun = resolve;
 		});
 		const trackedRun: any = {
-			then(onFulfilled: unknown, onRejected: ((error: Error) => unknown) | undefined) {
+			then(onFulfilled: unknown, onRejected: ((error: Error) => void) | undefined) {
 				observeRejection = onRejected;
 				return run.then(onFulfilled as any, onRejected as any);
 			},
-			catch(onRejected: (error: Error) => unknown) {
+			catch(onRejected: (error: Error) => void) {
 				observeRejection = onRejected;
 				return run.catch(onRejected);
 			},

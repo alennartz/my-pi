@@ -14,13 +14,11 @@
  * Every other level, API family, and payload shape passes through untouched.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isJsonObject } from "../subagents/narrow.js";
+import type { JsonObject } from "../subagents/narrow.js";
 
 /** APIs that carry a Google thinking config. */
 const GOOGLE_APIS = new Set(["google-generative-ai", "google-vertex", "google-gemini-cli"]);
-
-/** A payload node that may own a `thinkingConfig`. */
-type ThinkingConfigOwner = { thinkingConfig?: { thinkingLevel?: unknown } };
 
 /**
  * Rewrite the wire level to XHIGH when the request runs at the xhigh session
@@ -28,30 +26,21 @@ type ThinkingConfigOwner = { thinkingConfig?: { thinkingLevel?: unknown } };
  * under `config`, and REST-shaped payloads use `generationConfig`.
  */
 export function applyXhighThinkingLevel(
-	payload: unknown,
+	payload: JsonObject,
 	api: string,
 	thinkingLevel: string | undefined,
-): unknown {
+): JsonObject {
 	if (thinkingLevel !== "xhigh" || !GOOGLE_APIS.has(api)) {return payload;}
-	if (!payload || typeof payload !== "object") {return payload;}
-
-	const request = payload as { config?: ThinkingConfigOwner; generationConfig?: ThinkingConfigOwner } & ThinkingConfigOwner;
-	let changed = false;
-	for (const owner of [request.config, request.generationConfig, request]) {
-		const thinkingConfig = owner?.thinkingConfig;
-		const level = thinkingConfig?.thinkingLevel;
-		if ((level === "HIGH" || level === "high") && thinkingConfig) {
-			thinkingConfig.thinkingLevel = "XHIGH";
-			changed = true;
-		}
+	const owners: JsonObject[] = [payload];
+	const config = isJsonObject(payload.config) ? payload.config : undefined;
+	const generationConfig = isJsonObject(payload.generationConfig) ? payload.generationConfig : undefined;
+	if (config !== undefined) {owners.push(config);}
+	if (generationConfig !== undefined) {owners.push(generationConfig);}
+	for (const owner of owners) {
+		const thinkingConfig = isJsonObject(owner.thinkingConfig) ? owner.thinkingConfig : undefined;
+		if (thinkingConfig === undefined) {continue;}
+		const level = thinkingConfig.thinkingLevel;
+		if (level === "HIGH" || level === "high") {thinkingConfig.thinkingLevel = "XHIGH";}
 	}
-	return changed ? request : payload;
-}
-
-export default function (pi: ExtensionAPI) {
-	pi.on("before_provider_request", (event, ctx) => {
-		const model = ctx.model;
-		if (!model) {return;}
-		return applyXhighThinkingLevel(event.payload, String(model.api), ctx.thinkingLevel);
-	});
+	return payload;
 }
