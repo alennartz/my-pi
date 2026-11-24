@@ -19,6 +19,7 @@ export default defineConfig({
     'import/no-namespace': 'off',
     'no-console': 'off',
     'no-empty': ['error', { allowEmptyCatch: true }],
+    // Iterator helpers need ES2025 types; filter/map chains stay.
     'quality/no-array-filter-map': 'off',
     'quality/no-chained-type-assertions': 'off',
     // Conditional spreads mark optional properties under exactOptionalPropertyTypes.
