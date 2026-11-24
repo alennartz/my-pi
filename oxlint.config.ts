@@ -29,7 +29,6 @@ export default defineConfig({
     'quality/no-conditional-empty-object-spread': 'off',
     'quality/no-known-value-widening': 'off',
     'quality/no-object-parameters': 'off',
-    'quality/no-reflect-apply': 'off',
     'quality/no-reflect-get': 'off',
     'quality/no-unsafe-dictionary-type': 'off',
     'quality/no-unknown-returns': 'off',

@@ -112,7 +112,7 @@ function guardedStream(
 				const decision = state.evaluate(model, options);
 				if (decision?.blocked) {throw new Error(decision.message);}
 			}
-			return Reflect.apply(original, receiver, [model, context, options]);
+			return original.call(receiver, model, context, options);
 		} finally {
 			state.chain.depth -= 1;
 		}
