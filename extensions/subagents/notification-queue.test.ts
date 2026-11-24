@@ -4,8 +4,8 @@ import { NotificationQueue, type NotificationQueueConfig } from "./notification-
 function createQueue(overrides?: Partial<NotificationQueueConfig>) {
 	const delivered: string[] = [];
 	const deferred: string[] = [];
-	const deliveredDetails: Array<{ semanticEvents: readonly unknown[] } | undefined> = [];
-	const deferredDetails: Array<{ semanticEvents: readonly unknown[] } | undefined> = [];
+	const deliveredDetails: ({ semanticEvents: readonly unknown[] } | undefined)[] = [];
+	const deferredDetails: ({ semanticEvents: readonly unknown[] } | undefined)[] = [];
 	const queue = new NotificationQueue({
 		deliver: (content, details) => {
 			delivered.push(content);

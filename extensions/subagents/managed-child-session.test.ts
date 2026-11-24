@@ -11,7 +11,7 @@ const sdk = vi.hoisted(() => {
 		runtimeArgs: any[];
 		sessions: any[];
 		runtimes: any[];
-		bindings: Array<{ session: any; bindings: any }>;
+		bindings: { session: any; bindings: any }[];
 		eventDuringBind?: any;
 		promptImplementation: (session: any, text: string, options: any) => Promise<void>;
 	} = {

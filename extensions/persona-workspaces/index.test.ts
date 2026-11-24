@@ -122,7 +122,7 @@ function ctxFor(
 
 /** A fake child session manager whose transcript accumulates ingested notices. */
 function transcriptSessionManager() {
-	const entries: Array<Record<string, unknown>> = [];
+	const entries: Record<string, unknown>[] = [];
 	return {
 		entries,
 		sessionManager: {
@@ -136,8 +136,8 @@ function transcriptSessionManager() {
 
 function agentStartEvent(options?: {
 	customPrompt?: string;
-	contextFiles?: Array<{ path: string; content: string }>;
-	skills?: Array<{ name: string }>;
+	contextFiles?: { path: string; content: string }[];
+	skills?: { name: string }[];
 }) {
 	return {
 		type: "before_agent_start",

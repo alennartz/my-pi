@@ -68,7 +68,7 @@ export function openFetchStore(dir?: string, opts: FetchStoreOptions = {}): Fetc
 			return;
 		}
 		const jsonFiles = names.filter((n) => n.endsWith(".json"));
-		const live: Array<{ name: string; mtime: number; expiresAt: number }> = [];
+		const live: { name: string; mtime: number; expiresAt: number }[] = [];
 		for (const name of jsonFiles) {
 			const full = join(storeDir, name);
 			const key = name.slice(0, -".json".length);

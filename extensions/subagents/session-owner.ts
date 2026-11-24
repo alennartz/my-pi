@@ -2475,7 +2475,7 @@ class SubagentSessionOwner {
 		});
 	}
 
-	private getModelCompletions(prefix: string): Array<{ value: string; label: string }> | null {
+	private getModelCompletions(prefix: string): { value: string; label: string }[] | null {
 		if (this.phase.kind !== "active") {return null;}
 		const { environment } = this.phase.session;
 		if (environment.cachedModels.length === 0) {return null;}
@@ -3399,9 +3399,9 @@ class SubagentSessionOwner {
 		}
 		const ids = requested ?? manager.getAgentStatuses().map((status) => status.id);
 		const results = await Promise.allSettled(ids.map((id: string) => manager.interrupt(id, { signal })));
-		const interrupted: Array<{ path: string[]; output?: string; error?: string }> = [];
-		const pending: Array<{ path: string[]; output?: string; error?: string }> = [];
-		const failed: Array<{ path: string[]; output?: string; error?: string }> = [];
+		const interrupted: { path: string[]; output?: string; error?: string }[] = [];
+		const pending: { path: string[]; output?: string; error?: string }[] = [];
+		const failed: { path: string[]; output?: string; error?: string }[] = [];
 		results.forEach((result, index) => {
 			const pathValue = manager.getAgentPath(ids[index]) ?? childAgentPath(this.scopePath(), ids[index]);
 			if (result.status !== "fulfilled") {

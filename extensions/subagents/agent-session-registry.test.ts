@@ -359,7 +359,7 @@ describe("AgentSessionRegistry removal, attachment, and lifecycle", () => {
 		const [parent] = await registry.createChildren([], [request("worker")]);
 		const [grandchild] = await registry.createChildren(["worker"], [request("scout")]);
 		registry.updateOperational(["worker"], operational({ state: "errored", lastError: "final failure" }));
-		const removed: Array<{ path: string[]; lastError?: string }> = [];
+		const removed: { path: string[]; lastError?: string }[] = [];
 		registry.subscribe((event) => {
 			if (event.type === "node_removed") {
 				removed.push({ path: [...event.node.path], lastError: event.node.operational.lastError });

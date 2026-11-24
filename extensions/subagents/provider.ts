@@ -1549,7 +1549,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				if (isRecord(part) && part.type === "toolCall" && typeof part.id === "string") {toolArguments.set(part.id, part.arguments);}
 			}
 		}
-		const saved: Array<{ payload: PersistedSubagentContent; entryId?: string }> = [];
+		const saved: { payload: PersistedSubagentContent; entryId?: string }[] = [];
 		for (const entry of entries) {
 			const candidateEntry = isRecord(entry) ? entry : {};
 			const message = isRecord(candidateEntry.message) ? candidateEntry.message : candidateEntry;

@@ -57,7 +57,7 @@ function registerExtension() {
 		registeredName,
 		registeredCommand: registeredCommand as {
 			description: string;
-			getArgumentCompletions(prefix: string): Array<{ value: string; label: string }> | null;
+			getArgumentCompletions(prefix: string): { value: string; label: string }[] | null;
 			handler(
 				args: string,
 				ctx: { ui: { notify(message: string, level: string): void }; waitForIdle(): Promise<void> },

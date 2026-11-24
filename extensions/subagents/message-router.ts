@@ -262,8 +262,8 @@ export class MessageRouter {
 	 * would never be satisfied, because nothing but a response, a rejection, or
 	 * the sender's own death clears the correlation.
 	 */
-	pendingSendersTo(targetId: string): Array<{ from: string; correlationId: string }> {
-		const blocked: Array<{ from: string; correlationId: string }> = [];
+	pendingSendersTo(targetId: string): { from: string; correlationId: string }[] {
+		const blocked: { from: string; correlationId: string }[] = [];
 		for (const pending of this.pendingCorrelations.values()) {
 			if (pending.to === targetId) {
 				blocked.push({ from: pending.from, correlationId: pending.correlationId });

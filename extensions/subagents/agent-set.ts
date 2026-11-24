@@ -400,7 +400,7 @@ export class SubagentManager {
 	 * status projection is maintained through callbacks whose failures are
 	 * swallowed, and a later child event can overwrite the `waiting` state.
 	 */
-	getBlockedSenders(): Array<{ from: string; correlationId: string }> {
+	getBlockedSenders(): { from: string; correlationId: string }[] {
 		return this.router.pendingSendersTo("parent");
 	}
 
@@ -821,7 +821,7 @@ export class SubagentManager {
 		channels: string[],
 		batch: AgentSpec[],
 	): string {
-		const candidates: Array<{ id: string; persona?: string; isDefault: boolean }> = [
+		const candidates: { id: string; persona?: string; isDefault: boolean }[] = [
 			...this.entries.map((entry) => ({
 				id: entry.id,
 				persona: entry.agentDef,

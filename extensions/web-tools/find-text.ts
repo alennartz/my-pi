@@ -14,7 +14,7 @@ export interface FindResult {
 	/** Rendered passages with per-query match counts. */
 	text: string;
 	matchCount: number;
-	perQuery: Array<{ query: string; matchCount: number }>;
+	perQuery: { query: string; matchCount: number }[];
 }
 
 interface Range {

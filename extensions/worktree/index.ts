@@ -64,7 +64,7 @@ function resolveRepoRoot(cwd: string): string {
 }
 
 function parseWorktreeList(output: string): WorktreeInfo[] {
-	const entries: Array<{ path?: string; branch?: string }> = [];
+	const entries: { path?: string; branch?: string }[] = [];
 	let current: { path?: string; branch?: string } = {};
 
 	const pushCurrent = () => {
@@ -338,8 +338,8 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 	// returning the promise. We observe `agent_start` / `agent_end` events and
 	// pre-arm both barriers before sending so neither event can be missed.
 	let agentRunning = false;
-	const startWaiters: Array<() => void> = [];
-	const endWaiters: Array<() => void> = [];
+	const startWaiters: (() => void)[] = [];
+	const endWaiters: (() => void)[] = [];
 
 	pi.on("agent_start", () => {
 		agentRunning = true;

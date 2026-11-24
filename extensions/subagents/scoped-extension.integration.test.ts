@@ -15,7 +15,7 @@ vi.mock("node:crypto", async (importOriginal) => ({
 
 const managed = vi.hoisted(() => {
 	let sequence = 0;
-	const created: Array<{ config: any; dependencies: any; hooks: any; child: any }> = [];
+	const created: { config: any; dependencies: any; hooks: any; child: any }[] = [];
 	let onCreate: ((entry: { config: any; dependencies: any; hooks: any; child: any }) => Promise<void>) | undefined;
 	const createManagedChildSession = vi.fn(async (config: any, dependencies: any, hooks: any) => {
 		const localId = config.path[config.path.length - 1];
@@ -2616,13 +2616,13 @@ describe("root orchestration integration", () => {
 			"subagent",
 			{ agents: [{ id: "rev", persona: "reviewer", task: "review", cwd: childCwd }] },
 			ctx,
-		)) as { content?: Array<{ text?: string }> };
+		)) as { content?: { text?: string }[] };
 		const plain = (await execute(
 			tools,
 			"subagent",
 			{ agents: [{ id: "plain", persona: "reviewer", task: "review", cwd: plainCwd }] },
 			ctx,
-		)) as { content?: Array<{ text?: string }> };
+		)) as { content?: { text?: string }[] };
 
 		const overrideText = String(overridden?.content?.[0]?.text ?? "");
 		const plainText = String(plain?.content?.[0]?.text ?? "");
