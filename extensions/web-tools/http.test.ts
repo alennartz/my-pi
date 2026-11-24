@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 import { httpFetch, HttpFetchError, parseRetryAfterMs } from './http.js';
 import type { HttpFetchOptions } from './http.js';
 
@@ -19,10 +20,10 @@ function textResponse(body: string, init: ResponseInit = {}): Response {
 	return new Response(body, init);
 }
 
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: Mock<typeof fetch>;
 
 beforeEach(() => {
-	fetchMock = vi.fn();
+	fetchMock = vi.fn<typeof fetch>();
 });
 
 afterEach(() => {
@@ -80,8 +81,8 @@ describe("httpFetch", () => {
 					},
 				}),
 			)
-			.mockImplementationOnce(async (_url: string, init: RequestInit) => {
-				expect(new Headers(init.headers).get("cookie")).toBe("challenge=token");
+			.mockImplementationOnce(async (_url: string | URL | Request, init?: RequestInit) => {
+				expect(new Headers(init?.headers).get("cookie")).toBe("challenge=token");
 				return textResponse("ok", { status: 200 });
 			});
 
@@ -99,7 +100,7 @@ describe("httpFetch", () => {
 	});
 
 	it("fails after too many redirects", async () => {
-		fetchMock.mockImplementation(async (url: string) =>
+		fetchMock.mockImplementation(async (url: string | URL | Request) =>
 			new Response(null, {
 				status: 302,
 				headers: { location: `${url}r` },
@@ -190,9 +191,9 @@ describe("httpFetch", () => {
 			},
 		};
 		fetchMock.mockImplementation(
-			(_url: string, init: RequestInit) =>
+			(_url: string | URL | Request, init?: RequestInit) =>
 				new Promise((_resolve, reject) => {
-					init.signal?.addEventListener("abort", () =>
+					init?.signal?.addEventListener("abort", () =>
 						reject(new DOMException("Aborted", "AbortError")),
 					);
 				}),
@@ -232,9 +233,9 @@ describe("httpFetch", () => {
 	it("propagates caller cancellation without retrying", async () => {
 		const caller = new AbortController();
 		fetchMock.mockImplementation(
-			(_url: string, init: RequestInit) =>
+			(_url: string | URL | Request, init?: RequestInit) =>
 				new Promise((_resolve, reject) => {
-					init.signal?.addEventListener("abort", () =>
+					init?.signal?.addEventListener("abort", () =>
 						reject(new DOMException("Aborted", "AbortError")),
 					);
 					caller.abort();
