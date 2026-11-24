@@ -1,10 +1,11 @@
 import { childAgentPath } from './agent-path.js';
 import type { AgentPath } from './agent-path.js';
 import { createManagedChildSession } from './managed-child-session.js';
-import type { ChildSessionConfig, ChildSessionHooks, ManagedChildSession, ManagedChildSessionDependencies } from './managed-child-session.js';
+import type { ChildSessionConfig, ChildSessionHooks, ChildSessionRuntimeReplaced, ManagedChildSession, ManagedChildSessionDependencies } from './managed-child-session.js';
 import type { MessagePort } from "./message-router.js";
 import { createSessionTreeStore } from "./scoped-store.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
+import { asRecord, stringField } from "./narrow.js";
 import { required } from "../../lib/required.ts";
 import type { SubagentOwnerControlPort } from "./provider.js";
 import type { SemanticFactBus } from "./semantic-bus.js";
@@ -398,12 +399,15 @@ export class AgentSessionRegistry {
 					},
 				};
 				const managed = await this.createSession(config, this.dependencies, decoratedHooks);
-				const sessionObject: any = (managed as any).session;
+				const managedRecord = asRecord(managed) ?? {};
+				const sessionObject = asRecord(managedRecord.session) ?? {};
 				const current = required(this.nodes.get(pathKey)?.snapshot ?? this.stagedSnapshots.get(pathKey), "staged snapshot");
-				const sessionId = (managed as any).sessionId ?? sessionObject?.sessionId ?? current.sessionId;
-				const sessionFile = (managed as any).sessionFile ?? sessionObject?.sessionFile;
-				const manager = sessionObject?.sessionManager;
-				const cwd = manager?.getCwd?.() || current.cwd || (request.session.target.kind === "resume" ? "" : request.session.target.cwd);
+				const sessionId = stringField(managedRecord, "sessionId") ?? current.sessionId;
+				const sessionFile = stringField(managedRecord, "sessionFile");
+				const manager = asRecord(sessionObject.sessionManager);
+				const getCwd = manager?.getCwd;
+				const cwdFromManager = typeof getCwd === "function" ? String(getCwd.call(manager)) : "";
+				const cwd = cwdFromManager || current.cwd || (request.session.target.kind === "resume" ? "" : request.session.target.cwd);
 				const finalSnapshot = cloneFreeze({
 					...current,
 					sessionId,
@@ -526,7 +530,7 @@ export class AgentSessionRegistry {
 		return `incarnation-${next}`;
 	}
 
-	private applyRuntimeReplacement(pathKey: string, request: CreateAgentNodeRequest, replacement: any): void {
+	private applyRuntimeReplacement(pathKey: string, request: CreateAgentNodeRequest, replacement: ChildSessionRuntimeReplaced): void {
 		const current = this.nodes.get(pathKey)?.snapshot ?? this.stagedSnapshots.get(pathKey);
 		if (!current) {
 			request.hooks.onRuntimeReplaced?.(replacement);

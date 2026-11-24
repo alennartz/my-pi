@@ -36,8 +36,6 @@ export default defineConfig({
     // Boundary parsers return unknown so callers must narrow.
     'quality/no-unknown-returns': 'off',
     'typescript/array-type': ['error', { default: 'array' }],
-    // Pi event and tool payloads are untyped per event name at the SDK boundary.
-    'typescript/no-explicit-any': 'off',
     // Any values enter at untyped SDK boundaries.
     'typescript/no-unsafe-argument': 'off',
     'typescript/no-unsafe-assignment': 'off',

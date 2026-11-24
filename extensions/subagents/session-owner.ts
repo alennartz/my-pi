@@ -2,12 +2,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import type { AgentToolResult, ExtensionAPI, ExtensionContext, ExtensionFactory } from '@earendil-works/pi-coding-agent';
+import type { AgentToolResult, ExtensionAPI, ExtensionContext, ExtensionFactory, Theme } from '@earendil-works/pi-coding-agent';
 import { Type } from "typebox";
 import type { Static } from "typebox";
 import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
 import { answerActivity } from "@pimote/sdk/activity";
 import { registerProvider } from "@pimote/sdk/subagents";
+import type { SubagentPresentationProvider, SubagentPresentationReplay, SubagentProviderEvent } from "@pimote/sdk/subagents";
 import { normalizeFinalData, normalizeSavedPresentationData, savedPresentationKind } from './presentation-data.js';
 import type { PersistedSubagentContent } from './presentation-data.js';
 import {
@@ -25,6 +26,7 @@ import { childAgentPath } from './agent-path.js';
 import { onUnlistedEvent, toolCallUpdateView, toolExecutionEndView, toolExecutionStartView, toolResultView } from './pi-events.js';
 import type { ObservedPiEvent, PiEventHandlers, PiEventMap, PiEventName, PiEventResult } from './pi-events.js';
 import { asRecord, booleanField, stringField } from './narrow.js';
+import type { Component } from '@earendil-works/pi-tui';
 import type { AgentPath } from './agent-path.js';
 import { excludeModelOnlyTools } from "./child-tool-policy.js";
 import { getPersistencePaths } from "./persistence.js";
@@ -55,7 +57,7 @@ import { createSubagentSemanticAdapter } from './semantic-adapter.js';
 import type { PiToolCallDelta, PiToolExecution, SemanticAdapterEvent } from './semantic-adapter.js';
 export type { SemanticFactBus } from "./semantic-bus.js";
 import { createSubagentProvider } from './provider.js';
-import type { SubagentSemanticFact, SubagentAwaitChildStatus, SubagentEventData, SubagentMessageData, PiEventRef, SubagentProvider } from './provider.js';
+import type { SubagentSemanticFact, SubagentAwaitChildStatus, SubagentEventData, SubagentMessageData, PiEventRef, ProviderFeedEvent, ReplayResult, SubagentProvider } from './provider.js';
 import type {
 	SubagentManagerControl,
 	SubagentOwnerControlPort,
@@ -148,7 +150,7 @@ interface WaitState {
 
 function createSessionEnvironment(
 	packageAgents: { user: AgentConfig[]; project: AgentConfig[] } | null,
-	models: any[],
+	models: readonly AvailableModel[],
 ): SessionEnvironment {
 	const frozenPackages = packageAgents
 		? Object.freeze({
@@ -201,7 +203,7 @@ function stableRootSessionId(ctx: ExtensionContext, sessionFile: string | undefi
 	return ctx.sessionManager.getSessionName?.() ?? "root";
 }
 
-function summarizeArgs(args: Record<string, any>): string {
+function summarizeArgs(args: Record<string, unknown>): string {
 	if (!args) {return "";}
 	if (args.command) {
 		const command = String(args.command).replaceAll(/[\r\n\t]+/g, " ").replaceAll(/  +/g, " ").trim();
@@ -265,7 +267,7 @@ function resolveChildModelRef(args: {
 	inherited: string | undefined;
 	agentId: string;
 	tiers: TierConfig;
-	availableModels: readonly any[];
+	availableModels: readonly AvailableModel[];
 }): ResolvedChildModelRef {
 	const winner = args.pin || args.explicit || undefined;
 	const ref = winner ?? args.inherited;
@@ -451,7 +453,7 @@ class SessionTurnCoordinator {
 				flushCompletionBatch();
 			},
 		});
-		this.stopSequences = typeof (pi as any).on === "function"
+		this.stopSequences = typeof pi.on === "function"
 			? createStopSequenceManager(pi)
 			: { add() {}, remove() {}, addOnce() {}, clear() {} };
 	}
@@ -849,8 +851,8 @@ class SessionTurnCoordinator {
 				result.subagentContent,
 				{ interrupted: result.interrupted, error: result.error },
 			);
-		} catch (error: any) {
-			if (error?.message === "Aborted") {throw new Error("Wait cancelled.", { cause: error });}
+		} catch (error: unknown) {
+			if (stringField(error, "message") === "Aborted") {throw new Error("Wait cancelled.", { cause: error });}
 			throw error;
 		}
 	}
@@ -1029,13 +1031,21 @@ class SessionTurnCoordinator {
 	}
 }
 
-interface DashboardView {
+type DashboardView = Component & {
 	update(statuses: AgentStatus[]): void;
 	setSessionName(name: string | undefined): void;
-}
+};
 
 /** Owns display handles and the root-tree display subscription for one session. */
-type DashboardModule = { SubagentDashboard: new (theme: unknown) => DashboardView };
+type DashboardModule = { SubagentDashboard: new (theme: Theme) => DashboardView };
+
+/** Stand-in used when a mount is refused after pi requested the widget. */
+class HiddenDashboard implements DashboardView {
+	update(_statuses: AgentStatus[]): void {}
+	setSessionName(_name: string | undefined): void {}
+	render(): string[] {return [];}
+	invalidate(): void {}
+}
 type DashboardLoader = () => Promise<DashboardModule>;
 
 export class SubagentPresentation {
@@ -1048,7 +1058,7 @@ export class SubagentPresentation {
 	constructor(
 		private readonly pi: ExtensionAPI,
 		private readonly scope: SubagentScope,
-		loadDashboard: DashboardLoader = () => import("./widget.js") as Promise<any>,
+		loadDashboard: DashboardLoader = () => import("./widget.js"),
 	) {
 		this.loadDashboard = loadDashboard;
 	}
@@ -1063,7 +1073,7 @@ export class SubagentPresentation {
 		if (this.registryUnsubscribe) {return;}
 		// The receiver is supplied at call time below.
 		// oxlint-disable-next-line typescript/unbound-method
-		const subscribe = eventSource?.subscribe ?? (registry as any).subscribe;
+		const subscribe = eventSource?.subscribe ?? registry.subscribe.bind(registry);
 		if (typeof subscribe !== "function") {return;}
 		const forward = (event: RegistryEvent): void => {
 			onEvent?.(event);
@@ -1074,29 +1084,31 @@ export class SubagentPresentation {
 		};
 		this.registryUnsubscribe = eventSource
 			? subscribe.call(eventSource, forward)
-			: subscribe.call(registry, forward);
+			: subscribe(forward);
 	}
 
 	async ensureWidget(ctx: ExtensionContext): Promise<void> {
 		if (this.mountingDisabled || this.scope.kind === "child" || this.dashboard) {return;}
 		if (ctx.mode === "tui") {
 			const initialName = ctx.sessionManager.getSessionName?.();
-			let DashboardComponent: new (theme: unknown) => DashboardView;
+			let DashboardComponent: new (theme: Theme) => DashboardView;
 			try {
 				({ SubagentDashboard: DashboardComponent } = await this.loadDashboard());
 			} catch {
 				DashboardComponent = class {
 					update(_statuses: AgentStatus[]): void {}
 					setSessionName(_name: string | undefined): void {}
+					render(): string[] {return [];}
+					invalidate(): void {}
 				};
 			}
 			if (this.mountingDisabled) {return;}
 			ctx.ui.setWidget("subagents", (tui, theme) => {
-				if (this.mountingDisabled) {return undefined;}
+				if (this.mountingDisabled) {return new HiddenDashboard();}
 				this.tuiRef = tui;
 				this.dashboard = new DashboardComponent(theme);
 				this.dashboard.setSessionName(initialName);
-				return this.dashboard as any;
+				return this.dashboard;
 			});
 		}
 	}
@@ -1717,7 +1729,7 @@ class SubagentSessionOwner {
 			ownerControl?.registerManager?.(ownerPath, managerControl);
 			ownerControl?.registerLeaseCoordinator?.(ownerPath, turns);
 			if (provider && this.scope.kind === "root" && this.hasProviderEventBus()) {
-				unregisterProvider = registerProvider(this.pi, provider as any);
+				unregisterProvider = registerProvider(this.pi, presentationProviderOf(provider));
 			}
 			const session: ActiveSubagentSession = Object.freeze({
 				environment,
@@ -2284,7 +2296,7 @@ class SubagentSessionOwner {
 			}
 		}
 		const model = message.model ?? operational.model;
-		const modelInfo = ctx.modelRegistry.getAvailable().find((candidate: any) =>
+		const modelInfo = ctx.modelRegistry.getAvailable().find((candidate) =>
 			candidate?.id === model || `${candidate?.provider}/${candidate?.id}` === model,
 		);
 		this.updateRootOperational({
@@ -2421,8 +2433,8 @@ class SubagentSessionOwner {
 	}
 
 	private hasProviderEventBus(): boolean {
-		const events = (this.pi as any).events;
-		return Boolean(events && typeof events.on === "function" && typeof events.emit === "function");
+		const events = asRecord(this.pi)?.events;
+		return typeof asRecord(events)?.on === "function" && typeof asRecord(events)?.emit === "function";
 	}
 
 	private registerEventHandlers(): void {
@@ -2482,7 +2494,7 @@ class SubagentSessionOwner {
 
 		const { model: modelPart, thinking } = stripThinkingSuffix(input);
 		const resolved = ctx.modelRegistry.getAvailable().find(
-			(model: any) => model?.id === modelPart || `${model?.provider}/${model?.id}` === modelPart,
+			(model) => model.id === modelPart || `${model.provider}/${model.id}` === modelPart,
 		);
 		if (!resolved) {
 			ctx.ui.notify(`Unknown model "${modelPart}"`, "error");
@@ -2638,9 +2650,9 @@ class SubagentSessionOwner {
 
 	private listModels(ctx: ExtensionContext): ToolResult<ModelsResultData> {
 		this.requireActiveSession();
-		const models: any[] = ctx.modelRegistry.getAvailable();
+		const models = ctx.modelRegistry.getAvailable();
 		const data: ModelsResultData = {
-			models: models.map((model: any) => ({
+			models: models.map((model) => ({
 				ref: `${model?.provider}/${model?.id}`,
 				contextWindow: typeof model?.contextWindow === "number" ? model.contextWindow : null,
 				inputCostPerMtok: typeof model?.cost?.input === "number" ? model.cost.input : null,
@@ -2661,7 +2673,7 @@ class SubagentSessionOwner {
 		const session = this.requireActiveSession();
 		const discovery = session.environment.discoverAgents(ctx.cwd);
 		const allAgentConfigs = discovery.agents;
-		const availableModels: any[] = ctx.modelRegistry.getAvailable();
+		const availableModels = ctx.modelRegistry.getAvailable();
 
 		for (const agent of params.agents) {
 			const agentName = personaNameOf(agent);
@@ -2675,9 +2687,9 @@ class SubagentSessionOwner {
 		}
 
 		const manager = session.manager;
-		this.assertNewAgentIds(params.agents.map((agent: any) => agent.id), manager);
+		this.assertNewAgentIds(params.agents.map((agent) => agent.id), manager);
 		const resolvedCwds = resolveAgentCwds(
-			params.agents.map((agent: any) => ({ id: agent.id, cwd: agent.cwd })),
+			params.agents.map((agent) => ({ id: agent.id, cwd: agent.cwd })),
 			ctx.cwd,
 		);
 
@@ -2734,17 +2746,17 @@ class SubagentSessionOwner {
 					agent.id,
 					Object.freeze(resolvePersonaSkillPaths(active.skills, commands, "fatal").skillPaths),
 				);
-			} catch (error: any) {
-				throw new Error(`Failed to resolve skills for agent "${agent.id}": ${error.message}`, { cause: error });
+			} catch (error: unknown) {
+				throw new Error(`Failed to resolve skills for agent "${agent.id}": ${stringField(error, "message") ?? String(error)}`, { cause: error });
 			}
 		}
 
-		const agentSpecs: RegularAgentSpec[] = params.agents.map((agent: any) => {
+		const agentSpecs: RegularAgentSpec[] = params.agents.map((agent) => {
 			// The public `persona` item field maps onto the internal `agent` spec
 			// property via `personaNameOf`. Neither the public field nor the legacy
 			// fallback key may ride the spread below — they would leak onto the
 			// spec as stray properties.
-			const { persona: _personaField, agent: _legacyPersonaField, ...item } = agent;
+			const { persona: _personaField, ...item } = agent;
 			return Object.freeze({
 				kind: "agent" as const,
 				...item,
@@ -2777,7 +2789,7 @@ class SubagentSessionOwner {
 		session.turns.addStopSequenceOnce("<agent_idle");
 		const overrideNote = overrideNotes.length > 0 ? `\n\n${overrideNotes.join("\n")}` : "";
 		return this.structuredTextResult(ack + overrideNote, {
-			agents: params.agents.map((agent: any) => ({
+			agents: params.agents.map((agent) => ({
 				id: agent.id,
 				status: manager.getAgentStatus(agent.id)?.state ?? "running",
 			})),
@@ -2802,8 +2814,8 @@ class SubagentSessionOwner {
 		if (active?.skills) {
 			try {
 				skillPaths = resolvePersonaSkillPaths(active.skills, commands, "fatal").skillPaths;
-			} catch (error: any) {
-				throw new Error(`Failed to resolve skills for agent "${params.id}": ${error.message}`, { cause: error });
+			} catch (error: unknown) {
+				throw new Error(`Failed to resolve skills for agent "${params.id}": ${stringField(error, "message") ?? String(error)}`, { cause: error });
 			}
 		} else {
 			skillPaths = commands
@@ -3193,8 +3205,8 @@ class SubagentSessionOwner {
 		const session = this.requireActiveSession();
 		const manager = session.manager;
 		if (params.agents.length === 0) {throw new Error("Empty agents array — provide at least one agent to resurrect.");}
-		this.assertNewAgentIds(params.agents.map((agent: any) => agent.id), manager);
-		const sessionIds = params.agents.map((agent: any) => agent.sessionId);
+		this.assertNewAgentIds(params.agents.map((agent) => agent.id), manager);
+		const sessionIds = params.agents.map((agent) => agent.sessionId);
 		const duplicateSessions = sessionIds.filter((id: string, index: number) => sessionIds.indexOf(id) !== index);
 		if (duplicateSessions.length > 0) {throw new Error(`Duplicate session ids in batch: ${[...new Set(duplicateSessions)].join(", ")}`);}
 		const discovery = session.environment.discoverAgents(ctx.cwd);
@@ -3239,8 +3251,8 @@ class SubagentSessionOwner {
 					skillPaths = Object.freeze(
 						resolvePersonaSkillPaths(active.skills, this.pi.getCommands(), "fatal").skillPaths,
 					);
-				} catch (error: any) {
-					throw new Error(`Failed to resolve skills for agent "${agent.id}": ${error.message}`, { cause: error });
+				} catch (error: unknown) {
+					throw new Error(`Failed to resolve skills for agent "${agent.id}": ${stringField(error, "message") ?? String(error)}`, { cause: error });
 				}
 			}
 			specs.push({
@@ -3264,7 +3276,7 @@ class SubagentSessionOwner {
 		session.presentation.refresh(manager);
 		session.turns.addStopSequenceOnce("<agent_idle");
 		const data: ResurrectResultData = {
-			agents: params.agents.map((agent: any) => {
+			agents: params.agents.map((agent) => {
 				const pathValue = childAgentPath(this.scopePath(), agent.id);
 				const snapshot = session.registry.getSnapshot(pathValue);
 				const status = manager.getAgentStatus(agent.id);
@@ -3281,7 +3293,7 @@ class SubagentSessionOwner {
 			}),
 		};
 		const refs = this.nativeRefs(toolCallId, "lifecycle");
-		const facts = params.agents.map((agent: any) => {
+		const facts = params.agents.map((agent) => {
 			const pathValue = childAgentPath(this.scopePath(), agent.id);
 			return this.publishFact({ kind: "resurrect", data: {
 				operation: "resurrect",
@@ -3391,6 +3403,34 @@ class SubagentSessionOwner {
 		await session.manager.restoreFromPersistence(session.environment.discoverAgents(ctx.cwd).agents);
 	}
 }
+
+/** Keep only the SDK presentation events from a replay result. */
+function isProviderFeedEvent(event: ProviderFeedEvent): event is SubagentProviderEvent {
+	return !("kind" in event);
+}
+
+/** Project our replay result onto the SDK presentation shape. */
+function presentationReplay(result: ReplayResult): SubagentPresentationReplay {
+	if (result.kind === "snapshot_required") {return result;}
+	return { kind: "events", cursor: result.cursor, events: result.events.filter(isProviderFeedEvent) };
+}
+
+/** Project our provider onto the presentation interface pi registers. */
+function presentationProviderOf(provider: SubagentProvider & { shutdown(): void }): SubagentPresentationProvider {
+	return {
+		subscribe: (listener) => provider.subscribe(listener),
+		snapshot: () => provider.snapshot(),
+		replay: (after) => presentationReplay(provider.replay(after)),
+		rehydrate: (input) => provider.rehydrate(input),
+		acquire: (path) => provider.acquire(path),
+		teardown: (path, incarnation) => provider.teardown(path, incarnation),
+		stop: (request) => provider.stop(request),
+		resurrect: (request) => provider.resurrect(request),
+	};
+}
+
+/** One available model, as the registry reports it. */
+type AvailableModel = ReturnType<ExtensionContext["modelRegistry"]["getAvailable"]>[number];
 
 /** Tool parameter schemas, shared by tool registration and handler types. */
 const AgentItemSchema = Type.Object({

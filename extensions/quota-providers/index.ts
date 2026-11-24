@@ -375,7 +375,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 
 			let previous = attachedProviders.get(record.id);
 			let registeredNative = registry.getRegisteredNativeProvider?.(record.id);
-			const evaluate = (model: Model<any>, options?: SimpleStreamOptions) => {
+			const evaluate = (model: Model<unknown>, options?: SimpleStreamOptions) => {
 				maybeRefreshUsage(record);
 				return evaluateProviderQuota(
 					record,

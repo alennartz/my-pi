@@ -37,6 +37,9 @@ import { stripThinkingSuffix } from "./model-tiers.js";
 import { serializeAgentMessage, serializeAgentTorndown, serializeGroupTorndown, serializeSubagentIdentity } from './messages.js';
 import type { ActiveAgentsCompleteData, AgentCompleteData } from './messages.js';
 import { required } from "../../lib/required.ts";
+import { isThinkingLevel } from "./model-tiers.js";
+import { asRecord, booleanField, numberField, stringField } from "./narrow.js";
+import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { SubagentCapabilities } from "./provider.js";
 
 /**
@@ -741,7 +744,7 @@ export class SubagentManager {
 				// when resurrection resolved an override; otherwise it stays absent so
 				// the persisted session keeps its concrete model.
 				modelRef: spec.model,
-				thinkingLevel: spec.thinkingLevel as any,
+				thinkingLevel: spec.thinkingLevel !== undefined && isThinkingLevel(spec.thinkingLevel) ? spec.thinkingLevel : undefined,
 				toolPolicy,
 				skillPaths,
 				noSkills: spec.noSkills,
@@ -883,7 +886,7 @@ export class SubagentManager {
 		});
 	}
 
-	private applyChildEvent(entry: AgentEntry, event: any): void {
+	private applyChildEvent(entry: AgentEntry, event: AgentSessionEvent): void {
 		if (!this.isActiveEntry(entry)) {return;}
 
 		if (event.type === "tool_execution_start") {
@@ -950,7 +953,7 @@ export class SubagentManager {
 		}
 
 		if (event.type === "agent_end") {
-			if (event.willRetry) {return;}
+			if (booleanField(event, "willRetry") === true) {return;}
 			entry.pendingTerminalError = finalAssistantError(event.messages);
 			return;
 		}
@@ -960,47 +963,50 @@ export class SubagentManager {
 		}
 	}
 
-	private recordToolUsage(entry: AgentEntry, usage: any): void {
-		if (!usage || typeof usage !== "object") {return;}
+	private recordToolUsage(entry: AgentEntry, usage: unknown): void {
+		const record = asRecord(usage);
+		if (!record) {return;}
 		const current = this.operationalFor(entry);
 		const costBreakdown = addCostBreakdown(
 			current.usage.costBreakdown,
-			costBreakdownFromUsage(usage),
+			costBreakdownFromUsage(record),
 		);
 		this.replaceOperational(entry, operationalWith(current, {
 			usage: {
-				input: current.usage.input + (usage.input || 0),
-				output: current.usage.output + (usage.output || 0),
-				cacheRead: current.usage.cacheRead + (usage.cacheRead || 0),
-				cacheWrite: current.usage.cacheWrite + (usage.cacheWrite || 0),
-				cost: current.usage.cost + (usage.cost?.total || 0),
+				input: current.usage.input + (numberField(record, "input") ?? 0),
+				output: current.usage.output + (numberField(record, "output") ?? 0),
+				cacheRead: current.usage.cacheRead + (numberField(record, "cacheRead") ?? 0),
+				cacheWrite: current.usage.cacheWrite + (numberField(record, "cacheWrite") ?? 0),
+				cost: current.usage.cost + (numberField(asRecord(record.cost), "total") ?? 0),
 				turns: current.usage.turns,
 				...(costBreakdown !== undefined ? { costBreakdown } : undefined),
 			},
 		}));
 	}
 
-	private recordAssistantMessage(entry: AgentEntry, message: any): void {
-		if (message && typeof message === "object") {
-			if (entry.seenAssistantMessages.has(message)) {return;}
-			entry.seenAssistantMessages.add(message);
+	private recordAssistantMessage(entry: AgentEntry, message: unknown): void {
+		const record = asRecord(message);
+		if (record) {
+			if (entry.seenAssistantMessages.has(record)) {return;}
+			entry.seenAssistantMessages.add(record);
 		}
 
 		const current = this.operationalFor(entry);
-		const usage = message.usage;
-		const messageModel = typeof message.model === "string" ? message.model : undefined;
-		const messageThinkingLevel = typeof message.thinkingLevel === "string" ? message.thinkingLevel : undefined;
+		const usage = record?.usage;
+		const messageModel = stringField(record, "model");
+		const messageThinkingLevel = stringField(record, "thinkingLevel");
 		let lastOutput = current.lastOutput;
 		let lastText: string | undefined;
-		for (const part of message.content ?? []) {
-			if (part?.type === "text" && typeof part.text === "string") {
-				lastOutput = part.text;
-				lastText = part.text;
+		for (const part of Array.isArray(record?.content) ? record.content : []) {
+			const text = stringField(part, "text");
+			if (stringField(part, "type") === "text" && text !== undefined) {
+				lastOutput = text;
+				lastText = text;
 			}
 		}
-		const input = usage?.input || 0;
-		const cacheRead = usage?.cacheRead || 0;
-		const cacheWrite = usage?.cacheWrite || 0;
+		const input = numberField(usage, "input") ?? 0;
+		const cacheRead = numberField(usage, "cacheRead") ?? 0;
+		const cacheWrite = numberField(usage, "cacheWrite") ?? 0;
 		const lifecycle = current.state === "dead"
 			? {}
 			: { state: "running" as const, lastError: undefined };
@@ -1012,10 +1018,10 @@ export class SubagentManager {
 			...lifecycle,
 			usage: {
 				input: current.usage.input + input,
-				output: current.usage.output + (usage?.output || 0),
+				output: current.usage.output + (numberField(usage, "output") ?? 0),
 				cacheRead: current.usage.cacheRead + cacheRead,
 				cacheWrite: current.usage.cacheWrite + cacheWrite,
-				cost: current.usage.cost + (usage?.cost?.total || 0),
+				cost: current.usage.cost + (numberField(asRecord(usage)?.cost, "total") ?? 0),
 				turns: current.usage.turns + 1,
 				...(costBreakdown !== undefined ? { costBreakdown } : undefined),
 			},
@@ -1421,11 +1427,11 @@ export class SubagentManager {
 	}
 }
 
-function createChildCapabilities(session: any): SubagentCapabilities {
+function createChildCapabilities(session: AgentSession): SubagentCapabilities {
 	const executeBash = (...args: readonly unknown[]) => {
 		const command = args[0];
 		if (typeof command !== "string") {throw new TypeError("Child bash command must be a string");}
-		return session.executeBash(command, undefined, args[1]);
+		return session.executeBash(command, undefined);
 	};
 	return {
 		operations: [
@@ -1605,7 +1611,7 @@ function spawnAcknowledgement(agents: AgentSpec[], restoring: boolean, firstStar
 	return `${spawned} Results will arrive as notifications.\n\nUnless you were explicitly told to do other work after spawning, briefly tell the user what you spawned. Then:\n- If you have useful independent work to do in the meantime, do it.\n- If there is nothing else to do until an agent returns, call await_agents instead of ending your turn idle.\n- If the user might want you to take on other work while the agents run but you don't know what, ask them.`;
 }
 
-function summarizeArgs(args: Record<string, any>): string {
+function summarizeArgs(args: Record<string, unknown>): string {
 	if (!args) {return "";}
 	if (args.command) {
 		const command = String(args.command).replaceAll(/[\r\n\t]+/g, " ").replaceAll(/  +/g, " ").trim();

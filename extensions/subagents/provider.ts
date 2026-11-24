@@ -333,6 +333,8 @@ export type BorrowedAgentSession =
 		| "isStreaming"
 		| "isIdle"
 		| "isCompacting"
+		| "isBashRunning"
+		| "clearQueue"
 		| "subscribe"
 		| "prompt"
 		| "steer"
