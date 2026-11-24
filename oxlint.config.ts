@@ -42,6 +42,7 @@ export default defineConfig({
     'typescript/await-thenable': 'off',
     'typescript/consistent-type-imports': 'off',
     'typescript/no-empty-object-type': 'off',
+    // Pi event and tool payloads are untyped per event name at the SDK boundary.
     'typescript/no-explicit-any': 'off',
     'typescript/no-floating-promises': 'off',
     'typescript/no-import-type-side-effects': 'off',
