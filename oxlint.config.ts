@@ -60,7 +60,6 @@ export default defineConfig({
     'unicorn/consistent-function-scoping': 'off',
     'unicorn/no-useless-spread': 'off',
     'unicorn/prefer-import-meta-properties': 'off',
-    'unicorn/prefer-node-protocol': 'off',
     'unicorn/prefer-single-call': 'off',
     'unicorn/prefer-string-raw': 'off',
     'unicorn/prefer-top-level-await': 'off',

@@ -12,7 +12,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 	withFileMutationQueue: vi.fn((_path: string, fn: () => Promise<any>) => fn()),
 }));
 
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 // Helpers
