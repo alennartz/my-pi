@@ -13,11 +13,21 @@ export default defineConfig({
         'typescript/no-floating-promises': 'off',
       },
     },
+    {
+      // Command-line entry points and harnesses print their results.
+      files: [
+        'scripts/**',
+        'tools/manual-test/**',
+        'skills/autoflow/check-transition.ts',
+        'extensions/web-tools/smoke.ts',
+      ],
+      rules: { 'no-console': 'off' },
+    },
   ],
   rules: {
     // Baseline: rules with findings on existing code, re-enabled one at a time.
     'import/no-namespace': 'off',
-    'no-console': 'off',
+    'no-console': ['error', { allow: ['warn', 'error'] }],
     'no-empty': ['error', { allowEmptyCatch: true }],
     // Iterator helpers need ES2025 types; filter/map chains stay.
     'quality/no-array-filter-map': 'off',
