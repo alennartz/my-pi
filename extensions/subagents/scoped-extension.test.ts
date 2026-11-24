@@ -31,7 +31,7 @@ function childScope(path: AgentPath = ["worker"]): SubagentScope {
 		registry,
 		path,
 		identity: {
-			id: path[path.length - 1] ?? "worker",
+			id: path.at(-1) ?? "worker",
 			task: "do the work",
 			channels: ["parent"],
 		},

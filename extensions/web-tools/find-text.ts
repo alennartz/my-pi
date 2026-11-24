@@ -43,7 +43,7 @@ function mergeRanges(ranges: Range[]): Range[] {
 	const sorted = [...ranges].sort((a, b) => a.start - b.start || a.end - b.end);
 	const merged: Range[] = [{ ...sorted[0] }];
 	for (const range of sorted.slice(1)) {
-		const last = merged[merged.length - 1];
+		const last = merged.at(-1);
 		if (range.start <= last.end) {
 			last.end = Math.max(last.end, range.end);
 		} else {

@@ -216,7 +216,7 @@ export function buildThinkingLevelMap(eligibleProviders: GatewayProvider[]): Thi
 	for (let levelIndex = 1; levelIndex < THINKING_LEVELS.length; levelIndex++) {
 		const slot = slots.findIndex((rung) => rung >= levelIndex);
 		map[THINKING_LEVELS[levelIndex]] =
-			slot >= 0 ? slotValues[slot] : slotValues[slotValues.length - 1];
+			slot >= 0 ? slotValues[slot] : slotValues.at(-1);
 	}
 	return map;
 }

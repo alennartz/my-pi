@@ -1267,7 +1267,7 @@ class RootSubagentControlPort implements SubagentOwnerControlPort {
 
 	teardown(pathValue: AgentPath, incarnation: string) {
 		const owner = this.resolveOwner(pathValue);
-		return owner.control.teardown(pathValue[pathValue.length - 1], incarnation);
+		return owner.control.teardown(pathValue.at(-1)!, incarnation);
 	}
 
 	stop(request: import("./provider.js").SubagentStopRequest): Promise<void> {

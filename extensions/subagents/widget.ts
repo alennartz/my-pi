@@ -60,7 +60,7 @@ export function fitAgentId(id: string, max: number): string {
 		const candidate = `…/${segments.slice(start).join("/")}`;
 		if (visibleWidth(candidate) <= max) {return candidate;}
 	}
-	return truncateToWidth(segments[segments.length - 1] ?? id, max);
+	return truncateToWidth(segments.at(-1) ?? id, max);
 }
 
 // Dashboard component

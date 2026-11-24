@@ -63,7 +63,6 @@ export default defineConfig({
     'unicorn/catch-error-name': 'off',
     'unicorn/consistent-function-scoping': 'off',
     'unicorn/no-useless-spread': 'off',
-    'unicorn/prefer-at': 'off',
     'unicorn/prefer-import-meta-properties': 'off',
     'unicorn/prefer-node-protocol': 'off',
     'unicorn/prefer-single-call': 'off',

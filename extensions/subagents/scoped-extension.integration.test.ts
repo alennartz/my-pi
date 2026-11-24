@@ -18,7 +18,7 @@ const managed = vi.hoisted(() => {
 	const created: { config: any; dependencies: any; hooks: any; child: any }[] = [];
 	let onCreate: ((entry: { config: any; dependencies: any; hooks: any; child: any }) => Promise<void>) | undefined;
 	const createManagedChildSession = vi.fn(async (config: any, dependencies: any, hooks: any) => {
-		const localId = config.path[config.path.length - 1];
+		const localId = config.path.at(-1);
 		const sessionId = `session-${localId}-${++sequence}`;
 		const sessionDir = config.target.sessionDir;
 		const sessionFile = config.target.kind === "resume"
@@ -128,7 +128,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 			const snapshot: AgentNodeSnapshot = {
 				path: pathAtDepth,
 				parentPath: pathAtDepth.slice(0, -1),
-				localId: pathAtDepth[pathAtDepth.length - 1] ?? null,
+				localId: pathAtDepth.at(-1) ?? null,
 				ownership: "registry",
 				sessionId: `seed-${pathAtDepth.join("-")}`,
 				cwd: "/repo",
@@ -1636,7 +1636,7 @@ describe("root orchestration integration", () => {
 		fs.writeFileSync(parentSessionFile, "");
 		let failFirst = true;
 		managed.setOnCreate(async ({ config }) => {
-			if (failFirst && config.path[config.path.length - 1] === "failed") {throw new Error("construction failed");}
+			if (failFirst && config.path.at(-1) === "failed") {throw new Error("construction failed");}
 		});
 		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({ kind: "root" })(pi as any);
