@@ -42,7 +42,7 @@ export function modelLimitIdsFor(
 	modelLimitIds: Record<string, string[]>,
 	modelId: string | undefined,
 ): string[] | undefined {
-	if (modelId === undefined || !Object.prototype.hasOwnProperty.call(modelLimitIds, modelId)) {
+	if (modelId === undefined || !Object.hasOwn(modelLimitIds, modelId)) {
 		return undefined;
 	}
 	return modelLimitIds[modelId];

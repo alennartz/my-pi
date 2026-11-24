@@ -22,7 +22,6 @@ export default defineConfig({
     'no-empty': ['error', { allowEmptyCatch: true }],
     'no-promise-executor-return': 'off',
     'no-useless-assignment': 'off',
-    'prefer-object-has-own': 'off',
     'preserve-caught-error': 'off',
     'quality/no-array-filter-map': 'off',
     'quality/no-chained-type-assertions': 'off',
