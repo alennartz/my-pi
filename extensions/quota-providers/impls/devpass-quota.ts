@@ -1,4 +1,5 @@
 import type { QuotaSource, ImplContext, UsageSnapshot } from "../lib/types.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 const API_BASE_URL = "https://api.llmgateway.io/v1";
 const API_KEY_ENV = "LLMGATEWAY_API_KEY";
@@ -54,9 +55,9 @@ async function fetchGatewayJson(path: string, signal?: AbortSignal): Promise<unk
 	return response.json();
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
+function asRecord(value: unknown): Record<string, JsonValue> | undefined {
 	return typeof value === "object" && value !== null && !Array.isArray(value)
-		? value as Record<string, unknown>
+		? value as Record<string, JsonValue>
 		: undefined;
 }
 
@@ -76,15 +77,15 @@ function median(values: number[]): number | undefined {
 		: (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-function providerPrices(providers: DevPassProvider[]): Record<string, unknown>[] {
+function providerPrices(providers: DevPassProvider[]): Record<string, JsonValue>[] {
 	return providers
 		.values()
 		.map((provider) => asRecord(provider.pricing))
-		.filter((price): price is Record<string, unknown> => price !== undefined)
+		.filter((price): price is Record<string, JsonValue> => price !== undefined)
 		.toArray();
 }
 
-function medianPrice(prices: Record<string, unknown>[], field: string): number | undefined {
+function medianPrice(prices: Record<string, JsonValue>[], field: string): number | undefined {
 	return median(
 		prices
 			.values()
@@ -98,7 +99,7 @@ function perMillion(rate: number | undefined): number | undefined {
 	return rate === undefined ? undefined : rate * PER_TOKEN_TO_PER_MILLION;
 }
 
-function isPremiumModel(modelPricing: unknown, eligiblePrices: Record<string, unknown>[]): boolean {
+function isPremiumModel(modelPricing: unknown, eligiblePrices: Record<string, JsonValue>[]): boolean {
 	const catalogPrice = asRecord(modelPricing);
 	const input = perMillion(parseNumber(catalogPrice?.prompt) ?? medianPrice(eligiblePrices, "prompt"));
 	const output = perMillion(parseNumber(catalogPrice?.completion) ?? medianPrice(eligiblePrices, "completion"));
@@ -125,7 +126,7 @@ function findPremiumModelIds(records: unknown[]): Record<string, string[]> {
 	return modelLimitIds;
 }
 
-function usageAmount(data: Record<string, unknown>, field: string): number {
+function usageAmount(data: Record<string, JsonValue>, field: string): number {
 	const amount = parseNumber(data[field]);
 	if (amount === undefined) {
 		throw new Error(`devpass quota: /v1/key returned an invalid ${field}`);
@@ -133,7 +134,7 @@ function usageAmount(data: Record<string, unknown>, field: string): number {
 	return amount;
 }
 
-function readBillingCycleAnchor(settings: Record<string, unknown>): number | undefined {
+function readBillingCycleAnchor(settings: Record<string, JsonValue>): number | undefined {
 	const configured = settings.billingCycleAnchor;
 	if (typeof configured !== "string" || configured.trim() === "") {return undefined;}
 
@@ -216,8 +217,8 @@ function premiumResetAt(value: unknown): number | undefined {
 }
 
 function buildUsageSnapshots(
-	data: Record<string, unknown>,
-	settings: Record<string, unknown>,
+	data: Record<string, JsonValue>,
+	settings: Record<string, JsonValue>,
 	now: number,
 ): UsageSnapshot[] {
 	if (data.devPlan === "none") {return [];}

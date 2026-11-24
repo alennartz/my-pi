@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseQuotaAttachments } from "./attachments.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 function noExpand(path: string): string {
 	return path;
 }
 
-function config(providers: Record<string, unknown>): string {
+function config(providers: Record<string, JsonValue>): string {
 	return JSON.stringify({ providers });
 }
 

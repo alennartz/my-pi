@@ -13,6 +13,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 import personaWorkspaces from "./index.ts";
 import { markSubagentChildSession } from "../subagents/child-session-marker.ts";
 import { resolveChildToolPolicy } from "../subagents/child-tool-policy.ts";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 type Handler = (event: unknown, ctx: any) => unknown;
 
@@ -122,7 +123,7 @@ function ctxFor(
 
 /** A fake child session manager whose transcript accumulates ingested notices. */
 function transcriptSessionManager() {
-	const entries: Record<string, unknown>[] = [];
+	const entries: Record<string, JsonValue>[] = [];
 	return {
 		entries,
 		sessionManager: {

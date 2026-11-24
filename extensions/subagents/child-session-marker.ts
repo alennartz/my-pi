@@ -1,4 +1,6 @@
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
+import { isKeyedLookup, readGlobalSlot, writeGlobalSlot } from "./global-slot.js";
+import type { KeyedLookup } from "./global-slot.js";
 
 /** A session manager identity, usable as a registry key. */
 export type SessionManagerRef = Pick<SessionManager, "getCwd">;
@@ -21,18 +23,13 @@ export type SessionManagerRef = Pick<SessionManager, "getCwd">;
 
 const REGISTRY_KEY = Symbol.for("my-pi/subagents/child-session-managers");
 
-type ChildSessionRegistry = WeakMap<object, PersonaPayload | undefined>;
-
-function isRegistry(value: unknown): value is ChildSessionRegistry {
-	return typeof value === "object" && value !== null && typeof (value as ChildSessionRegistry).get === "function";
-}
+type ChildSessionRegistry = KeyedLookup<object, PersonaPayload | undefined>;
 
 function getRegistry(): ChildSessionRegistry {
-	const globals = globalThis as Record<symbol, unknown>;
-	const existing = globals[REGISTRY_KEY];
-	if (isRegistry(existing)) {return existing;}
-	const created: ChildSessionRegistry = new WeakMap();
-	globals[REGISTRY_KEY] = created;
+	const existing = readGlobalSlot(REGISTRY_KEY);
+	if (existing !== undefined && isKeyedLookup<object, PersonaPayload | undefined>(existing)) {return existing;}
+	const created: ChildSessionRegistry = new WeakMap<object, PersonaPayload | undefined>();
+	writeGlobalSlot(REGISTRY_KEY, created);
 	return created;
 }
 

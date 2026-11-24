@@ -1,5 +1,6 @@
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { required } from "../../lib/required.ts";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 const PER_TOKEN_TO_PER_MILLION = 1_000_000;
 const DEFAULT_CONTEXT_WINDOW = 128_000;
@@ -33,9 +34,9 @@ interface ProviderPrice {
 	input_cache_write_1h?: unknown;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
+function asRecord(value: unknown): Record<string, JsonValue> | undefined {
 	return typeof value === "object" && value !== null && !Array.isArray(value)
-		? value as Record<string, unknown>
+		? value as Record<string, JsonValue>
 		: undefined;
 }
 

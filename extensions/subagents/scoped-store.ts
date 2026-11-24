@@ -8,6 +8,8 @@
  */
 
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
+import { isKeyedLookup, readGlobalSlot, writeGlobalSlot } from "./global-slot.js";
+import type { KeyedLookup } from "./global-slot.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 
 /** A session manager identity, usable as a registry key. */
@@ -33,19 +35,14 @@ class InMemorySessionTreeStore implements SessionTreeStore {
 	}
 }
 
-type StoreRegistry = WeakMap<object, SessionTreeStore>;
+type StoreRegistry = KeyedLookup<object, SessionTreeStore>;
 const REGISTRY_KEY = Symbol.for("my-pi/subagents/session-tree-stores");
 
-function isStoreRegistry(value: unknown): value is StoreRegistry {
-	return typeof value === "object" && value !== null && typeof (value as StoreRegistry).get === "function";
-}
-
 function getRegistry(): StoreRegistry {
-	const globals = globalThis as Record<symbol, unknown>;
-	const existing = globals[REGISTRY_KEY];
-	if (isStoreRegistry(existing)) {return existing;}
-	const created: StoreRegistry = new WeakMap();
-	globals[REGISTRY_KEY] = created;
+	const existing = readGlobalSlot(REGISTRY_KEY);
+	if (existing !== undefined && isKeyedLookup<object, SessionTreeStore>(existing)) {return existing;}
+	const created: StoreRegistry = new WeakMap<object, SessionTreeStore>();
+	writeGlobalSlot(REGISTRY_KEY, created);
 	return created;
 }
 
@@ -80,19 +77,14 @@ export function registerSessionTreeStore(sessionManager: SessionManagerRef, stor
  * values as the manager registry, second key space. Strongly held; entries are
  * removed via unregisterSessionIdTreeStore when the session shuts down.
  */
-type IdRegistry = Map<string, SessionTreeStore>;
+type IdRegistry = KeyedLookup<string, SessionTreeStore>;
 const ID_REGISTRY_KEY = Symbol.for("my-pi/subagents/session-id-tree-stores");
 
-function isIdRegistry(value: unknown): value is IdRegistry {
-	return typeof value === "object" && value !== null && typeof (value as IdRegistry).size === "number";
-}
-
 function getIdRegistry(): IdRegistry {
-	const globals = globalThis as Record<symbol, unknown>;
-	const existing = globals[ID_REGISTRY_KEY];
-	if (isIdRegistry(existing)) {return existing;}
-	const created: IdRegistry = new Map();
-	globals[ID_REGISTRY_KEY] = created;
+	const existing = readGlobalSlot(ID_REGISTRY_KEY);
+	if (existing !== undefined && isKeyedLookup<string, SessionTreeStore>(existing)) {return existing;}
+	const created: IdRegistry = new Map<string, SessionTreeStore>();
+	writeGlobalSlot(ID_REGISTRY_KEY, created);
 	return created;
 }
 

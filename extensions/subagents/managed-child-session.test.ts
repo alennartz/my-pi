@@ -30,7 +30,7 @@ const sdk = vi.hoisted(() => {
 		},
 	};
 
-	function makeManager(kind: string, input: Record<string, any>) {
+	function makeManager(kind: string, input: Record<string, JsonValue>) {
 		const sessionId = `${kind}-${++sequence}`;
 		const cwd = kind === "resume" ? "/resumed-project" : input.cwd;
 		const sessionFile = kind === "resume"
@@ -210,6 +210,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 
 import { createManagedChildSession } from './managed-child-session.js';
 import type { ChildSessionConfig, ChildSessionHooks, ManagedChildSession, ManagedChildSessionDependencies } from './managed-child-session.js';
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 const uplink = {} as MessagePort;
 const registry = {} as ChildSessionConfig["scope"]["registry"];

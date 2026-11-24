@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { braveSearch } from "./brave.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 const FIXTURE = {
 	web: {
@@ -17,7 +18,7 @@ const FIXTURE = {
 	},
 };
 
-function okBody(extra: Record<string, unknown> = {}) {
+function okBody(extra: Record<string, JsonValue> = {}) {
 	return new Response(JSON.stringify({ ...FIXTURE, ...extra }), {
 		status: 200,
 		headers: { "content-type": "application/json" },

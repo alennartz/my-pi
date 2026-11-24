@@ -14,6 +14,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 // Helpers
 
@@ -25,7 +26,7 @@ type ToolDef = {
 
 let tool: ToolDef;
 
-function mockCtx(overrides: Record<string, any> = {}) {
+function mockCtx(overrides: Record<string, JsonValue> = {}) {
 	return {
 		hasUI: true,
 		cwd: "/workspace",

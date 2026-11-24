@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expandHome, POLICY_DEFAULTS, POLICY_KEYS, resolveAgentDir } from "./config.js";
 import type { QuotaPolicy } from "./types.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 /** A quota attachment keyed by an already-registered pi provider ID. */
 export interface QuotaAttachment {
@@ -9,7 +10,7 @@ export interface QuotaAttachment {
 	modulePath: string;
 	enabled: boolean;
 	policy: QuotaPolicy;
-	settings: Record<string, unknown>;
+	settings: Record<string, JsonValue>;
 }
 
 export interface ParsedQuotaAttachments {
@@ -36,15 +37,15 @@ export function parseQuotaAttachments(
 	if (
 		typeof parsed !== "object" ||
 		parsed === null ||
-		typeof (parsed as Record<string, unknown>).providers !== "object" ||
-		(parsed as Record<string, unknown>).providers === null ||
-		Array.isArray((parsed as Record<string, unknown>).providers)
+		typeof (parsed as Record<string, JsonValue>).providers !== "object" ||
+		(parsed as Record<string, JsonValue>).providers === null ||
+		Array.isArray((parsed as Record<string, JsonValue>).providers)
 	) {
 		warnings.push('quota-providers: config must have a "providers" object at top level');
 		return { attachments: [], warnings };
 	}
 
-	const rawProviders = (parsed as Record<string, unknown>).providers as Record<string, unknown>;
+	const rawProviders = (parsed as Record<string, JsonValue>).providers as Record<string, JsonValue>;
 	const attachments: QuotaAttachment[] = [];
 	const policyKeySet = new Set<string>(POLICY_KEYS);
 
@@ -54,7 +55,7 @@ export function parseQuotaAttachments(
 			continue;
 		}
 
-		const entry = block as Record<string, unknown>;
+		const entry = block as Record<string, JsonValue>;
 		if (typeof entry.module !== "string" || entry.module === "") {
 			warnings.push(
 				`quota-providers: provider "${providerId}" has missing or non-string "module" — skipping`,
@@ -81,7 +82,7 @@ export function parseQuotaAttachments(
 					: POLICY_DEFAULTS.enforceHardCap,
 		};
 
-		const settings: Record<string, unknown> = {};
+		const settings: Record<string, JsonValue> = {};
 		for (const [key, value] of Object.entries(entry)) {
 			if (!policyKeySet.has(key)) {settings[key] = value;}
 		}

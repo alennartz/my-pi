@@ -36,6 +36,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 /** A parsed workspace persona declaration. */
 export type PersonaDeclaration = {
@@ -108,10 +109,10 @@ function parseScalarFrontmatter(content: string) {
 }
 
 /** Parse flat `key: value` lines into a record; blank, comment, and nested lines are skipped. */
-type FlatScalars = Record<string, unknown>;
+type FlatScalars = Record<string, JsonValue>;
 
 function parseFlatScalars(yamlString: string): FlatScalars {
-	const entries: [string, unknown][] = [];
+	const entries: [string, JsonValue][] = [];
 	for (const rawLine of yamlString.split("\n")) {
 		const trimmed = rawLine.trim();
 		if (trimmed === "" || trimmed.startsWith("#") || /^\s/.test(rawLine)) {continue;}
@@ -119,7 +120,8 @@ function parseFlatScalars(yamlString: string): FlatScalars {
 		if (colon === -1) {continue;}
 		const key = trimmed.slice(0, colon).trim();
 		if (key === "") {continue;}
-		entries.push([key, parseScalarValue(trimmed.slice(colon + 1))]);
+		const scalar = parseScalarValue(trimmed.slice(colon + 1));
+		if (scalar !== undefined) {entries.push([key, scalar]);}
 	}
 	return Object.fromEntries(entries);
 }

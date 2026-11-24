@@ -29,6 +29,7 @@ import type {
 } from "@pimote/sdk/subagents";
 import type { SemanticAdapterEvent } from "./semantic-adapter.js";
 import { normalizeSavedPresentationData, savedPresentationKind } from './presentation-data.js';
+import type { JsonObject } from './narrow.js';
 import type { PersistedSubagentContent, PresentationKind } from './presentation-data.js';
 import { required } from "../../lib/required.ts";
 
@@ -121,7 +122,6 @@ export type SubagentAwaitData = Readonly<{
 	error?: string;
 	reason?: "settled" | "detach" | "stop" | "message";
 	message?: CommunicationData;
-	[key: string]: unknown;
 }>;
 
 /** Lifecycle operation details carried by interrupt, teardown, and resurrection facts. */
@@ -132,7 +132,7 @@ export type SubagentLifecycleData = Readonly<{
 	output?: string;
 	error?: string;
 	sessionId?: string;
-	recovery?: Readonly<Record<string, unknown>>;
+	recovery?: JsonObject;
 	[key: string]: unknown;
 }>;
 
@@ -467,7 +467,7 @@ type LeaseRecord = {
 	readonly listeners: Set<(event: SubagentLeaseEvent) => void>;
 };
 
-type UnknownRecord = Record<string, unknown>;
+type UnknownRecord = JsonObject;
 
 const EMPTY_CAPABILITIES: SubagentCapabilities = Object.freeze({});
 const DEFAULT_HISTORY_LIMIT = 256;

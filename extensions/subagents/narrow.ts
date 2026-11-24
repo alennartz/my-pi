@@ -4,6 +4,7 @@
  * Each helper takes `unknown` and returns a typed value or `undefined`, so a
  * caller reads a field only after the check that justifies it.
  */
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 /** A plain object view of an unknown value. */
 export function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -38,4 +39,22 @@ export function stringArrayField(value: unknown, key: string): string[] | undefi
 	const record = asRecord(value);
 	const field = record?.[key];
 	return Array.isArray(field) ? field.filter((item): item is string => typeof item === "string") : undefined;
+}
+
+/** A JSON object value. */
+export type JsonObject = Record<string, JsonValue>;
+
+/** True when a value survives a JSON round trip unchanged in shape. */
+export function isJsonValue(value: unknown): value is JsonValue {
+	if (value === null || typeof value === "string" || typeof value === "boolean") {return true;}
+	if (typeof value === "number") {return Number.isFinite(value);}
+	if (Array.isArray(value)) {return value.every((item) => isJsonValue(item));}
+	const record = asRecord(value);
+	return record !== undefined && Object.values(record).every((item) => isJsonValue(item));
+}
+
+/** Whether a value is a JSON object with JSON values only. */
+export function isJsonObject(value: unknown): value is JsonObject {
+	const record = asRecord(value);
+	return record !== undefined && Object.values(record).every((item) => isJsonValue(item));
 }

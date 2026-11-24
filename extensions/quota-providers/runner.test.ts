@@ -9,12 +9,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 const directory = import.meta.dirname;
 const RUNNER_PATH = join(directory, "runner.mjs");
 const SOURCE_PATH = join(directory, "test", "fake-impl.ts");
 
-type ProviderSettings = Record<string, unknown>;
+type ProviderSettings = Record<string, JsonValue>;
 
 function makeTempDir(): string {
 	return mkdtempSync(join(tmpdir(), "quota-runner-test-"));

@@ -17,6 +17,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 export const CONFIG_FILE_NAME = "autoflow.json";
 export const DEFAULT_AUTOFLOW_COMMAND = "/skill:autoflow";
@@ -63,7 +64,7 @@ export function parseAutoflowConfig(raw: string): ParsedAutoflowConfig {
 		};
 	}
 
-	const record = parsed as Record<string, unknown>;
+	const record = parsed as Record<string, JsonValue>;
 	const warnings: string[] = [];
 
 	let autoStart = false;

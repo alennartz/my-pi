@@ -96,6 +96,7 @@ import { appendAgentAdded, ensurePersistence } from "./persistence.js";
 import { AgentSessionRegistry } from "./agent-session-registry.js";
 import type { AgentNodeSnapshot, RegistryEvent } from "./agent-session-registry.js";
 import type { MessagePort, RoutedMessage, SendReceipt } from "./message-router.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 const key = (agentPath: AgentPath): string => JSON.stringify(agentPath);
 
@@ -323,7 +324,7 @@ function makePi(options: { activeTools?: string[]; registeredTools?: any[] } = {
 	return { pi, tools, handlers, commands };
 }
 
-function makeContext(parentSessionFile: string, overrides: Record<string, unknown> = {}) {
+function makeContext(parentSessionFile: string, overrides: Record<string, JsonValue> = {}) {
 	return {
 		cwd: path.dirname(parentSessionFile),
 		mode: "tui",

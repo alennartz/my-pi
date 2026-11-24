@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadQuotaAttachments, parseQuotaAttachments } from "./attachments.js";
 import { cachePaths, POLICY_KEYS } from "./config.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 // Helpers
 
@@ -14,7 +15,7 @@ function noExpand(pathValue: string): string {
 const expandHome = (pathValue: string): string =>
 	pathValue.startsWith("~/") ? path.join("/home/user", pathValue.slice(2)) : pathValue;
 
-function makeRaw(providers: Record<string, unknown>): string {
+function makeRaw(providers: Record<string, JsonValue>): string {
 	return JSON.stringify({ providers });
 }
 

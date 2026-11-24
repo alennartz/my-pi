@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 // The mock factory needs the whole module type for importOriginal.
 // oxlint-disable-next-line import/no-namespace
 import type * as DeclarationModule from "../persona-workspaces/declaration.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 // personaBindingMode patches/detects the host at first use; point it at a
 // throwaway runtime dir instead of the real pi install.
@@ -74,7 +75,7 @@ function setup() {
 	return { handlers, pi, command };
 }
 
-function commandCtx(overrides: Record<string, unknown> = {}) {
+function commandCtx(overrides: Record<string, JsonValue> = {}) {
 	return {
 		getSystemPrompt: () => "base prompt",
 		cwd: "/nowhere",

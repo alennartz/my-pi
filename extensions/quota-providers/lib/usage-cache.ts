@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { UsageSnapshot } from "./types.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 /** The atomic cache record written by the quota usage runner. */
 export interface UsageCacheFile {
@@ -20,7 +21,7 @@ function isUsageSnapshot(value: unknown): value is UsageSnapshot {
 		&& (snapshot.label === undefined || typeof snapshot.label === "string");
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, JsonValue> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

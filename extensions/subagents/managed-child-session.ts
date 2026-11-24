@@ -12,6 +12,7 @@ import { createSubagentsExtension } from './scoped-extension.js';
 import type { SubagentScope } from './scoped-extension.js';
 import { registerSessionTreeStore } from "./scoped-store.js";
 import { rootExtensionPath } from "./root-extension-path.mts";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 export type ChildSessionTarget =
 	| { kind: "new"; cwd: string; sessionDir: string }
@@ -109,7 +110,7 @@ const CHILD_CAPABILITY_OPERATIONS = Object.freeze([
 	"meta",
 ] as const);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, JsonValue> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 

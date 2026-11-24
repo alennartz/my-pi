@@ -38,9 +38,10 @@ import { serializeAgentMessage, serializeAgentTorndown, serializeGroupTorndown, 
 import type { ActiveAgentsCompleteData, AgentCompleteData } from './messages.js';
 import { required } from "../../lib/required.ts";
 import { isThinkingLevel } from "./model-tiers.js";
-import { asRecord, booleanField, numberField, stringField } from "./narrow.js";
+import { asRecord, booleanField, isJsonObject, numberField, stringField } from "./narrow.js";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { SubagentCapabilities } from "./provider.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 /**
  * Capability fields of one persona file — a workspace declaration or a
@@ -896,7 +897,7 @@ export class SubagentManager {
 				: { state: "running" as const, lastError: undefined };
 			const next = operationalWith(current, {
 				...lifecycle,
-				lastActivity: `${event.toolName}(${summarizeArgs(asRecord(event.args) ?? {})})`.replaceAll(/[\r\n]+/g, " "),
+				lastActivity: `${event.toolName}(${summarizeArgs(isJsonObject(event.args) ? event.args : {})})`.replaceAll(/[\r\n]+/g, " "),
 				hasSubgroup: event.toolName === "subagent" || event.toolName === "fork"
 					? true
 					: event.toolName === "teardown"
@@ -1611,7 +1612,7 @@ function spawnAcknowledgement(agents: AgentSpec[], restoring: boolean, firstStar
 	return `${spawned} Results will arrive as notifications.\n\nUnless you were explicitly told to do other work after spawning, briefly tell the user what you spawned. Then:\n- If you have useful independent work to do in the meantime, do it.\n- If there is nothing else to do until an agent returns, call await_agents instead of ending your turn idle.\n- If the user might want you to take on other work while the agents run but you don't know what, ask them.`;
 }
 
-function summarizeArgs(args: Record<string, unknown>): string {
+function summarizeArgs(args: Record<string, JsonValue>): string {
 	if (!args) {return "";}
 	if (args.command) {
 		const command = String(args.command).replaceAll(/[\r\n\t]+/g, " ").replaceAll(/  +/g, " ").trim();

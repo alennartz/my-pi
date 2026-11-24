@@ -11,6 +11,7 @@
  */
 
 import * as fs from "node:fs";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 export const TIER_NAMES = ["cheap", "medium", "smart", "frontier"] as const;
 export type TierName = (typeof TIER_NAMES)[number];
@@ -90,7 +91,7 @@ function sanitize(parsed: unknown): TierConfig {
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {return {};}
 	const config: TierConfig = {};
 	for (const name of TIER_NAMES) {
-		const value = (parsed as Record<string, unknown>)[name];
+		const value = (parsed as Record<string, JsonValue>)[name];
 		if (typeof value === "string") {config[name] = value;}
 	}
 	return config;

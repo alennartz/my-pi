@@ -1,3 +1,4 @@
+import type { JsonValue } from "@earendil-works/pi-ai";
 /**
  * A provider-wide usage snapshot. Limit IDs stay opaque to the quota core; the
  * source owns the association between model IDs and any scoped budgets.
@@ -41,7 +42,7 @@ export interface QuotaSource {
 
 export interface ImplContext {
 	/** The attachment's config block (source-specific settings pass through untouched). */
-	settings: Record<string, unknown>;
+	settings: Record<string, JsonValue>;
 
 	/**
 	 * Optional cancellation signal for usage polling. Sources should observe it

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 export type OverlayFile = {
 	path: string;
@@ -39,10 +40,10 @@ export function loadOverlayFiles(dir: string) {
 			continue;
 		}
 
-		let frontmatter: Record<string, unknown>;
+		let frontmatter: Record<string, JsonValue>;
 		let body: string;
 		try {
-			({ frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content));
+			({ frontmatter, body } = parseFrontmatter<Record<string, JsonValue>>(content));
 		} catch {
 			diagnostics.push({ path: filePath, message: `Malformed frontmatter in overlay file: ${filePath}` });
 			continue;

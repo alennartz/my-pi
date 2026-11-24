@@ -5,6 +5,7 @@ import type { AgentLifecycleEvent, PersistencePaths } from './persistence.js';
 import { parseSessionSnapshot } from './session-snapshot.js';
 import type { SessionSnapshot } from './session-snapshot.js';
 import { activityPreview } from "./format.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 /** Durable lifecycle/topology facts projected from my-pi's existing records. */
 export type SubagentLifecycleRecordKind =
@@ -67,7 +68,7 @@ type LifecycleReaderOptions = Readonly<{
 	parentPath: AgentPath;
 }>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, JsonValue> {
 	return typeof value === "object" && value !== null;
 }
 

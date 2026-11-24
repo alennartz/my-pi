@@ -7,8 +7,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { asRecord } from "./narrow.js";
-import { required } from "../../lib/required.ts";
+import { isJsonObject } from "./narrow.js";
+import type { JsonObject } from "./narrow.js";
 
 export interface StopSequenceManager {
 	/** Add sequences that persist until explicitly removed. */
@@ -36,7 +36,8 @@ export function createStopSequenceManager(pi: ExtensionAPI): StopSequenceManager
 		const sequences = [...persistent, ...oneShot];
 		oneShot = [];
 
-		return applyStopSequences(required(asRecord(event.payload), "request payload"), String(model.api), sequences);
+		if (!isJsonObject(event.payload)) {return undefined;}
+		return applyStopSequences(event.payload, String(model.api), sequences);
 	});
 
 	return {
@@ -56,7 +57,7 @@ export function createStopSequenceManager(pi: ExtensionAPI): StopSequenceManager
 	};
 }
 
-export function applyStopSequences(payload: Record<string, unknown>, api: string, sequences: string[]): Record<string, unknown> {
+export function applyStopSequences(payload: JsonObject, api: string, sequences: string[]): JsonObject {
 	switch (api) {
 		// Anthropic
 		case "anthropic-messages":
@@ -81,17 +82,15 @@ export function applyStopSequences(payload: Record<string, unknown>, api: string
 		case "google-generative-ai":
 		case "google-vertex":
 		case "google-gemini-cli": {
-			const generationConfig = asRecord(payload.generationConfig) ?? {};
-			generationConfig.stopSequences = mergeUnique(generationConfig.stopSequences, sequences);
-			payload.generationConfig = generationConfig;
+			const existing = isJsonObject(payload.generationConfig) ? payload.generationConfig : {};
+			payload.generationConfig = { ...existing, stopSequences: mergeUnique(existing.stopSequences, sequences) };
 			break;
 		}
 
 		// Bedrock (Anthropic-style under the hood)
 		case "bedrock-converse-stream": {
-			const requestFields = asRecord(payload.additionalModelRequestFields) ?? {};
-			requestFields.stop_sequences = mergeUnique(requestFields.stop_sequences, sequences);
-			payload.additionalModelRequestFields = requestFields;
+			const existing = isJsonObject(payload.additionalModelRequestFields) ? payload.additionalModelRequestFields : {};
+			payload.additionalModelRequestFields = { ...existing, stop_sequences: mergeUnique(existing.stop_sequences, sequences) };
 			break;
 		}
 

@@ -13,6 +13,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import newPrompt, { parsePromptName } from "./index.ts";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 type RegisteredCommand = {
 	description: string;
@@ -36,7 +37,7 @@ function registerExtension() {
 	return { command, pi };
 }
 
-function commandContext(overrides: Record<string, unknown> = {}) {
+function commandContext(overrides: Record<string, JsonValue> = {}) {
 	return {
 		hasUI: true,
 		cwd: "/workspace",

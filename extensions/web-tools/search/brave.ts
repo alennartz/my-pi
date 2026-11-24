@@ -5,6 +5,7 @@
 
 import type { SearchResponse, SearchResult } from "../types.js";
 import { newResponseId } from "../response-id.js";
+import type { JsonValue } from "@earendil-works/pi-ai";
 
 export interface BraveSearchParams {
 	query: string;
@@ -73,7 +74,7 @@ export async function braveSearch(params: BraveSearchParams): Promise<SearchResp
 	const results: SearchResult[] = [];
 	for (const item of raw) {
 		if (results.length >= count) {break;}
-		const r = item as Record<string, unknown>;
+		const r = item as Record<string, JsonValue>;
 		const url = typeof r.url === "string" ? r.url : "";
 		const title = typeof r.title === "string" ? r.title.trim() : "";
 		if (!url || !title) {continue;}
