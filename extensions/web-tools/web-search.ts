@@ -5,7 +5,7 @@
 
 import { Type } from "typebox";
 import type { Static } from "typebox";
-import { TtlLruCache } from "./cache.js";
+import type { TtlLruCache } from "./cache.js";
 import { braveSearch } from "./search/brave.js";
 import { applyDomainFilters, dedupeResults, renderSearchCards } from "./search/normalize.js";
 import type { SearchResponse } from "./types.js";

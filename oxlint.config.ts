@@ -30,7 +30,6 @@ export default defineConfig({
     'quality/no-unknown-returns': 'off',
     'typescript/array-type': ['error', { default: 'array' }],
     'typescript/await-thenable': 'off',
-    'typescript/consistent-type-imports': 'off',
     // Pi event and tool payloads are untyped per event name at the SDK boundary.
     'typescript/no-explicit-any': 'off',
     'typescript/no-floating-promises': 'off',

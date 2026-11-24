@@ -57,6 +57,7 @@ import type {
 	SubagentLeaseCoordinator,
 	SubagentResurrectRequest,
 	SubagentResurrectResult,
+	SubagentStopRequest,
 	SubagentTeardownResult,
 } from "./provider.js";
 
@@ -1270,7 +1271,7 @@ class RootSubagentControlPort implements SubagentOwnerControlPort {
 		return owner.control.teardown(pathValue.at(-1)!, incarnation);
 	}
 
-	stop(request: import("./provider.js").SubagentStopRequest): Promise<void> {
+	stop(request: SubagentStopRequest): Promise<void> {
 		const owner = this.resolveOwner(request.path);
 		return owner.control.stop(request);
 	}

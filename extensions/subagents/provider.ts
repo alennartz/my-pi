@@ -417,8 +417,8 @@ export type ReplayResult =
 	| Readonly<{ kind: "snapshot_required"; reason: "epoch_changed" | "history_unavailable" }>;
 
 export interface SubagentProvider {
-	subscribe(listener: (event: import('@pimote/sdk/subagents').SubagentProviderEvent) => void): () => void;
-	snapshot(): import('@pimote/sdk/subagents').SubagentProviderSnapshot;
+	subscribe(listener: (event: SubagentProviderEvent) => void): () => void;
+	snapshot(): SubagentProviderSnapshot;
 	/** Without a cursor, replay all retained events. */
 	replay(after?: FeedCursor): ReplayResult;
 	rehydrate(input: { session: BorrowedAgentSession; path: AgentPath }): Promise<void>;

@@ -30,7 +30,7 @@ import { appendAgentAdded, appendAgentRemoved, ensurePersistence, findAgentRecor
 import type { PersistedAgentRecord, PersistencePaths } from './persistence.js';
 import type { AgentChannelSpec } from './channels.js';
 import { MessageRouter } from './message-router.js';
-import type { MessagePort, RoutedMessage, RoutedMessagePhase } from './message-router.js';
+import type { MessagePort, RoutedMessage, RoutedMessagePhase, RoutedResponseProgress } from './message-router.js';
 import { parseSessionSnapshot } from "./session-snapshot.js";
 import { activityPreview, formatTokenCount } from "./format.js";
 import { stripThinkingSuffix } from "./model-tiers.js";
@@ -232,7 +232,7 @@ export interface SubagentManagerOptions {
 	) => boolean | void;
 	onParentMessage: (port: MessagePort, xml: string, message: RoutedMessage) => void;
 	onMessagePhase?: (event: RoutedMessagePhase) => void;
-	onResponseProgress?: (event: import("./message-router.js").RoutedResponseProgress) => void;
+	onResponseProgress?: (event: RoutedResponseProgress) => void;
 }
 
 export class SubagentManager {

@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import type * as DeclarationModule from "../persona-workspaces/declaration.js";
 
 // personaBindingMode patches/detects the host at first use; point it at a
 // throwaway runtime dir instead of the real pi install.
@@ -19,7 +20,7 @@ vi.mock("@earendil-works/pi-tui", () => ({
 
 // The workspace persona projection reads a fixture directory, not the real cwd.
 vi.mock("../persona-workspaces/declaration.js", async (importOriginal) => {
-	const original = await importOriginal<typeof import("../persona-workspaces/declaration.js")>();
+	const original = await importOriginal<typeof DeclarationModule>();
 	return {
 		...original,
 		loadWorkspacePersona: vi.fn((cwd: string) =>
