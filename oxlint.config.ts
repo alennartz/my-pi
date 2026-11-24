@@ -20,7 +20,7 @@ export default defineConfig({
     'import/no-namespace': 'off',
     'no-case-declarations': 'off',
     'no-console': 'off',
-    'no-empty': 'off',
+    'no-empty': ['error', { allowEmptyCatch: true }],
     'no-promise-executor-return': 'off',
     'no-useless-assignment': 'off',
     'prefer-object-has-own': 'off',

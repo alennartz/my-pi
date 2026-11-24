@@ -47,8 +47,7 @@ describe("loadTierConfig", () => {
 	afterEach(() => {
 		try {
 			fs.rmSync(tmpRoot, { recursive: true, force: true });
-		} catch {
-			}
+		} catch {}
 	});
 
 	function writeConfig(filePath: string, content: string): void {
