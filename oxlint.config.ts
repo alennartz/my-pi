@@ -26,7 +26,7 @@ export default defineConfig({
   ],
   rules: {
     // Baseline: rules with findings on existing code, re-enabled one at a time.
-    'import/no-namespace': 'off',
+    'import/no-namespace': ['error', { ignore: ['node:*'] }],
     'no-console': ['error', { allow: ['warn', 'error'] }],
     'no-empty': ['error', { allowEmptyCatch: true }],
     // Iterator helpers need ES2025 types; filter/map chains stay.

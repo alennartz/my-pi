@@ -88,6 +88,8 @@ import type { SemanticAdapterEvent } from "./semantic-adapter.js";
 import { createSubagentProvider } from './provider.js';
 import type { SubagentSemanticFact } from './provider.js';
 import { serializeAgentMessage } from "./messages.js";
+// vi.spyOn replaces a method on the module namespace object.
+// oxlint-disable-next-line import/no-namespace
 import * as agentDiscovery from "./agents.js";
 import type { AgentPath } from "./agent-path.js";
 import { appendAgentAdded, ensurePersistence } from "./persistence.js";

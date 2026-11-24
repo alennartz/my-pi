@@ -2,6 +2,8 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+// The mock factory needs the whole module type for importOriginal.
+// oxlint-disable-next-line import/no-namespace
 import type * as DeclarationModule from "../persona-workspaces/declaration.js";
 
 // personaBindingMode patches/detects the host at first use; point it at a
