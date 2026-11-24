@@ -71,16 +71,7 @@ function node(
   return { snapshot, session: managed } as RegisteredAgentNode;
 }
 
-function registryFixture(workerSessionFile?: string): {
-  registry: AgentSessionRegistry;
-  ownerControl: SubagentOwnerControlPort;
-  emit(event: RegistryEvent): void;
-  worker: RegisteredAgentNode;
-  scout: RegisteredAgentNode;
-  replace(path: AgentPath, sessionId: string): RegisteredAgentNode;
-  add(next: RegisteredAgentNode): void;
-  unavailable(path: AgentPath): void;
-} {
+function registryFixture(workerSessionFile?: string) {
   const worker = node(
     workerPath,
     "session-worker",

@@ -352,7 +352,7 @@ export function discoverAgents(
 	return { agents: Array.from(agentMap.values()), projectAgentsDir };
 }
 
-export function formatAgentList(agents: AgentConfig[], maxItems: number): { text: string; remaining: number } {
+export function formatAgentList(agents: AgentConfig[], maxItems: number) {
 	if (agents.length === 0) {return { text: "none", remaining: 0 };}
 	const listed = agents.slice(0, maxItems);
 	const remaining = agents.length - listed.length;
@@ -433,11 +433,13 @@ export type SkillFailurePolicy = "fatal" | "subset";
  * the `subset` policy, the names that no longer resolve (the caller logs
  * them).
  */
+type ResolvedSkillPaths = { skillPaths: string[]; dropped: string[] };
+
 export function resolvePersonaSkillPaths(
 	skillNames: string[],
 	commands: SlashCommandInfo[],
 	failure: SkillFailurePolicy,
-): { skillPaths: string[]; dropped: string[] } {
+): ResolvedSkillPaths {
 	if (failure === "fatal") {
 		return { skillPaths: resolveSkillPaths(skillNames, commands), dropped: [] };
 	}

@@ -42,7 +42,7 @@ export function isThinkingLevel(s: string): s is ThinkingLevel {
  *   "openai/gpt-5.4:exacto"           → { model: "openai/gpt-5.4:exacto" }  (not a level)
  *   "anthropic/claude-opus-4-8"       → { model: "anthropic/claude-opus-4-8" }
  */
-export function stripThinkingSuffix(pattern: string): { model: string; thinking?: ThinkingLevel } {
+export function stripThinkingSuffix(pattern: string) {
 	const lastColon = pattern.lastIndexOf(":");
 	if (lastColon === -1) {return { model: pattern };}
 	const suffix = pattern.slice(lastColon + 1);
@@ -108,11 +108,13 @@ function sanitize(parsed: unknown): TierConfig {
  * TierConfig) is not a per-call warning: the integration layer emits one
  * session-level notice.
  */
+type TierResolution = { model: string | undefined; warning?: string };
+
 export function resolveModelRef(
 	ref: string,
 	tiers: TierConfig,
 	isAvailable: (ref: string) => boolean,
-): { model: string | undefined; warning?: string } {
+): TierResolution {
 	if (!isTierName(ref)) {return { model: ref };}
 	const configured = tiers[ref];
 	if (configured === undefined) {return { model: undefined };}

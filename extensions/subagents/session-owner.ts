@@ -235,6 +235,20 @@ function modelRefOf(model: { provider?: unknown; id?: unknown } | undefined): st
  * rejected (passthrough), and unconfigured/unavailable tiers fall back to the
  * baseline with a warning.
  */
+type ResolvedChildModelRef = { model: string | undefined; warnings: string[] };
+
+type SettledRun = { aborted: boolean; rootError: string | undefined };
+
+type ResponseFactSlot = { fact?: SubagentSemanticFact };
+
+type MessageTracking = { facts: SubagentSemanticFact[]; correlationId?: string };
+
+type ToolResult<Details> = {
+	content: { type: "text"; text: string }[];
+	details: Details;
+	structuredContent: Details;
+};
+
 function resolveChildModelRef(args: {
 	pin: string | undefined;
 	explicit: string | undefined;
@@ -242,7 +256,7 @@ function resolveChildModelRef(args: {
 	agentId: string;
 	tiers: TierConfig;
 	availableModels: readonly any[];
-}): { model: string | undefined; warnings: string[] } {
+}): ResolvedChildModelRef {
 	const winner = args.pin || args.explicit || undefined;
 	const ref = winner ?? args.inherited;
 	if (ref === undefined) {return { model: undefined, warnings: [] };}
@@ -285,7 +299,7 @@ function personaNameOf(item: { persona?: unknown; agent?: unknown }): string | u
  * present; the legacy key never survives the rewrite. Pure — returns a new
  * arguments object.
  */
-function renameLegacyPersonaFields(args: unknown): unknown {
+function renameLegacyPersonaFields(args: unknown) {
 	if (typeof args !== "object" || args === null || Array.isArray(args)) {return args;}
 	const items = (args as { agents?: unknown }).agents;
 	if (!Array.isArray(items)) {return args;}
@@ -605,7 +619,7 @@ class SessionTurnCoordinator {
 		return error;
 	}
 
-	settleRun(aborted: boolean): { aborted: boolean; rootError: string | undefined } {
+	settleRun(aborted: boolean): SettledRun {
 		if (aborted) {this.stopParent();}
 		this.queue.setParentBusy(false, { flush: !aborted });
 		if (aborted) {this.queue.deferAll();}
@@ -1152,7 +1166,7 @@ class IncomingMessageState {
 		const port = this.correlationOrigin.get(correlationId);
 		const request = this.correlationMessages.get(correlationId);
 		if (!port || !request) {throw new Error(`No recorded response origin for correlation ID "${correlationId}".`);}
-		const result: { fact?: SubagentSemanticFact } = {};
+		const result: ResponseFactSlot = {};
 		const publish = (event: RoutedMessagePhase) => {
 			result.fact = this.onResponse?.(event, request.message, request.source);
 		};
@@ -1212,10 +1226,12 @@ type RegistryEventSource = {
 	subscribe(listener: (event: RegistryEvent) => void): () => void;
 };
 
-function createRegistryEventSource(registry: AgentSessionRegistry): {
+type RegistryEventSourceBundle = {
 	source: RegistryEventSource;
 	unsubscribe: () => void;
-} {
+};
+
+function createRegistryEventSource(registry: AgentSessionRegistry): RegistryEventSourceBundle {
 	const listeners = new Set<(event: RegistryEvent) => void>();
 	const unsubscribe = registry.subscribe((event) => {
 		for (const listener of Array.from(listeners)) {listener(event);}
@@ -2640,7 +2656,7 @@ class SubagentSessionOwner {
 		});
 	}
 
-	private listModels(ctx: ExtensionContext): { content: { type: "text"; text: string }[]; details: ModelsResultData; structuredContent: ModelsResultData } {
+	private listModels(ctx: ExtensionContext): ToolResult<ModelsResultData> {
 		this.requireActiveSession();
 		const models: any[] = ctx.modelRegistry.getAvailable();
 		const data: ModelsResultData = {
@@ -2885,7 +2901,7 @@ class SubagentSessionOwner {
 			this.semanticAdapter.setSendTarget(toolCallId, to);
 		}
 		const sessionId = this.currentSessionId();
-		const tracking: { facts: SubagentSemanticFact[]; correlationId?: string } = { facts: [] };
+		const tracking: MessageTracking = { facts: [] };
 		const unsubscribe = this.semanticEvents.subscribe((fact) => {
 			if (fact.kind !== "message_thread") {return;}
 			const ownCall = fact.relatedPiEvents.some((ref) => ref.sessionId === sessionId && ref.toolCallId === toolCallId);
@@ -3006,7 +3022,7 @@ class SubagentSessionOwner {
 		return { content: [{ type: "text", text: "Response sent." }], details: semanticDetails({}, fact) };
 	}
 
-	private checkStatus(params: any): { content: { type: "text"; text: string }[]; details: StatusResultData; structuredContent: StatusResultData } {
+	private checkStatus(params: any): ToolResult<StatusResultData> {
 		const { manager } = this.requireActiveSession();
 		if (!manager.hasAgents()) {throw new Error("No agents running.");}
 		if (params.agent) {

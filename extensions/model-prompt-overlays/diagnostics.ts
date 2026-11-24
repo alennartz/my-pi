@@ -1,6 +1,4 @@
-export function createDiagnosticsTracker(): {
-	shouldNotify(message: string): boolean;
-} {
+export function createDiagnosticsTracker() {
 	const seen = new Set<string>();
 
 	return {

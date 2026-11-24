@@ -64,18 +64,18 @@ function normalizeNode(schema: unknown, value: unknown): unknown {
 		const s = isPlainObject(schema) ? schema : {};
 		const properties = isPlainObject(s.properties) ? s.properties : undefined;
 		const required = new Set<string>(Array.isArray(s.required) ? s.required : []);
-		const out: Record<string, unknown> = {};
+		const entries: [string, unknown][] = [];
 		for (const [key, item] of Object.entries(value)) {
 			const propertySchema = properties?.[key];
 			// Undeclared keys pass through untouched; schema validation owns them.
 			if (!isPlainObject(propertySchema)) {
-				out[key] = item;
+				entries.push([key, item]);
 				continue;
 			}
 			if (!required.has(key) && isEmptyForType(propertySchema, item)) {continue;}
-			out[key] = normalizeNode(propertySchema, item);
+			entries.push([key, normalizeNode(propertySchema, item)]);
 		}
-		return out;
+		return Object.fromEntries(entries);
 	}
 	if (Array.isArray(value)) {
 		const items = isPlainObject(schema) ? schema.items : undefined;

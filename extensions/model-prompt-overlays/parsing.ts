@@ -16,10 +16,7 @@ export type OverlayDiagnostic = {
 
 const OVERLAY_PATTERN = /^AGENTS\..+\.md$/;
 
-export function loadOverlayFiles(dir: string): {
-	overlays: OverlayFile[];
-	diagnostics: OverlayDiagnostic[];
-} {
+export function loadOverlayFiles(dir: string) {
 	const overlays: OverlayFile[] = [];
 	const diagnostics: OverlayDiagnostic[] = [];
 

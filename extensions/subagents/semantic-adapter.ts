@@ -17,6 +17,7 @@ import {
   publicToolResult,
 } from './presentation-data.js';
 
+
 export type SemanticOperationKind = 'send' | 'respond' | 'await' | 'delegation' | 'completion' | 'interrupt' | 'teardown' | 'resurrect';
 export type SemanticPlacement = Readonly<{ toolCallId: string; contentIndex: number; entryId?: string }> | Readonly<{ entryId: string }>;
 export type PiToolCallDelta = Readonly<{
@@ -255,7 +256,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
     if (state.kind === 'respond') {state.body = partialString(state.rawArguments, 'message') ?? state.body;}
   }
 
-  function parametersFor(state: OperationState): Readonly<Record<string, unknown>> {
+  function parametersFor(state: OperationState) {
     if (state.kind === 'send') {
       const to = state.parameters.to ?? partialString(state.rawArguments, 'to');
       return normalizeToolParameters('send', { ...state.parameters, message: state.request, ...(to !== undefined ? { to } : {}) }, state.path, state.sendTarget);

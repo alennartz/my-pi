@@ -83,7 +83,7 @@ function request(localId: string, overrides: Partial<CreateAgentNodeRequest> = {
 
 function createRegistry(
 	createSession = vi.fn(async (config: any) => fakeSession(config.path.join("/"))),
-): { registry: AgentSessionRegistry; createSession: typeof createSession } {
+): RegistryFixture {
 	return {
 		registry: new AgentSessionRegistry({
 			root: rootSnapshot(),

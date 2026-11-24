@@ -96,10 +96,7 @@ export function parsePersonaDeclaration(
  * `key: value` scalars (optional single/double quotes stripped); nested YAML
  * structures are out of scope for a persona declaration.
  */
-function parseScalarFrontmatter(content: string): {
-	frontmatter: Record<string, unknown>;
-	body: string;
-} {
+function parseScalarFrontmatter(content: string) {
 	const normalized = content.replace(/^\uFEFF/, "").replaceAll('\r\n', "\n").replaceAll('\r', "\n");
 	if (!normalized.startsWith("---")) {return { frontmatter: {}, body: normalized };}
 	const endIndex = normalized.indexOf("\n---", 3);
@@ -111,8 +108,10 @@ function parseScalarFrontmatter(content: string): {
 }
 
 /** Parse flat `key: value` lines into a record; blank, comment, and nested lines are skipped. */
-function parseFlatScalars(yamlString: string): Record<string, unknown> {
-	const frontmatter: Record<string, unknown> = {};
+type FlatScalars = Record<string, unknown>;
+
+function parseFlatScalars(yamlString: string): FlatScalars {
+	const entries: [string, unknown][] = [];
 	for (const rawLine of yamlString.split("\n")) {
 		const trimmed = rawLine.trim();
 		if (trimmed === "" || trimmed.startsWith("#") || /^\s/.test(rawLine)) {continue;}
@@ -120,9 +119,9 @@ function parseFlatScalars(yamlString: string): Record<string, unknown> {
 		if (colon === -1) {continue;}
 		const key = trimmed.slice(0, colon).trim();
 		if (key === "") {continue;}
-		frontmatter[key] = parseScalarValue(trimmed.slice(colon + 1));
+		entries.push([key, parseScalarValue(trimmed.slice(colon + 1))]);
 	}
-	return frontmatter;
+	return Object.fromEntries(entries);
 }
 
 /**

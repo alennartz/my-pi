@@ -15,7 +15,7 @@ export function globToRegex(glob: string): RegExp {
 	return new RegExp(`^${escaped}$`);
 }
 
-function computeSpecificity(glob: string): { literalChars: number; wildcardCount: number } {
+function computeSpecificity(glob: string) {
 	const wildcardCount = (glob.match(/\*/g) || []).length;
 	const literalChars = glob.replaceAll('*', "").length;
 	return { literalChars, wildcardCount };

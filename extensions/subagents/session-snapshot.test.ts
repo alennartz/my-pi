@@ -31,10 +31,10 @@ function assistantLine(opts: {
 	model?: string;
 	text?: string | string[];
 	usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number };
-}): unknown {
+}) {
 	const texts = opts.text === undefined ? [] : Array.isArray(opts.text) ? opts.text : [opts.text];
 	const content = texts.map((t) => ({ type: "text", text: t }));
-	const message: Record<string, unknown> = { role: "assistant", content };
+	const message: SessionMessageRecord = { role: "assistant", content };
 	if (opts.model !== undefined) {message.model = opts.model;}
 	if (opts.usage) {
 		const { cost, ...rest } = opts.usage;
@@ -43,11 +43,11 @@ function assistantLine(opts: {
 	return { type: "message", message };
 }
 
-function userLine(text: string): unknown {
+function userLine(text: string) {
 	return { type: "message", message: { role: "user", content: [{ type: "text", text }] } };
 }
 
-function toolResultLine(payload: string): unknown {
+function toolResultLine(payload: string) {
 	return { type: "message", message: { role: "toolResult", content: [{ type: "text", text: payload }] } };
 }
 

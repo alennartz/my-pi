@@ -110,7 +110,7 @@ function setup() {
 function ctxFor(
 	cwd: string,
 	options?: { sessionManager?: object; models?: unknown[] },
-): Record<string, unknown> {
+): CtxFixture {
 	return {
 		cwd,
 		sessionManager: options?.sessionManager ?? { getEntries: () => [] },

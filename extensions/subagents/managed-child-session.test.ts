@@ -2,19 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatAgentPath } from "./agent-path.js";
 import type { MessagePort } from "./message-router.js";
 
+type SdkState = {
+	managers: any[];
+	servicesArgs: any[];
+	sessionArgs: any[];
+	runtimeArgs: any[];
+	sessions: any[];
+	runtimes: any[];
+	bindings: { session: any; bindings: any }[];
+	eventDuringBind?: any;
+	promptImplementation: (session: any, text: string, options: any) => Promise<void>;
+};
+
 const sdk = vi.hoisted(() => {
 	let sequence = 0;
-	const state: {
-		managers: any[];
-		servicesArgs: any[];
-		sessionArgs: any[];
-		runtimeArgs: any[];
-		sessions: any[];
-		runtimes: any[];
-		bindings: { session: any; bindings: any }[];
-		eventDuringBind?: any;
-		promptImplementation: (session: any, text: string, options: any) => Promise<void>;
-	} = {
+	const state: SdkState = {
 		managers: [],
 		servicesArgs: [],
 		sessionArgs: [],

@@ -219,7 +219,7 @@ function decodeChildAgent(value: unknown, owner: AgentPath): SubagentDelegatedCh
 	};
 }
 
-function decodeAffectedCore<S extends AwaitState>(value: unknown, owner: AgentPath, isState: (candidate: unknown) => candidate is S): Readonly<{
+type DecodedAffectedCore<S extends AwaitState> = Readonly<{
 	path: AgentPath;
 	sessionId: string;
 	incarnation: string;
@@ -229,7 +229,20 @@ function decodeAffectedCore<S extends AwaitState>(value: unknown, owner: AgentPa
 	channels?: readonly string[];
 	model?: string;
 	usageBaseline?: SubagentUsage;
-}> {
+}>;
+
+type DecodedAffectedAgent<S extends AwaitState> = Readonly<{
+	path: AgentPath;
+	sessionId: string;
+	incarnation: string;
+	state: S;
+	usage: SubagentUsage;
+	usageBaseline?: SubagentUsage;
+	output?: string;
+	error?: string;
+}>;
+
+function decodeAffectedCore<S extends AwaitState>(value: unknown, owner: AgentPath, isState: (candidate: unknown) => candidate is S): DecodedAffectedCore<S> {
 	if (!isPresentationRecord(value)) {return { path: presentationPath(owner, value), sessionId: '', incarnation: 'unknown', state: 'idle' as S, usage: decodeUsage(undefined) };}
 	const { id, path, state, status, usage, usageBaseline, task, channels, model } = value;
 	const candidate = state ?? status;
@@ -246,16 +259,7 @@ function decodeAffectedCore<S extends AwaitState>(value: unknown, owner: AgentPa
 	};
 }
 
-function decodeAffectedAgent<S extends AwaitState>(value: unknown, owner: AgentPath, isState: (candidate: unknown) => candidate is S): Readonly<{
-	path: AgentPath;
-	sessionId: string;
-	incarnation: string;
-	state: S;
-	usage: SubagentUsage;
-	usageBaseline?: SubagentUsage;
-	output?: string;
-	error?: string;
-}> {
+function decodeAffectedAgent<S extends AwaitState>(value: unknown, owner: AgentPath, isState: (candidate: unknown) => candidate is S): DecodedAffectedAgent<S> {
 	const core = decodeAffectedCore(value, owner, isState);
 	if (!isPresentationRecord(value)) {return core;}
 	const { output, error } = value;

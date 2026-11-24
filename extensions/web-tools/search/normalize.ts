@@ -52,12 +52,14 @@ export function renderSearchCards(response: SearchResponse): string {
 		.join("\n\n");
 }
 
+type DomainFilterOutcome = { kept: SearchResult[]; dropped: number };
+
 /** Apply include/exclude domain filters. Returns kept results and drop count. */
 export function applyDomainFilters(
 	results: SearchResult[],
 	includeDomains?: string[],
 	excludeDomains?: string[],
-): { kept: SearchResult[]; dropped: number } {
+): DomainFilterOutcome {
 	const include = includeDomains?.map((d) => normalizeDomain(d));
 	const exclude = excludeDomains?.map((d) => normalizeDomain(d));
 

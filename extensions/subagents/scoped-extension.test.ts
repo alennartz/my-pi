@@ -23,7 +23,7 @@ function sortedNames(names: readonly string[]): string[] {
 	return [...names].sort((left, right) => left.localeCompare(right));
 }
 
-function makePi(): { registerTool: ReturnType<typeof vi.fn> } {
+function makePi() {
 	return { registerTool: vi.fn() };
 }
 

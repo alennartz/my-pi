@@ -59,9 +59,11 @@ function resolveRepoRoot(cwd: string): string {
 	}
 }
 
+type WorktreeEntry = { path?: string; branch?: string };
+
 function parseWorktreeList(output: string): WorktreeInfo[] {
-	const entries: { path?: string; branch?: string }[] = [];
-	let current: { path?: string; branch?: string } = {};
+	const entries: WorktreeEntry[] = [];
+	let current: WorktreeEntry = {};
 
 	const pushCurrent = () => {
 		if (!current.path) {

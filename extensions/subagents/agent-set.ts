@@ -37,6 +37,7 @@ import { stripThinkingSuffix } from "./model-tiers.js";
 import { serializeAgentMessage, serializeAgentTorndown, serializeGroupTorndown, serializeSubagentIdentity } from './messages.js';
 import type { ActiveAgentsCompleteData, AgentCompleteData } from './messages.js';
 import { required } from "../../lib/required.ts";
+import type { SubagentCapabilities } from "./provider.js";
 
 /**
  * Capability fields of one persona file — a workspace declaration or a
@@ -235,6 +236,12 @@ export interface SubagentManagerOptions {
 	onMessagePhase?: (event: RoutedMessagePhase) => void;
 	onResponseProgress?: (event: RoutedResponseProgress) => void;
 }
+
+type AggregateUsage = { input: number; output: number; cost: number };
+
+type RemovedCorrelationTarget = { local: string[]; paths: AgentPath[] };
+
+type TeardownAllResult = { report: string; empty: boolean };
 
 export class SubagentManager {
 	private entries: AgentEntry[] = [];
@@ -1265,7 +1272,7 @@ export class SubagentManager {
 		};
 	}
 
-	private aggregateUsage(): { input: number; output: number; cost: number } {
+	private aggregateUsage(): AggregateUsage {
 		let input = 0;
 		let output = 0;
 		let cost = 0;
@@ -1279,7 +1286,7 @@ export class SubagentManager {
 		return { input, output, cost };
 	}
 
-	private async teardownAll(): Promise<{ report: string; empty: boolean }> {
+	private async teardownAll(): Promise<TeardownAllResult> {
 		const report = serializeGroupTorndown(this.getCompletionReport());
 		const entries = this.entries;
 		this.entries = [];
@@ -1414,7 +1421,7 @@ export class SubagentManager {
 	}
 }
 
-function createChildCapabilities(session: any): Record<string, unknown> {
+function createChildCapabilities(session: any): SubagentCapabilities {
 	const executeBash = (...args: readonly unknown[]) => {
 		const command = args[0];
 		if (typeof command !== "string") {throw new TypeError("Child bash command must be a string");}
@@ -1547,7 +1554,7 @@ function removeCorrelationTarget(
 	current: AgentOperationalSnapshot,
 	correlationId: string,
 	target: { localId: string; path: AgentPath } | undefined,
-): { local: string[]; paths: AgentPath[] } {
+): RemovedCorrelationTarget {
 	const correlationIndex = current.pendingCorrelations.indexOf(correlationId);
 	const local = [...current.waitingFor];
 	const paths = (current.waitingForPaths ?? []).map((path) => [...path]);

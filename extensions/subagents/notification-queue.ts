@@ -110,12 +110,7 @@ export class NotificationQueue<Semantic = unknown> {
 	}
 
 	/** Drain all entries, keeping the structured per-agent payloads alongside the text. */
-	drainDetailed(): {
-		text: string;
-		agents: AgentCompleteData[];
-		semanticEvents?: readonly Semantic[];
-		subagentContent?: readonly PersistedSubagentContent[];
-	} {
+	drainDetailed() {
 		const agents = this.entries.flatMap((e) => e.data ? [e.data] : []);
 		const semanticEvents = this.entries.flatMap((e) => e.semanticEvents);
 		const subagentContent = this.entries.flatMap((e) => e.subagentContent ?? []);

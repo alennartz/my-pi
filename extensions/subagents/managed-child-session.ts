@@ -425,11 +425,13 @@ function createExtensionsOverride(base: LoadExtensionsResult): LoadExtensionsRes
 	return { ...base, extensions };
 }
 
-function initialTarget(target: ChildSessionTarget): {
+type InitialTarget = {
 	sessionManager: SessionManager;
 	cwd: string;
 	reason: SessionStartEvent["reason"];
-} {
+};
+
+function initialTarget(target: ChildSessionTarget): InitialTarget {
 	switch (target.kind) {
 		case "new": {
 			const sessionManager = SessionManager.create(target.cwd, target.sessionDir);

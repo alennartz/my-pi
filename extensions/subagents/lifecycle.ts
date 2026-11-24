@@ -38,8 +38,6 @@ export type SubagentLifecycleRecordData = Readonly<{
 	status?: SubagentLifecycleStatus;
 	/** True when an old removal did not match the currently live incarnation. */
 	stale?: boolean;
-	/** Persisted fields are also available without unpacking `source`. */
-	[key: string]: unknown;
 }>;
 
 export type SubagentLifecycleRecord = Readonly<{
@@ -126,7 +124,7 @@ function dataFor(
 	sessionFile: string | undefined,
 	extra: Pick<SubagentLifecycleRecordData, "stale"> = {},
 ): SubagentLifecycleRecordData {
-	const persistedFields = isRecord(source) ? source : {};
+	const persistedFields = typeof source === "object" && source !== null ? source : {};
 	if (sessionFile === undefined) {
 		return {
 			...persistedFields,

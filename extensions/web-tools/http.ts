@@ -54,7 +54,14 @@ const BACKOFF_BASE_MS = 500;
 const BACKOFF_CAP_MS = 8000;
 const RETRY_AFTER_CAP_MS = 30_000;
 
-const REQUEST_HEADERS: Record<string, string> = {
+interface RequestHeaders {
+	"User-Agent": string;
+	Accept: string;
+	"Accept-Language": string;
+	Cookie?: string;
+}
+
+const REQUEST_HEADERS: RequestHeaders = {
 	"User-Agent":
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 	Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.8",
@@ -219,9 +226,8 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 
 			let response: Response;
 			try {
-				const headers: Record<string, string> = { ...REQUEST_HEADERS };
 				const cookie = cookieHeaderFor(currentUrl, cookieJar);
-				if (cookie) {headers.Cookie = cookie;}
+				const headers: RequestHeaders = { ...REQUEST_HEADERS, ...(cookie ? { Cookie: cookie } : {}) };
 				response = await doFetch(currentUrl, {
 					redirect: "manual",
 					headers,

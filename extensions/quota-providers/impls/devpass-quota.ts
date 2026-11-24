@@ -189,7 +189,7 @@ function monthBoundary(anchor: Date, monthsAfterAnchor: number): number {
 	);
 }
 
-function monthlyWindow(anchorMs: number, now: number): { windowStart: number; windowEnd: number } {
+function monthlyWindow(anchorMs: number, now: number) {
 	const anchor = new Date(anchorMs);
 	const current = new Date(now);
 	let months =

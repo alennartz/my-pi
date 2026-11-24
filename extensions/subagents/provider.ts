@@ -476,13 +476,11 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function stripPrivatePresentation<T>(value: T): T {
 	if (Array.isArray(value)) {return value.map((child) => stripPrivatePresentation(child)) as T;}
-	if (!isRecord(value)) {return value;}
-	const copy: UnknownRecord = {};
-	for (const [key, child] of Object.entries(value)) {
-		if (key === "correlationId" || key === "correlation_id") {continue;}
-		copy[key] = stripPrivatePresentation(child);
-	}
-	return copy as T;
+	if (typeof value !== "object" || value === null) {return value;}
+	const entries = Object.entries(value)
+		.filter(([key]) => key !== "correlationId" && key !== "correlation_id")
+		.map(([key, child]) => [key, stripPrivatePresentation(child)] as [string, unknown]);
+	return Object.fromEntries(entries) as T;
 }
 
 function freezePresentationValue<T>(value: T): T {
@@ -490,7 +488,7 @@ function freezePresentationValue<T>(value: T): T {
 		for (const child of value) {freezePresentationValue(child);}
 		return Object.freeze(value) as T;
 	}
-	if (isRecord(value)) {
+	if (typeof value === "object" && value !== null) {
 		for (const child of Object.values(value)) {freezePresentationValue(child);}
 		return Object.freeze(value) as T;
 	}
@@ -787,7 +785,7 @@ function presentationOperationKey(event: Pick<SemanticAdapterEvent, "path" | "op
 	return `${pathKey(event.path)}:${event.operationId}`;
 }
 
-function borrow(node: RegisteredAgentNode): { session: BorrowedAgentSession; capabilities: SubagentCapabilities } {
+function borrow(node: RegisteredAgentNode) {
 	let session: AgentSession;
 	try {
 		session = node.session.session;
@@ -1209,7 +1207,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function findRegistered(path: AgentPath): RegisteredAgentNode {
-		if (!validPath(path)) {throw new Error(`Invalid subagent path ${JSON.stringify(path)}`);}
+		if (!Array.isArray(path) || !path.every((part) => typeof part === "string")) {throw new Error(`Invalid subagent path ${JSON.stringify(path)}`);}
 		if (path.length === 0) {throw new Error("The root session is not a child view");}
 		let node: ReturnType<AgentSessionRegistry["get"]>;
 		try {
@@ -1309,7 +1307,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		return borrowed.session;
 	}
 
-	function controlIdentity(path: AgentPath): { node: ProviderNode; explicit: boolean } {
+	function controlIdentity(path: AgentPath) {
 		if (path.length === 0) {throw new Error("The root session is not a child view");}
 		const node = liveNodes.get(pathKey(path));
 		if (!node) {throw new Error(`Unknown subagent path ${JSON.stringify(path)}`);}

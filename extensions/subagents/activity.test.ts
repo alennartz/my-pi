@@ -35,7 +35,7 @@ function createMockEventBus(): EventBus & { handlers: Map<string, Set<(data: unk
 	};
 }
 
-function makePi(eventBus: EventBus): { registerTool: ReturnType<typeof vi.fn>; events: EventBus } {
+function makePi(eventBus: EventBus) {
 	return { registerTool: vi.fn(), events: eventBus };
 }
 
