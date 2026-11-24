@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SearchResponse } from "./types.js";
-import { runWebSearch, type WebSearchParams } from "./web-search.js";
+import { runWebSearch } from './web-search.js';
+import type { WebSearchParams } from './web-search.js';
 import { TtlLruCache } from "./cache.js";
 
 function fakeResponse(urls: string[], query = "test query"): SearchResponse {

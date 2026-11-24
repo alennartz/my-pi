@@ -1,11 +1,7 @@
-import { childAgentPath, type AgentPath } from "./agent-path.js";
-import {
-	createManagedChildSession,
-	type ChildSessionConfig,
-	type ChildSessionHooks,
-	type ManagedChildSession,
-	type ManagedChildSessionDependencies,
-} from "./managed-child-session.js";
+import { childAgentPath } from './agent-path.js';
+import type { AgentPath } from './agent-path.js';
+import { createManagedChildSession } from './managed-child-session.js';
+import type { ChildSessionConfig, ChildSessionHooks, ManagedChildSession, ManagedChildSessionDependencies } from './managed-child-session.js';
 import type { MessagePort } from "./message-router.js";
 import { createSessionTreeStore } from "./scoped-store.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";

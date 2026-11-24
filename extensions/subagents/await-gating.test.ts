@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createAwaitGate, type AwaitChildStatus, type AwaitMessage } from "./await-gating.js";
+import { createAwaitGate } from './await-gating.js';
+import type { AwaitChildStatus, AwaitMessage } from './await-gating.js';
 
 const worker = ["worker"] as const;
 const scout = ["scout"] as const;

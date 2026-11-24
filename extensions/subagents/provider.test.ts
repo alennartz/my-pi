@@ -13,15 +13,8 @@ import type {
 import type { AgentPath } from "./agent-path.js";
 import type { ManagedChildSession } from "./managed-child-session.js";
 import { createSubagentLifecycleReader } from "./lifecycle.js";
-import {
-  createSubagentProvider,
-  type ReplayResult,
-  type SubagentEvent,
-  type SubagentLeaseEvent,
-  type SubagentOwnerControlPort,
-  type SubagentSemanticFact,
-  type SubagentProviderOptions,
-} from "./provider.js";
+import { createSubagentProvider } from './provider.js';
+import type { ReplayResult, SubagentEvent, SubagentLeaseEvent, SubagentOwnerControlPort, SubagentSemanticFact, SubagentProviderOptions } from './provider.js';
 
 const workerPath: AgentPath = ["worker"];
 const scoutPath: AgentPath = ["worker", "scout"];

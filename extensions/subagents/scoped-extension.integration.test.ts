@@ -79,11 +79,13 @@ vi.mock("./broker.js", () => ({
 	},
 }));
 
-import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
+import { createSubagentsExtension } from './scoped-extension.js';
+import type { SubagentScope } from './scoped-extension.js';
 import { SubagentPresentation } from "./session-owner.js";
 import { createSemanticFactBus } from "./semantic-bus.js";
 import type { SemanticAdapterEvent } from "./semantic-adapter.js";
-import { createSubagentProvider, type SubagentSemanticFact } from "./provider.js";
+import { createSubagentProvider } from './provider.js';
+import type { SubagentSemanticFact } from './provider.js';
 import { serializeAgentMessage } from "./messages.js";
 import * as agentDiscovery from "./agents.js";
 import type { AgentPath } from "./agent-path.js";

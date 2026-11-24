@@ -1,11 +1,9 @@
 import * as path from "node:path";
 import type { AgentPath } from "./agent-path.js";
-import {
-	readEvents,
-	type AgentLifecycleEvent,
-	type PersistencePaths,
-} from "./persistence.js";
-import { parseSessionSnapshot, type SessionSnapshot } from "./session-snapshot.js";
+import { readEvents } from './persistence.js';
+import type { AgentLifecycleEvent, PersistencePaths } from './persistence.js';
+import { parseSessionSnapshot } from './session-snapshot.js';
+import type { SessionSnapshot } from './session-snapshot.js';
 import { activityPreview } from "./format.js";
 
 /** Durable lifecycle/topology facts projected from my-pi's existing records. */

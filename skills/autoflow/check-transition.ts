@@ -21,14 +21,8 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import {
-	checkWorkspaceGit,
-	checkWorkspaceRows,
-	createGitProbe,
-	parseWorkspaceRows,
-	type GitProbe,
-	type Result,
-} from "./workspace.ts";
+import { checkWorkspaceGit, checkWorkspaceRows, createGitProbe, parseWorkspaceRows } from './workspace.ts';
+import type { GitProbe, Result } from './workspace.ts';
 
 const checkedPhases = new Set([
 	"test-write",

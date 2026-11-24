@@ -1,28 +1,15 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import {
-	createAgentSessionFromServices,
-	createAgentSessionRuntime,
-	createAgentSessionServices,
-	createEventBus,
-	resolveCliModel,
-	SessionManager,
-	SettingsManager,
-	type AgentSession,
-	type AgentSessionEvent,
-	type AgentSessionRuntime,
-	type EventBusController,
-	type PromptOptions,
-	type ExtensionCommandContextActions,
-	type ExtensionError,
-	type LoadExtensionsResult,
-	type SessionStartEvent,
-} from "@earendil-works/pi-coding-agent";
-import { formatAgentPath, type AgentPath } from "./agent-path.js";
+import { createAgentSessionFromServices, createAgentSessionRuntime, createAgentSessionServices, createEventBus, resolveCliModel, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
+import type { AgentSession, AgentSessionEvent, AgentSessionRuntime, EventBusController, PromptOptions, ExtensionCommandContextActions, ExtensionError, LoadExtensionsResult, SessionStartEvent } from '@earendil-works/pi-coding-agent';
+import { formatAgentPath } from './agent-path.js';
+import type { AgentPath } from './agent-path.js';
 import type { ChildToolPolicy } from "./child-tool-policy.js";
-import { markSubagentChildSession, type PersonaPayload } from "./child-session-marker.js";
+import { markSubagentChildSession } from './child-session-marker.js';
+import type { PersonaPayload } from './child-session-marker.js';
 import type { SubagentCapabilities } from "./provider.js";
 import { stripThinkingSuffix } from "./model-tiers.js";
-import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
+import { createSubagentsExtension } from './scoped-extension.js';
+import type { SubagentScope } from './scoped-extension.js';
 import { registerSessionTreeStore } from "./scoped-store.js";
 import { rootExtensionPath } from "./root-extension-path.mts";
 

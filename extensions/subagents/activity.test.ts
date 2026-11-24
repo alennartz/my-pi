@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { askActivity } from "@pimote/sdk/activity";
 import type { EventBus } from "@earendil-works/pi-coding-agent";
 import { createSubagentsExtension } from "./scoped-extension.js";
-import { hasLiveBackgroundWork, type ActivityNode } from "./activity.js";
+import { hasLiveBackgroundWork } from './activity.js';
+import type { ActivityNode } from './activity.js';
 import type { AgentPath } from "./agent-path.js";
 import type { MessagePort } from "./message-router.js";
 

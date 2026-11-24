@@ -3,15 +3,8 @@ import {
 	buildCleanupMergePrompt,
 	resolveWorktreePath,
 } from "./command-surface.ts";
-import {
-	DEFAULT_MERGE_TARGET_FALLBACK,
-	type WorktreeController,
-	type WorktreeDependencies,
-	type WorktreeEnvironment,
-	type WorktreeGitClient,
-	type WorktreeInfo,
-	type WorktreeSessionGateway,
-} from "./contracts.ts";
+import { DEFAULT_MERGE_TARGET_FALLBACK } from './contracts.ts';
+import type { WorktreeController, WorktreeDependencies, WorktreeEnvironment, WorktreeGitClient, WorktreeInfo, WorktreeSessionGateway } from './contracts.ts';
 
 async function resolveMergeTarget(
 	git: WorktreeGitClient,

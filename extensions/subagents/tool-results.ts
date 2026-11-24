@@ -10,7 +10,8 @@
 import { Type } from "typebox";
 import type { Usage } from "@earendil-works/pi-ai";
 import { formatTokenCount } from "./format.js";
-import { addCostBreakdown, type AgentCostBreakdown } from "./agent-session-registry.js";
+import { addCostBreakdown } from './agent-session-registry.js';
+import type { AgentCostBreakdown } from './agent-session-registry.js';
 import type { AgentState, AgentStatus, AgentUsage } from "./agent-set.js";
 import { modelDisplayName } from "./status-display.js";
 import type { AgentCompleteData } from "./messages.js";

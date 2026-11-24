@@ -1,12 +1,6 @@
 import { randomUUID } from "node:crypto";
-import {
-	addToTopology,
-	buildTopology,
-	canSend,
-	removeFromTopology,
-	type AgentChannelSpec,
-	type Topology,
-} from "./channels.js";
+import { addToTopology, buildTopology, canSend, removeFromTopology } from './channels.js';
+import type { AgentChannelSpec, Topology } from './channels.js';
 import { DeadlockGraph } from "./deadlock.js";
 
 /**

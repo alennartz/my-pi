@@ -3,8 +3,10 @@ import { registerLooseTool } from "../../lib/tool-args.ts";
 import { TtlLruCache } from "./cache.js";
 import { openFetchStore } from "./fetch-store.js";
 import type { SearchResponse } from "./types.js";
-import { runWebSearch, webSearchOutput, webSearchParameters, type WebSearchParams } from "./web-search.js";
-import { runWebFetch, webFetchOutput, webFetchParameters, type WebFetchParams } from "./web-fetch.js";
+import { runWebSearch, webSearchOutput, webSearchParameters } from './web-search.js';
+import type { WebSearchParams } from './web-search.js';
+import { runWebFetch, webFetchOutput, webFetchParameters } from './web-fetch.js';
+import type { WebFetchParams } from './web-fetch.js';
 
 /**
  * web-tools extension: `web_search` and `web_fetch`.

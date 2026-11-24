@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-	serializeAgentComplete,
-	serializeGroupComplete,
-	serializeAgentTorndown,
-	serializeGroupTorndown,
-	type AgentCompleteData,
-} from "./messages.js";
+import { serializeAgentComplete, serializeGroupComplete, serializeAgentTorndown, serializeGroupTorndown } from './messages.js';
+import type { AgentCompleteData } from './messages.js';
 
 describe("serializeAgentComplete", () => {
 	it("includes session_id attribute and resurrect hint when sessionId is present (idle)", () => {

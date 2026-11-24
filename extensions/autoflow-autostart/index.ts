@@ -11,7 +11,8 @@
  * sessions (which load this same extension) never autostart.
  */
 
-import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { isSubagentChildSession } from "../subagents/child-session-marker.ts";
 import { DEFAULT_AUTOFLOW_COMMAND, loadAutoflowConfig } from "./config.ts";
 import { planInput, shouldArm } from "./trigger.ts";

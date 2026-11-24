@@ -9,25 +9,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-	type AgentConfig,
-	type AgentSpec,
-	type ForkAgentSpec,
-	isValidCwd,
-	resolvePersonaSkillPaths,
-} from "./agents.js";
-import { childAgentPath, qualifiedAgentId, type AgentPath } from "./agent-path.js";
-import {
-	addCostBreakdown,
-	costBreakdownFromUsage,
-	subtractCostBreakdown,
-	type AgentNodeSnapshot,
-	type AgentOperationalSnapshot,
-	type AgentSessionRegistry,
-	type AgentUsage as RegistryAgentUsage,
-	type CreateAgentNodeRequest,
-	isRegisteredAgentNode,
-} from "./agent-session-registry.js";
+import { isValidCwd, resolvePersonaSkillPaths } from './agents.js';
+import type { AgentConfig, AgentSpec, ForkAgentSpec } from './agents.js';
+import { childAgentPath, qualifiedAgentId } from './agent-path.js';
+import type { AgentPath } from './agent-path.js';
+import { addCostBreakdown, costBreakdownFromUsage, subtractCostBreakdown, isRegisteredAgentNode } from './agent-session-registry.js';
+import type { AgentNodeSnapshot, AgentOperationalSnapshot, AgentSessionRegistry, AgentUsage as RegistryAgentUsage, CreateAgentNodeRequest } from './agent-session-registry.js';
 import { resolveChildToolPolicy } from "./child-tool-policy.js";
 import type { PersonaPayload } from "./child-session-marker.js";
 import type {
@@ -37,36 +24,18 @@ import type {
 	SubagentStopRequest,
 	SubagentTeardownResult,
 } from "./provider.js";
-import { loadWorkspacePersona, type PersonaDeclaration } from "../persona-workspaces/declaration.ts";
-import {
-	appendAgentAdded,
-	appendAgentRemoved,
-	ensurePersistence,
-	findAgentRecordBySessionId,
-	getPersistencePaths,
-	loadPersistedAgents,
-	pruneInvalidPersistedAgents,
-	type PersistedAgentRecord,
-	type PersistencePaths,
-} from "./persistence.js";
-import { type AgentChannelSpec } from "./channels.js";
-import {
-	MessageRouter,
-	type MessagePort,
-	type RoutedMessage,
-	type RoutedMessagePhase,
-} from "./message-router.js";
+import { loadWorkspacePersona } from '../persona-workspaces/declaration.ts';
+import type { PersonaDeclaration } from '../persona-workspaces/declaration.ts';
+import { appendAgentAdded, appendAgentRemoved, ensurePersistence, findAgentRecordBySessionId, getPersistencePaths, loadPersistedAgents, pruneInvalidPersistedAgents } from './persistence.js';
+import type { PersistedAgentRecord, PersistencePaths } from './persistence.js';
+import type { AgentChannelSpec } from './channels.js';
+import { MessageRouter } from './message-router.js';
+import type { MessagePort, RoutedMessage, RoutedMessagePhase } from './message-router.js';
 import { parseSessionSnapshot } from "./session-snapshot.js";
 import { activityPreview, formatTokenCount } from "./format.js";
 import { stripThinkingSuffix } from "./model-tiers.js";
-import {
-	serializeAgentMessage,
-	serializeAgentTorndown,
-	serializeGroupTorndown,
-	serializeSubagentIdentity,
-	type ActiveAgentsCompleteData,
-	type AgentCompleteData,
-} from "./messages.js";
+import { serializeAgentMessage, serializeAgentTorndown, serializeGroupTorndown, serializeSubagentIdentity } from './messages.js';
+import type { ActiveAgentsCompleteData, AgentCompleteData } from './messages.js';
 
 /**
  * Capability fields of one persona file — a workspace declaration or a

@@ -1,118 +1,56 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
-import {
-	getAgentDir,
-	type ExtensionAPI,
-	type ExtensionContext,
-	type ExtensionFactory,
-} from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from '@earendil-works/pi-coding-agent';
 import { Type } from "typebox";
 import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
 import { answerActivity } from "@pimote/sdk/activity";
 import { registerProvider } from "@pimote/sdk/subagents";
-import { normalizeFinalData, normalizeSavedPresentationData, savedPresentationKind, type PersistedSubagentContent } from "./presentation-data.js";
+import { normalizeFinalData, normalizeSavedPresentationData, savedPresentationKind } from './presentation-data.js';
+import type { PersistedSubagentContent } from './presentation-data.js';
 import {
 	getOrCreateSessionTreeStore,
 	registerSessionTreeStore,
 	unregisterSessionTreeStore,
 } from "./scoped-store.js";
-import {
-	type AgentConfig,
-	type RegularAgentSpec,
-	type ForkAgentSpec,
-	discoverAgents,
-	discoverPackageAgents,
-	resolvePersonaSkillPaths,
-	resolveAgentCwds,
-	formatAgentList,
-	renderAgentDefinitions,
-} from "./agents.js";
-import {
-	SubagentManager,
-	isSettledState,
-	loadActivePersona,
-	selectActivePersona,
-	type AgentStatus,
-	type PersonaCapabilities,
-} from "./agent-set.js";
-import {
-	addCostBreakdown,
-	costBreakdownFromUsage,
-	AgentSessionRegistry,
-	type AgentOperationalSnapshot,
-	type RegistryEvent,
-} from "./agent-session-registry.js";
-import { childAgentPath, type AgentPath } from "./agent-path.js";
+import { discoverAgents, discoverPackageAgents, resolvePersonaSkillPaths, resolveAgentCwds, formatAgentList, renderAgentDefinitions } from './agents.js';
+import type { AgentConfig, RegularAgentSpec, ForkAgentSpec } from './agents.js';
+import { SubagentManager, isSettledState, loadActivePersona, selectActivePersona } from './agent-set.js';
+import type { AgentStatus, PersonaCapabilities } from './agent-set.js';
+import { addCostBreakdown, costBreakdownFromUsage, AgentSessionRegistry } from './agent-session-registry.js';
+import type { AgentOperationalSnapshot, RegistryEvent } from './agent-session-registry.js';
+import { childAgentPath } from './agent-path.js';
+import type { AgentPath } from './agent-path.js';
 import { excludeModelOnlyTools } from "./child-tool-policy.js";
 import { getPersistencePaths } from "./persistence.js";
-import { serializeAgentComplete, serializeAgentMessage, serializeAgentRemoved, serializeAgentResurrected, type AgentCompleteData } from "./messages.js";
+import { serializeAgentComplete, serializeAgentMessage, serializeAgentRemoved, serializeAgentResurrected } from './messages.js';
+import type { AgentCompleteData } from './messages.js';
 import { hasLiveBackgroundWork } from "./activity.js";
-import { createStopSequenceManager, type StopSequenceManager } from "./stop-sequences.js";
+import { createStopSequenceManager } from './stop-sequences.js';
+import type { StopSequenceManager } from './stop-sequences.js';
 import { NotificationQueue } from "./notification-queue.js";
-import {
-	createAwaitGate,
-	type AwaitChildStatus,
-	type AwaitGate,
-	type AwaitMessage,
-	type AwaitOutcome,
-} from "./await-gating.js";
+import { createAwaitGate } from './await-gating.js';
+import type { AwaitChildStatus, AwaitGate, AwaitMessage, AwaitOutcome } from './await-gating.js';
 import { modelDisplayName } from "./status-display.js";
 import { activityPreview } from "./format.js";
 import { formatOverrideNote } from "./tool-result.js";
 import { truncateForModel } from "../../lib/truncate.ts";
-import {
-	formatUsageLine,
-	isZeroUsage,
-	lifecycleStatus,
-	statusData,
-	sumAgentUsage,
-	toPiUsage,
-	type AwaitResultData,
-	type InterruptResultData,
-	type ModelsResultData,
-	type ResurrectResultData,
-	type SendResultData,
-	type StatusResultData,
-	type TeardownAgentData,
-	type TeardownResultData,
-	type AgentRefData,
-	AwaitResultSchema,
-	InterruptResultSchema,
-	ModelsResultSchema,
-	ResurrectResultSchema,
-	SendResultSchema,
-	SpawnResultSchema,
-	StatusResultSchema,
-	TeardownResultSchema,
-} from "./tool-results.js";
+import { formatUsageLine, isZeroUsage, lifecycleStatus, statusData, sumAgentUsage, toPiUsage, AwaitResultSchema, InterruptResultSchema, ModelsResultSchema, ResurrectResultSchema, SendResultSchema, SpawnResultSchema, StatusResultSchema, TeardownResultSchema } from './tool-results.js';
+import type { AwaitResultData, InterruptResultData, ModelsResultData, ResurrectResultData, SendResultData, StatusResultData, TeardownAgentData, TeardownResultData, AgentRefData } from './tool-results.js';
 import { loadWorkspacePersona } from "../persona-workspaces/declaration.ts";
-import {
-	TIERS_UNCONFIGURED_MESSAGE,
-	type TierConfig,
-	loadTierConfig,
-	resolveDeclaredModelRef,
-	renderTierTable,
-	stripThinkingSuffix,
-} from "./model-tiers.js";
+import { TIERS_UNCONFIGURED_MESSAGE, loadTierConfig, resolveDeclaredModelRef, renderTierTable, stripThinkingSuffix } from './model-tiers.js';
+import type { TierConfig } from './model-tiers.js';
 import type { MessagePort, RoutedMessage, RoutedMessagePhase, RoutedResponse, RoutedResponseProgress } from "./message-router.js";
-import { createSemanticFactBus, type SemanticFactBus } from "./semantic-bus.js";
-import { resolveExplicitAwait, type StoredChildSettlement } from "./await-result.js";
-import {
-	createSubagentSemanticAdapter,
-	type PiToolCallDelta,
-	type PiToolExecution,
-	type SemanticAdapterEvent,
-} from "./semantic-adapter.js";
+import { createSemanticFactBus } from './semantic-bus.js';
+import type { SemanticFactBus } from './semantic-bus.js';
+import { resolveExplicitAwait } from './await-result.js';
+import type { StoredChildSettlement } from './await-result.js';
+import { createSubagentSemanticAdapter } from './semantic-adapter.js';
+import type { PiToolCallDelta, PiToolExecution, SemanticAdapterEvent } from './semantic-adapter.js';
 export type { SemanticFactBus } from "./semantic-bus.js";
-import {
-	createSubagentProvider,
-	type SubagentSemanticFact,
-	type SubagentAwaitChildStatus,
-	type SubagentEventKind,
-	type PiEventRef,
-	type SubagentProvider,
-} from "./provider.js";
+import { createSubagentProvider } from './provider.js';
+import type { SubagentSemanticFact, SubagentAwaitChildStatus, SubagentEventKind, PiEventRef, SubagentProvider } from './provider.js';
 import type {
 	SubagentManagerControl,
 	SubagentOwnerControlPort,

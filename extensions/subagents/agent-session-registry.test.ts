@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentPath } from "./agent-path.js";
-import {
-	AgentSessionRegistry,
-	type AgentNodeSnapshot,
-	type AgentOperationalSnapshot,
-	type CreateAgentNodeRequest,
-} from "./agent-session-registry.js";
+import { AgentSessionRegistry } from './agent-session-registry.js';
+import type { AgentNodeSnapshot, AgentOperationalSnapshot, CreateAgentNodeRequest } from './agent-session-registry.js';
 import type {
 	ChildSessionConfig,
 	ChildSessionHooks,

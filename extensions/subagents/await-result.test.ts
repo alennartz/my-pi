@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { resolveExplicitAwait, type StoredChildSettlement } from './await-result.js';
+import { resolveExplicitAwait } from './await-result.js';
+import type { StoredChildSettlement } from './await-result.js';
 
 const worker: StoredChildSettlement = { path: ['worker'], state: 'idle', output: 'already done', sessionId: 'worker-session' };
 describe('explicit await resolution', () => {

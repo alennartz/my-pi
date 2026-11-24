@@ -3,19 +3,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-	TIER_NAMES,
-	TIERS_UNCONFIGURED_MESSAGE,
-	findAvailableModel,
-	isTierName,
-	loadTierConfig,
-	renderTierTable,
-	resolveDeclaredModelRef,
-	resolveModelRef,
-	stripThinkingSuffix,
-	isThinkingLevel,
-	type TierConfig,
-} from "./model-tiers.js";
+import { TIER_NAMES, TIERS_UNCONFIGURED_MESSAGE, findAvailableModel, isTierName, loadTierConfig, renderTierTable, resolveDeclaredModelRef, resolveModelRef, stripThinkingSuffix, isThinkingLevel } from './model-tiers.js';
+import type { TierConfig } from './model-tiers.js';
 
 // isTierName
 

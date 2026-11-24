@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { childAgentPath, formatAgentPath, qualifiedAgentId, type AgentPath } from "./agent-path.js";
+import { childAgentPath, formatAgentPath, qualifiedAgentId } from './agent-path.js';
+import type { AgentPath } from './agent-path.js';
 
 describe("canonical agent paths", () => {
 	it("represents the external root as an empty path", () => {

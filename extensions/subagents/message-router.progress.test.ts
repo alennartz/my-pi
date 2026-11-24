@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MessageRouter, type RoutedResponseProgress } from './message-router.js';
+import { MessageRouter } from './message-router.js';
+import type { RoutedResponseProgress } from './message-router.js';
 
 function fixture() {
   const progress: RoutedResponseProgress[] = [];

@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { Check } from "typebox/value";
 import type { AgentPath } from "./agent-path.js";
 import type { AgentSessionRegistry } from "./agent-session-registry.js";
-import { createSubagentsExtension, type SubagentScope } from "./scoped-extension.js";
+import { createSubagentsExtension } from './scoped-extension.js';
+import type { SubagentScope } from './scoped-extension.js';
 import type { MessagePort } from "./message-router.js";
 
 const ALL_TOOLS = [

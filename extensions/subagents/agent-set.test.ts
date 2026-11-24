@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { SubagentManager, type AgentStatus } from "./agent-set.js";
+import { SubagentManager } from './agent-set.js';
+import type { AgentStatus } from './agent-set.js';
 import type {
 	AgentNodeSnapshot,
 	AgentOperationalSnapshot,

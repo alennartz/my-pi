@@ -3,13 +3,8 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import {
-	CURRENT_SESSION_VERSION,
-	SessionManager,
-	type ExtensionAPI,
-	type ExtensionCommandContext,
-	type SessionHeader,
-} from "@earendil-works/pi-coding-agent";
+import { CURRENT_SESSION_VERSION, SessionManager } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionCommandContext, SessionHeader } from '@earendil-works/pi-coding-agent';
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { getWorktreeArgumentCompletions, isWorktreePath, parseWorktreeCommand } from "./command-surface.ts";
 import type {

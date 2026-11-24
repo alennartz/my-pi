@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { parseAgentConfig, renderAgentDefinitions, resolvePersonaSkillPaths, type AgentConfig } from "./agents.js";
+import { parseAgentConfig, renderAgentDefinitions, resolvePersonaSkillPaths } from './agents.js';
+import type { AgentConfig } from './agents.js';
 
 function agent(overrides: Partial<AgentConfig> = {}): AgentConfig {
 	return {

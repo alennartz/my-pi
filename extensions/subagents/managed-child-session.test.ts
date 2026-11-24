@@ -206,13 +206,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 	getAgentDir: sdk.getAgentDir,
 }));
 
-import {
-	createManagedChildSession,
-	type ChildSessionConfig,
-	type ChildSessionHooks,
-	type ManagedChildSession,
-	type ManagedChildSessionDependencies,
-} from "./managed-child-session.js";
+import { createManagedChildSession } from './managed-child-session.js';
+import type { ChildSessionConfig, ChildSessionHooks, ManagedChildSession, ManagedChildSessionDependencies } from './managed-child-session.js';
 
 const uplink = {} as MessagePort;
 const registry = {} as ChildSessionConfig["scope"]["registry"];

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-	excludeModelOnlyTools,
-	resolveChildToolPolicy,
-	type ChildToolPolicyInput,
-} from "./child-tool-policy.js";
+import { excludeModelOnlyTools, resolveChildToolPolicy } from './child-tool-policy.js';
+import type { ChildToolPolicyInput } from './child-tool-policy.js';
 
 function expectExactStableAllowlist(input: ChildToolPolicyInput, expected: string[]) {
 	const first = resolveChildToolPolicy(input);

@@ -17,7 +17,6 @@ export default defineConfig({
   rules: {
     // Baseline: rules with findings on existing code, re-enabled one at a time.
     '@nkzw/no-instanceof': 'off',
-    'import/consistent-type-specifier-style': 'off',
     'import/no-namespace': 'off',
     'no-case-declarations': 'off',
     'no-console': 'off',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentSessionRegistry, RegistryEvent } from './agent-session-registry.js';
-import { createSubagentProvider, type BorrowedAgentSession, type SubagentOwnerControlPort } from './provider.js';
+import { createSubagentProvider } from './provider.js';
+import type { BorrowedAgentSession, SubagentOwnerControlPort } from './provider.js';
 import type { SemanticAdapterEvent } from './semantic-adapter.js';
 
 function fixture(historyLimit?: number) {

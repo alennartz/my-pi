@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { httpFetch, HttpFetchError, parseRetryAfterMs, type HttpFetchOptions } from "./http.js";
+import { httpFetch, HttpFetchError, parseRetryAfterMs } from './http.js';
+import type { HttpFetchOptions } from './http.js';
 
 /** Build test options: instant sleep (recorded), fixed clock, mocked fetch. */
 function makeOpts(fetchImpl: typeof fetch): HttpFetchOptions & { sleeps: number[] } {

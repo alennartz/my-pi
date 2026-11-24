@@ -7,11 +7,13 @@ import { createHash } from "node:crypto";
 import { Type } from "typebox";
 import type { Static } from "typebox";
 import { extractContent } from "./extract.js";
-import { cacheKeyFor, openFetchStore, type FetchStore } from "./fetch-store.js";
+import { cacheKeyFor, openFetchStore } from './fetch-store.js';
+import type { FetchStore } from './fetch-store.js';
 import { findInText } from "./find-text.js";
 import { classifyContentType } from "./content-type.js";
 import { httpFetch, HttpFetchError } from "./http.js";
-import { errorFetchResult, okFetchResult, type FetchResult } from "./types.js";
+import { errorFetchResult, okFetchResult } from './types.js';
+import type { FetchResult } from './types.js';
 import { validateUrl } from "./url-policy.js";
 
 export const webFetchParameters = Type.Object({

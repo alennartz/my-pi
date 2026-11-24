@@ -2,18 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Check } from "typebox/value";
 import type { AgentStatus } from "./agent-set.js";
 import type { AgentCompleteData } from "./messages.js";
-import {
-	AwaitResultSchema,
-	completionDataFor,
-	formatUsageLine,
-	isZeroUsage,
-	lifecycleStatus,
-	outputPreview,
-	statusData,
-	sumAgentUsage,
-	toPiUsage,
-	type ManagerLookup,
-} from "./tool-results.js";
+import { AwaitResultSchema, completionDataFor, formatUsageLine, isZeroUsage, lifecycleStatus, outputPreview, statusData, sumAgentUsage, toPiUsage } from './tool-results.js';
+import type { ManagerLookup } from './tool-results.js';
 
 function statusOf(overrides: Partial<AgentStatus> = {}): AgentStatus {
 	return {

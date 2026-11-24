@@ -3,8 +3,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { childAgentPath, formatAgentPath, type AgentPath } from "./agent-path.js";
-import { createManagedChildSession, type ChildSessionConfig } from "./managed-child-session.js";
+import { childAgentPath, formatAgentPath } from './agent-path.js';
+import type { AgentPath } from './agent-path.js';
+import { createManagedChildSession } from './managed-child-session.js';
+import type { ChildSessionConfig } from './managed-child-session.js';
 import type { MessagePort } from "./message-router.js";
 
 const registry = {

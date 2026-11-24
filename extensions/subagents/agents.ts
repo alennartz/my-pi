@@ -11,7 +11,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager, type SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager } from '@earendil-works/pi-coding-agent';
+import type { SlashCommandInfo } from '@earendil-works/pi-coding-agent';
 
 export interface RegularAgentSpec {
 	kind: "agent";

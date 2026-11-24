@@ -1,10 +1,6 @@
 import { isAbsolute, join, relative } from "node:path";
-import {
-	WORKTREE_ROOT_DIRECTORY_NAME,
-	type WorktreeAutocompleteItem,
-	type WorktreeCleanupRequest,
-	type WorktreeCreateRequest,
-} from "./contracts.ts";
+import { WORKTREE_ROOT_DIRECTORY_NAME } from './contracts.ts';
+import type { WorktreeAutocompleteItem, WorktreeCleanupRequest, WorktreeCreateRequest } from './contracts.ts';
 
 const SUBCOMMANDS = ["create", "cleanup"] as const;
 

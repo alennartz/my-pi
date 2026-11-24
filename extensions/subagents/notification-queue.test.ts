@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { NotificationQueue, type NotificationQueueConfig } from "./notification-queue.js";
+import { NotificationQueue } from './notification-queue.js';
+import type { NotificationQueueConfig } from './notification-queue.js';
 
 function createQueue(overrides?: Partial<NotificationQueueConfig>) {
 	const delivered: string[] = [];

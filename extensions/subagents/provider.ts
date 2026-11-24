@@ -11,11 +11,8 @@ import type {
 } from "./agent-session-registry.js";
 import { getPersistencePaths } from "./persistence.js";
 import { createSemanticEvent } from "./semantic-events.js";
-import {
-	createSubagentLifecycleReader,
-	type SubagentLifecycleRecord,
-	type SubagentLifecycleReader,
-} from "./lifecycle.js";
+import { createSubagentLifecycleReader } from './lifecycle.js';
+import type { SubagentLifecycleRecord, SubagentLifecycleReader } from './lifecycle.js';
 import type { ManagedChildSession } from "./managed-child-session.js";
 import type {
 	ActiveSubagentOperation,
@@ -32,7 +29,8 @@ import type {
 	SubagentFiniteEvent,
 } from "@pimote/sdk/subagents";
 import type { SemanticAdapterEvent } from "./semantic-adapter.js";
-import { normalizeSavedPresentationData, savedPresentationKind, type PersistedSubagentContent, type PresentationKind } from "./presentation-data.js";
+import { normalizeSavedPresentationData, savedPresentationKind } from './presentation-data.js';
+import type { PersistedSubagentContent, PresentationKind } from './presentation-data.js';
 
 /** Opaque provider epoch plus the last ordered event sequence observed in it. */
 export type FeedCursor = Readonly<{

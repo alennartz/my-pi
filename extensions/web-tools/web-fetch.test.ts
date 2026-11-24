@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openFetchStore, type FetchStore } from "./fetch-store.js";
-import { mapWithConcurrency, runWebFetch, type WebFetchParams } from "./web-fetch.js";
+import { openFetchStore } from './fetch-store.js';
+import type { FetchStore } from './fetch-store.js';
+import { mapWithConcurrency, runWebFetch } from './web-fetch.js';
+import type { WebFetchParams } from './web-fetch.js';
 
 const articleHtml = readFileSync(
 	join(import.meta.dirname, "fixtures", "article.html"),
