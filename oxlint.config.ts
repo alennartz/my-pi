@@ -46,7 +46,6 @@ export default defineConfig({
     'typescript/no-unsafe-member-access': 'off',
     'typescript/no-unsafe-return': 'off',
     'typescript/no-unsafe-type-assertion': 'off',
-    'typescript/require-array-sort-compare': 'off',
     'typescript/unbound-method': 'off',
     'typescript/use-unknown-in-catch-callback-variable': 'off',
     // Helpers stay beside their single call site.

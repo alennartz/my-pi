@@ -19,6 +19,10 @@ const ALL_TOOLS = [
 	"interrupt",
 ];
 
+function sortedNames(names: readonly string[]): string[] {
+	return [...names].sort((left, right) => left.localeCompare(right));
+}
+
 function makePi(): { registerTool: ReturnType<typeof vi.fn> } {
 	return { registerTool: vi.fn() };
 }
@@ -73,7 +77,7 @@ describe("createSubagentsExtension root scope", () => {
 
 		const tools = pi.registerTool.mock.calls.map(([tool]) => tool);
 		const names = tools.map((tool) => tool.name);
-		expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
+		expect(sortedNames(names)).toEqual(sortedNames(ALL_TOOLS));
 		const awaitAgents = tools.find((tool) => tool.name === "await_agents");
 		expect(Check(awaitAgents.outputSchema, { agents: [], interrupted: true, error: "Cannot wait" })).toBe(true);
 		expect(Check(awaitAgents.outputSchema, { agents: [], interrupted: "true" })).toBe(false);
@@ -115,7 +119,7 @@ describe("createSubagentsExtension root scope", () => {
 			const pi = makePi();
 			await createSubagentsExtension({ kind: "root" })(pi as any);
 			const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
-			expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
+			expect(sortedNames(names)).toEqual(sortedNames(ALL_TOOLS));
 		} finally {
 			if (previous === undefined) {delete process.env.PI_PARENT_LINK;}
 			else {process.env.PI_PARENT_LINK = previous;}
@@ -129,7 +133,7 @@ describe("createSubagentsExtension child scope", () => {
 		await createSubagentsExtension(childScope(["researcher", "worker"]))(pi as any);
 
 		const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
-		expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
+		expect(sortedNames(names)).toEqual(sortedNames(ALL_TOOLS));
 	});
 
 	it("does not share mutable registrations between independently constructed scopes", async () => {
@@ -143,7 +147,7 @@ describe("createSubagentsExtension child scope", () => {
 
 		const firstNames = first.registerTool.mock.calls.map(([tool]) => tool.name);
 		const secondNames = second.registerTool.mock.calls.map(([tool]) => tool.name);
-		expect([...firstNames].sort()).toEqual([...ALL_TOOLS].sort());
-		expect([...secondNames].sort()).toEqual([...ALL_TOOLS].sort());
+		expect(sortedNames(firstNames)).toEqual(sortedNames(ALL_TOOLS));
+		expect(sortedNames(secondNames)).toEqual(sortedNames(ALL_TOOLS));
 	});
 });
