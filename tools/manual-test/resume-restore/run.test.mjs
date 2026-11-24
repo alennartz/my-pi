@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeModelRef, parseDetail } from "./run.mjs";
 
-test("normalizes the status display's valid thinking suffix", () => {
+void test("normalizes the status display's valid thinking suffix", () => {
 	assert.deepEqual(normalizeModelRef("gpt-4o-mini:off"), {
 		model: "gpt-4o-mini",
 		thinkingLevel: "off",
@@ -13,14 +13,14 @@ test("normalizes the status display's valid thinking suffix", () => {
 	});
 });
 
-test("does not strip a non-thinking model suffix", () => {
+void test("does not strip a non-thinking model suffix", () => {
 	assert.deepEqual(normalizeModelRef("openai/gpt-5:exacto"), {
 		model: "openai/gpt-5:exacto",
 		thinkingLevel: undefined,
 	});
 });
 
-test("parses displayed model and usage independently", () => {
+void test("parses displayed model and usage independently", () => {
 	const detail = parseDetail([
 		"Agent: worker",
 		"State: idle",

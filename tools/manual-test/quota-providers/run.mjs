@@ -563,4 +563,4 @@ async function main() {
 	process.exit(pass ? 0 : 1);
 }
 
-main();
+void main();

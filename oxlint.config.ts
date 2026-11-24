@@ -9,8 +9,6 @@ export default defineConfig({
     {
       files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
       rules: {
-        // nkzw re-enables this for TS files via its own override.
-        'typescript/no-floating-promises': 'off',
       },
     },
     {
@@ -42,7 +40,6 @@ export default defineConfig({
     'typescript/array-type': ['error', { default: 'array' }],
     // Pi event and tool payloads are untyped per event name at the SDK boundary.
     'typescript/no-explicit-any': 'off',
-    'typescript/no-floating-promises': 'off',
     // Assertions mark invariants that construction already checks.
     'typescript/no-non-null-assertion': 'off',
     'typescript/no-unsafe-argument': 'off',

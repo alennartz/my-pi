@@ -14,7 +14,7 @@ describe('router response progress', () => {
     const { parent, worker, progress } = fixture();
     const receipt = await parent.send({ to: 'worker', message: 'verify config', expectResponse: true });
     let settled = false;
-    receipt.response!.then(() => { settled = true; });
+    void receipt.response!.then(() => { settled = true; });
 
     await worker.responseProgress('corr-1', 'Everything required');
     await worker.responseProgress('corr-1', ' is present.');

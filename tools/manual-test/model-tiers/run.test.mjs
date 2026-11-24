@@ -19,18 +19,18 @@ const prompt = [
 	"suffix",
 ].join("\n");
 
-test("scopes tier rows to the Model Tiers section", () => {
+void test("scopes tier rows to the Model Tiers section", () => {
 	const table = tierTableBlock(prompt);
 	assert.equal(tierRow(table, "cheap"), "Quick codebase scouting, file discovery, and factual documentation updates.");
 	assert.equal(guidanceTablePasses(table), true);
 });
 
-test("does not match an unrelated cheap row before the scoped table", () => {
+void test("does not match an unrelated cheap row before the scoped table", () => {
 	const table = tierTableBlock("| cheap | unrelated |\n" + prompt);
 	assert.equal(tierRow(table, "cheap"), "Quick codebase scouting, file discovery, and factual documentation updates.");
 });
 
-test("keeps child session evidence after an agent_removed record", () => {
+void test("keeps child session evidence after an agent_removed record", () => {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "model-tier-fixture-"));
 	const log = path.join(dir, "agents.jsonl");
 	fs.writeFileSync(log, [

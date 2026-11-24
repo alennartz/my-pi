@@ -575,5 +575,5 @@ async function main() {
 export { agentRecords, guidanceTablePasses, tierRow, tierTableBlock };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-	main();
+	void main();
 }
