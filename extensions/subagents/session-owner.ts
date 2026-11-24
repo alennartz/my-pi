@@ -21,6 +21,9 @@ import type { AgentStatus, PersonaCapabilities } from './agent-set.js';
 import { addCostBreakdown, costBreakdownFromUsage, AgentSessionRegistry } from './agent-session-registry.js';
 import type { AgentOperationalSnapshot, RegistryEvent } from './agent-session-registry.js';
 import { childAgentPath } from './agent-path.js';
+import { onUnlistedEvent, toolCallUpdateView, toolExecutionEndView, toolExecutionStartView, toolResultView } from './pi-events.js';
+import type { ObservedPiEvent, PiEventHandlers, PiEventMap, PiEventName, PiEventResult } from './pi-events.js';
+import { asRecord, booleanField, stringField } from './narrow.js';
 import type { AgentPath } from './agent-path.js';
 import { excludeModelOnlyTools } from "./child-tool-policy.js";
 import { getPersistencePaths } from "./persistence.js";
@@ -314,8 +317,13 @@ function renameLegacyPersonaFields(args: unknown) {
 	};
 }
 
-function terminalError(event: any): string | undefined {
-	if (event?.willRetry) {return undefined;}
+/** pi marks a retried run on the payload, outside its declared event type. */
+function retriedRun(event: PiEventMap["agent_end"]): boolean {
+	return booleanField(event, "willRetry") === true;
+}
+
+function terminalError(event: PiEventMap["agent_end"]): string | undefined {
+	if (retriedRun(event)) {return undefined;}
 	const messages = Array.isArray(event?.messages) ? event.messages : [];
 	for (let index = messages.length - 1; index >= 0; index -= 1) {
 		const message = messages[index];
@@ -612,7 +620,7 @@ class SessionTurnCoordinator {
 		this.rootRunError = undefined;
 	}
 
-	endRun(event: any): string | undefined {
+	endRun(event: PiEventMap["agent_end"]): string | undefined {
 		this.queue.clearPendingTools();
 		const error = terminalError(event);
 		if (error) {this.rootRunError = error;}
@@ -1551,7 +1559,8 @@ class SubagentSessionOwner {
 		this.recordPresentationEvents(this.semanticAdapter.acceptAwaitLiveStatuses(toolCallId, turns.currentAwaitStatuses(ids, manager)));
 	}
 
-	private completePresentationAtToolResult(event: any): void {
+	private completePresentationAtToolResult(toolResult: PiEventMap["tool_result"]): void {
+		const event = toolResultView(toolResult);
 		if (event.toolName === "await_agents" && event.isError === true) {this.refreshAwaitPresentation(event.toolCallId);}
 		const result = event.result !== undefined
 			? event.result
@@ -1594,7 +1603,8 @@ class SubagentSessionOwner {
 		}
 	}
 
-	private persistToolResult(event: any): { details: unknown } | undefined {
+	private persistToolResult(toolResult: PiEventMap["tool_result"]): { details: unknown } | undefined {
+		const event = toolResultView(toolResult);
 		const facts = this.failedToolFacts.get(event.toolCallId);
 		this.failedToolFacts.delete(event.toolCallId);
 		const content = this.persistedPresentationContent(event.toolCallId);
@@ -1616,7 +1626,7 @@ class SubagentSessionOwner {
 		return undefined;
 	}
 
-	async start(event: any, ctx: ExtensionContext): Promise<void> {
+	async start(event: PiEventMap["session_start"], ctx: ExtensionContext): Promise<void> {
 		if (this.phase.kind !== "before-start") {
 			if (this.phase.kind === "starting" || this.phase.kind === "active") {return;}
 			throw new Error("Subagents session is shutting down.");
@@ -1805,39 +1815,33 @@ class SubagentSessionOwner {
 		}
 	}
 
-	async handlePiEvent(eventName: string, event: any, ctx: ExtensionContext): Promise<any> {
-		this.recordNativeEvent(event);
-		switch (eventName) {
-			case "session_start":
-				return this.start(event, ctx);
-			case "session_shutdown":
-				return this.shutdown(ctx);
-			case "agent_start":
-				return this.handleAgentStart(ctx);
-			case "agent_end":
-				return this.handleAgentEnd(event, ctx);
-			case "agent_settled":
-				return this.handleAgentSettled(event, ctx);
-			case "message_update":
-				return this.handleMessageUpdate(event, ctx);
-			case "message_end":
-				return this.handleMessageEnd(event, ctx);
-			case "session_info_changed":
-				return this.handleSessionInfoChanged(event);
-			case "tool_call":
-				return this.handleToolCall(event, ctx);
-			case "tool_execution_start":
-				return this.handleToolExecutionStart(event, ctx);
-			case "tool_execution_end":
-				return this.handleToolExecutionEnd(event, ctx);
-			case "tool_result":
+	/** Per-name handlers; each receives the payload its name declares. */
+	private piEventHandlers(ctx: ExtensionContext): PiEventHandlers {
+		return {
+			agent_start: async () => this.handleAgentStart(ctx),
+			agent_end: async (event) => this.handleAgentEnd(event, ctx),
+			agent_settled: async (event) => this.handleAgentSettled(event, ctx),
+			before_agent_start: async (event) => this.handleBeforeAgentStart(event, ctx),
+			entry_appended: (event) => this.recordNativeEvent(event),
+			message_end: async (event) => this.handleMessageEnd(event, ctx),
+			message_update: async (event) => this.handleMessageUpdate(event, ctx),
+			session_info_changed: async (event) => this.handleSessionInfoChanged(event),
+			session_shutdown: async () => this.shutdown(ctx),
+			session_start: async (event) => this.start(event, ctx),
+			tool_call: (event) => this.handleToolCall(event, ctx),
+			tool_execution_end: async (event) => this.handleToolExecutionEnd(event, ctx),
+			tool_execution_start: async (event) => this.handleToolExecutionStart(event, ctx),
+			tool_result: (event) => {
 				this.completePresentationAtToolResult(event);
 				return this.persistToolResult(event);
-			case "before_agent_start":
-				return this.handleBeforeAgentStart(event, ctx);
-			default:
-				return undefined;
-		}
+			},
+		};
+	}
+
+	/** Run the handler registered for one event name. */
+	async handlePiEvent<K extends PiEventName>(eventName: K, event: PiEventMap[K], ctx: ExtensionContext): Promise<PiEventResult<K>> {
+		this.recordNativeEvent(event);
+		return this.piEventHandlers(ctx)[eventName](event);
 	}
 
 	private scopePath(): AgentPath {
@@ -2015,7 +2019,7 @@ class SubagentSessionOwner {
 		}
 	}
 
-	private recordNativeEvent(event: any): void {
+	private recordNativeEvent(event: ObservedPiEvent): void {
 		const sessionId = this.currentSessionId();
 		if (!sessionId || sessionId === "unknown") {return;}
 		// A custom message_end callback can run before Pi allocates its entry.
@@ -2024,19 +2028,22 @@ class SubagentSessionOwner {
 			this.publishPersistedPresentationContent(this.persistedCustomContent(event.message.details));
 		}
 		if (event?.type === "entry_appended" && event.entry?.id) {
-			const entryId = event.entry.id as string;
-			const message = event.entry.message;
-			if (message?.toolCallId && !this.nativeToolEntries.has(message.toolCallId)) {this.nativeToolEntries.set(message.toolCallId, entryId);}
-			if (message?.toolCallId) {
-				const pending = this.pendingCustomPresentation.get(message.toolCallId);
+			const entryId = String(event.entry.id);
+			const message = asRecord(event.entry.message);
+			const messageToolCallId = stringField(message, "toolCallId");
+			if (messageToolCallId && !this.nativeToolEntries.has(messageToolCallId)) {this.nativeToolEntries.set(messageToolCallId, entryId);}
+			if (messageToolCallId) {
+				const pending = this.pendingCustomPresentation.get(messageToolCallId);
 				if (pending) {
 					this.publishPersistedPresentationContent(pending, entryId);
-					this.pendingCustomPresentation.delete(message.toolCallId);
+					this.pendingCustomPresentation.delete(messageToolCallId);
 				}
 			}
-			if (message?.content && Array.isArray(message.content)) {
-				for (const part of message.content) {
-					if (part?.type === "toolCall" && typeof part.id === "string" && !this.nativeToolEntries.has(part.id)) {this.nativeToolEntries.set(part.id, entryId);}
+			const content = message?.content;
+			if (Array.isArray(content)) {
+				for (const part of content) {
+					const partId = stringField(part, "id");
+					if (stringField(part, "type") === "toolCall" && partId && !this.nativeToolEntries.has(partId)) {this.nativeToolEntries.set(partId, entryId);}
 				}
 			}
 			const customType = message?.customType ?? event.entry.customType;
@@ -2114,7 +2121,7 @@ class SubagentSessionOwner {
 		if (this.scope.kind === "root") {this.updateRootOperational({ state: "running", lastError: undefined });}
 	}
 
-	private async handleAgentEnd(event: any, ctx: ExtensionContext): Promise<void> {
+	private async handleAgentEnd(event: PiEventMap["agent_end"], ctx: ExtensionContext): Promise<void> {
 		const session = await this.waitForActiveSession();
 		const error = session.turns.endRun(event);
 		if (this.scope.kind === "root" && error) {this.updateRootOperational({ lastError: error });}
@@ -2137,7 +2144,7 @@ class SubagentSessionOwner {
 		}
 	}
 
-	private async handleAgentSettled(event: any, ctx: ExtensionContext): Promise<void> {
+	private async handleAgentSettled(event: PiEventMap["agent_settled"], ctx: ExtensionContext): Promise<void> {
 		const session = await this.waitForActiveSession();
 		this.completeOutstandingPresentationCalls();
 		this.failedToolFacts.clear();
@@ -2170,23 +2177,21 @@ class SubagentSessionOwner {
 		}
 	}
 
-	private async handleMessageUpdate(event: any, _ctx: ExtensionContext): Promise<void> {
-		const update = event?.assistantMessageEvent;
-		if (!update || (update.type !== "toolcall_start" && update.type !== "toolcall_delta" && update.type !== "toolcall_end")) {return;}
-		const content = update.partial?.content?.[update.contentIndex] ?? event?.message?.content?.[update.contentIndex];
-		const toolCall = update.toolCall ?? content;
-		const toolCallId = typeof toolCall?.id === "string" ? toolCall.id : undefined;
-		const toolName = typeof toolCall?.name === "string" ? toolCall.name : undefined;
+	private async handleMessageUpdate(event: PiEventMap["message_update"], _ctx: ExtensionContext): Promise<void> {
+		const update = toolCallUpdateView(event);
+		if (!update) {return;}
+		const { contentIndex, toolCallId, toolName } = update;
 		if (!toolCallId || !toolName) {return;}
 		this.activePresentationCalls.add(toolCallId);
-		this.toolCallIndexes.set(toolCallId, update.contentIndex);
-		const serializedArguments = typeof toolCall.arguments === "string"
-			? toolCall.arguments
-			: toolCall.arguments && typeof toolCall.arguments === "object"
-				? JSON.stringify(toolCall.arguments)
+		this.toolCallIndexes.set(toolCallId, contentIndex);
+		const serializedArguments = typeof update.args === "string"
+			? update.args
+			: update.args && typeof update.args === "object"
+				? JSON.stringify(update.args)
 				: "";
-		const delta = update.type === "toolcall_delta"
-			? (typeof update.delta === "string" ? update.delta : "")
+		const updateType = stringField(event.assistantMessageEvent, "type");
+		const delta = updateType === "toolcall_delta"
+			? (stringField(event.assistantMessageEvent, "delta") ?? "")
 			: serializedArguments;
 		let targetPath: AgentPath | undefined;
 		if (toolName === "send") {
@@ -2203,11 +2208,11 @@ class SubagentSessionOwner {
 		}
 		const adapterEvent: PiToolCallDelta = {
 			toolCallId,
-			contentIndex: update.contentIndex,
+			contentIndex,
 			toolName,
 			path: this.scopePath(),
 			...(targetPath !== undefined ? { targetPath } : undefined),
-			phase: update.type === "toolcall_start" ? "start" : update.type === "toolcall_end" ? "end" : "delta",
+			phase: updateType === "toolcall_start" ? "start" : updateType === "toolcall_end" ? "end" : "delta",
 			delta,
 		};
 		const events = this.semanticAdapter.acceptToolCallDelta(adapterEvent);
@@ -2237,7 +2242,7 @@ class SubagentSessionOwner {
 		}
 	}
 
-	private async handleMessageEnd(event: any, ctx: ExtensionContext): Promise<void> {
+	private async handleMessageEnd(event: PiEventMap["message_end"], ctx: ExtensionContext): Promise<void> {
 		if (this.scope.kind !== "root" || event?.message?.role !== "assistant") {return;}
 		const { registry } = await this.waitForActiveSession();
 		const message = event.message;
@@ -2279,23 +2284,23 @@ class SubagentSessionOwner {
 		});
 	}
 
-	private async handleSessionInfoChanged(event: any): Promise<void> {
+	private async handleSessionInfoChanged(event: PiEventMap["session_info_changed"]): Promise<void> {
 		(await this.waitForActiveSession()).presentation.setSessionName(event.name);
 	}
 
-	private handleToolCall(event: any, ctx: ExtensionContext): { block: true; reason: string } | undefined {
+	private handleToolCall(event: PiEventMap["tool_call"], ctx: ExtensionContext): { block: true; reason: string } | undefined {
 		if (ctx.hasUI) {return undefined;}
 		const tool = this.pi.getAllTools().find((candidate) => candidate.name === event?.toolName);
 		if (tool?.exposure !== "model-only") {return undefined;}
 		return { block: true, reason: "Model-only tools are unavailable in sessions without UI." };
 	}
 
-	private async handleToolExecutionStart(event: any, ctx: ExtensionContext): Promise<void> {
+	private async handleToolExecutionStart(event: PiEventMap["tool_execution_start"], ctx: ExtensionContext): Promise<void> {
 		const session = await this.waitForActiveSession();
 		session.turns.trackToolStart(event.toolCallId);
-		const raw = event;
-		const toolName = raw.toolName ?? raw.tool?.name;
-		const argumentsValue = raw.args ?? raw.input;
+		const view = toolExecutionStartView(event);
+		const toolName = view.toolName;
+		const argumentsValue = view.args;
 		if (typeof toolName === "string" && argumentsValue && typeof argumentsValue === "object" && !Array.isArray(argumentsValue)) {
 			this.activePresentationCalls.add(event.toolCallId);
 			this.recordPresentationEvents(this.semanticAdapter.acceptToolExecutionStart({
@@ -2311,7 +2316,7 @@ class SubagentSessionOwner {
 		const current = required(session.registry.getSnapshot([]), "root snapshot").operational;
 		this.updateRootOperational({
 			lastActivity: toolName
-				? `${toolName}(${summarizeArgs(raw.args ?? raw.input ?? {})})`.replaceAll(/[\r\n]+/g, " ")
+				? `${toolName}(${summarizeArgs(asRecord(view.args) ?? {})})`.replaceAll(/[\r\n]+/g, " ")
 				: current.lastActivity,
 			hasSubgroup: toolName === "subagent" || toolName === "fork"
 				? true
@@ -2321,17 +2326,18 @@ class SubagentSessionOwner {
 		});
 	}
 
-	private async handleToolExecutionEnd(event: any, ctx: ExtensionContext): Promise<void> {
+	private async handleToolExecutionEnd(event: PiEventMap["tool_execution_end"], ctx: ExtensionContext): Promise<void> {
 		const session = await this.waitForActiveSession();
 		const hadToolResult = this.completedPresentationCalls.has(event.toolCallId);
 		if (!hadToolResult) {
+			const view = toolExecutionEndView(event);
 			const events = this.semanticAdapter.acceptToolExecution({
-				toolCallId: event.toolCallId,
-				contentIndex: typeof event.contentIndex === "number" ? event.contentIndex : (this.toolCallIndexes.get(event.toolCallId) ?? 0),
-				toolName: event.toolName,
+				toolCallId: view.toolCallId,
+				contentIndex: view.contentIndex ?? (this.toolCallIndexes.get(view.toolCallId) ?? 0),
+				toolName: view.toolName,
 				path: this.scopePath(),
-				targetPath: this.semanticAdapterTarget(event.toolCallId),
-				result: event.result,
+				targetPath: this.semanticAdapterTarget(view.toolCallId),
+				result: view.result,
 				isError: event.isError === true,
 			} satisfies PiToolExecution);
 			this.recordPresentationEvents(events);
@@ -2352,7 +2358,7 @@ class SubagentSessionOwner {
 		session.turns.trackToolEnd(event.toolCallId);
 	}
 
-	private async handleBeforeAgentStart(event: any, ctx: ExtensionContext): Promise<undefined> {
+	private async handleBeforeAgentStart(event: PiEventMap["before_agent_start"], ctx: ExtensionContext): Promise<undefined> {
 		const session = await this.waitForActiveSession();
 		if (!ctx.hasUI) {
 			const activeTools = this.pi.getActiveTools();
@@ -2407,29 +2413,25 @@ class SubagentSessionOwner {
 	}
 
 	private registerEventHandlers(): void {
-		if (typeof (this.pi as any).on !== "function") {return;}
-		const events = [
-			// The host emits this native persistence event for direct session
-			// subscribers. Keep the handler registered when the host exposes it so
-			// provenance can use the appended entry rather than the prior leaf.
-			"entry_appended",
-			"agent_start",
-			"agent_end",
-			"agent_settled",
-			"message_end",
-			"session_info_changed",
-			"tool_call",
-			"message_update",
-			"tool_execution_start",
-			"tool_execution_end",
-			"tool_result",
-			"session_start",
-			"before_agent_start",
-			"session_shutdown",
-		] as const;
-		for (const eventName of events) {
-			this.pi.on(eventName as any, async (event: any, ctx: ExtensionContext) => this.handlePiEvent(eventName, event, ctx));
-		}
+		const registrar = this.pi;
+		if (typeof registrar.on !== "function") {return;}
+		registrar.on("agent_start", async (event, ctx) => this.handlePiEvent("agent_start", event, ctx));
+		registrar.on("agent_end", async (event, ctx) => this.handlePiEvent("agent_end", event, ctx));
+		registrar.on("agent_settled", async (event, ctx) => this.handlePiEvent("agent_settled", event, ctx));
+		registrar.on("message_end", async (event, ctx) => this.handlePiEvent("message_end", event, ctx));
+		registrar.on("message_update", async (event, ctx) => this.handlePiEvent("message_update", event, ctx));
+		registrar.on("session_info_changed", async (event, ctx) => this.handlePiEvent("session_info_changed", event, ctx));
+		registrar.on("tool_call", async (event, ctx) => this.handlePiEvent("tool_call", event, ctx));
+		registrar.on("tool_execution_start", async (event, ctx) => this.handlePiEvent("tool_execution_start", event, ctx));
+		registrar.on("tool_execution_end", async (event, ctx) => this.handlePiEvent("tool_execution_end", event, ctx));
+		registrar.on("tool_result", async (event, ctx) => this.handlePiEvent("tool_result", event, ctx));
+		registrar.on("session_start", async (event, ctx) => this.handlePiEvent("session_start", event, ctx));
+		registrar.on("before_agent_start", async (event, ctx) => this.handlePiEvent("before_agent_start", event, ctx));
+		registrar.on("session_shutdown", async (event, ctx) => this.handlePiEvent("session_shutdown", event, ctx));
+		// The host emits this native persistence event for direct session
+		// subscribers. Keep the handler registered when the host exposes it so
+		// provenance can use the appended entry rather than the prior leaf.
+		onUnlistedEvent(registrar, "entry_appended", async (event, ctx) => this.handlePiEvent("entry_appended", event, ctx));
 	}
 
 	private registerCommand(): void {
