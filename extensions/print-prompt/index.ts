@@ -3,6 +3,7 @@ import { Box, Text } from "@earendil-works/pi-tui";
 import { planRunBinding, personaBindingMode, STACKED_PERSONA_SECTION } from "../persona-workspaces/index.js";
 import { loadWorkspacePersona } from "../persona-workspaces/declaration.js";
 import { getSubagentPersona } from "../subagents/child-session-marker.js";
+import type { SessionManagerRef } from "../subagents/child-session-marker.js";
 
 export default function (pi: ExtensionAPI) {
 	// `before_agent_start` handlers finish before `agent_start`, so this is the
@@ -53,7 +54,7 @@ export default function (pi: ExtensionAPI) {
  */
 function projectPersonaPreamble(
 	base: string,
-	input: { cwd: string; sessionManager: object; customPrompt: string | undefined },
+	input: { cwd: string; sessionManager: SessionManagerRef; customPrompt: string | undefined },
 ): string {
 	const plan = planRunBinding({
 		workspace: loadWorkspacePersona(input.cwd),

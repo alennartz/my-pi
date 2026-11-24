@@ -14,6 +14,7 @@ import type {
 	ExtensionContext,
 	ModelRegistry,
 	ProviderConfig,
+	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model, ModelsRefreshOptions, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { loadQuotaAttachments } from "./lib/attachments.js";
@@ -199,8 +200,10 @@ type AttachedProvider = {
 	providerConfig?: ProviderConfig;
 };
 
-const sessionIdOf = (manager: object): string | undefined =>
-	(manager as { getSessionId?: () => string }).getSessionId?.call(manager);
+/** The session identity this bridge reads. */
+type SessionIdentitySource = Pick<SessionManager, "getCwd" | "getSessionId">;
+
+const sessionIdOf = (manager: SessionIdentitySource): string | undefined => manager.getSessionId();
 
 type ProviderStateStores = WeakMap<object, Map<string, AttachedProvider>>;
 type RefreshHooks = WeakMap<object, { afterRefresh: () => void; generation: number }>;
@@ -284,7 +287,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	let fallbackSessionId: string | undefined;
 	const boundStores = new Map<string, SessionTreeStore>();
 
-	function bindTreeStore(ctx: { sessionManager: object }, preferFallback: boolean): void {
+	function bindTreeStore(ctx: { sessionManager: SessionIdentitySource }, preferFallback: boolean): void {
 		const store = getOrCreateSessionTreeStore(ctx.sessionManager);
 		treeStore = store;
 		const sessionId = sessionIdOf(ctx.sessionManager);

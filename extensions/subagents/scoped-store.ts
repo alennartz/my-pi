@@ -8,6 +8,10 @@
  */
 
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
+import type { SessionManager } from "@earendil-works/pi-coding-agent";
+
+/** A session manager identity, usable as a registry key. */
+export type SessionManagerRef = Pick<SessionManager, "getCwd">;
 
 class InMemorySessionTreeStore implements SessionTreeStore {
 	private readonly values = new Map<string, unknown>();
@@ -51,12 +55,12 @@ export function createSessionTreeStore(): SessionTreeStore {
 }
 
 /** Retrieve the store already associated with a session manager. */
-export function getSessionTreeStore(sessionManager: object): SessionTreeStore | undefined {
+export function getSessionTreeStore(sessionManager: SessionManagerRef): SessionTreeStore | undefined {
 	return getRegistry().get(sessionManager);
 }
 
 /** Retrieve or lazily create the store for a session manager. */
-export function getOrCreateSessionTreeStore(sessionManager: object): SessionTreeStore {
+export function getOrCreateSessionTreeStore(sessionManager: SessionManagerRef): SessionTreeStore {
 	const registry = getRegistry();
 	const existing = registry.get(sessionManager);
 	if (existing) {return existing;}
@@ -66,7 +70,7 @@ export function getOrCreateSessionTreeStore(sessionManager: object): SessionTree
 }
 
 /** Associate a child session manager with its parent's tree store. */
-export function registerSessionTreeStore(sessionManager: object, store: SessionTreeStore): void {
+export function registerSessionTreeStore(sessionManager: SessionManagerRef, store: SessionTreeStore): void {
 	getRegistry().set(sessionManager, store);
 }
 
@@ -110,7 +114,7 @@ export function unregisterSessionIdTreeStore(sessionId: string, store?: SessionT
 }
 
 /** Remove one session-manager association without destroying the shared store. */
-export function unregisterSessionTreeStore(sessionManager: object, store?: SessionTreeStore): void {
+export function unregisterSessionTreeStore(sessionManager: SessionManagerRef, store?: SessionTreeStore): void {
 	const registry = getRegistry();
 	if (store !== undefined && registry.get(sessionManager) !== store) {return;}
 	registry.delete(sessionManager);

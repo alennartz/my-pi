@@ -30,7 +30,6 @@ export default defineConfig({
     // Double assertions escape the unsafe-assertion rule for doubles.
     'quality/no-chained-type-assertions': 'off',
     // Options objects name each argument at every call site.
-    'quality/no-object-parameters': 'off',
     // Parsed payloads travel as dictionaries until a schema narrows them.
     'quality/no-unsafe-dictionary-type': 'off',
     'typescript/no-unsafe-assignment': 'off',

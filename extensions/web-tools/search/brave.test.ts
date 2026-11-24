@@ -17,7 +17,7 @@ const FIXTURE = {
 	},
 };
 
-function okBody(extra: object = {}) {
+function okBody(extra: Record<string, unknown> = {}) {
 	return new Response(JSON.stringify({ ...FIXTURE, ...extra }), {
 		status: 200,
 		headers: { "content-type": "application/json" },

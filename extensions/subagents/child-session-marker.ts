@@ -1,3 +1,7 @@
+import type { SessionManager } from "@earendil-works/pi-coding-agent";
+
+/** A session manager identity, usable as a registry key. */
+export type SessionManagerRef = Pick<SessionManager, "getCwd">;
 /**
  * Marker for subagent child session managers.
  *
@@ -44,7 +48,7 @@ export type PersonaPayload = { name: string; body: string };
  * Mark a session manager as hosting a subagent child session, optionally
  * recording the spawn-declared persona payload.
  */
-export function markSubagentChildSession(sessionManager: object, payload?: PersonaPayload): void {
+export function markSubagentChildSession(sessionManager: SessionManagerRef, payload?: PersonaPayload): void {
 	getRegistry().set(sessionManager, payload);
 }
 
@@ -53,11 +57,11 @@ export function markSubagentChildSession(sessionManager: object, payload?: Perso
  * if any. Undefined outside subagent children and for children spawned
  * without a named agent definition.
  */
-export function getSubagentPersona(sessionManager: object): PersonaPayload | undefined {
+export function getSubagentPersona(sessionManager: SessionManagerRef): PersonaPayload | undefined {
 	return getRegistry().get(sessionManager);
 }
 
 /** Whether this session manager hosts a subagent child session. */
-export function isSubagentChildSession(sessionManager: object): boolean {
+export function isSubagentChildSession(sessionManager: SessionManagerRef): boolean {
 	return getRegistry().has(sessionManager);
 }

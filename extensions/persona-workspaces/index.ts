@@ -54,8 +54,16 @@ import type {
 	BeforeAgentStartEventResult,
 	ExtensionAPI,
 	ExtensionContext,
+	SessionManager,
 	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
+
+/** The session-manager surface the persona projection reads. */
+type SessionManagerSurface = Pick<SessionManager, "getCwd"> & {
+	getHeader?: () => unknown;
+	getBranch?: () => unknown[];
+	getEntries?: () => unknown[];
+};
 import { Box, Text } from "@earendil-works/pi-tui";
 import { loadWorkspacePersona } from "./declaration.ts";
 import type { PersonaDeclaration } from "./declaration.ts";
@@ -364,7 +372,7 @@ function noticeMessage(notice: PersonaNotice): BeforeAgentStartEventResult["mess
  * the persona in full but never announce; a `fork` announces only when the
  * persona is new to its lineage (see `planNotice`).
  */
-function isContinuation(reason: SessionReason, manager: object): boolean {
+function isContinuation(reason: SessionReason, manager: SessionManagerSurface): boolean {
 	if (CONTINUATION_REASONS.has(reason)) {return true;}
 	if (reason !== "startup") {return false;} // `new`/`fork`: the transcript decides
 	const header = sessionHeader(manager);
@@ -384,16 +392,15 @@ function hasConversation(entries: readonly unknown[]): boolean {
 }
 
 /** The session header a manager exposes (real pi sessions), or undefined. */
-function sessionHeader(manager: object): { parentSession?: unknown } | undefined {
-	const m = manager as { getHeader?: () => unknown };
-	const header = typeof m.getHeader === "function" ? m.getHeader() : undefined;
+function sessionHeader(manager: SessionManagerSurface): { parentSession?: unknown } | undefined {
+	const header = typeof manager.getHeader === "function" ? manager.getHeader() : undefined;
 	return (header as { parentSession?: unknown } | null | undefined) ?? undefined;
 }
 
 /** Record the latest session-start state for the active session manager. */
 function recordSessionStart(
 	state: SessionStartState,
-	manager: object,
+	manager: SessionManagerSurface,
 	reason: SessionReason,
 	continuation: boolean,
 ): void {
@@ -408,7 +415,7 @@ function recordSessionStart(
  * pi always dispatches `session_start` before the first run, so an unrecorded
  * reason means a fresh session instance, not a continuation).
  */
-function recordedContinuation(state: SessionStartState, manager: object): boolean {
+function recordedContinuation(state: SessionStartState, manager: SessionManagerSurface): boolean {
 	return state.manager === manager ? state.continuation : false;
 }
 
@@ -456,12 +463,10 @@ function personaNoticeCondition(entry: unknown): NoticeCondition | "unknown" | u
  * The transcript surface for notice deduplication: the current branch when the
  * session manager exposes one (real pi sessions), else all entries.
  */
-function transcriptEntries(sessionManager: object): readonly unknown[] {
-	const manager = sessionManager as {
-		getBranch?: () => unknown[];
-		getEntries?: () => unknown[];
-	};
-	const entries = typeof manager.getBranch === "function" ? manager.getBranch() : manager.getEntries?.();
+function transcriptEntries(sessionManager: SessionManagerSurface): readonly unknown[] {
+	const entries = typeof sessionManager.getBranch === "function"
+		? sessionManager.getBranch()
+		: typeof sessionManager.getEntries === "function" ? sessionManager.getEntries() : undefined;
 	return Array.isArray(entries) ? entries : [];
 }
 
