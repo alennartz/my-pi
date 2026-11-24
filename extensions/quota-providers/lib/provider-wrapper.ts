@@ -195,7 +195,7 @@ export function wrapProviderWithQuota(
 			if (property === QUOTA_WRAPPER) {return wrapper[QUOTA_WRAPPER];}
 			if (property === "streamSimple") {return guardedStreamSimple;}
 
-			const value = Reflect.get(provider, property, provider);
+			const value = (provider as Record<PropertyKey, unknown>)[property];
 			return typeof value === "function" ? value.bind(provider) : value;
 		},
 	}) as Provider;
