@@ -1022,6 +1022,8 @@ export class SubagentPresentation {
 		eventSource?: RegistryEventSource,
 	): void {
 		if (this.registryUnsubscribe) {return;}
+		// The receiver is supplied at call time below.
+		// oxlint-disable-next-line typescript/unbound-method
 		const subscribe = eventSource?.subscribe ?? (registry as any).subscribe;
 		if (typeof subscribe !== "function") {return;}
 		const forward = (event: RegistryEvent): void => {

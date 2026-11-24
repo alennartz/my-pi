@@ -135,6 +135,8 @@ export function installQuotaStreamGuard(
 		return true;
 	}
 
+	// guardedStream supplies the receiver when it calls this method.
+	// oxlint-disable-next-line typescript/unbound-method
 	const originalStreamSimple = provider.streamSimple;
 	const state: WrapperState = { kind: "stream", originalStreamSimple, evaluate, chain };
 	const guardedStreamSimple = guardedStream(state, originalStreamSimple, provider);
@@ -177,6 +179,8 @@ export function wrapProviderWithQuota(
 		return provider;
 	}
 
+	// guardedStream supplies the receiver when it calls this method.
+	// oxlint-disable-next-line typescript/unbound-method
 	const streamSimple = provider.streamSimple;
 	const chain: QuotaGuardChain = { depth: 0 };
 	const state: WrapperState = { kind: "provider", original: provider, evaluate, chain };

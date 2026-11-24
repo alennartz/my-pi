@@ -285,10 +285,10 @@ export class SubagentManager {
 	 */
 	getDisplayStatuses(): AgentStatus[] {
 		const owner = this.opts.ownerPath;
-		const listDescendants = this.opts.registry.listDescendants;
-		const snapshots = typeof listDescendants === "function"
-			? listDescendants.call(this.opts.registry, owner)
-			: this.opts.registry.listChildren(owner);
+		const registry = this.opts.registry;
+		const snapshots = typeof registry.listDescendants === "function"
+			? registry.listDescendants(owner)
+			: registry.listChildren(owner);
 		return snapshots.map((snapshot) => ({
 			...projectStatus(snapshot),
 			id: qualifiedAgentId(owner, snapshot.path) || snapshot.localId || "",

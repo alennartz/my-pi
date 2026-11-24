@@ -352,10 +352,10 @@ export class AgentSessionRegistry {
 				}) as AgentNodeSnapshot;
 				this.stagedSnapshots.set(pathKey, structuralSnapshot);
 				const decoratedHooks: ChildSessionHooks = {
-					onEvent: request.hooks.onEvent,
-					onDiagnostic: request.hooks.onDiagnostic,
-					getCapabilities: request.hooks.getCapabilities,
-					onShutdownRequested: request.hooks.onShutdownRequested,
+					onEvent: request.hooks.onEvent.bind(request.hooks),
+					onDiagnostic: request.hooks.onDiagnostic?.bind(request.hooks),
+					getCapabilities: request.hooks.getCapabilities?.bind(request.hooks),
+					onShutdownRequested: request.hooks.onShutdownRequested.bind(request.hooks),
 					onRuntimeReplaced: (replacement) => {
 						this.applyRuntimeReplacement(pathKey, request, replacement);
 					},

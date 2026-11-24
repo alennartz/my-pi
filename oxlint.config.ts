@@ -43,7 +43,6 @@ export default defineConfig({
     'typescript/no-unsafe-member-access': 'off',
     'typescript/no-unsafe-return': 'off',
     'typescript/no-unsafe-type-assertion': 'off',
-    'typescript/unbound-method': 'off',
     // Helpers stay beside their single call site.
     'unicorn/consistent-function-scoping': 'off',
     'unicorn/prefer-single-call': 'off',
