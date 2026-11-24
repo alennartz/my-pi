@@ -2027,7 +2027,6 @@ describe("root orchestration integration", () => {
 		await startSession(handlers, ctx);
 
 		await execute(tools, "fork", { id: "clone", task: "continue the source work" }, ctx);
-		const fork = managed.created[0];
 		const status = await execute(tools, "check_status", { agent: "clone" }, ctx);
 		expect(status.content[0].text).toMatch(/State: running/i);
 	});

@@ -19,7 +19,6 @@ import type {
 	SubagentAwaitStatus,
 	SubagentDeltaData,
 	SubagentPresentationManifest,
-	SubagentPresentationReplay,
 	SubagentProviderEvent,
 	SubagentProviderSnapshot,
 	SubagentStartData,
@@ -647,25 +646,6 @@ function nodeFromLifecycle(
 	});
 }
 
-function lifecycleData(record: SubagentLifecycleRecord): SubagentLifecycleData {
-	const data = isRecord(record.data) ? { ...record.data } : {};
-	delete data.source;
-	delete data.snapshot;
-	delete data.status;
-	const operation = record.kind === "resurrect"
-		? "resurrect"
-		: record.kind === "teardown"
-			? "teardown"
-			: record.kind === "interrupt"
-				? "interrupt"
-				: undefined;
-	return {
-		...data,
-		...(operation !== undefined ? { operation } : {}),
-		path: copyPath(record.path),
-		...(record.sessionId !== undefined ? { sessionId: record.sessionId } : {}),
-	};
-}
 
 function eventCursor(epoch: string, sequence: number): FeedCursor {
 	return Object.freeze({ epoch, sequence });
@@ -1111,7 +1091,6 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		}
 
 		if (event.type === "runtime_replaced") {
-			const prior = liveNodes.get(key);
 			const priorIdentity = liveIdentity.get(key)
 				?? nextIncarnation(event.node.path, asString(event.node.incarnation), liveIdentity, retiredIncarnations);
 			const next = projectNode(event.node, priorIdentity);

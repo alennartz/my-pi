@@ -190,8 +190,6 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 	let currentUrl = url;
 	let attempts = 0;
 	const cookieJar: CookieJar = new Map();
-	let lastRetryable: { code: "timeout" | "network" | "retry-exhausted"; message: string } | null =
-		null;
 
 	for (let hop = 0; hop <= maxRedirects; hop++) {
 		// Destination was validated when the redirect was followed (location branch);
@@ -231,7 +229,6 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 				if (opts.signal?.aborted) {throw err;} // caller cancellation propagates
 				const code = timedOut.value ? "timeout" : "network";
 				const message = `${code} on ${currentUrl}: ${err instanceof Error ? err.message : String(err)}`;
-				lastRetryable = { code, message };
 				if (attempt < maxAttempts) {
 					await sleep(backoffDelayMs(attempt));
 					continue;
@@ -303,7 +300,6 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 			}
 
 			const message = `HTTP ${response.status} from ${currentUrl}`;
-			lastRetryable = { code: "retry-exhausted", message };
 			if (attempt < maxAttempts) {
 				const retryAfter = parseRetryAfterMs(
 					response.headers?.get?.("retry-after") ?? null,

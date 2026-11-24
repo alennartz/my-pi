@@ -31,7 +31,7 @@ import { createStopSequenceManager } from './stop-sequences.js';
 import type { StopSequenceManager } from './stop-sequences.js';
 import { NotificationQueue } from "./notification-queue.js";
 import { createAwaitGate } from './await-gating.js';
-import type { AwaitChildStatus, AwaitGate, AwaitMessage, AwaitOutcome } from './await-gating.js';
+import type { AwaitChildStatus, AwaitGate, AwaitOutcome } from './await-gating.js';
 import { modelDisplayName } from "./status-display.js";
 import { activityPreview } from "./format.js";
 import { formatOverrideNote } from "./tool-result.js";

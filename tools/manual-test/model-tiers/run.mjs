@@ -213,22 +213,6 @@ function agentRecords(logFile) {
 	return [...records.values()];
 }
 
-function liveAgents(logFile) {
-	if (!fs.existsSync(logFile)) {return [];}
-	const records = new Map(agentRecords(logFile).map((entry) => [entry.id, entry]));
-	for (const raw of fs.readFileSync(logFile, "utf8").split("\n")) {
-		const line = raw.trim();
-		if (!line) {continue;}
-		let entry;
-		try {
-			entry = JSON.parse(line);
-		} catch {
-			continue;
-		}
-		if (entry.type === "agent_removed" && typeof entry.id === "string") {records.delete(entry.id);}
-	}
-	return [...records.values()];
-}
 
 // Read the model id recorded in a child session file (first assistant msg or
 // model_change entry).

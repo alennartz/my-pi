@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isValidCwd, resolvePersonaSkillPaths } from './agents.js';
-import type { AgentConfig, AgentSpec, ForkAgentSpec } from './agents.js';
+import type { AgentConfig, AgentSpec } from './agents.js';
 import { childAgentPath, qualifiedAgentId } from './agent-path.js';
 import type { AgentPath } from './agent-path.js';
 import { addCostBreakdown, costBreakdownFromUsage, subtractCostBreakdown, isRegisteredAgentNode } from './agent-session-registry.js';

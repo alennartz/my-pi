@@ -22,7 +22,6 @@ export default defineConfig({
     'no-console': 'off',
     'no-empty': 'off',
     'no-promise-executor-return': 'off',
-    'no-unused-vars': 'off',
     'no-useless-assignment': 'off',
     'prefer-object-has-own': 'off',
     'preserve-caught-error': 'off',

@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname } from "node:path";
 import { CURRENT_SESSION_VERSION, SessionManager } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionCommandContext, SessionHeader } from '@earendil-works/pi-coding-agent';
 import type { AutocompleteItem } from "@earendil-works/pi-tui";

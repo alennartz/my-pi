@@ -11,7 +11,6 @@ import {
 import type { UsageSnapshot, LedgerEntry, QuotaPolicy } from "./types.js";
 
 const DAY_MS = 86_400_000;
-const HOUR_MS = 3_600_000;
 
 /** A 30-day window, $100 quota, starting at epoch 0. */
 function makeSnapshot(overrides: Partial<UsageSnapshot> = {}): UsageSnapshot {

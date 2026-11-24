@@ -164,22 +164,6 @@ function agentRecords(logFile) {
 	return [...records.values()];
 }
 
-function liveAgents(logFile) {
-	if (!fs.existsSync(logFile)) {return [];}
-	const records = new Map(agentRecords(logFile).map((entry) => [entry.id, entry]));
-	for (const raw of fs.readFileSync(logFile, "utf8").split("\n")) {
-		const line = raw.trim();
-		if (!line) {continue;}
-		let entry;
-		try {
-			entry = JSON.parse(line);
-		} catch {
-			continue;
-		}
-		if (entry.type === "agent_removed" && typeof entry.id === "string") {records.delete(entry.id);}
-	}
-	return [...records.values()];
-}
 
 // Independent re-parse of a child session file (the oracle the restore path
 // should agree with). Mirrors parseSessionSnapshot's contract.
@@ -405,7 +389,6 @@ function parseDetail(text) {
 		const m = text.match(re);
 		return m ? m[1].trim() : undefined;
 	};
-	const usage = get(/Usage:\s*↑(\d+)\s*↓(\d+)\s*\$([0-9.]+)\s*\((\d+)\s*turns?\)/);
 	const um = text.match(/Usage:\s*↑(\d+)\s*↓(\d+)\s*\$([0-9.]+)\s*\((\d+)\s*turns?\)/);
 	const displayedModel = get(/Model:\s*(.+)/);
 	const normalized = normalizeModelRef(displayedModel);

@@ -14,7 +14,6 @@ import {
   normalizeAwaitStatuses,
   normalizeFinalData,
   normalizeToolParameters,
-  presentationPath,
   publicToolResult,
 } from './presentation-data.js';
 
