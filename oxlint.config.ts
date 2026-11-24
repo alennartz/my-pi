@@ -57,6 +57,7 @@ export default defineConfig({
     'unicorn/prefer-import-meta-properties': 'off',
     'unicorn/prefer-single-call': 'off',
     'unicorn/prefer-string-raw': 'off',
+    // Harness scripts export helpers and run main under an entry guard.
     'unicorn/prefer-top-level-await': 'off',
   },
 });
