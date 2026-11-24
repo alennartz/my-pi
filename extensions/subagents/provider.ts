@@ -881,7 +881,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function refreshInitialNodes(): void {
-		let nodes: readonly AgentNodeSnapshot[] = [];
+		let nodes: readonly AgentNodeSnapshot[];
 		try {
 			nodes = options.registry.listDescendants([]);
 		} catch {
@@ -1513,7 +1513,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const identity = `${input.session.sessionId}:${pathKey(input.path)}`;
 		const alreadyHydrated = hydratedSessions.has(identity);
 		const manager = input.session.sessionManager;
-		let entries: readonly unknown[] = [];
+		let entries: readonly unknown[];
 		try {
 			entries = manager.getBranch?.() ?? manager.getEntries?.() ?? [];
 		} catch {
@@ -1588,7 +1588,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		lifecycleReader = createSubagentLifecycleReader(getPersistencePaths(options.parentSessionFile));
 	}
 	if (lifecycleReader) {
-		let records: readonly SubagentLifecycleRecord[] = [];
+		let records: readonly SubagentLifecycleRecord[];
 		try {
 			records = lifecycleReader.read();
 		} catch {

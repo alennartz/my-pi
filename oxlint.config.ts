@@ -21,7 +21,6 @@ export default defineConfig({
     'no-console': 'off',
     'no-empty': ['error', { allowEmptyCatch: true }],
     'no-promise-executor-return': 'off',
-    'no-useless-assignment': 'off',
     'preserve-caught-error': 'off',
     'quality/no-array-filter-map': 'off',
     'quality/no-chained-type-assertions': 'off',
