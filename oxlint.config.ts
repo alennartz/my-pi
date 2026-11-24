@@ -30,6 +30,7 @@ export default defineConfig({
     'preserve-caught-error': 'off',
     'quality/no-array-filter-map': 'off',
     'quality/no-chained-type-assertions': 'off',
+    // Conditional spreads mark optional properties under exactOptionalPropertyTypes.
     'quality/no-conditional-empty-object-spread': 'off',
     'quality/no-known-value-widening': 'off',
     'quality/no-object-parameters': 'off',
