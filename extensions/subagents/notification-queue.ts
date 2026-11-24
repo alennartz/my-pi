@@ -59,10 +59,8 @@ export interface NotificationQueueConfig<Semantic = unknown> {
 	steerDelivery: boolean;
 }
 
-interface QueueEntry<Semantic> extends NotificationQueueEntry<Semantic> {}
-
 export class NotificationQueue<Semantic = unknown> {
-	private entries: QueueEntry<Semantic>[] = [];
+	private entries: NotificationQueueEntry<Semantic>[] = [];
 	private parentBusy = false;
 	private pendingToolCalls = new Set<string>();
 	private _isWaiting = false;
