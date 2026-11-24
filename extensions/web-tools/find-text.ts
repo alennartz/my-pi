@@ -62,7 +62,7 @@ export function findInText(
 	const contextChars = opts.contextChars ?? DEFAULT_CONTEXT_CHARS;
 	const maxOutputChars = opts.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS;
 
-	const normalized = [...new Set(queries.map((q) => q.trim()).filter(Boolean))];
+	const normalized = [...new Set(queries.values().map((q) => q.trim()).filter(Boolean))];
 	if (normalized.length === 0 || markdown.length === 0) {
 		return { text: "No search terms provided.", matchCount: 0, perQuery: [] };
 	}
@@ -102,11 +102,13 @@ export function findInText(
 	for (const passage of passages) {
 		// Which queries have matches inside this passage?
 		const counts = perQuery
+			.values()
 			.map(({ query, matches }) => ({
 				query,
 				count: matches.filter((m) => m.start >= passage.start && m.end <= passage.end).length,
 			}))
-			.filter((c) => c.count > 0);
+			.filter((c) => c.count > 0)
+			.toArray();
 		if (counts.length === 0) {continue;}
 
 		const prefix = passage.start > 0 ? "…" : "";

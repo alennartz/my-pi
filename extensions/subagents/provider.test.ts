@@ -126,6 +126,7 @@ function registryFixture(workerSessionFile?: string): {
     ),
     listDescendants: vi.fn((parent: AgentPath) =>
       nodes
+        .values()
         .filter(
           (item) =>
             item.snapshot.path.length > parent.length &&

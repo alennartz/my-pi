@@ -114,12 +114,13 @@ function cookieHeaderFor(url: string, jar: CookieJar): string | undefined {
 	const cookies = jar.get(originKey(url));
 	if (!cookies) {return undefined;}
 	const pathname = new URL(url).pathname || "/";
-	const matching = [...cookies.entries()]
+	const matching = cookies.entries()
 		.filter(
 			([, cookie]) =>
 				pathname === cookie.path || pathname.startsWith(`${cookie.path.replace(/\/$/, "")}/`),
 		)
-		.map(([name, cookie]) => `${name}=${cookie.value}`);
+		.map(([name, cookie]) => `${name}=${cookie.value}`)
+		.toArray();
 	return matching.length > 0 ? matching.join("; ") : undefined;
 }
 

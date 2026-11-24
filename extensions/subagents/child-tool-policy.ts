@@ -21,8 +21,10 @@ export function excludeModelOnlyTools(
 ): string[] {
 	const modelOnly = new Set(
 		registeredTools
+			.values()
 			.filter((tool) => tool.exposure === "model-only")
-			.map((tool) => tool.name),
+			.map((tool) => tool.name)
+			.toArray(),
 	);
 	return activeTools.filter((name) => !modelOnly.has(name));
 }

@@ -62,8 +62,10 @@ function median(values: number[]): number | undefined {
 function medianRate(prices: ProviderPrice[], key: keyof ProviderPrice): number | undefined {
 	return median(
 		prices
+			.values()
 			.map((price) => parsePrice(price[key]))
-			.filter((price): price is number => price !== undefined),
+			.filter((price): price is number => price !== undefined)
+			.toArray(),
 	);
 }
 
@@ -73,8 +75,10 @@ function perMillion(rate: number | undefined): number | undefined {
 
 function providerPrices(providers: GatewayProvider[]): ProviderPrice[] {
 	return providers
+		.values()
 		.map((provider) => asRecord(provider.pricing) as ProviderPrice | undefined)
-		.filter((price): price is ProviderPrice => price !== undefined);
+		.filter((price): price is ProviderPrice => price !== undefined)
+		.toArray();
 }
 
 function modelInput(model: GatewayModel): ("text" | "image")[] {

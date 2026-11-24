@@ -174,8 +174,10 @@ export function unknownModelMessage(
 	availableModels: readonly ModelRefCandidate[],
 ): string {
 	const available = availableModels
+		.values()
 		.map((model) => `${model?.provider}/${model?.id}`)
 		.filter(Boolean)
+		.toArray()
 		.sort();
 	const preview = available.length > 0 ? available.slice(0, 20).join(", ") : "none";
 	const more = available.length > 20 ? `, ... (+${available.length - 20} more)` : "";

@@ -477,7 +477,7 @@ export class SubagentManager {
 			this.ensureSessionDirectory();
 			this.router.addAgents(
 				agents.map(channelSpec),
-				new Set(agents.filter((agent) => agent.kind === "fork").map((agent) => agent.id)),
+				new Set(agents.values().filter((agent) => agent.kind === "fork").map((agent) => agent.id)),
 			);
 
 			const ports = new Map<string, MessagePort>();
@@ -803,6 +803,7 @@ export class SubagentManager {
 			})),
 		];
 		const peers = candidates
+			.values()
 			.filter((candidate) => candidate.id !== spec.id && channels.includes(candidate.id))
 			.map((candidate) => ({
 				id: candidate.id,
@@ -810,7 +811,8 @@ export class SubagentManager {
 					? agentConfigs.find((config) => config.name === candidate.persona)?.description
 					: undefined,
 				isDefault: candidate.isDefault,
-			}));
+			}))
+			.toArray();
 		peers.push({
 			id: "parent",
 			description:

@@ -726,8 +726,10 @@ class SessionTurnCoordinator {
 		}
 		if (this.waitState) {throw new Error("Another await_agents call is already active.");}
 		const requested = ids
+			.values()
 			.map((id) => manager.getAgentPath(id))
-			.filter((path): path is AgentPath => path !== undefined);
+			.filter((path): path is AgentPath => path !== undefined)
+			.toArray();
 		const attached = [...this.leaseCounts.entries()].flatMap(([key, count]) => {
 			const path = JSON.parse(key) as AgentPath;
 			return Array.from({ length: count }, () => path);
@@ -912,8 +914,10 @@ class SessionTurnCoordinator {
 	): SubagentSemanticFact | undefined {
 		if (!semantic) {return;}
 		const requested = ids
+			.values()
 			.map((id) => manager.getAgentPath(id))
-			.filter((path): path is AgentPath => path !== undefined);
+			.filter((path): path is AgentPath => path !== undefined)
+			.toArray();
 		const fact = this.semantic.publishFact("await_released", this.semantic.getScopePath(), {
 			invocationId: semantic.invocationId,
 			requested,

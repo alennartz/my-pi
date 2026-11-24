@@ -509,9 +509,10 @@ export class AgentSessionRegistry {
 		this.disposed = true;
 		this.disposal = (async () => {
 			await this.waitForReservations([]);
-			const topLevel = [...this.nodes.values()]
+			const topLevel = this.nodes.values()
 				.filter((node) => node.snapshot.parentPath && node.snapshot.parentPath.length === 0)
-				.map((node) => node.snapshot.path);
+				.map((node) => node.snapshot.path)
+				.toArray();
 			await Promise.all(topLevel.map((path) => this.remove(path)));
 		})();
 		return this.disposal;
@@ -598,9 +599,10 @@ export class AgentSessionRegistry {
 	}
 
 	private async waitForReservations(prefix: AgentPath): Promise<void> {
-		const waits = [...this.reservations.values()]
+		const waits = this.reservations.values()
 			.filter((reservation) => isPrefix(prefix, reservation.path))
-			.map((reservation) => reservation.promise);
+			.map((reservation) => reservation.promise)
+			.toArray();
 		if (waits.length > 0) {await Promise.all(waits);}
 	}
 

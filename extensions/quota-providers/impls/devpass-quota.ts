@@ -78,15 +78,19 @@ function median(values: number[]): number | undefined {
 
 function providerPrices(providers: DevPassProvider[]): Record<string, unknown>[] {
 	return providers
+		.values()
 		.map((provider) => asRecord(provider.pricing))
-		.filter((price): price is Record<string, unknown> => price !== undefined);
+		.filter((price): price is Record<string, unknown> => price !== undefined)
+		.toArray();
 }
 
 function medianPrice(prices: Record<string, unknown>[], field: string): number | undefined {
 	return median(
 		prices
+			.values()
 			.map((price) => parseNumber(price[field]))
-			.filter((price): price is number => price !== undefined),
+			.filter((price): price is number => price !== undefined)
+			.toArray(),
 	);
 }
 

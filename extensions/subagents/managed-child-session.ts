@@ -401,12 +401,14 @@ function reportExtensionDiagnostics(
 
 function isRootSubagentsExtension(extension: { path?: string; resolvedPath?: string }): boolean {
 	return [extension.resolvedPath, extension.path]
+		.values()
 		.filter((candidate): candidate is string => candidate !== undefined)
 		.map(normalizePath)
 		.some((candidate) => candidate === ROOT_SUBAGENTS_EXTENSION_PATH);
 }
 function isChildSubagentsExtension(extension: { path?: string; resolvedPath?: string }): boolean {
 	return [extension.resolvedPath, extension.path]
+		.values()
 		.filter((candidate): candidate is string => candidate !== undefined)
 		.map(normalizePath)
 		.some((candidate) => candidate === CHILD_SUBAGENTS_EXTENSION_PATH);
