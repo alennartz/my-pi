@@ -16,7 +16,7 @@ function fixture(historyLimit?: number) {
     registry,
     ownerControl,
     presentationEvents: { subscribePresentation(listener) { presentationListeners.add(listener); return () => presentationListeners.delete(listener); } },
-    ...(historyLimit !== undefined ? { historyLimit } : {}),
+    ...(historyLimit !== undefined ? { historyLimit } : undefined),
   });
   return {
     provider,
@@ -52,7 +52,7 @@ async function rehydratedFinals(entries: readonly unknown[], path: readonly stri
 const entry = (operationId: string, kind: string, source: string, data: unknown) => ({
   type: 'message', id: `${operationId}-entry`, message: { role: 'custom', customType: 'subagents', details: { subagentContent: [{
     operationId, kind, source, state: 'complete', data,
-    ...(source === 'tool' ? { placement: { toolCallId: operationId, contentIndex: 0 } } : {}),
+    ...(source === 'tool' ? { placement: { toolCallId: operationId, contentIndex: 0 } } : undefined),
   }] } },
 });
 
@@ -162,7 +162,7 @@ describe('subagent presentation provider', () => {
     const awaited = {
       operationId: 'await-call', kind: 'await', source: 'tool', state: 'complete',
       placement: { toolCallId: 'await-call', contentIndex: 0 },
-      data: { operation: 'await', result: { statuses, ...(interrupted ? { interrupted: true } : {}) } },
+      data: { operation: 'await', result: { statuses, ...(interrupted ? { interrupted: true } : undefined) } },
     };
     const events = await rehydratedFinals([{
       type: 'message', id: 'await-result', message: {
@@ -345,7 +345,7 @@ describe('subagent presentation provider', () => {
     const path = ['owner', 'worker'];
     const details = {
       agents: [{ id: 'worker', status: 'running', usageBaseline: { turns: 0 }, metadata: { ready: true } }],
-      ...(kind === 'teardown' ? { affectedAgents: [{ path, sessionId: 'saved', state: 'idle', task: 'Continue the review', channels: ['parent', 'scout'], model: 'provider/model', metadata: { retained: true } }] } : {}),
+      ...(kind === 'teardown' ? { affectedAgents: [{ path, sessionId: 'saved', state: 'idle', task: 'Continue the review', channels: ['parent', 'scout'], model: 'provider/model', metadata: { retained: true } }] } : undefined),
       metadata: { publicFlag: false, correlation_id: 'private' },
       subagentContent: [{ operationId: 'saved-output', kind, source: 'tool', state: 'complete', placement: { toolCallId: 'saved-output', contentIndex: 0 },
         data: kind === 'delegation' ? { operation: kind, children: [{ path, task: 'inspect', persona: 'scout' }] }

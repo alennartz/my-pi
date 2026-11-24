@@ -5,7 +5,7 @@ const provider = (efforts?: string[]) => ({
 	streaming: true,
 	tools: true,
 	reasoning: true,
-	...(efforts ? { reasoning_efforts: efforts } : {}),
+	...(efforts ? { reasoning_efforts: efforts } : undefined),
 	pricing: { prompt: "1e-6", completion: "2e-6" },
 });
 

@@ -208,7 +208,7 @@ export function parseAgentConfig(
 
 	return {
 		...persona,
-		...(invocation === undefined ? {} : { invocation }),
+		...(invocation === undefined ? undefined : { invocation }),
 		description: frontmatter.description,
 		tools: tools && tools.length > 0 ? tools : undefined,
 		skills: skills && skills.length > 0 ? skills : undefined,

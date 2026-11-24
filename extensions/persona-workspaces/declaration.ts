@@ -79,11 +79,11 @@ export function parsePersonaDeclaration(
 	return {
 		kind: "persona",
 		name,
-		...(icon !== undefined ? { icon } : {}),
-		...(description !== undefined ? { description } : {}),
-		...(tools !== undefined ? { tools } : {}),
-		...(model !== undefined ? { model } : {}),
-		...(skills !== undefined ? { skills } : {}),
+		...(icon !== undefined ? { icon } : undefined),
+		...(description !== undefined ? { description } : undefined),
+		...(tools !== undefined ? { tools } : undefined),
+		...(model !== undefined ? { model } : undefined),
+		...(skills !== undefined ? { skills } : undefined),
 		body,
 		sourcePath,
 	};

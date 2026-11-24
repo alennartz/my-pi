@@ -74,7 +74,7 @@ async function setup(origin: "builtin" | "models.json" | "legacy" | "native", sn
 
 function snapshot(spend: number, limitId?: string) {
 	const now = Date.now();
-	return { ...(limitId ? { limitId } : {}), spend, quota: 10, windowStart: now - 5 * day, windowEnd: now + 5 * day, asOf: now - 1000 };
+	return { ...(limitId ? { limitId } : undefined), spend, quota: 10, windowStart: now - 5 * day, windowEnd: now + 5 * day, asOf: now - 1000 };
 }
 
 function stream(registry: ModelRegistry, provider: string, id = "standard", sessionId?: string) {

@@ -118,8 +118,8 @@ export class NotificationQueue<Semantic = unknown> {
 		return {
 			text,
 			agents,
-			...(semanticEvents.length > 0 ? { semanticEvents } : {}),
-			...(subagentContent.length > 0 ? { subagentContent } : {}),
+			...(semanticEvents.length > 0 ? { semanticEvents } : undefined),
+			...(subagentContent.length > 0 ? { subagentContent } : undefined),
 		};
 	}
 
@@ -154,7 +154,7 @@ export class NotificationQueue<Semantic = unknown> {
 			const entries = this.entries.map((entry) => ({
 				...entry,
 				semanticEvents: [...entry.semanticEvents],
-				...(entry.subagentContent ? { subagentContent: [...entry.subagentContent] } : {}),
+				...(entry.subagentContent ? { subagentContent: [...entry.subagentContent] } : undefined),
 			}));
 			this.entries.length = 0;
 			this.config.deliverEntries(entries, true);
@@ -166,7 +166,7 @@ export class NotificationQueue<Semantic = unknown> {
 		this.config.deliverDeferred(
 			truncateMiddle(combined).content,
 			semanticEvents.length > 0 || subagentContent.length > 0
-				? { ...(semanticEvents.length > 0 ? { semanticEvents } : {}), ...(subagentContent.length > 0 ? { subagentContent } : {}) }
+				? { ...(semanticEvents.length > 0 ? { semanticEvents } : undefined), ...(subagentContent.length > 0 ? { subagentContent } : undefined) }
 				: undefined,
 		);
 	}
@@ -208,7 +208,7 @@ export class NotificationQueue<Semantic = unknown> {
 			const entries = this.entries.map((entry) => ({
 				...entry,
 				semanticEvents: [...entry.semanticEvents],
-				...(entry.subagentContent ? { subagentContent: [...entry.subagentContent] } : {}),
+				...(entry.subagentContent ? { subagentContent: [...entry.subagentContent] } : undefined),
 			}));
 			this.entries.length = 0;
 			this.config.deliverEntries(entries, false);
@@ -221,7 +221,7 @@ export class NotificationQueue<Semantic = unknown> {
 		this.config.deliver(
 			truncateMiddle(combined).content,
 			semanticEvents.length > 0 || subagentContent.length > 0
-				? { ...(semanticEvents.length > 0 ? { semanticEvents } : {}), ...(subagentContent.length > 0 ? { subagentContent } : {}) }
+				? { ...(semanticEvents.length > 0 ? { semanticEvents } : undefined), ...(subagentContent.length > 0 ? { subagentContent } : undefined) }
 				: undefined,
 		);
 	}

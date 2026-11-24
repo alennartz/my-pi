@@ -215,7 +215,7 @@ export function sumAgentUsage(usages: readonly AgentUsage[]): AgentUsage {
 				cacheWrite: total.cacheWrite + usage.cacheWrite,
 				cost: total.cost + usage.cost,
 				turns: total.turns + usage.turns,
-				...(costBreakdown !== undefined ? { costBreakdown } : {}),
+				...(costBreakdown !== undefined ? { costBreakdown } : undefined),
 			};
 		},
 		{ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
@@ -339,7 +339,7 @@ export function statusData(status: AgentStatus): StatusAgentData {
 			...status.usage,
 			...(status.usage.costBreakdown
 				? { costBreakdown: { ...status.usage.costBreakdown } }
-				: {}),
+				: undefined),
 		},
 	};
 }

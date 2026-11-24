@@ -285,8 +285,8 @@ export function buildProviderModelConfigs(records: unknown[]): ProviderModelConf
 			contextWindow,
 			maxTokens,
 			cost: { input, output, cacheRead, cacheWrite },
-			...(inputLimits ? { inputLimits } : {}),
-			...(thinkingLevelMap ? { thinkingLevelMap } : {}),
+			...(inputLimits ? { inputLimits } : undefined),
+			...(thinkingLevelMap ? { thinkingLevelMap } : undefined),
 		};
 		entries.push(entry);
 	}

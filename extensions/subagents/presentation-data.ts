@@ -103,7 +103,7 @@ function redactErrors(value: unknown, identifiers: readonly string[]): unknown {
  * explicit property name, never by looping over keys.
  */
 export function publicToolResult(value: unknown, isError = false, parameters?: unknown): RecordData {
-	if (!isPresentationRecord(value)) {return redactErrors(isError ? { isError: true, ...(typeof value === 'string' ? { error: value } : {}) } : {}, privateIdentifiers(argumentRecord(parameters))) as RecordData;}
+	if (!isPresentationRecord(value)) {return redactErrors(isError ? { isError: true, ...(typeof value === 'string' ? { error: value } : undefined) } : {}, privateIdentifiers(argumentRecord(parameters))) as RecordData;}
 	const source = isPresentationRecord(value.structuredContent) ? value.structuredContent
 		: isPresentationRecord(value.details) ? value.details : value.role === 'toolResult' ? {} : value;
 	const result = cleanPresentationValue(source) as RecordData;
@@ -137,7 +137,7 @@ export function normalizeToolParameters(operation: SubagentOperationKind, value:
 		parameters.agents = parameters.agents.map((agent) => {
 			if (!isPresentationRecord(agent)) {return agent;}
 			const { agent: legacyPersona, ...fields } = agent;
-			return { ...fields, ...(fields.persona === undefined && legacyPersona !== undefined ? { persona: legacyPersona } : {}) };
+			return { ...fields, ...(fields.persona === undefined && legacyPersona !== undefined ? { persona: legacyPersona } : undefined) };
 		});
 	}
 	return parameters;
@@ -154,9 +154,9 @@ export function normalizeAwaitStatuses(values: readonly unknown[], owner: AgentP
 		const decoded: SubagentAwaitStatus = {
 			path: canonicalPath,
 			state: candidate,
-			...(typeof output === 'string' ? { output } : {}),
-			...(typeof error === 'string' ? { error } : {}),
-			...(typeof sessionId === 'string' ? { sessionId } : {}),
+			...(typeof output === 'string' ? { output } : undefined),
+			...(typeof error === 'string' ? { error } : undefined),
+			...(typeof sessionId === 'string' ? { sessionId } : undefined),
 		};
 		return [decoded];
 	});
@@ -203,7 +203,7 @@ function decodeUsage(value: unknown): SubagentUsage {
 		cacheRead: finiteNumber(value.cacheRead),
 		cacheWrite: finiteNumber(value.cacheWrite),
 		cost: finiteNumber(value.cost),
-		...(costBreakdown !== undefined ? { costBreakdown } : {}),
+		...(costBreakdown !== undefined ? { costBreakdown } : undefined),
 		turns: finiteNumber(value.turns),
 	};
 }
@@ -214,8 +214,8 @@ function decodeChildAgent(value: unknown, owner: AgentPath): SubagentDelegatedCh
 	return {
 		path: presentationPath(owner, path ?? id),
 		task: typeof task === 'string' ? task : '',
-		...(typeof persona === 'string' && persona.length > 0 ? { persona } : {}),
-		...(isAwaitState(status) ? { status } : {}),
+		...(typeof persona === 'string' && persona.length > 0 ? { persona } : undefined),
+		...(isAwaitState(status) ? { status } : undefined),
 	};
 }
 
@@ -252,10 +252,10 @@ function decodeAffectedCore<S extends AwaitState>(value: unknown, owner: AgentPa
 		incarnation: typeof value.incarnation === 'string' ? value.incarnation : 'unknown',
 		state: isState(candidate) ? candidate : 'idle' as S,
 		usage: decodeUsage(usage),
-		...(typeof task === 'string' ? { task } : {}),
-		...(Array.isArray(channels) ? { channels: channels.filter((channel): channel is string => typeof channel === 'string') } : {}),
-		...(typeof model === 'string' ? { model } : {}),
-		...(usageBaseline !== undefined ? { usageBaseline: decodeUsage(usageBaseline) } : {}),
+		...(typeof task === 'string' ? { task } : undefined),
+		...(Array.isArray(channels) ? { channels: channels.filter((channel): channel is string => typeof channel === 'string') } : undefined),
+		...(typeof model === 'string' ? { model } : undefined),
+		...(usageBaseline !== undefined ? { usageBaseline: decodeUsage(usageBaseline) } : undefined),
 	};
 }
 
@@ -265,8 +265,8 @@ function decodeAffectedAgent<S extends AwaitState>(value: unknown, owner: AgentP
 	const { output, error } = value;
 	return {
 		...core,
-		...(typeof output === 'string' ? { output } : {}),
-		...(typeof error === 'string' ? { error } : {}),
+		...(typeof output === 'string' ? { output } : undefined),
+		...(typeof error === 'string' ? { error } : undefined),
 	};
 }
 
@@ -275,8 +275,8 @@ function decodeInterruptTarget(value: unknown, owner: AgentPath): InterruptTarge
 	const { id, path, output, error } = value;
 	return {
 		path: presentationPath(owner, path ?? id),
-		...(typeof output === 'string' ? { output } : {}),
-		...(typeof error === 'string' ? { error } : {}),
+		...(typeof output === 'string' ? { output } : undefined),
+		...(typeof error === 'string' ? { error } : undefined),
 	};
 }
 
@@ -285,9 +285,9 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 		const { state, output, error, usage } = source;
 		const result: CompletionFinal['result'] = {
 			state: state === 'errored' || state === 'dead' || state === 'stopped' ? state : 'idle',
-			...(typeof output === 'string' ? { output } : {}),
-			...(typeof error === 'string' ? { error } : {}),
-			...(usage !== undefined ? { usage: decodeUsage(usage) } : {}),
+			...(typeof output === 'string' ? { output } : undefined),
+			...(typeof error === 'string' ? { error } : undefined),
+			...(usage !== undefined ? { usage: decodeUsage(usage) } : undefined),
 		};
 		return { operation: 'completion', result };
 	}
@@ -298,7 +298,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 			const prior = normalized.find((entry) => JSON.stringify(entry.path) === JSON.stringify(child.path));
 			return { ...(prior ?? {}), ...child, path: [...child.path] };
 		}) : normalized;
-		const result: DelegationFinal['result'] = { children, ...(typeof source.error === 'string' ? { error: source.error } : {}) };
+		const result: DelegationFinal['result'] = { children, ...(typeof source.error === 'string' ? { error: source.error } : undefined) };
 		return { operation: 'delegation', parameters, result };
 	}
 	if (operation === 'interrupt') {
@@ -306,7 +306,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 			interrupted: (Array.isArray(source.interrupted) ? source.interrupted : []).map((entry) => decodeInterruptTarget(entry, owner)),
 			pending: (Array.isArray(source.pending) ? source.pending : []).map((entry) => decodeInterruptTarget(entry, owner)),
 			failed: (Array.isArray(source.failed) ? source.failed : []).map((entry) => decodeInterruptTarget(entry, owner)),
-			...(typeof source.error === 'string' ? { error: source.error } : {}),
+			...(typeof source.error === 'string' ? { error: source.error } : undefined),
 		};
 		return { operation: 'interrupt', parameters, result };
 	}
@@ -315,7 +315,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 		const result: TeardownFinal['result'] = {
 			status: source.status === 'already_removed' || source.status === 'not_found' ? source.status : 'removed',
 			affectedAgents: affectedRaw.map((agent) => decodeAffectedCore(agent, owner, isAwaitState)),
-			...(typeof source.error === 'string' ? { error: source.error } : {}),
+			...(typeof source.error === 'string' ? { error: source.error } : undefined),
 		};
 		return { operation: 'teardown', parameters, result };
 	}
@@ -323,7 +323,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 		const affectedRaw = Array.isArray(source.affectedAgents) ? source.affectedAgents : Array.isArray(source.agents) ? source.agents : [];
 		const result: ResurrectFinal['result'] = {
 			affectedAgents: affectedRaw.map((agent) => decodeAffectedAgent(agent, owner, isResurrectState)),
-			...(typeof source.error === 'string' ? { error: source.error } : {}),
+			...(typeof source.error === 'string' ? { error: source.error } : undefined),
 		};
 		return { operation: 'resurrect', parameters, result };
 	}
@@ -335,8 +335,8 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 		const statusesRaw = Array.isArray(source.statuses) ? source.statuses : Array.isArray(source.agents) ? source.agents : [];
 		const result: AwaitFinal['result'] = {
 			statuses: normalizeAwaitStatuses(statusesRaw, owner),
-			...(source.interrupted === true ? { interrupted: true } : {}),
-			...(typeof source.error === 'string' ? { error: source.error } : {}),
+			...(source.interrupted === true ? { interrupted: true } : undefined),
+			...(typeof source.error === 'string' ? { error: source.error } : undefined),
 		};
 		return { operation: 'await', parameters, result };
 	}
@@ -345,7 +345,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 		const { body, ...rest } = source;
 		const result: RespondFinal['result'] = {
 			...rest,
-			...(body !== undefined ? { message: body } : {}),
+			...(body !== undefined ? { message: body } : undefined),
 		};
 		return { operation: 'respond', result };
 	}
@@ -355,12 +355,12 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 	const responsePreferred = toolBacked && source.response === undefined;
 	const result: SendFinal['result'] = {
 		...rest,
-		...(toDefined ? { to: presentationPath(targetPath ?? owner, to ?? recipient) } : {}),
-		...(from !== undefined ? { from: presentationPath(owner, from) } : {}),
-		...(message !== undefined && responsePreferred ? { response: message } : {}),
-		...(message !== undefined && !responsePreferred ? { message } : {}),
+		...(toDefined ? { to: presentationPath(targetPath ?? owner, to ?? recipient) } : undefined),
+		...(from !== undefined ? { from: presentationPath(owner, from) } : undefined),
+		...(message !== undefined && responsePreferred ? { response: message } : undefined),
+		...(message !== undefined && !responsePreferred ? { message } : undefined),
 	};
-	return { operation: 'send', ...(toolBacked ? { parameters } : {}), result };
+	return { operation: 'send', ...(toolBacked ? { parameters } : undefined), result };
 }
 
 type FinalInput = Readonly<{
@@ -397,15 +397,15 @@ function normalizeSavedData(
 	if (operation === 'send') {
 		const hasEnvelope = isPresentationRecord(data.result);
 		const { operation: _operation, request, parameters: _parameters, ...flat } = data;
-		const source: RecordData = hasEnvelope ? data.result as RecordData : { ...flat, ...(!toolBacked && request !== undefined ? { message: request } : {}) };
-		const inputs = { ...parameters, ...(toolBacked && typeof request === 'string' ? { message: request } : {}) };
+		const source: RecordData = hasEnvelope ? data.result as RecordData : { ...flat, ...(!toolBacked && request !== undefined ? { message: request } : undefined) };
+		const inputs = { ...parameters, ...(toolBacked && typeof request === 'string' ? { message: request } : undefined) };
 		const targetPath = toolBacked && data.to !== undefined ? presentationPath(path, data.to) : undefined;
 		return { operation, source, parameters: normalizeToolParameters(operation, inputs, path, targetPath), targetPath };
 	}
 	if (operation === 'respond') {
 		const { operation: _operation, body, parameters: _parameters, ...flat } = data;
 		const source: RecordData = isPresentationRecord(data.result) ? data.result : flat;
-		return { operation, source, parameters: normalizeToolParameters(operation, { ...parameters, ...(toolBacked && body !== undefined ? { message: body } : {}) }, path) };
+		return { operation, source, parameters: normalizeToolParameters(operation, { ...parameters, ...(toolBacked && body !== undefined ? { message: body } : undefined) }, path) };
 	}
 	if (operation === 'await') {
 		const fallback = argumentsValue === undefined && data.parameters === undefined && Array.isArray(data.requested) && data.requested.length > 0 ? { agents: data.requested } : parameters;
@@ -491,15 +491,15 @@ function mergeFinalData(native: SubagentFinalData, saved: SubagentFinalData): Su
 	if (saved.operation === 'await' && native.operation === 'await') {
 		const result: AwaitFinal['result'] = {
 			statuses: mergeAwaitStatuses(native.result.statuses, saved.result.statuses),
-			...(native.result.interrupted === true || saved.result.interrupted === true ? { interrupted: true } : {}),
-			...(native.result.error !== undefined ? { error: native.result.error } : {}),
-			...(saved.result.error !== undefined ? { error: saved.result.error } : {}),
+			...(native.result.interrupted === true || saved.result.interrupted === true ? { interrupted: true } : undefined),
+			...(native.result.error !== undefined ? { error: native.result.error } : undefined),
+			...(saved.result.error !== undefined ? { error: saved.result.error } : undefined),
 		};
 		return { operation: 'await', parameters: saved.parameters, result };
 	}
 	if (saved.operation === 'send' && native.operation === 'send') {
 		const response = saved.result.response !== undefined ? saved.result.response : native.result.response;
-		const result: SendFinal['result'] = { ...native.result, ...saved.result, ...(response !== undefined ? { response } : {}) };
+		const result: SendFinal['result'] = { ...native.result, ...saved.result, ...(response !== undefined ? { response } : undefined) };
 		return { operation: 'send', parameters: saved.parameters, result };
 	}
 	if (saved.operation === 'respond' && native.operation === 'respond') {

@@ -332,9 +332,9 @@ export class MessageRouter {
 				from: endpoint.id,
 				to: input.to,
 				message: input.message,
-				...(input.correlationId !== undefined ? { correlationId: input.correlationId } : {}),
+				...(input.correlationId !== undefined ? { correlationId: input.correlationId } : undefined),
 				responseExpected: false,
-				...(toolCallId !== undefined ? { toolCallId } : {}),
+				...(toolCallId !== undefined ? { toolCallId } : undefined),
 			}, publishPhase);
 			this.deliverMessage(endpoint.id, target, input.message, input.correlationId, false);
 			return {};
@@ -362,8 +362,8 @@ export class MessageRouter {
 			to: input.to,
 			message: input.message,
 			responseExpected: true,
-			...(toolCallId !== undefined ? { toolCallId } : {}),
-			...(publishPhase ? { semanticPublisher: publishPhase } : {}),
+			...(toolCallId !== undefined ? { toolCallId } : undefined),
+			...(publishPhase ? { semanticPublisher: publishPhase } : undefined),
 			resolve: resolveResponse,
 			reject: rejectResponse,
 			waitingEdgeAttached: true,
@@ -382,7 +382,7 @@ export class MessageRouter {
 			message: input.message,
 			correlationId,
 			responseExpected: true,
-			...(toolCallId !== undefined ? { toolCallId } : {}),
+			...(toolCallId !== undefined ? { toolCallId } : undefined),
 		}, publishPhase);
 		this.deliverMessage(endpoint.id, target, input.message, correlationId, true);
 
@@ -426,7 +426,7 @@ export class MessageRouter {
 				to: pending.from,
 				correlationId,
 				delta,
-				...(pending.toolCallId !== undefined ? { toolCallId: pending.toolCallId } : {}),
+				...(pending.toolCallId !== undefined ? { toolCallId: pending.toolCallId } : undefined),
 			});
 		} catch (error) {
 			throw error instanceof Error ? error : new Error(String(error));
@@ -579,7 +579,7 @@ export class MessageRouter {
 			message,
 			correlationId: pending.correlationId,
 			responseExpected: false,
-			...((responderToolCallId ?? pending.toolCallId) !== undefined ? { toolCallId: responderToolCallId ?? pending.toolCallId } : {}),
+			...((responderToolCallId ?? pending.toolCallId) !== undefined ? { toolCallId: responderToolCallId ?? pending.toolCallId } : undefined),
 		}, publishPhase ?? pending.semanticPublisher);
 		pending.resolve({ type: "response", message });
 	}
@@ -596,7 +596,7 @@ export class MessageRouter {
 			correlationId: pending.correlationId,
 			responseExpected: false,
 			error,
-			...(pending.toolCallId !== undefined ? { toolCallId: pending.toolCallId } : {}),
+			...(pending.toolCallId !== undefined ? { toolCallId: pending.toolCallId } : undefined),
 		}, pending.semanticPublisher);
 		pending.resolve({ type: "error", error });
 	}

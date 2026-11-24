@@ -251,7 +251,7 @@ export class AgentSessionRegistry {
 		if (!baseline) {return undefined;}
 		return {
 			...baseline,
-			...(baseline.costBreakdown ? { costBreakdown: { ...baseline.costBreakdown } } : {}),
+			...(baseline.costBreakdown ? { costBreakdown: { ...baseline.costBreakdown } } : undefined),
 		};
 	}
 
@@ -407,7 +407,7 @@ export class AgentSessionRegistry {
 				const finalSnapshot = cloneFreeze({
 					...current,
 					sessionId,
-					...(sessionFile !== undefined ? { sessionFile } : {}),
+					...(sessionFile !== undefined ? { sessionFile } : undefined),
 					cwd,
 				}) as AgentNodeSnapshot;
 				this.stagedSnapshots.set(pathKey, finalSnapshot);
@@ -547,10 +547,10 @@ export class AgentSessionRegistry {
 			sessionId: typeof replacement?.newSessionId === "string"
 				? replacement.newSessionId
 				: typeof session?.sessionId === "string" ? session.sessionId : current.sessionId,
-			...(session?.sessionFile !== undefined ? { sessionFile: session.sessionFile } : {}),
+			...(session?.sessionFile !== undefined ? { sessionFile: session.sessionFile } : undefined),
 			...(typeof session?.sessionManager?.getCwd === "function"
 				? { cwd: session.sessionManager.getCwd() }
-				: {}),
+				: undefined),
 		}) as AgentNodeSnapshot;
 		const liveNode = this.nodes.get(pathKey);
 		if (liveNode) {

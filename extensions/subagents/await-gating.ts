@@ -266,7 +266,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		if (path) {
 			const key = pathKey(path);
 			const stopped: AwaitChildStatus = {
-				...(suppliedStatus ? copyStatus(suppliedStatus) : {}),
+				...(suppliedStatus ? copyStatus(suppliedStatus) : undefined),
 				path: copyPath(path),
 				state: "stopped",
 			};

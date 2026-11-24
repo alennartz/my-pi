@@ -227,7 +227,7 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 			let response: Response;
 			try {
 				const cookie = cookieHeaderFor(currentUrl, cookieJar);
-				const headers: RequestHeaders = { ...REQUEST_HEADERS, ...(cookie ? { Cookie: cookie } : {}) };
+				const headers: RequestHeaders = { ...REQUEST_HEADERS, ...(cookie ? { Cookie: cookie } : undefined) };
 				response = await doFetch(currentUrl, {
 					redirect: "manual",
 					headers,

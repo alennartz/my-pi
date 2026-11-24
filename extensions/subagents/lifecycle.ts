@@ -111,9 +111,9 @@ function statusFromSnapshot(snapshot: SessionSnapshot): SubagentLifecycleStatus 
 	return {
 		state: "idle",
 		usage: snapshot.usage,
-		...(snapshot.model !== undefined ? { model: snapshot.model } : {}),
-		...(snapshot.lastOutput !== undefined ? { lastOutput: snapshot.lastOutput } : {}),
-		...(snapshot.lastOutput !== undefined ? { lastActivity: activityPreview(snapshot.lastOutput) } : {}),
+		...(snapshot.model !== undefined ? { model: snapshot.model } : undefined),
+		...(snapshot.lastOutput !== undefined ? { lastOutput: snapshot.lastOutput } : undefined),
+		...(snapshot.lastOutput !== undefined ? { lastActivity: activityPreview(snapshot.lastOutput) } : undefined),
 		lastTurnInput: snapshot.lastTurnInput,
 	};
 }
@@ -129,7 +129,7 @@ function dataFor(
 		return {
 			...persistedFields,
 			source,
-			...(extra.stale === true ? { stale: true } : {}),
+			...(extra.stale === true ? { stale: true } : undefined),
 		};
 	}
 	const snapshot = parseSessionSnapshot(resolveSessionFile(paths, sessionFile));
@@ -138,7 +138,7 @@ function dataFor(
 		source,
 		snapshot,
 		status: statusFromSnapshot(snapshot),
-		...(extra.stale === true ? { stale: true } : {}),
+		...(extra.stale === true ? { stale: true } : undefined),
 	};
 }
 
@@ -181,9 +181,9 @@ function readRecords(options: LifecycleReaderOptions): readonly SubagentLifecycl
 				timestamp: event.timestamp,
 				kind,
 				path: copyPath(pathValue),
-				...(sessionId !== undefined ? { sessionId } : {}),
-				...(prior?.sessionId !== undefined ? { previousSessionId: prior.sessionId } : {}),
-				...(sessionFile !== undefined ? { sessionFile } : {}),
+				...(sessionId !== undefined ? { sessionId } : undefined),
+				...(prior?.sessionId !== undefined ? { previousSessionId: prior.sessionId } : undefined),
+				...(sessionFile !== undefined ? { sessionFile } : undefined),
 				data: dataFor(options.paths, event, sessionFile),
 			};
 			records.push(record);
@@ -206,8 +206,8 @@ function readRecords(options: LifecycleReaderOptions): readonly SubagentLifecycl
 			path: copyPath(pathValue),
 			...(sessionId ?? current?.sessionId
 				? { sessionId: sessionId ?? current?.sessionId }
-				: {}),
-			...(sessionFile !== undefined ? { sessionFile } : {}),
+				: undefined),
+			...(sessionFile !== undefined ? { sessionFile } : undefined),
 			data: dataFor(options.paths, event, sessionFile, stale ? { stale: true } : {}),
 		};
 		records.push(record);

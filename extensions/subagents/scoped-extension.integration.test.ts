@@ -954,7 +954,7 @@ describe("semantic facts on native messages", () => {
 				sessionId: snapshot.sessionId,
 				task: snapshot.task,
 				channels: [...snapshot.channels],
-				...(snapshot.model !== undefined ? { model: snapshot.model } : {}),
+				...(snapshot.model !== undefined ? { model: snapshot.model } : undefined),
 			}),
 		]);
 		expect(observed).toContainEqual(expect.objectContaining({

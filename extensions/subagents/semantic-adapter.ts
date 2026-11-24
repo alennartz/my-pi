@@ -206,7 +206,7 @@ function partialDelegationChildren(raw: string, owner: AgentPath): readonly Suba
     return [{
       path: [...owner, id],
       task: partialString(candidate, 'task') ?? '',
-      ...(persona ? { persona } : {}),
+      ...(persona ? { persona } : undefined),
     }];
   });
 }
@@ -239,7 +239,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
       operationId: options.operationId?.({ toolCallId: event.toolCallId, kind }) ?? event.toolCallId,
       kind, path: [...event.path], placement: { toolCallId: event.toolCallId, contentIndex: event.contentIndex },
       started: false, rawArguments: '', parameters: {}, request: '', response: '', body: '', requested: [], statuses: [], delegationChildren: [], interrupted: false, sendPhase: 'sending',
-      ...(event.targetPath !== undefined ? { sendTarget: [...event.targetPath] } : {}),
+      ...(event.targetPath !== undefined ? { sendTarget: [...event.targetPath] } : undefined),
     };
     operations.set(event.toolCallId, state);
     return state;
@@ -259,7 +259,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
   function parametersFor(state: OperationState) {
     if (state.kind === 'send') {
       const to = state.parameters.to ?? partialString(state.rawArguments, 'to');
-      return normalizeToolParameters('send', { ...state.parameters, message: state.request, ...(to !== undefined ? { to } : {}) }, state.path, state.sendTarget);
+      return normalizeToolParameters('send', { ...state.parameters, message: state.request, ...(to !== undefined ? { to } : undefined) }, state.path, state.sendTarget);
     }
     if (state.kind === 'respond') {return { ...state.parameters, message: state.body };}
     return state.parameters;
@@ -331,7 +331,7 @@ export function createSubagentSemanticAdapter(options: SubagentSemanticAdapterOp
       const requested = new Set(state.requested.map((path) => JSON.stringify(path)));
       const prior = hasStatuses ? state.statuses.filter((status) => !requested.has(JSON.stringify(status.path))) : state.statuses;
       state.statuses = mergeAwaitStatuses(prior, statuses, state.requested);
-      return normalizeFinalData({ operation: 'await', path: state.path, parameters: parametersFor(state), result: { ...source, statuses: state.statuses, ...(state.interrupted ? { interrupted: true } : {}) }, toolBacked: true }) as SubagentEndData;
+      return normalizeFinalData({ operation: 'await', path: state.path, parameters: parametersFor(state), result: { ...source, statuses: state.statuses, ...(state.interrupted ? { interrupted: true } : undefined) }, toolBacked: true }) as SubagentEndData;
     }
     const parameters = parametersFor(state);
     const result = state.kind === 'send' && source.response === undefined && source.message === undefined ? { ...source, response: state.response } : source;

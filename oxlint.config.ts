@@ -27,8 +27,6 @@ export default defineConfig({
     'import/no-namespace': ['error', { ignore: ['node:*'] }],
     'no-console': ['error', { allow: ['warn', 'error'] }],
     'no-empty': ['error', { allowEmptyCatch: true }],
-    // Conditional spreads mark optional properties under exactOptionalPropertyTypes.
-    'quality/no-conditional-empty-object-spread': 'off',
     // Double assertions escape the unsafe-assertion rule for doubles.
     'quality/no-chained-type-assertions': 'off',
     // Options objects name each argument at every call site.

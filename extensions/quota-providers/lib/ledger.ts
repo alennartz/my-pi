@@ -87,7 +87,7 @@ export function parseLedger(raw: string): LedgerEntry[] {
         entries.push({
           timestamp: parsed.timestamp,
           cost: parsed.cost,
-          ...(quotaLimitIds && quotaLimitIds.length > 0 ? { quotaLimitIds } : {}),
+          ...(quotaLimitIds && quotaLimitIds.length > 0 ? { quotaLimitIds } : undefined),
         });
       }
     } catch {

@@ -545,7 +545,7 @@ function cloneUsage(value: AgentUsage | undefined): SubagentUsage {
 						cacheWrite: finiteNumber(costBreakdown.cacheWrite),
 					}),
 				}
-			: {}),
+			: undefined),
 	});
 }
 
@@ -629,19 +629,19 @@ function nodeFromLifecycle(
 		path: copyPath(record.path),
 		incarnation,
 		sessionId,
-		...(task !== undefined ? { task } : {}),
-		...(persona !== undefined ? { persona } : {}),
-		...(personaIcon !== undefined ? { personaIcon } : {}),
-		...(model !== undefined ? { model } : {}),
+		...(task !== undefined ? { task } : undefined),
+		...(persona !== undefined ? { persona } : undefined),
+		...(personaIcon !== undefined ? { personaIcon } : undefined),
+		...(model !== undefined ? { model } : undefined),
 		state: "idle",
 		usage: sourceUsage(status),
 		...(contextFill(status.lastTurnInput, undefined) !== undefined
 			? { contextFill: contextFill(status.lastTurnInput, undefined) }
-			: {}),
+			: undefined),
 		channels: sourceChannels(source),
 		waitingFor: Object.freeze([]),
 		hasSubgroup: false,
-		...(activity !== undefined ? { activity } : {}),
+		...(activity !== undefined ? { activity } : undefined),
 	});
 }
 
@@ -721,9 +721,9 @@ function restoreAwaitResult(payload: PersistedSubagentContent, semantic: unknown
 			restored.push({
 				path: copyPath(status.path),
 				state,
-				...(typeof status.output === "string" ? { output: status.output } : {}),
-				...(typeof status.error === "string" ? { error: status.error } : {}),
-				...(typeof status.sessionId === "string" ? { sessionId: status.sessionId } : {}),
+				...(typeof status.output === "string" ? { output: status.output } : undefined),
+				...(typeof status.error === "string" ? { error: status.error } : undefined),
+				...(typeof status.sessionId === "string" ? { sessionId: status.sessionId } : undefined),
 			});
 		}
 	}
@@ -731,8 +731,8 @@ function restoreAwaitResult(payload: PersistedSubagentContent, semantic: unknown
 	return { ...payload, data: { ...payload.data, result: {
 		...result,
 		statuses: [...result.statuses, ...restored],
-		...(interrupted !== undefined ? { interrupted } : {}),
-		...(error !== undefined ? { error } : {}),
+		...(interrupted !== undefined ? { interrupted } : undefined),
+		...(error !== undefined ? { error } : undefined),
 	} } };
 }
 
@@ -759,7 +759,7 @@ function presentationTarget(event: SemanticAdapterEvent): Readonly<{ operationId
 		operationId: event.operationId,
 		kind: event.kind,
 		path: copyPath(event.path),
-		...(event.placement !== undefined ? { placement: Object.freeze({ ...event.placement }) } : {}),
+		...(event.placement !== undefined ? { placement: Object.freeze({ ...event.placement }) } : undefined),
 	});
 }
 
@@ -902,20 +902,20 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			path: copyPath(snapshot.path),
 			incarnation: identity.incarnation,
 			sessionId: snapshot.sessionId,
-			...(cwd !== undefined ? { cwd } : {}),
-			...(snapshot.task !== undefined ? { task: snapshot.task } : {}),
-			...(persona !== undefined ? { persona } : {}),
-			...(personaIcon !== undefined ? { personaIcon } : {}),
-			...(model !== undefined ? { model } : {}),
-			...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+			...(cwd !== undefined ? { cwd } : undefined),
+			...(snapshot.task !== undefined ? { task: snapshot.task } : undefined),
+			...(persona !== undefined ? { persona } : undefined),
+			...(personaIcon !== undefined ? { personaIcon } : undefined),
+			...(model !== undefined ? { model } : undefined),
+			...(thinkingLevel !== undefined ? { thinkingLevel } : undefined),
 			state: operational.state,
-			...(activity !== undefined ? { activity } : {}),
+			...(activity !== undefined ? { activity } : undefined),
 			usage: cloneUsage(operational.usage),
-			...(fill !== undefined ? { contextFill: fill } : {}),
+			...(fill !== undefined ? { contextFill: fill } : undefined),
 			channels: Object.freeze(Array.isArray(snapshot.channels) ? [...snapshot.channels] : []),
 			waitingFor: projectWaiting(snapshot.path, operational),
 			hasSubgroup: Boolean(operational.hasSubgroup || descendants),
-			...(lastError !== undefined ? { lastError } : {}),
+			...(lastError !== undefined ? { lastError } : undefined),
 		});
 	}
 
@@ -1336,7 +1336,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const rootCwd = asString(options.registry.getSnapshot?.([])?.cwd);
 		return Object.freeze({
 			...base,
-			...(rootCwd !== undefined ? { rootCwd } : {}),
+			...(rootCwd !== undefined ? { rootCwd } : undefined),
 			nodes: Object.freeze(base.nodes.map((node) => publicNode(node))),
 			manifest,
 			activeOperations: Object.freeze(Array.from(activeOperations.values()).map((operation) => Object.freeze({
@@ -1429,7 +1429,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			return {
 				...result,
 				path: copyPath(result.path ?? path),
-				...(result.incarnation === undefined ? { incarnation } : {}),
+				...(result.incarnation === undefined ? { incarnation } : undefined),
 			};
 		} finally {
 			removingPaths.delete(removalKey);
@@ -1485,14 +1485,14 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const placement = payload.source === "tool"
 			? Object.freeze({
 				...payload.placement,
-				...(payload.placement.entryId === undefined && entryId !== undefined ? { entryId } : {}),
+				...(payload.placement.entryId === undefined && entryId !== undefined ? { entryId } : undefined),
 			})
 			: (payload.placement?.entryId !== undefined ? Object.freeze({ entryId: payload.placement.entryId }) : entryId !== undefined ? Object.freeze({ entryId }) : undefined);
 		const target = Object.freeze({
 			operationId: payload.operationId,
 			kind: payload.kind,
 			path: copyPath(path),
-			...(placement !== undefined ? { placement } : {}),
+			...(placement !== undefined ? { placement } : undefined),
 		});
 		const event = Object.freeze({
 			type: "subagent_snapshot_event",
@@ -1550,10 +1550,10 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 					path: input.path,
 					toolBacked,
 					arguments: argumentsValue,
-					...(candidate.source === "tool" ? { nativeResult: messageRecord } : {}),
+					...(candidate.source === "tool" ? { nativeResult: messageRecord } : undefined),
 				});
 				const payload = { ...repaired, kind, data } as PersistedSubagentContent;
-				saved.push({ payload, ...(entryId !== undefined ? { entryId } : {}) });
+				saved.push({ payload, ...(entryId !== undefined ? { entryId } : undefined) });
 			}
 		}
 		for (const item of saved) {

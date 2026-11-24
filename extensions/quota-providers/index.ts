@@ -503,7 +503,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 			{
 				timestamp: event.message.timestamp,
 				cost: event.message.usage?.cost?.total ?? 0,
-				...(quotaLimitIds ? { quotaLimitIds } : {}),
+				...(quotaLimitIds ? { quotaLimitIds } : undefined),
 			},
 			`${record.paths.ledger}.lock`,
 		);

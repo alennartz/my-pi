@@ -219,7 +219,7 @@ export class ManagedChildSession {
 			try {
 				promptResult = session.prompt(text, {
 					source: "rpc",
-					...(streamingBehavior ? { streamingBehavior } : {}),
+					...(streamingBehavior ? { streamingBehavior } : undefined),
 					preflightResult: settlePreflight,
 				});
 			} catch (error) {
@@ -480,9 +480,9 @@ export async function createManagedChildSession(
 				...(config.noSkills || skillPaths.length > 0
 					? {
 							noSkills: true,
-							...(skillPaths.length > 0 ? { additionalSkillPaths: skillPaths } : {}),
+							...(skillPaths.length > 0 ? { additionalSkillPaths: skillPaths } : undefined),
 						}
-					: {}),
+					: undefined),
 			};
 			// No trust hook: pi's default project-trusted state stands, so the
 			// child trusts its cwd and loads all project resources there
@@ -510,8 +510,8 @@ export async function createManagedChildSession(
 			const sessionResult = await createAgentSessionFromServices({
 				services,
 				sessionManager: options.sessionManager,
-				...(modelResult?.model ? { model: modelResult.model } : {}),
-				...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+				...(modelResult?.model ? { model: modelResult.model } : undefined),
+				...(thinkingLevel !== undefined ? { thinkingLevel } : undefined),
 				...(config.toolPolicy.allowedTools !== undefined
 					? { tools: config.toolPolicy.allowedTools }
 					: { excludeTools: config.toolPolicy.excludeTools }),

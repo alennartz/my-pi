@@ -363,9 +363,9 @@ class SessionTurnCoordinator {
 				operation: "completion",
 				result: {
 					state,
-					...(status.output !== undefined ? { output: status.output } : {}),
-					...(status.error !== undefined ? { error: status.error } : {}),
-					...(usage !== undefined ? { usage } : {}),
+					...(status.output !== undefined ? { output: status.output } : undefined),
+					...(status.error !== undefined ? { error: status.error } : undefined),
+					...(usage !== undefined ? { usage } : undefined),
 				},
 			},
 		}];
@@ -392,13 +392,13 @@ class SessionTurnCoordinator {
 			steerDelivery: USE_STEER_DELIVERY,
 			deliver: (combined, details) => {
 				pi.sendMessage(
-					{ customType: "subagents", content: combined, display: true, ...(details ? { details } : {}) },
+					{ customType: "subagents", content: combined, display: true, ...(details ? { details } : undefined) },
 					{ triggerTurn: true },
 				);
 			},
 			deliverDeferred: (combined, details) => {
 				pi.sendMessage(
-					{ customType: "subagents", content: combined, display: true, ...(details ? { details } : {}) },
+					{ customType: "subagents", content: combined, display: true, ...(details ? { details } : undefined) },
 					{ deliverAs: "nextTurn" },
 				);
 			},
@@ -409,7 +409,7 @@ class SessionTurnCoordinator {
 					const subagentContent = completionBatch.flatMap((entry) => entry.subagentContent ?? []);
 					const details = subagentContent.length > 0 ? { subagentContent } : undefined;
 					pi.sendMessage(
-						{ customType: "subagents", content: completionBatch.map((entry) => entry.xml).join("\n"), display: true, ...(details ? { details } : {}) },
+						{ customType: "subagents", content: completionBatch.map((entry) => entry.xml).join("\n"), display: true, ...(details ? { details } : undefined) },
 						deferred ? { deliverAs: "nextTurn" } : { triggerTurn: true },
 					);
 					completionBatch = [];
@@ -428,7 +428,7 @@ class SessionTurnCoordinator {
 							customType: "subagents",
 							content: entry.xml,
 							display: true,
-							...(details ? { details } : {}),
+							...(details ? { details } : undefined),
 						},
 						deferred ? { deliverAs: "nextTurn" } : { triggerTurn: true },
 					);
@@ -572,7 +572,7 @@ class SessionTurnCoordinator {
 			output: status.output,
 			error: status.error,
 			sessionId: status.sessionId,
-			...(status.replaced ? { replaced: true } : {}),
+			...(status.replaced ? { replaced: true } : undefined),
 		};
 		const facts = this.completionFacts.get(key);
 		manager.markCompletionDelivered(agentId);
@@ -649,8 +649,8 @@ class SessionTurnCoordinator {
 					...(outcome.kind === "interrupted" ? { message: {
 						from: outcome.message.from, to: outcome.message.to, text: outcome.message.content,
 						phase: "received", responseExpected: outcome.message.responseExpected,
-						...(outcome.message.correlationId ? { correlationId: outcome.message.correlationId } : {}),
-					} } : {}),
+						...(outcome.message.correlationId ? { correlationId: outcome.message.correlationId } : undefined),
+					} } : undefined),
 				},
 				state.semantic.refs,
 			);
@@ -661,9 +661,9 @@ class SessionTurnCoordinator {
 		state.resolve({
 			...drained,
 			agents,
-			...(interrupted ? { interrupted: true } : {}),
-			...(semanticEvents.length > 0 ? { semanticEvents } : {}),
-			...(drained.subagentContent && drained.subagentContent.length > 0 ? { subagentContent: drained.subagentContent } : {}),
+			...(interrupted ? { interrupted: true } : undefined),
+			...(semanticEvents.length > 0 ? { semanticEvents } : undefined),
+			...(drained.subagentContent && drained.subagentContent.length > 0 ? { subagentContent: drained.subagentContent } : undefined),
 		});
 	}
 
@@ -678,7 +678,7 @@ class SessionTurnCoordinator {
 				from,
 				to,
 				content: typeof data?.text === "string" ? data.text : "",
-				...(typeof data?.correlationId === "string" ? { correlationId: data.correlationId } : {}),
+				...(typeof data?.correlationId === "string" ? { correlationId: data.correlationId } : undefined),
 				responseExpected: data?.responseExpected === true,
 			});
 			return;
@@ -781,7 +781,7 @@ class SessionTurnCoordinator {
 							requested,
 							refs: [...semantic.refs],
 						},
-					} : {}),
+					} : undefined),
 				};
 				this.waitState = state;
 				gate.result.then(
@@ -867,9 +867,9 @@ class SessionTurnCoordinator {
 			statuses: [{
 				path,
 				state: completionStatus,
-				...(status.lastOutput !== undefined ? { output: status.lastOutput } : {}),
-				...(status.lastError !== undefined ? { error: status.lastError } : {}),
-				...(manager.getSessionId(agentId) !== undefined ? { sessionId: manager.getSessionId(agentId) } : {}),
+				...(status.lastOutput !== undefined ? { output: status.lastOutput } : undefined),
+				...(status.lastError !== undefined ? { error: status.lastError } : undefined),
+				...(manager.getSessionId(agentId) !== undefined ? { sessionId: manager.getSessionId(agentId) } : undefined),
 			}],
 		}, refs);
 		const completionFact = this.semantic.publishFact("completion", path, completionData, refs);
@@ -886,9 +886,9 @@ class SessionTurnCoordinator {
 		this.settledStatuses.set(key, {
 			path: [...path],
 			state: completionStatus,
-			...(status.lastOutput !== undefined ? { output: status.lastOutput } : {}),
-			...(data.error !== undefined ? { error: data.error } : {}),
-			...(data.sessionId !== undefined ? { sessionId: data.sessionId } : {}),
+			...(status.lastOutput !== undefined ? { output: status.lastOutput } : undefined),
+			...(data.error !== undefined ? { error: data.error } : undefined),
+			...(data.sessionId !== undefined ? { sessionId: data.sessionId } : undefined),
 		});
 		this.completionManagers.set(key, manager);
 		this.completionFacts.set(key, semanticFacts);
@@ -939,9 +939,9 @@ class SessionTurnCoordinator {
 			statuses: agents.map((agent) => ({
 				path: manager.getAgentPath(agent.id) ?? [...this.semantic.getScopePath(), agent.id],
 				state: agent.status,
-				...(agent.output !== undefined ? { output: agent.output } : {}),
-				...(agent.error !== undefined ? { error: agent.error } : {}),
-				...(agent.sessionId !== undefined ? { sessionId: agent.sessionId } : {}),
+				...(agent.output !== undefined ? { output: agent.output } : undefined),
+				...(agent.error !== undefined ? { error: agent.error } : undefined),
+				...(agent.sessionId !== undefined ? { sessionId: agent.sessionId } : undefined),
 			})),
 			reason,
 		}, semantic.refs);
@@ -954,9 +954,9 @@ class SessionTurnCoordinator {
 		return {
 			path: [...path],
 			state,
-			...(status.lastOutput !== undefined ? { output: status.lastOutput } : {}),
-			...(status.lastError !== undefined ? { error: status.lastError } : {}),
-			...(sessionId !== undefined ? { sessionId } : {}),
+			...(status.lastOutput !== undefined ? { output: status.lastOutput } : undefined),
+			...(status.lastError !== undefined ? { error: status.lastError } : undefined),
+			...(sessionId !== undefined ? { sessionId } : undefined),
 		};
 	}
 
@@ -968,9 +968,9 @@ class SessionTurnCoordinator {
 			return [{
 				id,
 				status: status.state,
-				...(status.lastOutput !== undefined ? { output: status.lastOutput } : {}),
-				...(status.lastError !== undefined ? { error: status.lastError } : {}),
-				...(sessionId !== undefined ? { sessionId } : {}),
+				...(status.lastOutput !== undefined ? { output: status.lastOutput } : undefined),
+				...(status.lastError !== undefined ? { error: status.lastError } : undefined),
+				...(sessionId !== undefined ? { sessionId } : undefined),
 			}];
 		});
 	}
@@ -984,9 +984,9 @@ class SessionTurnCoordinator {
 			return [{
 				path,
 				state: status.state,
-				...(status.lastOutput !== undefined ? { output: status.lastOutput } : {}),
-				...(status.lastError !== undefined ? { error: status.lastError } : {}),
-				...(sessionId !== undefined ? { sessionId } : {}),
+				...(status.lastOutput !== undefined ? { output: status.lastOutput } : undefined),
+				...(status.lastError !== undefined ? { error: status.lastError } : undefined),
+				...(sessionId !== undefined ? { sessionId } : undefined),
 			}];
 		});
 	}
@@ -1001,10 +1001,10 @@ class SessionTurnCoordinator {
 		return {
 			text: (await truncateForModel(text)).text,
 			agents,
-			...(outcome.interrupted === true ? { interrupted: true } : {}),
-			...(outcome.error !== undefined ? { error: outcome.error } : {}),
-			...(semanticEvents?.length ? { semanticEvents } : {}),
-			...(subagentContent && subagentContent.length > 0 ? { subagentContent } : {}),
+			...(outcome.interrupted === true ? { interrupted: true } : undefined),
+			...(outcome.error !== undefined ? { error: outcome.error } : undefined),
+			...(semanticEvents?.length ? { semanticEvents } : undefined),
+			...(subagentContent && subagentContent.length > 0 ? { subagentContent } : undefined),
 		};
 	}
 }
@@ -1174,7 +1174,7 @@ class IncomingMessageState {
 		await port.respond(correlationId, message);
 		if (!result.fact) {publish({
 			phase: "response", from: port.id, to: request.message.from, message,
-			correlationId, responseExpected: false, ...(toolCallId ? { toolCallId } : {}),
+			correlationId, responseExpected: false, ...(toolCallId ? { toolCallId } : undefined),
 		});}
 		this.correlationOrigin.delete(correlationId);
 		this.correlationMessages.delete(correlationId);
@@ -1510,7 +1510,7 @@ class SubagentSessionOwner {
 				placement: {
 					toolCallId: event.placement.toolCallId,
 					contentIndex: event.placement.contentIndex,
-					...(this.nativeToolEntries.get(toolCallId) !== undefined ? { entryId: this.nativeToolEntries.get(toolCallId) } : {}),
+					...(this.nativeToolEntries.get(toolCallId) !== undefined ? { entryId: this.nativeToolEntries.get(toolCallId) } : undefined),
 				},
 			} satisfies PersistedSubagentContent];
 		});
@@ -1556,10 +1556,10 @@ class SubagentSessionOwner {
 		const result = event.result !== undefined
 			? event.result
 			: {
-					...(event.structuredContent !== undefined ? { structuredContent: event.structuredContent } : {}),
-					...(event.details !== undefined ? { details: event.details } : {}),
-					...(event.content !== undefined ? { content: event.content } : {}),
-					...(event.usage !== undefined ? { usage: event.usage } : {}),
+					...(event.structuredContent !== undefined ? { structuredContent: event.structuredContent } : undefined),
+					...(event.details !== undefined ? { details: event.details } : undefined),
+					...(event.content !== undefined ? { content: event.content } : undefined),
+					...(event.usage !== undefined ? { usage: event.usage } : undefined),
 				};
 		const customContent = [
 			this.persistedCustomContent(event.details),
@@ -1609,7 +1609,7 @@ class SubagentSessionOwner {
 		const combinedContent = [...priorContent, ...content];
 		const next = {
 			...prior,
-			...(combinedContent.length > 0 ? { subagentContent: combinedContent } : {}),
+			...(combinedContent.length > 0 ? { subagentContent: combinedContent } : undefined),
 		};
 		if (facts && facts.length > 0) {return { details: semanticDetails(next, facts) };}
 		if (combinedContent.length > 0) {return { details: next };}
@@ -1708,8 +1708,8 @@ class SubagentSessionOwner {
 				ownerControl: ownerControl ?? this.rootControl ?? new RootSubagentControlPort(),
 				managerControl,
 				registryEventsUnsubscribe: registryEvents.unsubscribe,
-				...(provider ? { provider } : {}),
-				...(unregisterProvider ? { unregisterProvider } : {}),
+				...(provider ? { provider } : undefined),
+				...(unregisterProvider ? { unregisterProvider } : undefined),
 			});
 			this.phase = { kind: "active", session };
 			this.resolveStart();
@@ -1864,8 +1864,8 @@ class SubagentSessionOwner {
 		const entryId = toolCallId === undefined ? undefined : this.nativeToolEntries.get(toolCallId);
 		return [{
 			sessionId,
-			...(entryId !== undefined ? { entryId } : {}),
-			...(toolCallId !== undefined ? { toolCallId } : {}),
+			...(entryId !== undefined ? { entryId } : undefined),
+			...(toolCallId !== undefined ? { toolCallId } : undefined),
 			kind,
 		}];
 	}
@@ -1886,7 +1886,7 @@ class SubagentSessionOwner {
 				this.delegationFacts.set(toolCallId, Object.freeze(data.children.map((child: any) => Object.freeze({
 					path: Object.freeze([...(Array.isArray(child.path) ? child.path : [])]),
 					task: typeof child.task === "string" ? child.task : "",
-					...(typeof child.persona === "string" ? { persona: child.persona } : {}),
+					...(typeof child.persona === "string" ? { persona: child.persona } : undefined),
 				}))));
 			}
 		}
@@ -1913,10 +1913,10 @@ class SubagentSessionOwner {
 			from,
 			to,
 			text: event.message,
-			...(event.correlationId !== undefined ? { correlationId: event.correlationId } : {}),
+			...(event.correlationId !== undefined ? { correlationId: event.correlationId } : undefined),
 			responseExpected: event.responseExpected,
 			phase: event.phase,
-			...(event.error !== undefined ? { error: event.error } : {}),
+			...(event.error !== undefined ? { error: event.error } : undefined),
 		}, this.nativeRefs(event.toolCallId, event.toolCallId ? "tool_call" : "lifecycle"));
 	}
 
@@ -1963,7 +1963,7 @@ class SubagentSessionOwner {
 			from,
 			to,
 			text: message.message,
-			...(message.correlationId !== undefined ? { correlationId: message.correlationId } : {}),
+			...(message.correlationId !== undefined ? { correlationId: message.correlationId } : undefined),
 			responseExpected: message.responseExpected,
 			phase: "received",
 		}, this.nativeRefs(undefined, "custom_message"));
@@ -1998,7 +1998,7 @@ class SubagentSessionOwner {
 				operationId: item.operationId,
 				kind,
 				path: this.scopePath(),
-				...(placement !== undefined ? { placement } : {}),
+				...(placement !== undefined ? { placement } : undefined),
 			} as const;
 			const event = {
 				type: "snapshot" as const,
@@ -2079,7 +2079,7 @@ class SubagentSessionOwner {
 				ownership: "external",
 				incarnation: "root",
 				sessionId: stableRootSessionId(ctx, sessionFile),
-				...(sessionFile ? { sessionFile } : {}),
+				...(sessionFile ? { sessionFile } : undefined),
 				cwd: (ctx.sessionManager as { getCwd?: () => string }).getCwd?.() ?? ctx.cwd,
 				channels: [],
 				operational: emptyOperational("idle"),
@@ -2206,7 +2206,7 @@ class SubagentSessionOwner {
 			contentIndex: update.contentIndex,
 			toolName,
 			path: this.scopePath(),
-			...(targetPath !== undefined ? { targetPath } : {}),
+			...(targetPath !== undefined ? { targetPath } : undefined),
 			phase: update.type === "toolcall_start" ? "start" : update.type === "toolcall_end" ? "end" : "delta",
 			delta,
 		};
@@ -2255,7 +2255,7 @@ class SubagentSessionOwner {
 			cacheWrite: prior.cacheWrite + (usage?.cacheWrite || 0),
 			cost: prior.cost + (usage?.cost?.total || 0),
 			turns: prior.turns + 1,
-			...(costBreakdown !== undefined ? { costBreakdown } : {}),
+			...(costBreakdown !== undefined ? { costBreakdown } : undefined),
 		};
 		let lastOutput = operational.lastOutput;
 		let lastText: string | undefined;
@@ -2274,7 +2274,7 @@ class SubagentSessionOwner {
 			model,
 			contextWindow: modelInfo?.contextWindow ?? operational.contextWindow,
 			lastTurnInput: (usage?.input || 0) + (usage?.cacheRead || 0) + (usage?.cacheWrite || 0),
-			...(lastText !== undefined ? { lastActivity: activityPreview(lastText) } : {}),
+			...(lastText !== undefined ? { lastActivity: activityPreview(lastText) } : undefined),
 			lastOutput,
 		});
 	}
@@ -2788,7 +2788,7 @@ class SubagentSessionOwner {
 			children: agentSpecs.map((spec) => ({
 				path: childAgentPath(this.scopePath(), spec.id),
 				task: spec.task,
-				...(spec.personaName !== undefined ? { persona: spec.personaName } : {}),
+				...(spec.personaName !== undefined ? { persona: spec.personaName } : undefined),
 			})),
 		}, refs);
 		await session.presentation.ensureWidget(ctx);
@@ -2917,13 +2917,13 @@ class SubagentSessionOwner {
 			receipt = await port.send({ to: params.to, message: params.message, expectResponse: params.expectResponse });
 		} catch (error) {
 			publishPhase({ phase: "failure", from: params.to, to: "parent", message: params.message, responseExpected: false,
-				...(toolCallId ? { toolCallId } : {}), error: error instanceof Error ? error.message : String(error) });
+				...(toolCallId ? { toolCallId } : undefined), error: error instanceof Error ? error.message : String(error) });
 			unsubscribe();
 			throw error;
 		}
 		if (!tracking.facts.some((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")) {
 			publishPhase({ phase: "sent", from: "parent", to: params.to, message: params.message, responseExpected: params.expectResponse === true,
-				...(toolCallId ? { toolCallId } : {}), ...(receipt.correlationId ? { correlationId: receipt.correlationId } : {}) });
+				...(toolCallId ? { toolCallId } : undefined), ...(receipt.correlationId ? { correlationId: receipt.correlationId } : undefined) });
 		}
 		if (!params.expectResponse) {
 			unsubscribe();
@@ -2941,8 +2941,8 @@ class SubagentSessionOwner {
 			const phase = response.type === "response" ? "response" : "failure";
 			const existing = tracking.facts.find((fact) => fact.kind === "message_thread" && fact.data.phase === phase && fact.data.correlationId === correlationId);
 			return existing ?? publishPhase({ phase, from: params.to, to: "parent", message: response.type === "response" ? response.message : params.message,
-				correlationId, responseExpected: false, ...(toolCallId ? { toolCallId } : {}),
-				...(response.type === "error" ? { error: response.error } : {}) });
+				correlationId, responseExpected: false, ...(toolCallId ? { toolCallId } : undefined),
+				...(response.type === "error" ? { error: response.error } : undefined) });
 		};
 		const deliverDeferredResponse = (response: RoutedResponse) => {
 			try {
@@ -3057,9 +3057,9 @@ class SubagentSessionOwner {
 				incarnation: snapshot.incarnation,
 				state: snapshot.operational.state,
 				usage: snapshot.operational.usage,
-				...(snapshot.task !== undefined ? { task: snapshot.task } : {}),
+				...(snapshot.task !== undefined ? { task: snapshot.task } : undefined),
 				channels: [...snapshot.channels],
-				...(snapshot.operational.model !== undefined ? { model: snapshot.operational.model } : {}),
+				...(snapshot.operational.model !== undefined ? { model: snapshot.operational.model } : undefined),
 			}));
 		});
 		for (const entry of reports) {
@@ -3116,7 +3116,7 @@ class SubagentSessionOwner {
 				sessionId: request.sessionId,
 				task: request.task,
 				channels: [...request.channels],
-				...(request.model !== undefined ? { model: request.model } : {}),
+				...(request.model !== undefined ? { model: request.model } : undefined),
 			}],
 		};
 		const result = await this.resurrectAgents(params, ctx);
@@ -3162,9 +3162,9 @@ class SubagentSessionOwner {
 				incarnation: removed.incarnation,
 				state: removed.operational.state,
 				usage: removed.operational.usage,
-				...(removed.task !== undefined ? { task: removed.task } : {}),
+				...(removed.task !== undefined ? { task: removed.task } : undefined),
 				channels: [...removed.channels],
-				...(removed.operational.model !== undefined ? { model: removed.operational.model } : {}),
+				...(removed.operational.model !== undefined ? { model: removed.operational.model } : undefined),
 			}
 			: undefined;
 		const content: PersistedSubagentContent = {
@@ -3182,7 +3182,7 @@ class SubagentSessionOwner {
 					incarnation: result.incarnation,
 					outcome: "succeeded",
 					source: "user",
-					...(affectedAgent ? { affectedAgents: [affectedAgent] } : {}),
+					...(affectedAgent ? { affectedAgents: [affectedAgent] } : undefined),
 				},
 				toolBacked: true,
 			}),
@@ -3295,8 +3295,8 @@ class SubagentSessionOwner {
 					incarnation: snapshot?.incarnation ?? "unknown",
 					state: status?.state === "idle" ? "idle" : "running",
 					usage: status?.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
-					...(status?.lastOutput !== undefined ? { output: status.lastOutput } : {}),
-					...(status?.lastError !== undefined ? { error: status.lastError } : {}),
+					...(status?.lastOutput !== undefined ? { output: status.lastOutput } : undefined),
+					...(status?.lastError !== undefined ? { error: status.lastError } : undefined),
 				};
 			}),
 		};
@@ -3337,8 +3337,8 @@ class SubagentSessionOwner {
 			});
 			const output = this.structuredTextResult(result.text, {
 				agents: result.agents,
-				...(result.interrupted === true ? { interrupted: true } : {}),
-				...(result.error !== undefined ? { error: result.error } : {}),
+				...(result.interrupted === true ? { interrupted: true } : undefined),
+				...(result.error !== undefined ? { error: result.error } : undefined),
 			}, [started, ...(result.semanticEvents ?? [])]);
 			const subagentContent = result.subagentContent?.filter((item) => item.kind !== "completion") ?? [];
 			if (subagentContent.length === 0) {return output;}
@@ -3383,7 +3383,7 @@ class SubagentSessionOwner {
 				operation: "interrupt",
 				outcome: outcome === "settled" ? "succeeded" : "failed",
 				path: pathValue,
-				...(result.status === "rejected" ? { error: String(result.reason) } : {}),
+				...(result.status === "rejected" ? { error: String(result.reason) } : undefined),
 			}, refs);
 		});
 		if (interrupted.length > 0) {lines.push(`Interrupted: ${interrupted.map((item) => item.path.at(-1)).join(", ")}`);}

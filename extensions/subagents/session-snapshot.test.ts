@@ -38,7 +38,7 @@ function assistantLine(opts: {
 	if (opts.model !== undefined) {message.model = opts.model;}
 	if (opts.usage) {
 		const { cost, ...rest } = opts.usage;
-		message.usage = { ...rest, ...(cost !== undefined ? { cost: { total: cost } } : {}) };
+		message.usage = { ...rest, ...(cost !== undefined ? { cost: { total: cost } } : undefined) };
 	}
 	return { type: "message", message };
 }

@@ -38,7 +38,7 @@ export default function autoflowAutostart(pi: ExtensionAPI) {
 	pi.on("input", (event) => {
 		const plan = planInput(armed, {
 			text: event.text,
-			...(event.streamingBehavior !== undefined ? { streamingBehavior: event.streamingBehavior } : {}),
+			...(event.streamingBehavior !== undefined ? { streamingBehavior: event.streamingBehavior } : undefined),
 			command,
 		});
 		armed = plan.armed;

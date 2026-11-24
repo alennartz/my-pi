@@ -71,7 +71,7 @@ export function selectActivePersona(
 	if (active === undefined) {return undefined;}
 	return {
 		name: active.name,
-		...(active.icon !== undefined ? { icon: active.icon } : {}),
+		...(active.icon !== undefined ? { icon: active.icon } : undefined),
 		model: active.model,
 		tools: active.tools,
 		skills: active.skills,
@@ -842,7 +842,7 @@ export class SubagentManager {
 				usage: { ...snapshot.usage },
 				model: parsedModel?.model,
 				thinkingLevel: parsedModel?.thinking,
-				...(snapshot.lastOutput !== undefined ? { lastActivity: activityPreview(snapshot.lastOutput) } : {}),
+				...(snapshot.lastOutput !== undefined ? { lastActivity: activityPreview(snapshot.lastOutput) } : undefined),
 				lastOutput: snapshot.lastOutput,
 				lastTurnInput: snapshot.lastTurnInput,
 				contextWindow: parsedModel?.model ? this.opts.resolveContextWindow(parsedModel.model) : undefined,
@@ -975,7 +975,7 @@ export class SubagentManager {
 				cacheWrite: current.usage.cacheWrite + (usage.cacheWrite || 0),
 				cost: current.usage.cost + (usage.cost?.total || 0),
 				turns: current.usage.turns,
-				...(costBreakdown !== undefined ? { costBreakdown } : {}),
+				...(costBreakdown !== undefined ? { costBreakdown } : undefined),
 			},
 		}));
 	}
@@ -1017,11 +1017,11 @@ export class SubagentManager {
 				cacheWrite: current.usage.cacheWrite + cacheWrite,
 				cost: current.usage.cost + (usage?.cost?.total || 0),
 				turns: current.usage.turns + 1,
-				...(costBreakdown !== undefined ? { costBreakdown } : {}),
+				...(costBreakdown !== undefined ? { costBreakdown } : undefined),
 			},
 			model: messageModel ?? current.model,
 			thinkingLevel: messageThinkingLevel ?? current.thinkingLevel,
-			...(lastText !== undefined ? { lastActivity: activityPreview(lastText) } : {}),
+			...(lastText !== undefined ? { lastActivity: activityPreview(lastText) } : undefined),
 			lastOutput,
 			lastTurnInput: input + cacheRead + cacheWrite,
 			contextWindow: current.contextWindow ?? (messageModel
@@ -1461,7 +1461,7 @@ function projectStatus(snapshot: AgentNodeSnapshot): AgentStatus {
 			...operational.usage,
 			...(operational.usage.costBreakdown
 				? { costBreakdown: { ...operational.usage.costBreakdown } }
-				: {}),
+				: undefined),
 		},
 		model: operational.model,
 		thinkingLevel: operational.thinkingLevel,
@@ -1489,7 +1489,7 @@ function addUsage(first: AgentUsage, second: AgentUsage): AgentUsage {
 		cacheWrite: first.cacheWrite + second.cacheWrite,
 		cost: first.cost + second.cost,
 		turns: first.turns + second.turns,
-		...(costBreakdown !== undefined ? { costBreakdown } : {}),
+		...(costBreakdown !== undefined ? { costBreakdown } : undefined),
 	};
 }
 
@@ -1506,7 +1506,7 @@ function subtractUsage(current: AgentUsage, baseline: AgentUsage): AgentUsage {
 		cacheWrite: current.cacheWrite - baseline.cacheWrite,
 		cost: current.cost - baseline.cost,
 		turns: current.turns - baseline.turns,
-		...(costBreakdown !== undefined ? { costBreakdown } : {}),
+		...(costBreakdown !== undefined ? { costBreakdown } : undefined),
 	};
 }
 

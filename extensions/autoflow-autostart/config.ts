@@ -80,7 +80,7 @@ export function parseAutoflowConfig(raw: string): ParsedAutoflowConfig {
 
 	return {
 		config: { autoStart, command },
-		...(warnings.length > 0 ? { warning: warnings.join(" ") } : {}),
+		...(warnings.length > 0 ? { warning: warnings.join(" ") } : undefined),
 	};
 }
 
