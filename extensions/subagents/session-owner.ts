@@ -2,8 +2,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from '@earendil-works/pi-coding-agent';
+import type { AgentToolResult, ExtensionAPI, ExtensionContext, ExtensionFactory } from '@earendil-works/pi-coding-agent';
 import { Type } from "typebox";
+import type { Static } from "typebox";
 import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
 import { answerActivity } from "@pimote/sdk/activity";
 import { registerProvider } from "@pimote/sdk/subagents";
@@ -245,6 +246,12 @@ type SettledRun = { aborted: boolean; rootError: string | undefined };
 type ResponseFactSlot = { fact?: SubagentSemanticFact };
 
 type MessageTracking = { facts: SubagentSemanticFact[]; correlationId?: string };
+
+/** The result shape pi accepts from a tool handler. */
+type ToolReply = AgentToolResult;
+
+/** Await report details, including any content kept for replay. */
+type AwaitReplyDetails = AwaitResultData & { subagentContent?: PersistedSubagentContent[] };
 
 type ToolResult<Details> = {
 	content: { type: "text"; text: string }[];
@@ -2490,28 +2497,6 @@ class SubagentSessionOwner {
 	}
 
 	private registerTools(): void {
-		const AgentItem = Type.Object({
-			id: Type.String({ description: "Unique identifier for this agent among the parent's active agents" }),
-			persona: Type.Optional(Type.String({ description: "Persona name — the `name` of a discovered agent definition (omit for a default general-purpose agent)" })),
-			model: Type.Optional(Type.String({ description: "Tier (cheap, medium, smart, frontier) or concrete model id. A persona model pin outranks this value." })),
-			task: Type.String({ description: "Task description for this agent" }),
-			channels: Type.Optional(Type.Array(Type.String(), {
-				description: "Peer agent ids this agent can send to. The parent is always allowed.",
-			})),
-			cwd: Type.Optional(Type.String({
-				description:
-					"Working directory for this agent. Relative paths resolve against the parent's cwd. " +
-					"Defaults to the parent's cwd. The subagent boots as if pi were freshly launched in this directory — " +
-					"its AGENTS.md, project agents, and project skills are discovered relative to it.",
-			})),
-		});
-		const ResurrectItem = Type.Object({
-			id: Type.String({ description: "Unique identifier for the resurrected agent among the parent's active agents" }),
-			sessionId: Type.String({ description: "session_id surfaced by a prior teardown report" }),
-			model: Type.Optional(Type.String({ description: "Tier (cheap, medium, smart, frontier) or concrete model id. Omit to keep the model the session last ran on. A persona model pin outranks this value." })),
-			channels: Type.Array(Type.String(), { description: "Peer agent ids this agent can send to (re-declared fresh; siblings resurrected in the same batch are valid targets). Parent is always allowed." }),
-			task: Type.String({ description: "Directive the agent runs on resurrection" }),
-		});
 
 		this.pi.registerTool({
 			name: "list_models",
@@ -2526,9 +2511,6 @@ class SubagentSessionOwner {
 			execute: async (_toolCallId, _params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.listModels(ctx)),
 		});
 
-		const SubagentParams = Type.Object({
-			agents: Type.Array(AgentItem, { description: "Agents to spawn under this parent session" }),
-		});
 		this.pi.registerTool({
 			name: "subagent",
 			label: "Subagents",
@@ -2544,12 +2526,12 @@ class SubagentSessionOwner {
 				"Prefer `subagent` over `fork` when the work needs multiple coordinated agents, specialized agents, or a clean slate. Prefer `fork` when you want a copy of your current session context to explore a side quest without bloating your primary context.",
 				"Read the orchestrating-agents skill before splitting work across subagents.",
 			],
-			parameters: SubagentParams,
+			parameters: SubagentParamsSchema,
 			executionMode: "sequential",
 			// Legacy `agent` item fields rewrite to the public `persona` field
 			// first, so the empty-optional cleanup and schema validation see only
 			// the advertised name.
-			prepareArguments: (args: unknown) => dropEmptyOptionals(SubagentParams, renameLegacyPersonaFields(args)) as any,
+			prepareArguments: (args: unknown) => dropEmptyOptionals(SubagentParamsSchema, renameLegacyPersonaFields(args)) as SubagentToolParams,
 			execute: async (toolCallId, params, signal, _onUpdate, ctx) => this.runSemanticTool(toolCallId, signal, () => this.spawnAgents(params, signal, ctx, toolCallId)),
 		});
 
@@ -2560,10 +2542,7 @@ class SubagentSessionOwner {
 			outputSchema: SpawnResultSchema,
 			description: "Start a child agent from a copy of this conversation. The child inherits the model and cwd. Returns the same result shape as subagent.",
 			promptSnippet: "Fork a child agent that keeps your full conversation history.",
-			parameters: Type.Object({
-				id: Type.String({ description: "Unique identifier for the forked agent" }),
-				task: Type.String({ description: "Task description for the forked agent" }),
-			}),
+			parameters: ForkParamsSchema,
 			executionMode: "sequential",
 			execute: async (toolCallId, params, signal, _onUpdate, ctx) => this.runSemanticTool(toolCallId, signal, () => this.forkAgent(params, signal, ctx, toolCallId)),
 		});
@@ -2579,11 +2558,7 @@ class SubagentSessionOwner {
 				"As a subagent, do not use send to report a final result. Your final text reaches the parent automatically.",
 				"For scatter-gather: call send(expectResponse=true) to multiple agents in the same turn. Each returns when its target responds.",
 			],
-			parameters: Type.Object({
-				to: Type.String({ description: "Target agent id or 'parent'" }),
-				message: Type.String({ description: "Message content" }),
-				expectResponse: Type.Optional(Type.Boolean({ description: "Wait for a response (blocking). Default: false.", default: false })),
-			}),
+			parameters: SendParamsSchema,
 			execute: async (toolCallId, params, signal) => this.runSemanticTool(toolCallId, signal, () => this.sendMessage(params, signal, toolCallId)),
 		});
 
@@ -2593,10 +2568,7 @@ class SubagentSessionOwner {
 			exposure: "direct",
 			description: "Reply to one agent_message by correlationId. Required when response_expected is true.",
 			promptSnippet: "Answer an agent_message that needs a reply.",
-			parameters: Type.Object({
-				correlationId: Type.String({ description: "The correlation_id from the incoming agent_message" }),
-				message: Type.String({ description: "Response content" }),
-			}),
+			parameters: RespondParamsSchema,
 			execute: async (toolCallId, params, signal) => this.runSemanticTool(toolCallId, signal, () => this.respondToMessage(params, toolCallId)),
 		});
 
@@ -2608,7 +2580,7 @@ class SubagentSessionOwner {
 			outputSchema: StatusResultSchema,
 			description: "Query agent status. Omit agent for summary of all active agents.",
 			promptSnippet: "Query agent status; use only for a specific reason: suspected stall, progress question, or mid-run usage check.",
-			parameters: Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to query. Omit for summary of all active agents." })) }),
+			parameters: CheckStatusParamsSchema,
 			execute: async (_toolCallId, params, signal) => this.runWhenReady(signal, () => this.checkStatus(params)),
 		});
 
@@ -2619,7 +2591,7 @@ class SubagentSessionOwner {
 			outputSchema: TeardownResultSchema,
 			description: "Remove an agent or tear down all agents. Returns a completion report.",
 			promptSnippet: "Remove agents no longer needed; idle or errored agents stay usable, so send new messages to restart or continue work.",
-			parameters: Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to remove. Omit to tear down all agents." })) }),
+			parameters: TeardownParamsSchema,
 			execute: async (toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.teardownAgents(params, ctx, toolCallId)),
 		});
 
@@ -2633,7 +2605,7 @@ class SubagentSessionOwner {
 			promptGuidelines: [
 				"To resurrect a mesh of agents that talked to each other, resurrect them in a single call: each agent may declare channels to its siblings, since they come online together.",
 			],
-			parameters: Type.Object({ agents: Type.Array(ResurrectItem, { description: "Agents to resurrect from their session files." }) }),
+			parameters: ResurrectParamsSchema,
 			executionMode: "sequential",
 			execute: async (toolCallId, params, signal, _onUpdate, ctx) => this.runWhenReady(signal, () => this.resurrectAgents(params, ctx, toolCallId)),
 		});
@@ -2648,7 +2620,7 @@ class SubagentSessionOwner {
 			promptGuidelines: [
 				"Any agent message that arrives during await_agents interrupts the wait. If that message expects a response, you must call `respond` before waiting again.",
 			],
-			parameters: Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to wait on. Omit to wait on all active agents." })) }),
+			parameters: AwaitParamsSchema,
 			execute: async (toolCallId, params, signal) => this.runSemanticTool(toolCallId, signal, () => this.awaitAgents(params, signal, toolCallId)),
 		});
 
@@ -2659,7 +2631,7 @@ class SubagentSessionOwner {
 			outputSchema: InterruptResultSchema,
 			description: "Halt a subagent immediately without tearing it down. Interrupts any in-flight tool call. Returns interrupted, pending, and failed agent lists. pending means the abort was delivered but has not settled.",
 			promptSnippet: "Halt an agent immediately without tearing it down; prefer send unless the agent must stop now.",
-			parameters: Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to interrupt. Omit to interrupt all active agents." })) }),
+			parameters: InterruptParamsSchema,
 			execute: async (toolCallId, params, signal) => this.runWhenReady(signal, () => this.interruptAgents(params, signal, toolCallId)),
 		});
 	}
@@ -2685,7 +2657,7 @@ class SubagentSessionOwner {
 		return { content: [{ type: "text", text: lines.join("\n") }], details: data, structuredContent: data };
 	}
 
-	private async spawnAgents(params: any, signal: AbortSignal | undefined, ctx: ExtensionContext, toolCallId?: string): Promise<any> {
+	private async spawnAgents(params: SubagentToolParams, signal: AbortSignal | undefined, ctx: ExtensionContext, toolCallId?: string): Promise<ToolReply> {
 		const session = this.requireActiveSession();
 		const discovery = session.environment.discoverAgents(ctx.cwd);
 		const allAgentConfigs = discovery.agents;
@@ -2812,7 +2784,7 @@ class SubagentSessionOwner {
 		}, delegation);
 	}
 
-	private async forkAgent(params: any, signal: AbortSignal | undefined, ctx: ExtensionContext, toolCallId?: string): Promise<any> {
+	private async forkAgent(params: ForkToolParams, signal: AbortSignal | undefined, ctx: ExtensionContext, toolCallId?: string): Promise<ToolReply> {
 		const session = this.requireActiveSession();
 		const manager = session.manager;
 		if (manager.getAgentStatus(params.id)) {throw new Error(`Agent id "${params.id}" already exists`);}
@@ -2885,7 +2857,7 @@ class SubagentSessionOwner {
 		}, delegation);
 	}
 
-	private async sendMessage(params: any, signal: AbortSignal | undefined, toolCallId?: string): Promise<any> {
+	private async sendMessage(params: SendToolParams, signal: AbortSignal | undefined, toolCallId?: string): Promise<ToolReply> {
 		const session = this.requireActiveSession();
 		const from = this.scopePath();
 		if (signal?.aborted) {throw new Error("Cancelled");}
@@ -2922,7 +2894,7 @@ class SubagentSessionOwner {
 		port.setSemanticToolCall?.(toolCallId, publishPhase);
 		let receipt: Awaited<ReturnType<MessagePort["send"]>>;
 		try {
-			receipt = await port.send({ to: params.to, message: params.message, expectResponse: params.expectResponse });
+			receipt = await port.send({ to: params.to, message: params.message, expectResponse: params.expectResponse ?? false });
 		} catch (error) {
 			publishPhase({ phase: "failure", from: params.to, to: "parent", message: params.message, responseExpected: false,
 				...(toolCallId ? { toolCallId } : undefined), error: error instanceof Error ? error.message : String(error) });
@@ -3024,13 +2996,13 @@ class SubagentSessionOwner {
 		throw new Error(outcome.response.error);
 	}
 
-	private async respondToMessage(params: any, toolCallId?: string): Promise<any> {
+	private async respondToMessage(params: RespondToolParams, toolCallId?: string): Promise<ToolReply> {
 		const session = this.requireActiveSession();
 		const fact = await session.incomingMessages.respond(params.correlationId, params.message, toolCallId);
 		return { content: [{ type: "text", text: "Response sent." }], details: semanticDetails({}, fact) };
 	}
 
-	private checkStatus(params: any): ToolResult<StatusResultData> {
+	private checkStatus(params: CheckStatusToolParams): ToolResult<StatusResultData> {
 		const { manager } = this.requireActiveSession();
 		if (!manager.hasAgents()) {throw new Error("No agents running.");}
 		if (params.agent) {
@@ -3044,7 +3016,7 @@ class SubagentSessionOwner {
 		return { content: [{ type: "text", text: statuses.map(formatAgentStatusSummary).join("\n") }], details: data, structuredContent: data };
 	}
 
-	private async teardownAgents(params: any, ctx: ExtensionContext, toolCallId?: string): Promise<any> {
+	private async teardownAgents(params: TeardownToolParams, ctx: ExtensionContext, toolCallId?: string): Promise<ToolReply> {
 		const session = this.requireActiveSession();
 		if (!session.manager.hasAgents()) {throw new Error("No agents to teardown.");}
 		const targetIds: string[] = params.agent ? [params.agent] : session.manager.getAgentStatuses().map((status) => status.id);
@@ -3217,7 +3189,7 @@ class SubagentSessionOwner {
 		return result;
 	}
 
-	private async resurrectAgents(params: any, ctx: ExtensionContext, toolCallId?: string): Promise<any> {
+	private async resurrectAgents(params: ResurrectToolParams, ctx: ExtensionContext, toolCallId?: string): Promise<ToolReply> {
 		const session = this.requireActiveSession();
 		const manager = session.manager;
 		if (params.agents.length === 0) {throw new Error("Empty agents array — provide at least one agent to resurrect.");}
@@ -3321,7 +3293,7 @@ class SubagentSessionOwner {
 		return { content: [{ type: "text", text: ack }], details: semanticDetails(data, facts), structuredContent: data };
 	}
 
-	private async awaitAgents(params: any, signal: AbortSignal | undefined, toolCallId?: string): Promise<any> {
+	private async awaitAgents(params: AwaitToolParams, signal: AbortSignal | undefined, toolCallId?: string): Promise<AgentToolResult<AwaitReplyDetails>> {
 		const session = this.requireActiveSession();
 		const manager = session.manager;
 		if (!manager.hasAgents()) {throw new Error("No agents running. Spawn agents first with the subagent or fork tool.");}
@@ -3343,26 +3315,20 @@ class SubagentSessionOwner {
 				invocationId: toolCallId ?? started.eventId,
 				refs,
 			});
-			const output = this.structuredTextResult(result.text, {
+			const output: AgentToolResult<AwaitReplyDetails> = this.structuredTextResult(result.text, {
 				agents: result.agents,
 				...(result.interrupted === true ? { interrupted: true } : undefined),
 				...(result.error !== undefined ? { error: result.error } : undefined),
 			}, [started, ...(result.semanticEvents ?? [])]);
 			const subagentContent = result.subagentContent?.filter((item) => item.kind !== "completion") ?? [];
 			if (subagentContent.length === 0) {return output;}
-			return {
-				...output,
-				details: {
-					...(output.details as Record<string, unknown>),
-					subagentContent,
-				},
-			};
+			return { ...output, details: { ...output.details, subagentContent } };
 		} finally {
 			this.activeAwaitOperations.delete(toolCallId ?? `${this.currentSessionId()}:await`);
 		}
 	}
 
-	private async interruptAgents(params: any, signal: AbortSignal | undefined, toolCallId?: string): Promise<any> {
+	private async interruptAgents(params: InterruptToolParams, signal: AbortSignal | undefined, toolCallId?: string): Promise<ToolReply> {
 		const { manager } = this.requireActiveSession();
 		if (!manager.hasAgents()) {throw new Error("No agents running. Spawn agents first with the subagent or fork tool.");}
 		const requested = params.agents?.length ? params.agents : undefined;
@@ -3426,7 +3392,72 @@ class SubagentSessionOwner {
 	}
 }
 
-/** Build an extension factory bound to one root or child session scope. */
+/** Tool parameter schemas, shared by tool registration and handler types. */
+const AgentItemSchema = Type.Object({
+	id: Type.String({ description: "Unique identifier for this agent among the parent's active agents" }),
+	persona: Type.Optional(Type.String({ description: "Persona name — the `name` of a discovered agent definition (omit for a default general-purpose agent)" })),
+	model: Type.Optional(Type.String({ description: "Tier (cheap, medium, smart, frontier) or concrete model id. A persona model pin outranks this value." })),
+	task: Type.String({ description: "Task description for this agent" }),
+	channels: Type.Optional(Type.Array(Type.String(), {
+		description: "Peer agent ids this agent can send to. The parent is always allowed.",
+	})),
+	cwd: Type.Optional(Type.String({
+		description:
+			"Working directory for this agent. Relative paths resolve against the parent's cwd. " +
+			"Defaults to the parent's cwd. The subagent boots as if pi were freshly launched in this directory — " +
+			"its AGENTS.md, project agents, and project skills are discovered relative to it.",
+	})),
+});
+
+const ResurrectItemSchema = Type.Object({
+	id: Type.String({ description: "Unique identifier for the resurrected agent among the parent's active agents" }),
+	sessionId: Type.String({ description: "session_id surfaced by a prior teardown report" }),
+	model: Type.Optional(Type.String({ description: "Tier (cheap, medium, smart, frontier) or concrete model id. Omit to keep the model the session last ran on. A persona model pin outranks this value." })),
+	channels: Type.Array(Type.String(), { description: "Peer agent ids this agent can send to (re-declared fresh; siblings resurrected in the same batch are valid targets). Parent is always allowed." }),
+	task: Type.String({ description: "Directive the agent runs on resurrection" }),
+});
+
+const SubagentParamsSchema = Type.Object({
+	agents: Type.Array(AgentItemSchema, { description: "Agents to spawn under this parent session" }),
+});
+
+const ForkParamsSchema = Type.Object({
+	id: Type.String({ description: "Unique identifier for the forked agent" }),
+	task: Type.String({ description: "Task description for the forked agent" }),
+});
+
+const SendParamsSchema = Type.Object({
+	to: Type.String({ description: "Target agent id or 'parent'" }),
+	message: Type.String({ description: "Message content" }),
+	expectResponse: Type.Optional(Type.Boolean({ description: "Wait for a response (blocking). Default: false.", default: false })),
+});
+
+const RespondParamsSchema = Type.Object({
+	correlationId: Type.String({ description: "The correlation_id from the incoming agent_message" }),
+	message: Type.String({ description: "Response content" }),
+});
+
+const CheckStatusParamsSchema = Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to query. Omit for summary of all active agents." })) });
+
+const TeardownParamsSchema = Type.Object({ agent: Type.Optional(Type.String({ description: "Agent id to remove. Omit to tear down all agents." })) });
+
+const ResurrectParamsSchema = Type.Object({ agents: Type.Array(ResurrectItemSchema, { description: "Agents to resurrect from their session files." }) });
+
+const AwaitParamsSchema = Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to wait on. Omit to wait on all active agents." })) });
+
+const InterruptParamsSchema = Type.Object({ agents: Type.Optional(Type.Array(Type.String(), { description: "Agent IDs to interrupt. Omit to interrupt all active agents." })) });
+
+/** Parameters each tool handler receives, derived from its schema. */
+type SubagentToolParams = Static<typeof SubagentParamsSchema>;
+type ForkToolParams = Static<typeof ForkParamsSchema>;
+type SendToolParams = Static<typeof SendParamsSchema>;
+type RespondToolParams = Static<typeof RespondParamsSchema>;
+type CheckStatusToolParams = Static<typeof CheckStatusParamsSchema>;
+type TeardownToolParams = Static<typeof TeardownParamsSchema>;
+type ResurrectToolParams = Static<typeof ResurrectParamsSchema>;
+type AwaitToolParams = Static<typeof AwaitParamsSchema>;
+type InterruptToolParams = Static<typeof InterruptParamsSchema>;
+
 export function createSubagentsExtension(scope: SubagentScope): ExtensionFactory {
 	return (pi: ExtensionAPI) => new SubagentSessionOwner(scope, pi).register();
 }
