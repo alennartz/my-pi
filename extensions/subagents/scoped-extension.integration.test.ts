@@ -123,7 +123,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 	nodes.set(key([]), { snapshot: rootSnapshot });
 	const seedPath = (agentPath: AgentPath) => {
 		for (let length = 1; length <= agentPath.length; length++) {
-			const pathAtDepth = [...agentPath.slice(0, length)];
+			const pathAtDepth = agentPath.slice(0, length);
 			if (nodes.has(key(pathAtDepth))) {continue;}
 			const snapshot: AgentNodeSnapshot = {
 				path: pathAtDepth,

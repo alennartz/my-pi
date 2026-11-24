@@ -138,6 +138,8 @@ function registryFixture(workerSessionFile?: string): {
       return () => listeners.delete(next);
     }),
     remove: vi.fn(async (path: AgentPath) => {
+      // The loop splices this array, so it iterates a copy.
+      // oxlint-disable-next-line no-useless-spread
       for (const item of [...nodes]) {
         if (path.every((part, index) => item.snapshot.path[index] === part)) {
           nodes.splice(nodes.indexOf(item), 1);

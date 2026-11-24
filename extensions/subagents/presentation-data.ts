@@ -73,7 +73,7 @@ export function cleanPresentationValue(value: unknown): unknown {
 }
 
 export function presentationPath(owner: AgentPath, value: unknown): AgentPath {
-	if (Array.isArray(value)) {return [...value.filter((part): part is string => typeof part === 'string' && part.length > 0)];}
+	if (Array.isArray(value)) {return value.filter((part): part is string => typeof part === 'string' && part.length > 0);}
 	if (typeof value !== 'string' || value.length === 0) {return [...owner];}
 	if (value === 'parent') {return owner.slice(0, -1);}
 	const path = value.split('/').filter(Boolean);

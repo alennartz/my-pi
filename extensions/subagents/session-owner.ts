@@ -394,7 +394,7 @@ class SessionTurnCoordinator {
 					const details = subagentContent.length > 0 ? { subagentContent } : undefined;
 					pi.sendMessage(
 						{ customType: "subagents", content: completionBatch.map((entry) => entry.xml).join("\n"), display: true, ...(details ? { details } : {}) },
-						{ ...(deferred ? { deliverAs: "nextTurn" } : { triggerTurn: true }) },
+						deferred ? { deliverAs: "nextTurn" } : { triggerTurn: true },
 					);
 					completionBatch = [];
 				};
@@ -414,7 +414,7 @@ class SessionTurnCoordinator {
 							display: true,
 							...(details ? { details } : {}),
 						},
-						{ ...(deferred ? { deliverAs: "nextTurn" } : { triggerTurn: true }) },
+						deferred ? { deliverAs: "nextTurn" } : { triggerTurn: true },
 					);
 				}
 				flushCompletionBatch();

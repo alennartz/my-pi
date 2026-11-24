@@ -53,7 +53,6 @@ export default defineConfig({
     'typescript/use-unknown-in-catch-callback-variable': 'off',
     'unicorn/catch-error-name': 'off',
     'unicorn/consistent-function-scoping': 'off',
-    'unicorn/no-useless-spread': 'off',
     'unicorn/prefer-single-call': 'off',
     // Harness scripts export helpers and run main under an entry guard.
     'unicorn/prefer-top-level-await': 'off',

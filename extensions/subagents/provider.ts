@@ -804,10 +804,10 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		retired.add(identity.incarnation);
 		retiredIncarnations.set(key, retired);
 		const prefix = `${key}:`;
-		for (const operationKey of [...presentationOperations]) {
+		for (const operationKey of presentationOperations) {
 			if (operationKey.startsWith(prefix)) {presentationOperations.delete(operationKey);}
 		}
-		for (const operationKey of [...activeOperations.keys()]) {
+		for (const operationKey of activeOperations.keys()) {
 			if (operationKey.startsWith(prefix)) {activeOperations.delete(operationKey);}
 		}
 	}
