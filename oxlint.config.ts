@@ -39,6 +39,7 @@ export default defineConfig({
     'quality/no-object-parameters': 'off',
     // Parsed payloads travel as dictionaries until a schema narrows them.
     'quality/no-unsafe-dictionary-type': 'off',
+    // Boundary parsers return unknown so callers must narrow.
     'quality/no-unknown-returns': 'off',
     'typescript/array-type': ['error', { default: 'array' }],
     // Pi event and tool payloads are untyped per event name at the SDK boundary.
