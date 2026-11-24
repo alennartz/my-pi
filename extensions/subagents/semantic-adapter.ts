@@ -116,7 +116,7 @@ function partialString(raw: string, key: string): string | undefined {
     value += character;
   }
   try { return JSON.parse(`"${value}"`); }
-  catch { return value.replaceAll('\\"', '"').replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'); }
+  catch { return value.replaceAll(String.raw`\"`, '"').replaceAll(String.raw`\n`, '\n').replaceAll(String.raw`\r`, '\r').replaceAll(String.raw`\\`, '\\'); }
 }
 
 function readQuotedString(raw: string, start: number): Readonly<{ value: string; end: number }> | undefined {

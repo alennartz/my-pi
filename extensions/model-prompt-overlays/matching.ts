@@ -11,7 +11,7 @@ export type MatchedOverlay = OverlayFile & MatchResult;
 
 export function globToRegex(glob: string): RegExp {
 	// Escape regex-special chars, then replace escaped \* with .*
-	const escaped = glob.replaceAll(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll('*', ".*");
+	const escaped = glob.replaceAll(/[.+?^${}()|[\]\\]/g, String.raw`\$&`).replaceAll('*', ".*");
 	return new RegExp(`^${escaped}$`);
 }
 

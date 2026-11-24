@@ -55,7 +55,6 @@ export default defineConfig({
     'unicorn/consistent-function-scoping': 'off',
     'unicorn/no-useless-spread': 'off',
     'unicorn/prefer-single-call': 'off',
-    'unicorn/prefer-string-raw': 'off',
     // Harness scripts export helpers and run main under an entry guard.
     'unicorn/prefer-top-level-await': 'off',
   },
