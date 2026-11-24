@@ -17,7 +17,7 @@ export default defineConfig({
         'scripts/**',
         'tools/manual-test/**',
         'skills/autoflow/check-transition.ts',
-        'extensions/web-tools/smoke.ts',
+        'extensions/web-tools/smoke.mts',
       ],
       rules: { 'no-console': 'off' },
     },
@@ -45,7 +45,5 @@ export default defineConfig({
     'typescript/no-unsafe-member-access': 'off',
     'typescript/no-unsafe-return': 'off',
     'typescript/no-unsafe-type-assertion': 'off',
-    // Harness scripts export helpers and run main under an entry guard.
-    'unicorn/prefer-top-level-await': 'off',
   },
 });

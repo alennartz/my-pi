@@ -1,17 +1,17 @@
 /**
  * Live smoke test — real network, run manually (not part of vitest):
  *
- *   npx tsx extensions/web-tools/smoke.ts
+ *   npx tsx extensions/web-tools/smoke.mts
  *
  * Requires BRAVE_API_KEY. Run twice: the second run's fetches must report
  * cached: true (disk page cache persists across invocations).
  */
 
-import { TtlLruCache } from "./cache.js";
-import { openFetchStore } from "./fetch-store.js";
-import type { SearchResponse } from "./types.js";
-import { runWebSearch } from "./web-search.js";
-import { runWebFetch } from "./web-fetch.js";
+import { TtlLruCache } from "./cache.ts";
+import { openFetchStore } from "./fetch-store.ts";
+import type { SearchResponse } from "./types.ts";
+import { runWebSearch } from "./web-search.ts";
+import { runWebFetch } from "./web-fetch.ts";
 
 const searchCache = new TtlLruCache<{ response: SearchResponse; dropped: number }>(60_000, 100);
 const fetchStore = openFetchStore();
@@ -69,7 +69,9 @@ async function main(): Promise<void> {
 	console.log("\nRun this script again — both fetches should report cached: true.");
 }
 
-main().catch((error: unknown) => {
+try {
+	await main();
+} catch (error: unknown) {
 	console.error(error);
 	process.exit(1);
-});
+}

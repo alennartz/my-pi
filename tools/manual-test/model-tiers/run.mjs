@@ -574,6 +574,8 @@ async function main() {
 
 export { agentRecords, guidanceTablePasses, tierRow, tierTableBlock };
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-	void main();
+const runsAsScript = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+
+if (runsAsScript) {
+	await main();
 }
