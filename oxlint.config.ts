@@ -35,6 +35,7 @@ export default defineConfig({
     'quality/no-chained-type-assertions': 'off',
     // Explicit return types document each helper's contract.
     'quality/no-known-value-widening': 'off',
+    // Options objects name each argument at every call site.
     'quality/no-object-parameters': 'off',
     'quality/no-unsafe-dictionary-type': 'off',
     'quality/no-unknown-returns': 'off',
