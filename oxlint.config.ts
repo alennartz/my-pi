@@ -37,6 +37,7 @@ export default defineConfig({
     'quality/no-known-value-widening': 'off',
     // Options objects name each argument at every call site.
     'quality/no-object-parameters': 'off',
+    // Parsed payloads travel as dictionaries until a schema narrows them.
     'quality/no-unsafe-dictionary-type': 'off',
     'quality/no-unknown-returns': 'off',
     'typescript/array-type': ['error', { default: 'array' }],
