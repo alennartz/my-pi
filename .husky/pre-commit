@@ -1,3 +1,6 @@
 # Canonical types are load-bearing: a commit that breaks the strict
 # typecheck does not land.
 npm run typecheck
+
+# Lint is part of the gate: a commit with findings does not land.
+npm run lint
