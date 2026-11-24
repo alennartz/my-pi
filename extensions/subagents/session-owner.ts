@@ -54,7 +54,7 @@ import { createSubagentSemanticAdapter } from './semantic-adapter.js';
 import type { PiToolCallDelta, PiToolExecution, SemanticAdapterEvent } from './semantic-adapter.js';
 export type { SemanticFactBus } from "./semantic-bus.js";
 import { createSubagentProvider } from './provider.js';
-import type { SubagentSemanticFact, SubagentAwaitChildStatus, SubagentEventKind, PiEventRef, SubagentProvider } from './provider.js';
+import type { SubagentSemanticFact, SubagentAwaitChildStatus, SubagentEventData, SubagentMessageData, PiEventRef, SubagentProvider } from './provider.js';
 import type {
 	SubagentManagerControl,
 	SubagentOwnerControlPort,
@@ -125,7 +125,7 @@ interface SemanticOwnerOptions {
 	getScopePath: () => AgentPath;
 	getSessionId: () => string;
 	getNativeRefs: (toolCallId?: string, kind?: PiEventRef["kind"]) => readonly PiEventRef[];
-	publishFact: (kind: SubagentEventKind, path: AgentPath, data: any, refs?: readonly PiEventRef[]) => SubagentSemanticFact;
+	publishFact: (event: SubagentEventData, path: AgentPath, refs?: readonly PiEventRef[]) => SubagentSemanticFact;
 }
 
 type DelegationPresentationChild = Readonly<{ path: AgentPath; task: string; persona?: string }>;
@@ -647,9 +647,9 @@ class SessionTurnCoordinator {
 		if (state.semantic) {
 			const reason = outcome.kind === "interrupted" ? "message" : outcome.reason;
 			const finalFact = this.semantic.publishFact(
-				interrupted ? "await_interrupted" : "await_released",
-				state.semantic.path,
 				{
+					kind: interrupted ? "await_interrupted" : "await_released",
+					data: {
 					invocationId: state.semantic.invocationId,
 					requested: state.semantic.requested,
 					statuses: this.currentAwaitStatuses(state.ids, state.manager),
@@ -659,7 +659,9 @@ class SessionTurnCoordinator {
 						phase: "received", responseExpected: outcome.message.responseExpected,
 						...(outcome.message.correlationId ? { correlationId: outcome.message.correlationId } : undefined),
 					} } : undefined),
+					},
 				},
+				state.semantic.path,
 				state.semantic.refs,
 			);
 			semanticEvents = [...semanticEvents, finalFact];
@@ -813,12 +815,15 @@ class SessionTurnCoordinator {
 					this.waitState = null;
 					this.queue.setWaiting(false);
 					if (state.semantic) {
-						this.semantic.publishFact("await_interrupted", state.semantic.path, {
-							invocationId: state.semantic.invocationId,
-							requested: state.semantic.requested,
-							statuses: this.currentAwaitStatuses(ids, manager),
-							reason: "stop",
-						}, state.semantic.refs);
+						this.semantic.publishFact({
+							kind: "await_interrupted",
+							data: {
+								invocationId: state.semantic.invocationId,
+								requested: state.semantic.requested,
+								statuses: this.currentAwaitStatuses(ids, manager),
+								reason: "stop",
+							},
+						}, state.semantic.path, state.semantic.refs);
 						this.clearAwaitInvocations(state.semantic.requested);
 					}
 					state.reject(new Error("Aborted"));
@@ -870,7 +875,7 @@ class SessionTurnCoordinator {
 				: { delivery: "asynchronous" as const }),
 		};
 		const refs = awaited?.refs ?? this.semantic.getNativeRefs(undefined, "lifecycle");
-		const settledFact = this.semantic.publishFact("child_settled", path, {
+		const settledFact = this.semantic.publishFact({ kind: "child_settled", data: {
 			path,
 			statuses: [{
 				path,
@@ -879,8 +884,8 @@ class SessionTurnCoordinator {
 				...(status.lastError !== undefined ? { error: status.lastError } : undefined),
 				...(manager.getSessionId(agentId) !== undefined ? { sessionId: manager.getSessionId(agentId) } : undefined),
 			}],
-		}, refs);
-		const completionFact = this.semantic.publishFact("completion", path, completionData, refs);
+		} }, path, refs);
+		const completionFact = this.semantic.publishFact({ kind: "completion", data: completionData }, path, refs);
 		const semanticFacts = [settledFact, completionFact];
 		const data: AgentCompleteData = {
 			id: agentId,
@@ -941,18 +946,18 @@ class SessionTurnCoordinator {
 			.map((id) => manager.getAgentPath(id))
 			.filter((path): path is AgentPath => path !== undefined)
 			.toArray();
-		const fact = this.semantic.publishFact("await_released", this.semantic.getScopePath(), {
+		const fact = this.semantic.publishFact({ kind: "await_released", data: {
 			invocationId: semantic.invocationId,
 			requested,
-			statuses: agents.map((agent) => ({
+			statuses: agents.map((agent): SubagentAwaitChildStatus => ({
 				path: manager.getAgentPath(agent.id) ?? [...this.semantic.getScopePath(), agent.id],
-				state: agent.status,
+				state: agent.status as SubagentAwaitChildStatus["state"],
 				...(agent.output !== undefined ? { output: agent.output } : undefined),
 				...(agent.error !== undefined ? { error: agent.error } : undefined),
 				...(agent.sessionId !== undefined ? { sessionId: agent.sessionId } : undefined),
 			})),
 			reason,
-		}, semantic.refs);
+		} }, this.semantic.getScopePath(), semantic.refs);
 		this.clearAwaitInvocations(requested);
 		return fact;
 	}
@@ -1386,7 +1391,7 @@ class SubagentSessionOwner {
 			getScopePath: () => this.scopePath(),
 			getSessionId: () => this.currentSessionId(),
 			getNativeRefs: (toolCallId, kind = "tool_call") => this.nativeRefs(toolCallId, kind),
-			publishFact: (kind, path, data, refs) => this.publishFact(kind, path, data, refs),
+			publishFact: (event, path, refs) => this.publishFact(event, path, refs),
 		});
 		this.incomingMessages = new IncomingMessageState(
 			this.turns,
@@ -1874,33 +1879,32 @@ class SubagentSessionOwner {
 		}];
 	}
 
-	private publishFact(kind: SubagentEventKind, path: AgentPath, data: any, refs: readonly PiEventRef[] = []): SubagentSemanticFact {
+	private publishFact(event: SubagentEventData, path: AgentPath, refs: readonly PiEventRef[] = []): SubagentSemanticFact {
 		const sessionId = this.currentSessionId();
 		const fact: SubagentSemanticFact = {
 			eventId: `${sessionId}:${this.semanticEpoch}:semantic-${++this.semanticSequence}`,
 			path: [...path],
-			kind: kind as any,
-			data,
 			relatedPiEvents: refs.map((ref) => ({ ...ref })),
+			...event,
 		};
 		this.semanticEvents.publish(fact);
-		if (kind === "delegation") {
+		if (event.kind === "delegation") {
 			const toolCallId = refs.find((ref) => ref.toolCallId)?.toolCallId;
-			if (toolCallId && Array.isArray(data?.children)) {
-				this.delegationFacts.set(toolCallId, Object.freeze(data.children.map((child: any) => Object.freeze({
+			if (toolCallId && Array.isArray(event.data.children)) {
+				this.delegationFacts.set(toolCallId, Object.freeze(event.data.children.map((child) => Object.freeze({
 					path: Object.freeze([...(Array.isArray(child.path) ? child.path : [])]),
 					task: typeof child.task === "string" ? child.task : "",
 					...(typeof child.persona === "string" ? { persona: child.persona } : undefined),
 				}))));
 			}
 		}
-		if (kind === "child_settled" && Array.isArray(data?.statuses)) {
+		if (event.kind === "child_settled" && Array.isArray(event.data.statuses)) {
 			for (const operationId of this.activeAwaitOperations) {
-				this.recordPresentationEvents(this.semanticAdapter.acceptAwaitProgress(operationId, data.statuses));
+				this.recordPresentationEvents(this.semanticAdapter.acceptAwaitProgress(operationId, event.data.statuses));
 			}
 		}
-		if ((kind === "await_interrupted" || kind === "await_released") && typeof data?.invocationId === "string" && Array.isArray(data.requested) && Array.isArray(data.statuses)) {
-			this.recordPresentationEvents(this.semanticAdapter.acceptAwaitSnapshot(data.invocationId, data.requested, data.statuses, kind === "await_interrupted" || data.reason === "message"));
+		if ((event.kind === "await_interrupted" || event.kind === "await_released") && typeof event.data.invocationId === "string" && Array.isArray(event.data.requested) && Array.isArray(event.data.statuses)) {
+			this.recordPresentationEvents(this.semanticAdapter.acceptAwaitSnapshot(event.data.invocationId, event.data.requested, event.data.statuses, event.kind === "await_interrupted" || event.data.reason === "message"));
 		}
 		return fact;
 	}
@@ -1913,15 +1917,17 @@ class SubagentSessionOwner {
 	private publishRoutedMessage(event: RoutedMessagePhase, paths?: { from: AgentPath; to: AgentPath }): SubagentSemanticFact {
 		const from = paths?.from ?? this.pathForEndpoint(event.from);
 		const to = paths?.to ?? this.pathForEndpoint(event.to);
-		return this.publishFact("message_thread", from, {
+		const shared = {
 			from,
 			to,
 			text: event.message,
 			...(event.correlationId !== undefined ? { correlationId: event.correlationId } : undefined),
 			responseExpected: event.responseExpected,
-			phase: event.phase,
-			...(event.error !== undefined ? { error: event.error } : undefined),
-		}, this.nativeRefs(event.toolCallId, event.toolCallId ? "tool_call" : "lifecycle"));
+		};
+		const data: SubagentMessageData = event.phase === "failure"
+			? { ...shared, phase: "failure", error: event.error ?? "" }
+			: { ...shared, phase: event.phase };
+		return this.publishFact({ kind: "message_thread", data }, from, this.nativeRefs(event.toolCallId, event.toolCallId ? "tool_call" : "lifecycle"));
 	}
 
 	private incomingPresentationContent(message: RoutedMessage, source: "local" | "uplink"): PersistedSubagentContent {
@@ -1963,14 +1969,14 @@ class SubagentSessionOwner {
 	private publishIncomingMessage(message: RoutedMessage, source: "local" | "uplink"): SubagentSemanticFact {
 		const from = this.pathForEndpoint(message.from, source);
 		const to = this.scopePath();
-		return this.publishFact("message_thread", from, {
+		return this.publishFact({ kind: "message_thread", data: {
 			from,
 			to,
 			text: message.message,
 			...(message.correlationId !== undefined ? { correlationId: message.correlationId } : undefined),
 			responseExpected: message.responseExpected,
 			phase: "received",
-		}, this.nativeRefs(undefined, "custom_message"));
+		} }, from, this.nativeRefs(undefined, "custom_message"));
 	}
 
 	private publishPersistedPresentationContent(
@@ -2059,10 +2065,10 @@ class SubagentSessionOwner {
 			if (event.type !== "runtime_replaced") {return;}
 			const parentPath = event.node.parentPath ?? [];
 			if (!samePath(parentPath, ownerPath)) {return;}
-			this.publishFact("runtime_replaced", event.node.path, {
+			this.publishFact({ kind: "runtime_replaced", data: {
 				oldSessionId: event.oldSessionId,
 				newSessionId: event.newSessionId,
-			}, [
+			} }, event.node.path, [
 				{ sessionId: event.oldSessionId, kind: "lifecycle" },
 				{ sessionId: event.newSessionId, kind: "lifecycle" },
 			]);
@@ -2784,7 +2790,7 @@ class SubagentSessionOwner {
 		});
 
 		const refs = this.nativeRefs(toolCallId, "tool_call");
-		const delegation = this.publishFact("delegation", this.scopePath(), {
+		const delegation = this.publishFact({ kind: "delegation", data: {
 			invocationId: toolCallId ?? `${this.currentSessionId()}:subagent`,
 			awaitsResult: false,
 			children: agentSpecs.map((spec) => ({
@@ -2792,7 +2798,7 @@ class SubagentSessionOwner {
 				task: spec.task,
 				...(spec.personaName !== undefined ? { persona: spec.personaName } : undefined),
 			})),
-		}, refs);
+		} }, this.scopePath(), refs);
 		await session.presentation.ensureWidget(ctx);
 		const ack = await manager.start(agentSpecs, allAgentConfigs);
 		session.presentation.refresh(manager);
@@ -2865,11 +2871,11 @@ class SubagentSessionOwner {
 			model,
 		};
 		const refs = this.nativeRefs(toolCallId, "tool_call");
-		const delegation = this.publishFact("delegation", this.scopePath(), {
+		const delegation = this.publishFact({ kind: "delegation", data: {
 			invocationId: toolCallId ?? `${this.currentSessionId()}:fork`,
 			awaitsResult: false,
 			children: [{ path: childAgentPath(this.scopePath(), params.id), task: params.task }],
-		}, refs);
+		} }, this.scopePath(), refs);
 		await session.presentation.ensureWidget(ctx);
 		const ack = await manager.start([forkSpec], []);
 		session.presentation.refresh(manager);
@@ -3069,12 +3075,12 @@ class SubagentSessionOwner {
 		}
 		const { report, empty } = await session.manager.teardown(params.agent || undefined);
 		const refs = this.nativeRefs(toolCallId, "lifecycle");
-		const facts = reports.map((entry) => this.publishFact("teardown", childAgentPath(this.scopePath(), entry.id), {
+		const facts = reports.map((entry) => this.publishFact({ kind: "teardown", data: {
 			operation: "teardown",
 			outcome: "succeeded",
 			path: childAgentPath(this.scopePath(), entry.id),
 			sessionId: entry.sessionId,
-		}, refs));
+		} }, childAgentPath(this.scopePath(), entry.id), refs));
 		if (empty) {
 			session.turns.drainLocal();
 			session.presentation.clear(ctx);
@@ -3189,13 +3195,13 @@ class SubagentSessionOwner {
 				toolBacked: true,
 			}),
 		};
-		this.publishFact("teardown", pathValue, {
+		this.publishFact({ kind: "teardown", data: {
 			operation: "teardown",
 			outcome: "succeeded",
 			path: pathValue,
 			sessionId: result.sessionId,
 			output: "Agent removed by user action.",
-		}, this.nativeRefs(undefined, "lifecycle"));
+		} }, pathValue, this.nativeRefs(undefined, "lifecycle"));
 		this.pi.sendMessage(
 			{
 				customType: "subagents",
@@ -3305,12 +3311,12 @@ class SubagentSessionOwner {
 		const refs = this.nativeRefs(toolCallId, "lifecycle");
 		const facts = params.agents.map((agent: any) => {
 			const pathValue = childAgentPath(this.scopePath(), agent.id);
-			return this.publishFact("resurrect", pathValue, {
+			return this.publishFact({ kind: "resurrect", data: {
 				operation: "resurrect",
 				outcome: "succeeded",
 				path: pathValue,
 				sessionId: agent.sessionId,
-			}, refs);
+			} }, pathValue, refs);
 		});
 		return { content: [{ type: "text", text: ack }], details: semanticDetails(data, facts), structuredContent: data };
 	}
@@ -3327,10 +3333,10 @@ class SubagentSessionOwner {
 		const refs = this.nativeRefs(toolCallId, "tool_call");
 		const requestedPaths = ids.map((id: string) => manager.getAgentPath(id)).filter((path: AgentPath | undefined): path is AgentPath => path !== undefined);
 		this.activeAwaitOperations.add(toolCallId ?? `${this.currentSessionId()}:await`);
-		const started = this.publishFact("await_started", this.scopePath(), {
+		const started = this.publishFact({ kind: "await_started", data: {
 			invocationId: toolCallId ?? `${this.currentSessionId()}:await`,
 			requested: requestedPaths,
-		}, refs);
+		} }, this.scopePath(), refs);
 		session.turns.registerAwaitInvocation(manager, ids, toolCallId ?? started.eventId, refs);
 		try {
 			const result = await session.turns.awaitAgentCompletion(ids, manager, signal, {
@@ -3381,12 +3387,12 @@ class SubagentSessionOwner {
 			const pathValue = manager.getAgentPath(id) ?? childAgentPath(this.scopePath(), id);
 			const result = results[index];
 			const outcome = result.status === "fulfilled" ? result.value : "failed";
-			return this.publishFact("interrupt", pathValue, {
+			return this.publishFact({ kind: "interrupt", data: {
 				operation: "interrupt",
 				outcome: outcome === "settled" ? "succeeded" : "failed",
 				path: pathValue,
 				...(result.status === "rejected" ? { error: String(result.reason) } : undefined),
-			}, refs);
+			} }, pathValue, refs);
 		});
 		if (interrupted.length > 0) {lines.push(`Interrupted: ${interrupted.map((item) => item.path.at(-1)).join(", ")}`);}
 		if (pending.length > 0) {lines.push(
