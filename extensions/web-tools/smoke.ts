@@ -69,7 +69,7 @@ async function main(): Promise<void> {
 	console.log("\nRun this script again — both fetches should report cached: true.");
 }
 
-main().catch((error) => {
+main().catch((error: unknown) => {
 	console.error(error);
 	process.exit(1);
 });

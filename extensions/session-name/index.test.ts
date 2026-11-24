@@ -89,7 +89,7 @@ describe("setting names", () => {
 		const { state } = setup("manual rename");
 		const failure = await tool.execute("t1", { name: "model rename", oldName: "" }).then(
 			() => null,
-			(error: Error) => error,
+			(error: unknown) => (error instanceof Error ? error : new Error(String(error))),
 		);
 		expect(failure?.message).toMatch(/leave the name as is/);
 		expect(failure?.message).not.toContain("manual rename");

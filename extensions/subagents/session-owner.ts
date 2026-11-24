@@ -772,7 +772,7 @@ class SessionTurnCoordinator {
 						if (this.activeGate === gate) {this.activeGate = null;}
 						this.finishWait(outcome);
 					},
-					(error) => {
+					(error: unknown) => {
 						if (this.activeGate === gate) {this.activeGate = null;}
 						if (this.waitState === state) {
 							this.waitState = null;
@@ -1428,7 +1428,7 @@ class SubagentSessionOwner {
 						cleanup();
 						resolve();
 					},
-					(error) => {
+					(error: unknown) => {
 						if (settled) {return;}
 						settled = true;
 						cleanup();
@@ -1696,7 +1696,7 @@ class SubagentSessionOwner {
 
 			if (this.scope.kind === "child") {
 				if (event.reason === "resume") {
-					void this.restoreChildDescendants(ctx, session).catch((error) => {
+					void this.restoreChildDescendants(ctx, session).catch((error: unknown) => {
 						const message = error instanceof Error ? error.message : String(error);
 						console.error(`[subagents] Failed to restore nested subagents: ${message}`);
 					});
@@ -2957,7 +2957,7 @@ class SubagentSessionOwner {
 					settled = true;
 					resolve({ kind: "response", response });
 				},
-				(error) => {
+				(error: unknown) => {
 					signal?.removeEventListener("abort", onAbort);
 					if (settled) {
 						deliverDeferredResponse({ type: "error", error: error instanceof Error ? error.message : String(error) });
@@ -2967,7 +2967,7 @@ class SubagentSessionOwner {
 					reject(error);
 				},
 			);
-		}).catch((error) => {
+		}).catch((error: unknown) => {
 			terminalFact({ type: "error", error: error instanceof Error ? error.message : String(error) });
 			unsubscribe();
 			throw error;

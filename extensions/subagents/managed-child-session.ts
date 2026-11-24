@@ -234,7 +234,7 @@ export class ManagedChildSession {
 				() => {
 					if (!settled) {settlePreflight("started");}
 				},
-				(error) => {
+				(error: unknown) => {
 					if (!settled) {
 						settled = true;
 						reject(error);
