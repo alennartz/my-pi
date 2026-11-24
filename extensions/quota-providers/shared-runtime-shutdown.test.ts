@@ -5,6 +5,7 @@ import { InMemoryModelsStore } from "@earendil-works/pi-ai";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import quotaExtension from "./index.js";
+type Handler = (...args: any[]) => unknown;
 
 const quotaSource = join(import.meta.dirname, "test/fake-quota-source.ts");
 const tempDirs: string[] = [];
@@ -60,11 +61,11 @@ const gatewayConfig = {
 } as any;
 
 function extensionApi(registry: ModelRegistry) {
-	const events = new Map<string, Function>();
+	const events = new Map<string, Handler>();
 	return {
 		events,
 		pi: {
-			on: (name: string, handler: Function) => events.set(name, handler),
+			on: (name: string, handler: Handler) => events.set(name, handler),
 			registerCommand: vi.fn(),
 			registerProvider: (...args: any[]) => args.length === 1
 				? registry.registerProvider(args[0])

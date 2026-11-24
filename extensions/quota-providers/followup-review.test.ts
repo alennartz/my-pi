@@ -6,6 +6,7 @@ import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import quotaExtension from "./index.js";
 import { wrapProviderWithQuota } from "./lib/provider-wrapper.js";
+type Handler = (...args: any[]) => unknown;
 
 const source = join(import.meta.dirname, "test/fake-quota-source.ts");
 const dirs: string[] = [];
@@ -52,11 +53,11 @@ function snapshot() {
 }
 
 function makePi(registry: ModelRegistry) {
-	const events = new Map<string, Function>();
+	const events = new Map<string, Handler>();
 	return {
 		events,
 		pi: {
-			on: (name: string, handler: Function) => events.set(name, handler),
+			on: (name: string, handler: Handler) => events.set(name, handler),
 			registerCommand: vi.fn(),
 			registerProvider: (...args: any[]) => args.length === 1
 				? registry.registerProvider(args[0])
@@ -147,7 +148,7 @@ async function createNativeAttachment(providerId: string, marker: string) {
 	return { dir, registry, native, events, ctx };
 }
 
-async function cleanFirstSession(events: Map<string, Function>, ctx: any): Promise<void> {
+async function cleanFirstSession(events: Map<string, Handler>, ctx: any): Promise<void> {
 	await events.get("session_shutdown")?.({}, ctx);
 }
 

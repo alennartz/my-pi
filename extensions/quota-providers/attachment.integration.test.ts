@@ -6,6 +6,7 @@ import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import quotaExtension from "./index.js";
 import { getOrCreateSessionTreeStore, registerSessionTreeStore } from "../subagents/scoped-store.js";
+type Handler = (...args: any[]) => unknown;
 
 const source = join(import.meta.dirname, "test/fake-quota-source.ts");
 const dirs: string[] = [];
@@ -56,10 +57,10 @@ async function setup(origin: "builtin" | "models.json" | "legacy" | "native", sn
 	mkdirSync(cacheDir, { recursive: true });
 	writeFileSync(join(cacheDir, "usage.json"), JSON.stringify({ writtenAt: Date.now(), snapshots, modelLimitIds: mapping }));
 	vi.stubEnv("PI_CODING_AGENT_DIR", dir);
-	const events = new Map<string, Function>();
+	const events = new Map<string, Handler>();
 	const commands = new Map<string, any>();
 	const pi = {
-		on: (name: string, handler: Function) => events.set(name, handler),
+		on: (name: string, handler: Handler) => events.set(name, handler),
 		registerCommand: (name: string, command: any) => commands.set(name, command),
 		registerProvider: (...args: any[]) => args.length === 1 ? registry.registerProvider(args[0]) : registry.registerProvider(args[0], args[1]),
 	};
