@@ -804,7 +804,7 @@ class SessionTurnCoordinator {
 				}
 			});
 			const agents = this.mergeCompletionAgents(this.currentAwaitAgents(ids, manager), result.agents.filter((agent) => !ids.includes(agent.id)));
-			return this.truncatedWaitResult(
+			return await this.truncatedWaitResult(
 				result.text || "All specified agents have completed. No pending notifications.",
 				agents,
 				result.semanticEvents,

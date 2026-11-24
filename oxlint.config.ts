@@ -50,7 +50,6 @@ export default defineConfig({
     'typescript/no-unsafe-return': 'off',
     'typescript/no-unsafe-type-assertion': 'off',
     'typescript/require-array-sort-compare': 'off',
-    'typescript/return-await': 'off',
     'typescript/unbound-method': 'off',
     'typescript/use-unknown-in-catch-callback-variable': 'off',
     'unicorn/catch-error-name': 'off',
