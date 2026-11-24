@@ -29,7 +29,6 @@ export default defineConfig({
     'quality/no-unsafe-dictionary-type': 'off',
     'quality/no-unknown-returns': 'off',
     'typescript/array-type': ['error', { default: 'array' }],
-    'typescript/await-thenable': 'off',
     // Pi event and tool payloads are untyped per event name at the SDK boundary.
     'typescript/no-explicit-any': 'off',
     'typescript/no-floating-promises': 'off',

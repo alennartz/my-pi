@@ -18,12 +18,12 @@ export interface StoredFetch {
 }
 
 export interface FetchStore {
-	get(key: string): StoredFetch | null;
-	put(key: string, result: FetchResult): void;
+	get(key: string): Promise<StoredFetch | null>;
+	put(key: string, result: FetchResult): Promise<void>;
 	/** Local path to the full untruncated markdown sidecar. */
 	pathFor(key: string): string;
-	clear(): void;
-	get size(): number;
+	clear(): Promise<void>;
+	size(): Promise<number>;
 }
 
 export interface FetchStoreOptions {
