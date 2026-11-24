@@ -72,7 +72,7 @@ class AskUserComponent implements Component, Focusable {
 	// -- Submit helpers -----------------------------------------------------
 
 	private submit(index: number, annotation?: string): void {
-		const opt = this.options[index]!;
+		const opt = this.options[index];
 		const trimmed = annotation?.trim();
 		this.done({
 			index,
@@ -180,8 +180,8 @@ class AskUserComponent implements Component, Focusable {
 		for (let i = 0; i < this.options.length; i++) {
 			const isHighlighted = i === this.highlight;
 			const num = `${i + 1}`;
-			const label = this.options[i]!.label;
-			const desc = this.options[i]!.description;
+			const label = this.options[i].label;
+			const desc = this.options[i].description;
 
 			let prefix: string;
 			let content: string;
@@ -302,7 +302,7 @@ export async function showAskUser(
 
 	return {
 		index: selectedIndex,
-		label: options[selectedIndex]!.label,
+		label: options[selectedIndex].label,
 		// Annotations not available in fallback mode
 	};
 }

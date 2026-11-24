@@ -1049,7 +1049,7 @@ export class SubagentPresentation {
 				DashboardComponent = class {
 					update(_statuses: AgentStatus[]): void {}
 					setSessionName(_name: string | undefined): void {}
-				} as any;
+				};
 			}
 			if (this.mountingDisabled) {return;}
 			ctx.ui.setWidget("subagents", (tui, theme) => {
@@ -1079,7 +1079,7 @@ export class SubagentPresentation {
 	}
 
 	clear(ctx?: ExtensionContext): void {
-		if (this.scope.kind === "root") {ctx?.ui.setWidget("subagents", undefined as any);}
+		if (this.scope.kind === "root") {ctx?.ui.setWidget("subagents", undefined);}
 		this.dashboard = null;
 		this.tuiRef = null;
 	}
@@ -1516,7 +1516,7 @@ class SubagentSessionOwner {
 			? record.details as Record<string, unknown>
 			: record;
 		return Array.isArray(details.subagentContent)
-			? details.subagentContent.filter((item): item is PersistedSubagentContent => Boolean(item && typeof item === "object" && !Array.isArray(item) && (item as any).source === "custom_entry"))
+			? details.subagentContent.filter((item): item is PersistedSubagentContent => Boolean(item && typeof item === "object" && !Array.isArray(item) && (item).source === "custom_entry"))
 			: [];
 	}
 
@@ -1853,7 +1853,7 @@ class SubagentSessionOwner {
 			kind: kind as any,
 			data,
 			relatedPiEvents: refs.map((ref) => ({ ...ref })),
-		} as SubagentSemanticFact;
+		};
 		this.semanticEvents.publish(fact);
 		if (kind === "delegation") {
 			const toolCallId = refs.find((ref) => ref.toolCallId)?.toolCallId;
@@ -2268,7 +2268,7 @@ class SubagentSessionOwner {
 	private async handleToolExecutionStart(event: any, ctx: ExtensionContext): Promise<void> {
 		const session = await this.waitForActiveSession();
 		session.turns.trackToolStart(event.toolCallId);
-		const raw = event as any;
+		const raw = event;
 		const toolName = raw.toolName ?? raw.tool?.name;
 		const argumentsValue = raw.args ?? raw.input;
 		if (typeof toolName === "string" && argumentsValue && typeof argumentsValue === "object" && !Array.isArray(argumentsValue)) {

@@ -199,7 +199,7 @@ describe("PersistedAgentRecord fork tools/skillPaths round-trip", () => {
 	it("leaves tools/skillPaths undefined for legacy records", () => {
 		appendAgentAdded(paths, baseRecord());
 		const loaded = loadPersistedAgents(parentSessionFile);
-		expect(loaded!.agents[0]!.tools).toBeUndefined();
-		expect(loaded!.agents[0]!.skillPaths).toBeUndefined();
+		expect(loaded!.agents[0].tools).toBeUndefined();
+		expect(loaded!.agents[0].skillPaths).toBeUndefined();
 	});
 });

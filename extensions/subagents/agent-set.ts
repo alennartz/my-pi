@@ -1361,8 +1361,8 @@ export class SubagentManager {
 				skillPaths: resolved?.skillPaths ?? agent.skillPaths,
 				noSkills: resolved !== undefined ? true : undefined,
 				personaTools: workspace?.tools,
-				thinkingLevel: this.opts.pi.getThinkingLevel() as string,
-			} as AgentSpec;
+				thinkingLevel: this.opts.pi.getThinkingLevel(),
+			};
 		}
 		const persistedWinner = agent.personaName ?? agent.agent;
 		const agentConfig = persistedWinner

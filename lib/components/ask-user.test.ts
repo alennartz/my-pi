@@ -21,7 +21,7 @@ describe("showAskUser", () => {
 		await showAskUser(ctx, "pick one", options);
 
 		expect(custom).toHaveBeenCalledTimes(1);
-		const [factory, opts] = custom.mock.calls[0]!;
+		const [factory, opts] = custom.mock.calls[0];
 		expect(typeof factory).toBe("function");
 		expect(opts).toEqual({
 			overlay: true,

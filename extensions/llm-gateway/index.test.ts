@@ -8,7 +8,7 @@ async function captureRegistration() {
 	const registerProvider = vi.fn();
 	await registerLLMGateway({ registerProvider } as any);
 	const [providerId, config] = registerProvider.mock.calls[0] ?? [];
-	return { providerId, config } as { providerId: string; config: Record<string, any> };
+	return { providerId, config };
 }
 
 function storedModel() {

@@ -29,7 +29,7 @@ function createMockEventBus(): EventBus & { handlers: Map<string, Set<(data: unk
 			}
 			set.add(handler);
 			return () => {
-				set!.delete(handler);
+				set.delete(handler);
 			};
 		},
 	};

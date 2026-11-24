@@ -202,5 +202,5 @@ export function wrapProviderWithQuota(
 			const value = (provider as Record<PropertyKey, unknown>)[property];
 			return typeof value === "function" ? value.bind(provider) : value;
 		},
-	}) as Provider;
+	});
 }

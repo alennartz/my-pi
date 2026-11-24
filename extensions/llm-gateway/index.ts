@@ -22,7 +22,7 @@ function isFresh(checkedAt: unknown, now: number): checkedAt is number {
 function asProviderModelConfig(model: AnyModel): ProviderModelConfig | undefined {
 	if (model.provider !== PROVIDER_ID || model.api !== "openai-completions") {return undefined;}
 	const { provider: _provider, baseUrl: _baseUrl, ...config } = model;
-	return config as ProviderModelConfig;
+	return config;
 }
 
 function restoreStoredModels(stored: Readonly<ModelsStoreEntry> | undefined): ProviderModelConfig[] {
@@ -38,7 +38,7 @@ function toStoredModel(model: ProviderModelConfig): AnyModel {
 		api: model.api ?? "openai-completions",
 		provider: PROVIDER_ID,
 		baseUrl: BASE_URL,
-	} as AnyModel;
+	};
 }
 
 function catalogRecords(payload: unknown): unknown[] {

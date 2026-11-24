@@ -10,7 +10,7 @@ export interface UsageCacheFile {
 
 function isUsageSnapshot(value: unknown): value is UsageSnapshot {
 	if (!isRecord(value)) {return false;}
-	const snapshot = value as Record<string, unknown>;
+	const snapshot = value;
 	return typeof snapshot.spend === "number" && Number.isFinite(snapshot.spend)
 		&& typeof snapshot.quota === "number" && Number.isFinite(snapshot.quota)
 		&& typeof snapshot.windowStart === "number" && Number.isFinite(snapshot.windowStart)

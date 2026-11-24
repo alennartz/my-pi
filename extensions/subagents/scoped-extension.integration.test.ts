@@ -571,8 +571,8 @@ describe("child-scoped extension routing", () => {
 
 		const [message] = pi.sendMessage.mock.calls;
 		expect(message[0]).toMatchObject({ customType: "subagents", content: expect.stringContaining("continue") });
-		expect((message[0] as any).details?.subagentContent).toHaveLength(1);
-		expect((message[0] as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "message_received", data: { operation: "send", result: { from: [], to: ["child"], message: "continue", responseExpected: false } } });
+		expect((message[0]).details?.subagentContent).toHaveLength(1);
+		expect((message[0]).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "message_received", data: { operation: "send", result: { from: [], to: ["child"], message: "continue", responseExpected: false } } });
 	});
 
 	it("keeps child notifications local after session shutdown and renders the scoped model catalog", async () => {
@@ -975,8 +975,8 @@ describe("semantic facts on native messages", () => {
 			uplink.emit({ from: "parent", message: reason, responseExpected: false });
 			const notification = child.pi.sendMessage.mock.calls.at(-1)?.[0];
 			expect(notification).toMatchObject({ customType: "subagents", content: serializeAgentMessage({ from: "parent", content: reason, responseExpected: false }) });
-			expect((notification as any).details?.subagentContent).toHaveLength(1);
-			expect((notification as any).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "message_received", data: { operation: "send", result: expect.objectContaining({ message: reason }) } });
+			expect((notification).details?.subagentContent).toHaveLength(1);
+			expect((notification).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "message_received", data: { operation: "send", result: expect.objectContaining({ message: reason }) } });
 			await child.handlers.get("session_shutdown")?.({}, ctx);
 		}
 	});
@@ -1329,7 +1329,7 @@ describe("semantic facts on native messages", () => {
 		managed.created[1].hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
 		managed.created[1].hooks.onEvent({ type: "agent_settled" });
 		const result = await waiting;
-		expect((result.structuredContent as any).agents.map((agent: any) => agent.id)).toEqual(["worker", "scout"]);
+		expect((result.structuredContent).agents.map((agent: any) => agent.id)).toEqual(["worker", "scout"]);
 	});
 
 	it("merges the child's last action into one activity field that survives settle", async () => {
@@ -1363,7 +1363,7 @@ describe("semantic facts on native messages", () => {
 
 		await lease.release();
 		const result = await waiting;
-		expect((result.structuredContent as any).agents).toContainEqual(expect.objectContaining({ id: "worker" }));
+		expect((result.structuredContent).agents).toContainEqual(expect.objectContaining({ id: "worker" }));
 	});
 
 	it("tells the parent when a viewed child's held answer was replaced", async () => {

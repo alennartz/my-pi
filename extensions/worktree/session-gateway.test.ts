@@ -25,7 +25,7 @@ describe("worktree session gateway", () => {
 		// from the file header — a missing file silently falls back to
 		// process.cwd(). The gateway must therefore persist the header eagerly.
 		expect(existsSync(sessionFile)).toBe(true);
-		const header = JSON.parse(readFileSync(sessionFile, "utf8").split("\n")[0]!);
+		const header = JSON.parse(readFileSync(sessionFile, "utf8").split("\n")[0]);
 		expect(header.type).toBe("session");
 		expect(header.cwd).toBe(worktreeCwd);
 		expect(SessionManager.open(sessionFile).getCwd()).toBe(worktreeCwd);

@@ -103,7 +103,7 @@ function parseJsonObject(raw: string): Record<string, unknown> | undefined {
 
 function partialString(raw: string, key: string): string | undefined {
   const complete = parseJsonObject(raw);
-  if (complete && typeof complete[key] === 'string') {return complete[key] as string;}
+  if (complete && typeof complete[key] === 'string') {return complete[key];}
   const match = new RegExp(`"${key}"\\s*:\\s*"`).exec(raw);
   if (!match) {return undefined;}
   let value = '';

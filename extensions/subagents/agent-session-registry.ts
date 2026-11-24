@@ -436,7 +436,7 @@ export class AgentSessionRegistry {
 				const node = this.nodes.get(key(path))!;
 				this.emit({ type: "node_added", node: node.snapshot });
 			}
-			return created.map((node) => this.publicNode(node) as RegisteredAgentNode);
+			return created.map((node) => this.publicNode(node));
 		} catch (error) {
 			for (const node of created) {
 				try { await this.disposeNode(node); } catch { /* preserve original construction failure */ }

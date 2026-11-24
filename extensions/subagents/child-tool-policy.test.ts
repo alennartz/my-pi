@@ -8,7 +8,7 @@ function expectExactStableAllowlist(input: ChildToolPolicyInput, expected: strin
 
 	expect(first.excludeTools).toBeUndefined();
 	expect(first.allowedTools).toBeDefined();
-	expect(new Set(first.allowedTools!)).toEqual(new Set(expected));
+	expect(new Set(first.allowedTools)).toEqual(new Set(expected));
 	expect(first.allowedTools!).toHaveLength(expected.length);
 	expect(second).toEqual(first);
 }

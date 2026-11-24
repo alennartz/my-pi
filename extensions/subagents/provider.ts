@@ -1198,7 +1198,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		if (!node || node.snapshot.path.length === 0 || node.snapshot.ownership !== "registry" || !("session" in node)) {
 			throw new Error(`Unknown subagent path ${JSON.stringify(path)}`);
 		}
-		return node as RegisteredAgentNode;
+		return node;
 	}
 
 	function borrow(node: RegisteredAgentNode): { session: BorrowedAgentSession; capabilities: SubagentCapabilities } {
@@ -1217,7 +1217,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			throw new Error(`Subagent capabilities are unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
 		}
 		return {
-			session: session as unknown as BorrowedAgentSession,
+			session,
 			capabilities,
 		};
 	}
@@ -1475,7 +1475,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			if (!("type" in event) || event.type !== "subagent_snapshot_event") {return false;}
 			const target = event.target;
 			if (!isRecord(target)) {return false;}
-			return target.operationId === operationId && Array.isArray(target.path) && pathKey([...target.path] as unknown as AgentPath) === pathKey(path);
+			return target.operationId === operationId && Array.isArray(target.path) && pathKey([...target.path]) === pathKey(path);
 		});
 	}
 
@@ -1541,12 +1541,12 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				if (!isPersistedPresentationContent(candidate)) {continue;}
 				if (candidate.kind === "completion" && (candidate.source !== "custom_entry" || !customMessage)) {continue;}
 				const repaired = awaitResult ? restoreAwaitResult(candidate, details.semantic) : candidate;
-				const kind = savedPresentationKind(repaired as unknown as Record<string, unknown>) as PresentationKind;
+				const kind = savedPresentationKind(repaired) as PresentationKind;
 				const argumentsValue = toolArguments.get(candidate.source === "tool" ? candidate.placement.toolCallId : candidate.operationId);
 				const toolBacked = kind !== "message_received" && (candidate.source === "tool" || ("parameters" in repaired.data && isRecord(repaired.data.parameters)) || argumentsValue !== undefined
 					|| (kind !== "send" && kind !== "respond" && kind !== "completion"));
 				const data = normalizeSavedPresentationData({
-					data: repaired.data as unknown as Record<string, unknown>,
+					data: repaired.data,
 					operation: kind === "message_received" ? "send" : kind,
 					path: input.path,
 					toolBacked,
@@ -1607,7 +1607,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			path: copyPath(fact.path),
 			relatedPiEvents: cloneRefs(fact.relatedPiEvents),
 		});
-		appendEvent(semantic as Omit<SubagentEvent, "cursor">);
+		appendEvent(semantic);
 	});}
 	const presentationSource = options.presentationEvents?.subscribePresentation;
 	if (presentationSource) {

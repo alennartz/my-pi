@@ -78,7 +78,7 @@ function snapshot(spend: number, limitId?: string) {
 }
 
 function stream(registry: ModelRegistry, provider: string, id = "standard", sessionId?: string) {
-	return registry.getProvider(provider)!.streamSimple(model(id, provider), { messages: [] }, { sessionId } as any);
+	return registry.getProvider(provider)!.streamSimple(model(id, provider), { messages: [] }, { sessionId });
 }
 
 afterEach(async () => {

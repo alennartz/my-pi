@@ -40,7 +40,7 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function asProvider(value: unknown): GatewayProvider | undefined {
 	const record = asRecord(value);
-	return record ? record as GatewayProvider : undefined;
+	return record ? record : undefined;
 }
 
 function parsePrice(value: unknown): number | undefined {

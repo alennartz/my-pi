@@ -32,7 +32,7 @@ function configuredUsage(value: unknown, modelLimitIds: unknown): QuotaSourceRes
 		const result = value as Partial<QuotaSourceResult>;
 		return {
 			snapshots: result.snapshots as UsageSnapshot[],
-			modelLimitIds: (result.modelLimitIds as Record<string, string[]> | undefined) ?? {},
+			modelLimitIds: (result.modelLimitIds) ?? {},
 		};
 	}
 	return {

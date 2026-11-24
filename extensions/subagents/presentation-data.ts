@@ -400,19 +400,19 @@ function normalizeSavedData(
 	}
 	if (operation === 'respond') {
 		const { operation: _operation, body, parameters: _parameters, ...flat } = data;
-		const source: RecordData = isPresentationRecord(data.result) ? data.result as RecordData : flat;
+		const source: RecordData = isPresentationRecord(data.result) ? data.result : flat;
 		return { operation, source, parameters: normalizeToolParameters(operation, { ...parameters, ...(toolBacked && body !== undefined ? { message: body } : {}) }, path) };
 	}
 	if (operation === 'await') {
 		const fallback = argumentsValue === undefined && data.parameters === undefined && Array.isArray(data.requested) && data.requested.length > 0 ? { agents: data.requested } : parameters;
-		const source: RecordData = isPresentationRecord(data.result) ? data.result as RecordData : { statuses: Array.isArray(data.statuses) ? data.statuses : [] };
+		const source: RecordData = isPresentationRecord(data.result) ? data.result : { statuses: Array.isArray(data.statuses) ? data.statuses : [] };
 		return { operation, source, parameters: normalizeToolParameters(operation, fallback, path) };
 	}
 	if (operation === 'protocol_error') {
-		const source: RecordData = isPresentationRecord(data.result) ? data.result as RecordData : { error: typeof data.message === 'string' ? data.message : '' };
+		const source: RecordData = isPresentationRecord(data.result) ? data.result : { error: typeof data.message === 'string' ? data.message : '' };
 		return { operation, source, parameters };
 	}
-	const source: RecordData = isPresentationRecord(data.result) ? data.result as RecordData : operation === 'delegation' && data.children !== undefined ? { children: data.children } : {};
+	const source: RecordData = isPresentationRecord(data.result) ? data.result : operation === 'delegation' && data.children !== undefined ? { children: data.children } : {};
 	return { operation, source, parameters: normalizeToolParameters(operation, parameters, path) };
 }
 

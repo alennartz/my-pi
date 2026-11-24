@@ -149,7 +149,7 @@ export function refreshStatusline(
 async function loadQuotaSource(modulePath: string): Promise<QuotaSource> {
 	const { createJiti } = await import("jiti");
 	const jiti = createJiti(import.meta.url, { interopDefault: true });
-	const loaded = await jiti.import(modulePath) as unknown;
+	const loaded = await jiti.import<unknown>(modulePath);
 	const source = loaded && typeof loaded === "object" && "getUsage" in loaded
 		? loaded
 		: loaded && typeof loaded === "object" && "default" in loaded
@@ -342,7 +342,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 			}
 			attachProviders({ modelRegistry: registry });
 		};
-		const existing = hooks.get(registry as object);
+		const existing = hooks.get(registry);
 		if (existing) {
 			existing.afterRefresh = afterRefresh;
 			return;
@@ -358,7 +358,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 					if (generation === hook.generation) {hook.afterRefresh();}
 				}
 			};
-			hooks.set(registry as object, hook);
+			hooks.set(registry, hook);
 		} catch {
 			// Some hosts expose a frozen registry facade. Lifecycle reattachment
 			// still protects the next request through the stable wrapper.

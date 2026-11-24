@@ -16,8 +16,8 @@ describe('router response progress', () => {
     let settled = false;
     receipt.response!.then(() => { settled = true; });
 
-    await worker.responseProgress!('corr-1', 'Everything required');
-    await worker.responseProgress!('corr-1', ' is present.');
+    await worker.responseProgress('corr-1', 'Everything required');
+    await worker.responseProgress('corr-1', ' is present.');
     expect(progress).toEqual([
       expect.objectContaining({ from: 'worker', to: 'parent', delta: 'Everything required' }),
       expect.objectContaining({ from: 'worker', to: 'parent', delta: ' is present.' }),
@@ -32,7 +32,7 @@ describe('router response progress', () => {
     const { parent, worker, scout, progress } = fixture();
     const receipt = await parent.send({ to: 'worker', message: 'verify config', expectResponse: true });
 
-    await expect(scout.responseProgress!('corr-1', 'not allowed')).rejects.toThrow();
+    await expect(scout.responseProgress('corr-1', 'not allowed')).rejects.toThrow();
     expect(progress).toEqual([]);
     await worker.respond('corr-1', 'done');
     await expect(receipt.response).resolves.toMatchObject({ type: 'response', message: 'done' });

@@ -103,7 +103,7 @@ async function createDynamicAttachment(
 		apiKey: "test-key",
 		models: [model("initial", providerId)],
 		refreshModels,
-	} as any);
+	});
 	const { pi, events } = makePi(registry);
 	await quotaExtension(pi as any);
 	const manager = { getSessionId: () => `${providerId}-session` };
@@ -206,7 +206,7 @@ describe("quota provider review follow-up", () => {
 		const replacement = effective.getModels().find((entry) => entry.id === "replacement")!;
 		let result;
 		try {
-			result = await effective.streamSimple(replacement, { messages: [] } as any, {} as any).result();
+			result = await effective.streamSimple(replacement, { messages: [] } as any, {}).result();
 		} catch (error) {
 			expect(String(error)).toMatch(/quota/i);
 			return;
@@ -265,10 +265,10 @@ describe("quota provider review follow-up", () => {
 		}
 		if (calls < 2) {throw new Error("overlapping refreshes did not start");}
 
-		gates[0]!();
+		gates[0]();
 		await first;
 		expect(aborted).toBe(1);
-		gates[1]!();
+		gates[1]();
 		await second;
 		expect(aborted).toBe(1);
 		expect(attachment.registry.getProvider("overlap-provider")?.getModels().map((entry) => entry.id))

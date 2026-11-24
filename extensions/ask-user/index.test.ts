@@ -6,7 +6,7 @@ describe("ask_user tool", () => {
 		const registerTool = vi.fn();
 		askUser({ registerTool } as any);
 
-		const tool = registerTool.mock.calls[0]![0];
+		const tool = registerTool.mock.calls[0][0];
 		expect(tool.exposure).toBe("model-only");
 		await expect(tool.execute(
 			"call-1",

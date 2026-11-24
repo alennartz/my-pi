@@ -76,7 +76,7 @@ export function loadOverlayFiles(dir: string): {
 				diagnostics.push({ path: filePath, message: `'models' array contains non-string values: ${filePath}` });
 				continue;
 			}
-			models = rawModels as string[];
+			models = rawModels;
 		} else {
 			diagnostics.push({ path: filePath, message: `Invalid 'models' field (expected string or string[]): ${filePath}` });
 			continue;
