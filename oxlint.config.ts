@@ -46,6 +46,7 @@ export default defineConfig({
     'typescript/no-explicit-any': 'off',
     // Assertions mark invariants that construction already checks.
     'typescript/no-non-null-assertion': 'off',
+    // Any values enter at untyped SDK boundaries.
     'typescript/no-unsafe-argument': 'off',
     'typescript/no-unsafe-assignment': 'off',
     'typescript/no-unsafe-call': 'off',
