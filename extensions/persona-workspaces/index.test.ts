@@ -36,7 +36,7 @@ function plainDirectory(): string {
 }
 
 /** A host runtime whose prompt module already carries the preamble override. */
-function usePatchedHost(): string {
+function patchedHost(): string {
 	const dir = mkdtempSync(join(tmpdir(), "persona-host-patched-"));
 	mkdirSync(join(dir, "dist", "core"), { recursive: true });
 	writeFileSync(
@@ -55,7 +55,7 @@ function usePatchedHost(): string {
 }
 
 /** A host runtime with an unpatched (or missing) prompt module. */
-function useUnpatchedHost(): string {
+function unpatchedHost(): string {
 	const dir = mkdtempSync(join(tmpdir(), "persona-host-plain-"));
 	hostPathState.packageDir = dir;
 	return dir;
@@ -81,7 +81,7 @@ function usePatchableUnpatchedHost(): string {
 
 function setup() {
 	hostPathState.agentDir = "";
-	usePatchedHost();
+	patchedHost();
 	const handlers = new Map<string, Handler>();
 	const setModel = vi.fn(async () => true);
 	const setActiveTools = vi.fn();
@@ -168,7 +168,7 @@ describe("prompt binding", () => {
 		const s = setup();
 		const cwd = personaWorkspace();
 		await s.sessionStart({ type: "session_start", reason: "startup" }, ctxFor(cwd));
-		useUnpatchedHost();
+		unpatchedHost();
 
 		const event = agentStartEvent();
 		const ctx = ctxFor(cwd);

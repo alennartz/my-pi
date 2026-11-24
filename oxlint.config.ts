@@ -30,7 +30,6 @@ export default defineConfig({
     'quality/no-object-parameters': 'off',
     'quality/no-unsafe-dictionary-type': 'off',
     'quality/no-unknown-returns': 'off',
-    'react-hooks/rules-of-hooks': 'off',
     'typescript/array-type': ['error', { default: 'array' }],
     'typescript/await-thenable': 'off',
     'typescript/consistent-type-imports': 'off',
