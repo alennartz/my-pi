@@ -812,7 +812,7 @@ class SessionTurnCoordinator {
 				{ interrupted: result.interrupted, error: result.error },
 			);
 		} catch (error: any) {
-			if (error?.message === "Aborted") {throw new Error("Wait cancelled.");}
+			if (error?.message === "Aborted") {throw new Error("Wait cancelled.", { cause: error });}
 			throw error;
 		}
 	}
@@ -2728,7 +2728,7 @@ class SubagentSessionOwner {
 					Object.freeze(resolvePersonaSkillPaths(active.skills, commands, "fatal").skillPaths),
 				);
 			} catch (error: any) {
-				throw new Error(`Failed to resolve skills for agent "${agent.id}": ${error.message}`);
+				throw new Error(`Failed to resolve skills for agent "${agent.id}": ${error.message}`, { cause: error });
 			}
 		}
 
@@ -2796,7 +2796,7 @@ class SubagentSessionOwner {
 			try {
 				skillPaths = resolvePersonaSkillPaths(active.skills, commands, "fatal").skillPaths;
 			} catch (error: any) {
-				throw new Error(`Failed to resolve skills for agent "${params.id}": ${error.message}`);
+				throw new Error(`Failed to resolve skills for agent "${params.id}": ${error.message}`, { cause: error });
 			}
 		} else {
 			skillPaths = commands
@@ -3234,7 +3234,7 @@ class SubagentSessionOwner {
 						resolvePersonaSkillPaths(active.skills, this.pi.getCommands(), "fatal").skillPaths,
 					);
 				} catch (error: any) {
-					throw new Error(`Failed to resolve skills for agent "${agent.id}": ${error.message}`);
+					throw new Error(`Failed to resolve skills for agent "${agent.id}": ${error.message}`, { cause: error });
 				}
 			}
 			specs.push({

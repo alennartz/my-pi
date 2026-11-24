@@ -1206,7 +1206,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		try {
 			session = node.session.session;
 		} catch (error) {
-			throw new Error(`Subagent runtime is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+			throw new Error(`Subagent runtime is unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
 		}
 		if (!session) {throw new Error("Subagent runtime is unavailable");}
 		let capabilities: SubagentCapabilities = EMPTY_CAPABILITIES;
@@ -1214,7 +1214,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			const candidate = (node.session as ManagedChildSession & { capabilities?: SubagentCapabilities }).capabilities;
 			if (candidate) {capabilities = candidate;}
 		} catch (error) {
-			throw new Error(`Subagent capabilities are unavailable: ${error instanceof Error ? error.message : String(error)}`);
+			throw new Error(`Subagent capabilities are unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
 		}
 		return {
 			session: session as unknown as BorrowedAgentSession,

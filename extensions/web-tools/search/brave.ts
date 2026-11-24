@@ -54,7 +54,7 @@ export async function braveSearch(params: BraveSearchParams): Promise<SearchResp
 			signal: params.signal,
 		});
 	} catch (error) {
-		throw new Error(`Brave search request failed: ${error instanceof Error ? error.message : error}`);
+		throw new Error(`Brave search request failed: ${error instanceof Error ? error.message : error}`, { cause: error });
 	}
 
 	if (!response.ok) {
