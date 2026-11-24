@@ -32,10 +32,14 @@ class InMemorySessionTreeStore implements SessionTreeStore {
 type StoreRegistry = WeakMap<object, SessionTreeStore>;
 const REGISTRY_KEY = Symbol.for("my-pi/subagents/session-tree-stores");
 
+function isStoreRegistry(value: unknown): value is StoreRegistry {
+	return typeof value === "object" && value !== null && typeof (value as StoreRegistry).get === "function";
+}
+
 function getRegistry(): StoreRegistry {
 	const globals = globalThis as Record<symbol, unknown>;
 	const existing = globals[REGISTRY_KEY];
-	if (existing instanceof WeakMap) {return existing as StoreRegistry;}
+	if (isStoreRegistry(existing)) {return existing;}
 	const created: StoreRegistry = new WeakMap();
 	globals[REGISTRY_KEY] = created;
 	return created;
@@ -75,10 +79,14 @@ export function registerSessionTreeStore(sessionManager: object, store: SessionT
 type IdRegistry = Map<string, SessionTreeStore>;
 const ID_REGISTRY_KEY = Symbol.for("my-pi/subagents/session-id-tree-stores");
 
+function isIdRegistry(value: unknown): value is IdRegistry {
+	return typeof value === "object" && value !== null && typeof (value as IdRegistry).size === "number";
+}
+
 function getIdRegistry(): IdRegistry {
 	const globals = globalThis as Record<symbol, unknown>;
 	const existing = globals[ID_REGISTRY_KEY];
-	if (existing instanceof Map) {return existing as IdRegistry;}
+	if (isIdRegistry(existing)) {return existing;}
 	const created: IdRegistry = new Map();
 	globals[ID_REGISTRY_KEY] = created;
 	return created;

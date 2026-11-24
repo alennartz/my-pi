@@ -205,10 +205,18 @@ type RefreshHooks = WeakMap<object, { afterRefresh: () => void; generation: numb
 const PROVIDER_STATE_KEY = Symbol.for("my-pi.quota-provider-state-stores");
 const REFRESH_HOOK_KEY = Symbol.for("my-pi.quota-provider-refresh-hooks");
 
+function isProviderStateStores(value: unknown): value is ProviderStateStores {
+	return typeof value === "object" && value !== null && typeof (value as ProviderStateStores).get === "function";
+}
+
+function isRefreshHooks(value: unknown): value is RefreshHooks {
+	return typeof value === "object" && value !== null && typeof (value as RefreshHooks).get === "function";
+}
+
 function providerStateStores(): ProviderStateStores {
 	const globals = globalThis as Record<PropertyKey, unknown>;
 	const existing = globals[PROVIDER_STATE_KEY];
-	if (existing instanceof WeakMap) {return existing as ProviderStateStores;}
+	if (isProviderStateStores(existing)) {return existing;}
 	const stores: ProviderStateStores = new WeakMap();
 	globals[PROVIDER_STATE_KEY] = stores;
 	return stores;
@@ -217,7 +225,7 @@ function providerStateStores(): ProviderStateStores {
 function refreshHooks(): RefreshHooks {
 	const globals = globalThis as Record<PropertyKey, unknown>;
 	const existing = globals[REFRESH_HOOK_KEY];
-	if (existing instanceof WeakMap) {return existing as RefreshHooks;}
+	if (isRefreshHooks(existing)) {return existing;}
 	const hooks: RefreshHooks = new WeakMap();
 	globals[REFRESH_HOOK_KEY] = hooks;
 	return hooks;

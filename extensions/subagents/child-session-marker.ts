@@ -19,10 +19,14 @@ const REGISTRY_KEY = Symbol.for("my-pi/subagents/child-session-managers");
 
 type ChildSessionRegistry = WeakMap<object, PersonaPayload | undefined>;
 
+function isRegistry(value: unknown): value is ChildSessionRegistry {
+	return typeof value === "object" && value !== null && typeof (value as ChildSessionRegistry).get === "function";
+}
+
 function getRegistry(): ChildSessionRegistry {
 	const globals = globalThis as Record<symbol, unknown>;
 	const existing = globals[REGISTRY_KEY];
-	if (existing instanceof WeakMap) {return existing as ChildSessionRegistry;}
+	if (isRegistry(existing)) {return existing;}
 	const created: ChildSessionRegistry = new WeakMap();
 	globals[REGISTRY_KEY] = created;
 	return created;
