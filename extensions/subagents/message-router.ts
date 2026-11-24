@@ -161,7 +161,7 @@ export class MessageRouter {
 
 	/** Remove an agent's endpoint and every route that references it. */
 	removeAgent(agentId: string): void {
-		if (this.closed) return;
+		if (this.closed) {return;}
 		this.agentRemoved(agentId);
 		removeFromTopology(this.topology, agentId);
 	}
@@ -198,7 +198,7 @@ export class MessageRouter {
 	 * endpoint: subsequent sends can still be delivered to the same session.
 	 */
 	agentIdle(agentId: string): void {
-		if (this.closed) return;
+		if (this.closed) {return;}
 		const error =
 			`Agent "${agentId}" went idle without responding to your send. ` +
 			"It either forgot to call respond, or chose not to. Its final output " +
@@ -219,7 +219,7 @@ export class MessageRouter {
 	 * later send must be deliverable once the source condition is cleared.
 	 */
 	agentErrored(agentId: string, error: string): void {
-		if (this.closed) return;
+		if (this.closed) {return;}
 		const failure = error || `Agent "${agentId}" ended its run with an error`;
 		this.failCorrelationsForAgent(agentId, failure);
 	}
@@ -230,7 +230,7 @@ export class MessageRouter {
 	 * reconnect before new sends are accepted.
 	 */
 	agentUnavailable(agentId: string, error: string): void {
-		if (this.closed) return;
+		if (this.closed) {return;}
 		const failure = error || `Agent "${agentId}" is unavailable`;
 		this.unavailableAgents.set(agentId, failure);
 		this.disconnectEndpoint(agentId);
@@ -244,7 +244,7 @@ export class MessageRouter {
 	 * completed with typed lifecycle errors.
 	 */
 	agentRemoved(agentId: string): void {
-		if (this.closed) return;
+		if (this.closed) {return;}
 		const failure = `Agent "${agentId}" was removed`;
 		this.unavailableAgents.set(agentId, failure);
 		this.disconnectEndpoint(agentId);
@@ -278,7 +278,7 @@ export class MessageRouter {
 	 * promises. No topology or SDK/session state is changed here.
 	 */
 	close(): void {
-		if (this.closed) return;
+		if (this.closed) {return;}
 		this.closed = true;
 
 		for (const pending of Array.from(this.pendingCorrelations.values())) {
@@ -416,7 +416,7 @@ export class MessageRouter {
 
 	private async responseProgressFrom(endpoint: Endpoint, correlationId: string, delta: string): Promise<void> {
 		this.assertEndpointActive(endpoint);
-		if (typeof delta !== "string") throw new Error("Response progress must be a string");
+		if (typeof delta !== "string") {throw new Error("Response progress must be a string");}
 		const pending = this.pendingCorrelations.get(correlationId);
 		if (!pending) {
 			throw new Error(`No pending request for correlation ID "${correlationId}"`);
@@ -457,16 +457,16 @@ export class MessageRouter {
 	}
 
 	private detachFrom(endpoint: Endpoint, correlationId: string): void {
-		if (!this.isEndpointActive(endpoint)) return;
+		if (!this.isEndpointActive(endpoint)) {return;}
 		const pending = this.pendingCorrelations.get(correlationId);
-		if (!pending || pending.from !== endpoint.id) return;
+		if (!pending || pending.from !== endpoint.id) {return;}
 		this.endWaiting(pending);
 	}
 
 	private cancelFrom(endpoint: Endpoint, correlationId: string): void {
-		if (!this.isEndpointActive(endpoint)) return;
+		if (!this.isEndpointActive(endpoint)) {return;}
 		const pending = this.pendingCorrelations.get(correlationId);
-		if (!pending || pending.from !== endpoint.id) return;
+		if (!pending || pending.from !== endpoint.id) {return;}
 		this.resolvePendingError(
 			pending,
 			`Blocking send with correlation ID "${correlationId}" was cancelled`,
@@ -474,7 +474,7 @@ export class MessageRouter {
 	}
 
 	private subscribeTo(endpoint: Endpoint, listener: (message: RoutedMessage) => void): () => void {
-		if (!this.isEndpointActive(endpoint)) return () => undefined;
+		if (!this.isEndpointActive(endpoint)) {return () => undefined;}
 		endpoint.listeners.add(listener);
 		return () => {
 			endpoint.listeners.delete(listener);
@@ -482,11 +482,11 @@ export class MessageRouter {
 	}
 
 	private assertRouterOpen(): void {
-		if (this.closed) throw new Error("Message router is closed");
+		if (this.closed) {throw new Error("Message router is closed");}
 	}
 
 	private assertEndpointActive(endpoint: Endpoint): void {
-		if (this.closed) throw new Error("Message router is closed");
+		if (this.closed) {throw new Error("Message router is closed");}
 		if (!this.isEndpointActive(endpoint)) {
 			throw new Error(`Endpoint "${endpoint.id}" is not connected`);
 		}
@@ -502,7 +502,7 @@ export class MessageRouter {
 		}
 
 		const failure = this.unavailableAgents.get(to);
-		if (failure !== undefined) throw new Error(failure);
+		if (failure !== undefined) {throw new Error(failure);}
 	}
 
 	private deliverMessage(
@@ -514,7 +514,7 @@ export class MessageRouter {
 	): void {
 		this.onMessageDelivery?.(target.id);
 		const routed: RoutedMessage = { from, message, responseExpected };
-		if (correlationId !== undefined) routed.correlationId = correlationId;
+		if (correlationId !== undefined) {routed.correlationId = correlationId;}
 
 		// Take a snapshot so a listener can unsubscribe itself without changing
 		// which listeners receive this already-accepted delivery.
@@ -534,7 +534,7 @@ export class MessageRouter {
 			if (typeof correlationId !== "string" || correlationId.length === 0) {
 				throw new Error("Correlation ID factory must return a non-empty string");
 			}
-			if (!this.pendingCorrelations.has(correlationId)) return correlationId;
+			if (!this.pendingCorrelations.has(correlationId)) {return correlationId;}
 		}
 		throw new Error("Correlation ID factory did not produce a unique pending ID");
 	}
@@ -546,19 +546,19 @@ export class MessageRouter {
 			this.edgeCounts.set(from, targets);
 		}
 		const count = targets.get(to) ?? 0;
-		if (count === 0) this.deadlockGraph.addEdge(from, to);
+		if (count === 0) {this.deadlockGraph.addEdge(from, to);}
 		targets.set(to, count + 1);
 	}
 
 	private removeEdge(from: string, to: string): void {
 		const targets = this.edgeCounts.get(from);
-		if (!targets) return;
+		if (!targets) {return;}
 		const count = targets.get(to);
-		if (count === undefined) return;
+		if (count === undefined) {return;}
 		if (count <= 1) {
 			targets.delete(to);
 			this.deadlockGraph.removeEdge(from, to);
-			if (targets.size === 0) this.edgeCounts.delete(from);
+			if (targets.size === 0) {this.edgeCounts.delete(from);}
 			return;
 		}
 		targets.set(to, count - 1);
@@ -569,13 +569,13 @@ export class MessageRouter {
 			this.removeEdge(pending.from, pending.to);
 			pending.waitingEdgeAttached = false;
 		}
-		if (pending.waitingStatusEnded) return;
+		if (pending.waitingStatusEnded) {return;}
 		pending.waitingStatusEnded = true;
 		this.invokeBlockingSendEnd(pending.from, pending.correlationId);
 	}
 
 	private completePendingResponse(pending: PendingCorrelation, message: string, responderToolCallId?: string, publishPhase?: (event: RoutedMessagePhase) => void): void {
-		if (this.pendingCorrelations.get(pending.correlationId) !== pending) return;
+		if (this.pendingCorrelations.get(pending.correlationId) !== pending) {return;}
 		this.pendingCorrelations.delete(pending.correlationId);
 		this.endWaiting(pending);
 		this.emitMessagePhase({
@@ -591,7 +591,7 @@ export class MessageRouter {
 	}
 
 	private resolvePendingError(pending: PendingCorrelation, error: string): void {
-		if (this.pendingCorrelations.get(pending.correlationId) !== pending) return;
+		if (this.pendingCorrelations.get(pending.correlationId) !== pending) {return;}
 		this.pendingCorrelations.delete(pending.correlationId);
 		this.endWaiting(pending);
 		this.emitMessagePhase({
@@ -608,7 +608,7 @@ export class MessageRouter {
 	}
 
 	private rejectPendingForClose(pending: PendingCorrelation): void {
-		if (this.pendingCorrelations.get(pending.correlationId) !== pending) return;
+		if (this.pendingCorrelations.get(pending.correlationId) !== pending) {return;}
 		this.pendingCorrelations.delete(pending.correlationId);
 		this.endWaiting(pending);
 		pending.reject(new Error("Message router is closed"));
@@ -625,21 +625,21 @@ export class MessageRouter {
 	private removeEdgesForAgent(agentId: string): void {
 		for (const [from, targets] of Array.from(this.edgeCounts.entries())) {
 			if (from === agentId) {
-				for (const to of targets.keys()) this.deadlockGraph.removeEdge(from, to);
+				for (const to of targets.keys()) {this.deadlockGraph.removeEdge(from, to);}
 				this.edgeCounts.delete(from);
 				continue;
 			}
 			if (targets.has(agentId)) {
 				targets.delete(agentId);
 				this.deadlockGraph.removeEdge(from, agentId);
-				if (targets.size === 0) this.edgeCounts.delete(from);
+				if (targets.size === 0) {this.edgeCounts.delete(from);}
 			}
 		}
 	}
 
 	private disconnectEndpoint(agentId: string): void {
 		const endpoint = this.endpoints.get(agentId);
-		if (!endpoint) return;
+		if (!endpoint) {return;}
 		endpoint.active = false;
 		endpoint.listeners.clear();
 		this.endpoints.delete(agentId);
@@ -664,8 +664,8 @@ export class MessageRouter {
 
 	private emitMessagePhase(event: RoutedMessagePhase, publishPhase?: (event: RoutedMessagePhase) => void): void {
 		try {
-			if (publishPhase) publishPhase(event);
-			else this.onMessagePhase?.(event);
+			if (publishPhase) {publishPhase(event);}
+			else {this.onMessagePhase?.(event);}
 		} catch {
 			// Semantic observers cannot interrupt an accepted transport operation.
 		}

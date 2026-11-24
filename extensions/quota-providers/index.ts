@@ -61,13 +61,13 @@ function evaluateProviderQuota(
 	now = Date.now(),
 	modelId?: string,
 ): ReturnType<typeof decideBlock> | undefined {
-	if (!record.hasUsageSeam) return undefined;
+	if (!record.hasUsageSeam) {return undefined;}
 	const cached = readUsageCache(record.paths.usage);
-	if (!cached) return undefined;
+	if (!cached) {return undefined;}
 	const limitIds = modelLimitIdsFor(cached.modelLimitIds, modelId) ?? [];
 	const snapshots = applicableSnapshots(cached.snapshots, limitIds, now)
 		.sort((a, b) => a.windowEnd - b.windowEnd);
-	if (snapshots.length === 0) return undefined;
+	if (snapshots.length === 0) {return undefined;}
 
 	const ledger = readLedger(record.paths.ledger);
 	const bypassActive = record.policy.bypassAllowed && store ? readBypass(store) : false;
@@ -111,15 +111,15 @@ function buildFooterLine(
 	store: SessionTreeStore,
 	modelId?: string,
 ): string | undefined {
-	if (!record.hasUsageSeam) return undefined;
+	if (!record.hasUsageSeam) {return undefined;}
 	const cached = readUsageCache(record.paths.usage);
-	if (!cached) return undefined;
+	if (!cached) {return undefined;}
 
 	const ledger = readLedger(record.paths.ledger);
 	const bypassActive = record.policy.bypassAllowed && readBypass(store);
 	const limitIds = modelLimitIdsFor(cached.modelLimitIds, modelId) ?? [];
 	const snapshot = firstHitSnapshot(cached.snapshots, limitIds, ledger, now);
-	if (!snapshot) return undefined;
+	if (!snapshot) {return undefined;}
 
 	const verdict = evaluateQuota(snapshot, ledger, record.policy, now);
 	const spend = effectiveSpend(snapshot, ledger);
@@ -127,9 +127,9 @@ function buildFooterLine(
 	const resetDate = formatShortDate(verdict.resetAt);
 
 	let suffix = "";
-	if (verdict.state === "hard-exceeded") suffix = " · HARD CAP";
-	else if (bypassActive) suffix = " · bypassed";
-	else if (verdict.state === "soft-exceeded") suffix = " · soft cap";
+	if (verdict.state === "hard-exceeded") {suffix = " · HARD CAP";}
+	else if (bypassActive) {suffix = " · bypassed";}
+	else if (verdict.state === "soft-exceeded") {suffix = " · soft cap";}
 
 	return `quota: ${formatDollars(spend)}/${formatDollars(snapshot.quota)} ${delta}→${resetDate}${suffix}`;
 }
@@ -139,7 +139,7 @@ export function refreshStatusline(
 	record: ProviderRecord | null | undefined,
 	ctx: ExtensionContext,
 ): void {
-	if (!ctx.hasUI || typeof ctx.ui?.setStatus !== "function") return;
+	if (!ctx.hasUI || typeof ctx.ui?.setStatus !== "function") {return;}
 	const store = getOrCreateSessionTreeStore(ctx.sessionManager);
 	const line = record ? buildFooterLine(record, Date.now(), store, ctx.model?.id) : undefined;
 	ctx.ui.setStatus("quota-providers", line);
@@ -208,7 +208,7 @@ const REFRESH_HOOK_KEY = Symbol.for("my-pi.quota-provider-refresh-hooks");
 function providerStateStores(): ProviderStateStores {
 	const globals = globalThis as Record<PropertyKey, unknown>;
 	const existing = globals[PROVIDER_STATE_KEY];
-	if (existing instanceof WeakMap) return existing as ProviderStateStores;
+	if (existing instanceof WeakMap) {return existing as ProviderStateStores;}
 	const stores: ProviderStateStores = new WeakMap();
 	globals[PROVIDER_STATE_KEY] = stores;
 	return stores;
@@ -217,7 +217,7 @@ function providerStateStores(): ProviderStateStores {
 function refreshHooks(): RefreshHooks {
 	const globals = globalThis as Record<PropertyKey, unknown>;
 	const existing = globals[REFRESH_HOOK_KEY];
-	if (existing instanceof WeakMap) return existing as RefreshHooks;
+	if (existing instanceof WeakMap) {return existing as RefreshHooks;}
 	const hooks: RefreshHooks = new WeakMap();
 	globals[REFRESH_HOOK_KEY] = hooks;
 	return hooks;
@@ -229,7 +229,7 @@ function maybeRefreshUsage(record: RecordWithRunner): void {
 	const now = Date.now();
 	const windowEnded = cached?.snapshots.some((snapshot) => now >= snapshot.windowEnd) ?? false;
 	const age = cached ? (now - cached.writtenAt) / 1000 : Infinity;
-	if (!windowEnded && age < record.policy.maxPollSeconds) return;
+	if (!windowEnded && age < record.policy.maxPollSeconds) {return;}
 	spawnUsageRefresh(record);
 }
 
@@ -238,11 +238,11 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	const configPath = join(agentDir, "quota-providers.json");
 	const runnerPath = fileURLToPath(new URL("./runner.mjs", import.meta.url));
 	const { attachments, warnings } = loadQuotaAttachments(configPath);
-	for (const warning of warnings) console.warn(warning);
+	for (const warning of warnings) {console.warn(warning);}
 
 	const records: RecordWithRunner[] = [];
 	for (const attachment of attachments) {
-		if (!attachment.enabled) continue;
+		if (!attachment.enabled) {continue;}
 		try {
 			await loadQuotaSource(attachment.modulePath);
 		} catch (error) {
@@ -280,16 +280,16 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		const store = getOrCreateSessionTreeStore(ctx.sessionManager);
 		treeStore = store;
 		const sessionId = sessionIdOf(ctx.sessionManager);
-		if (!sessionId) return;
+		if (!sessionId) {return;}
 		boundStores.set(sessionId, store);
 		registerSessionIdTreeStore(sessionId, store);
-		if (preferFallback || !fallbackSessionId) fallbackSessionId = sessionId;
+		if (preferFallback || !fallbackSessionId) {fallbackSessionId = sessionId;}
 	}
 
 	function stateStore(registry: ProviderRegistry): Map<string, AttachedProvider> {
 		const key = registry as object;
 		const existing = providerStates.get(key);
-		if (existing) return existing;
+		if (existing) {return existing;}
 		const states = new Map<string, AttachedProvider>();
 		providerStates.set(key, states);
 		return states;
@@ -302,21 +302,21 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	): void {
 		const registeredNative = registry.getRegisteredNativeProvider?.(providerId);
 		const current = registry.getProvider(providerId);
-		if (current) restoreQuotaStreamGuard(current);
-		if (state.effective !== current) restoreQuotaStreamGuard(state.effective);
-		if (registeredNative !== state.wrapper) return;
+		if (current) {restoreQuotaStreamGuard(current);}
+		if (state.effective !== current) {restoreQuotaStreamGuard(state.effective);}
+		if (registeredNative !== state.wrapper) {return;}
 
 		try {
 			pi.unregisterProvider(providerId);
 		} catch {
 			return;
 		}
-		if (state.nativeBase) pi.registerProvider(state.nativeBase);
-		else if (state.providerConfig) pi.registerProvider(providerId, state.providerConfig);
+		if (state.nativeBase) {pi.registerProvider(state.nativeBase);}
+		else if (state.providerConfig) {pi.registerProvider(providerId, state.providerConfig);}
 	}
 
 	function ensureRefreshHook(registry: ProviderRegistry): void {
-		if (!registry.refresh) return;
+		if (!registry.refresh) {return;}
 		const hooks = refreshHooks();
 		const afterRefresh = () => {
 			const attachedProviders = stateStore(registry);
@@ -347,7 +347,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 				try {
 					return await refresh(options);
 				} finally {
-					if (generation === hook.generation) hook.afterRefresh();
+					if (generation === hook.generation) {hook.afterRefresh();}
 				}
 			};
 			hooks.set(registry as object, hook);
@@ -363,7 +363,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		ensureRefreshHook(registry);
 		for (const record of providerRecords) {
 			let provider = registry.getProvider(record.id);
-			if (!provider) continue;
+			if (!provider) {continue;}
 
 			let previous = attachedProviders.get(record.id);
 			let registeredNative = registry.getRegisteredNativeProvider?.(record.id);
@@ -403,16 +403,16 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 			// composer can replace the effective object during a refresh, but every
 			// recomposed provider still delegates through this stable wrapper.
 			let wrapper = previous?.wrapper;
-			if (wrapper) wrapper = wrapProviderWithQuota(wrapper, evaluate);
+			if (wrapper) {wrapper = wrapProviderWithQuota(wrapper, evaluate);}
 			else if (registeredNative && isQuotaWrappedProvider(registeredNative)) {
 				wrapper = wrapProviderWithQuota(registeredNative, evaluate);
-			} else wrapper = wrapProviderWithQuota(original, evaluate);
+			} else {wrapper = wrapProviderWithQuota(original, evaluate);}
 			if (registeredNative !== wrapper) {
 				pi.registerProvider(wrapper);
 				provider = registry.getProvider(record.id) ?? provider;
 			}
 
-			if (previous && previous.effective !== provider) restoreQuotaStreamGuard(previous.effective);
+			if (previous && previous.effective !== provider) {restoreQuotaStreamGuard(previous.effective);}
 
 			// Keep the current request synchronous as well. The stable base wrapper
 			// protects lazy requests after a refresh; this seam protects this object.
@@ -438,7 +438,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		const attachedProviders = stateStore(registry);
 		const active = new Set(providerRecords.map((record) => record.id));
 		for (const [providerId, state] of attachedProviders) {
-			if (active.has(providerId)) continue;
+			if (active.has(providerId)) {continue;}
 			detachProvider(registry, providerId, state);
 			attachedProviders.delete(providerId);
 		}
@@ -449,7 +449,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		restoreStaleProviders(ctx);
 		attachProviders(ctx);
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
-		if (record) maybeRefreshUsage(record);
+		if (record) {maybeRefreshUsage(record);}
 		refreshStatusline(record, ctx);
 	});
 
@@ -464,7 +464,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 
 	pi.on("session_shutdown", (_event, ctx) => {
 		const sessionId = sessionIdOf(ctx.sessionManager);
-		if (!sessionId) return;
+		if (!sessionId) {return;}
 		const store = boundStores.get(sessionId);
 		unregisterSessionIdTreeStore(sessionId, store);
 		boundStores.delete(sessionId);
@@ -477,14 +477,14 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	pi.on("model_select", (event, ctx) => {
 		attachProviders(ctx);
 		const record = providerIdToRecord.get(event.model.provider ?? "");
-		if (record) maybeRefreshUsage(record);
+		if (record) {maybeRefreshUsage(record);}
 		refreshStatusline(record, ctx);
 	});
 
 	pi.on("message_end", (event, ctx) => {
-		if (event.message.role !== "assistant") return;
+		if (event.message.role !== "assistant") {return;}
 		const record = providerIdToRecord.get(event.message.provider ?? "");
-		if (!record) return;
+		if (!record) {return;}
 
 		const cached = readUsageCache(record.paths.usage);
 		const quotaLimitIds = cached
@@ -506,7 +506,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	pi.on("input", (_event, ctx) => {
 		attachProviders(ctx);
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
-		if (!record) return;
+		if (!record) {return;}
 		maybeRefreshUsage(record);
 		refreshStatusline(record, ctx);
 	});

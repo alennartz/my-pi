@@ -29,7 +29,7 @@ export function matchOverlay(
 
 	for (const glob of overlay.models) {
 		const regex = globToRegex(glob);
-		if (!regex.test(modelId)) continue;
+		if (!regex.test(modelId)) {continue;}
 
 		const { literalChars, wildcardCount } = computeSpecificity(glob);
 
@@ -50,8 +50,8 @@ export function matchOverlay(
  * Ascending literalChars (fewer = broader), then descending wildcardCount (more = broader).
  */
 export function compareSpecificity(a: MatchResult, b: MatchResult): number {
-	if (a.literalChars !== b.literalChars) return a.literalChars - b.literalChars;
-	if (a.wildcardCount !== b.wildcardCount) return b.wildcardCount - a.wildcardCount;
+	if (a.literalChars !== b.literalChars) {return a.literalChars - b.literalChars;}
+	if (a.wildcardCount !== b.wildcardCount) {return b.wildcardCount - a.wildcardCount;}
 	return 0;
 }
 
@@ -64,10 +64,10 @@ export type IndexedMatchedOverlay = MatchedOverlay & { rootIndex: number };
 export function sortMatchedOverlays(matches: IndexedMatchedOverlay[]): MatchedOverlay[] {
 	return [...matches].sort((a, b) => {
 		// Root order first
-		if (a.rootIndex !== b.rootIndex) return a.rootIndex - b.rootIndex;
+		if (a.rootIndex !== b.rootIndex) {return a.rootIndex - b.rootIndex;}
 		// Specificity within same root (broad → narrow)
 		const spec = compareSpecificity(a, b);
-		if (spec !== 0) return spec;
+		if (spec !== 0) {return spec;}
 		// Stable tie-breaker: path
 		return a.path.localeCompare(b.path);
 	});

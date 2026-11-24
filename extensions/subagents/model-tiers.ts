@@ -44,9 +44,9 @@ export function isThinkingLevel(s: string): s is ThinkingLevel {
  */
 export function stripThinkingSuffix(pattern: string): { model: string; thinking?: ThinkingLevel } {
 	const lastColon = pattern.lastIndexOf(":");
-	if (lastColon === -1) return { model: pattern };
+	if (lastColon === -1) {return { model: pattern };}
 	const suffix = pattern.slice(lastColon + 1);
-	if (!isThinkingLevel(suffix)) return { model: pattern };
+	if (!isThinkingLevel(suffix)) {return { model: pattern };}
 	return { model: pattern.slice(0, lastColon), thinking: suffix };
 }
 
@@ -87,11 +87,11 @@ function readTierFile(filePath: string): TierConfig {
 
 /** Keep only known tier keys with string values; drop everything else. */
 function sanitize(parsed: unknown): TierConfig {
-	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {return {};}
 	const config: TierConfig = {};
 	for (const name of TIER_NAMES) {
 		const value = (parsed as Record<string, unknown>)[name];
-		if (typeof value === "string") config[name] = value;
+		if (typeof value === "string") {config[name] = value;}
 	}
 	return config;
 }
@@ -113,13 +113,13 @@ export function resolveModelRef(
 	tiers: TierConfig,
 	isAvailable: (ref: string) => boolean,
 ): { model: string | undefined; warning?: string } {
-	if (!isTierName(ref)) return { model: ref };
+	if (!isTierName(ref)) {return { model: ref };}
 	const configured = tiers[ref];
-	if (configured === undefined) return { model: undefined };
+	if (configured === undefined) {return { model: undefined };}
 	// Availability is judged on the model part alone; the full suffixed string
 	// (including any thinking level) is returned as-is when available.
 	const { model: modelPart } = stripThinkingSuffix(configured);
-	if (isAvailable(modelPart)) return { model: configured };
+	if (isAvailable(modelPart)) {return { model: configured };}
 	return {
 		model: undefined,
 		warning: `Model tier "${ref}" is configured as "${modelPart}", which is not available; using the session default model.`,

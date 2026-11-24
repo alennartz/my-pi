@@ -124,7 +124,7 @@ export async function mapWithConcurrency<T, R>(
 	async function worker(): Promise<void> {
 		for (;;) {
 			const index = cursor++;
-			if (index >= items.length) return;
+			if (index >= items.length) {return;}
 			results[index] = await fn(items[index], index);
 		}
 	}
@@ -133,7 +133,7 @@ export async function mapWithConcurrency<T, R>(
 }
 
 function normalizeFindText(findText: WebFetchParams["findText"]): string[] {
-	if (findText === undefined) return [];
+	if (findText === undefined) {return [];}
 	return findText.map((q) => q.trim()).filter(Boolean);
 }
 
@@ -280,11 +280,11 @@ function toStructuredResult(result: FetchResult): WebFetchStructured["results"][
 		truncated: result.truncated,
 		status: result.status,
 	};
-	if (result.title !== undefined) structured.title = result.title;
-	if (result.path !== undefined) structured.path = result.path;
-	if (result.nextOffset !== undefined) structured.nextOffset = result.nextOffset;
-	if (result.errorCode !== undefined) structured.errorCode = result.errorCode;
-	if (result.errorMessage !== undefined) structured.errorMessage = result.errorMessage;
+	if (result.title !== undefined) {structured.title = result.title;}
+	if (result.path !== undefined) {structured.path = result.path;}
+	if (result.nextOffset !== undefined) {structured.nextOffset = result.nextOffset;}
+	if (result.errorCode !== undefined) {structured.errorCode = result.errorCode;}
+	if (result.errorMessage !== undefined) {structured.errorMessage = result.errorMessage;}
 	return structured;
 }
 

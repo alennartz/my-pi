@@ -61,7 +61,7 @@ describe("LLM Gateway provider registration", () => {
 		const fetchMock = vi.fn(async () => catalogResponse());
 		vi.stubGlobal("fetch", fetchMock);
 		const publish = async ({ persist }: any) => {
-			if (persist) await store.write("llmgateway", persist);
+			if (persist) {await store.write("llmgateway", persist);}
 			return true;
 		};
 		const models = await config.refreshModels({ stored: undefined, allowNetwork: true, force: false, signal: new AbortController().signal, publish });

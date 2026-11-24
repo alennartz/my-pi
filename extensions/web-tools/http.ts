@@ -71,7 +71,7 @@ function originKey(url: string): string {
 
 function defaultCookiePath(url: string): string {
 	const pathname = new URL(url).pathname;
-	if (!pathname || pathname === "/") return "/";
+	if (!pathname || pathname === "/") {return "/";}
 	const slash = pathname.lastIndexOf("/");
 	return slash <= 0 ? "/" : pathname.slice(0, slash);
 }
@@ -88,13 +88,13 @@ function setCookiesFromResponse(url: string, headers: Headers, jar: CookieJar): 
 		: headers.get("set-cookie")
 			? splitSetCookie(headers.get("set-cookie") as string)
 			: [];
-	if (values.length === 0) return;
+	if (values.length === 0) {return;}
 
 	const key = originKey(url);
 	const cookies = jar.get(key) ?? new Map<string, StoredCookie>();
 	for (const header of values) {
 		const match = /^\s*([^=;\s]+)=([^;]*)/.exec(header);
-		if (!match) continue;
+		if (!match) {continue;}
 		const name = match[1];
 		const value = match[2];
 		const maxAge = /(?:^|;)\s*max-age\s*=\s*(-?\d+)/i.exec(header);
@@ -106,13 +106,13 @@ function setCookiesFromResponse(url: string, headers: Headers, jar: CookieJar): 
 			/(?:^|;)\s*path\s*=\s*([^;]+)/i.exec(header)?.[1]?.trim() || defaultCookiePath(url);
 		cookies.set(name, { value, path: path.startsWith("/") ? path : "/" });
 	}
-	if (cookies.size > 0) jar.set(key, cookies);
-	else jar.delete(key);
+	if (cookies.size > 0) {jar.set(key, cookies);}
+	else {jar.delete(key);}
 }
 
 function cookieHeaderFor(url: string, jar: CookieJar): string | undefined {
 	const cookies = jar.get(originKey(url));
-	if (!cookies) return undefined;
+	if (!cookies) {return undefined;}
 	const pathname = new URL(url).pathname || "/";
 	const matching = [...cookies.entries()]
 		.filter(
@@ -128,7 +128,7 @@ export function parseRetryAfterMs(
 	value: string | null,
 	now: () => number,
 ): number | null {
-	if (!value) return null;
+	if (!value) {return null;}
 	const trimmed = value.trim();
 	const seconds = Number(trimmed);
 	if (Number.isFinite(seconds) && trimmed !== "") {
@@ -162,7 +162,7 @@ async function readBodyBounded(
 	let tooLarge = false;
 	for (;;) {
 		const { done, value } = await reader.read();
-		if (done) break;
+		if (done) {break;}
 		if (value) {
 			received += value.byteLength;
 			if (received > maxBytes) {
@@ -220,7 +220,7 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 			try {
 				const headers: Record<string, string> = { ...REQUEST_HEADERS };
 				const cookie = cookieHeaderFor(currentUrl, cookieJar);
-				if (cookie) headers.Cookie = cookie;
+				if (cookie) {headers.Cookie = cookie;}
 				response = await doFetch(currentUrl, {
 					redirect: "manual",
 					headers,
@@ -228,7 +228,7 @@ export async function httpFetch(url: string, opts: HttpFetchOptions = {}): Promi
 				});
 			} catch (err) {
 				clearTimeout(timer);
-				if (opts.signal?.aborted) throw err; // caller cancellation propagates
+				if (opts.signal?.aborted) {throw err;} // caller cancellation propagates
 				const code = timedOut.value ? "timeout" : "network";
 				const message = `${code} on ${currentUrl}: ${err instanceof Error ? err.message : String(err)}`;
 				lastRetryable = { code, message };

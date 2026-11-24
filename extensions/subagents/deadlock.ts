@@ -23,7 +23,7 @@ export class DeadlockGraph {
 		const targets = this.edges.get(from);
 		if (targets) {
 			targets.delete(to);
-			if (targets.size === 0) this.edges.delete(from);
+			if (targets.size === 0) {this.edges.delete(from);}
 		}
 	}
 
@@ -31,7 +31,7 @@ export class DeadlockGraph {
 	removeAllEdgesTo(target: string): void {
 		for (const [from, targets] of this.edges) {
 			targets.delete(target);
-			if (targets.size === 0) this.edges.delete(from);
+			if (targets.size === 0) {this.edges.delete(from);}
 		}
 	}
 
@@ -40,21 +40,21 @@ export class DeadlockGraph {
 	 * DFS from `to` looking for `from`. Does NOT add the edge.
 	 */
 	wouldCauseCycle(from: string, to: string): boolean {
-		if (from === to) return true;
+		if (from === to) {return true;}
 
 		const visited = new Set<string>();
 		const stack = [to];
 
 		while (stack.length > 0) {
 			const current = stack.pop()!;
-			if (current === from) return true;
-			if (visited.has(current)) continue;
+			if (current === from) {return true;}
+			if (visited.has(current)) {continue;}
 			visited.add(current);
 
 			const targets = this.edges.get(current);
 			if (targets) {
 				for (const next of targets) {
-					if (!visited.has(next)) stack.push(next);
+					if (!visited.has(next)) {stack.push(next);}
 				}
 			}
 		}

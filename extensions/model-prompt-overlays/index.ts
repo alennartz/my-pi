@@ -12,7 +12,7 @@ export default function modelPromptOverlays(pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", (event, ctx) => {
 		const modelId = ctx.model?.id;
-		if (!modelId) return undefined;
+		if (!modelId) {return undefined;}
 
 		// Project-local ancestor overlays only load when the project is trusted;
 		// the global agent dir always applies.

@@ -1,7 +1,7 @@
 import type { MatchedOverlay } from "./matching.ts";
 
 export function renderOverlayAppendBlock(matches: MatchedOverlay[]): string | undefined {
-	if (matches.length === 0) return undefined;
+	if (matches.length === 0) {return undefined;}
 
 	const sections = matches.map((overlay) => {
 		const trimmedBody = overlay.body.trimEnd();

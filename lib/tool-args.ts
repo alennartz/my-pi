@@ -36,14 +36,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /** Declared JSON-Schema types of a schema node, descending into unions. */
 function declaredTypes(schema: unknown): string[] {
 	const types: string[] = [];
-	if (!isPlainObject(schema)) return types;
-	if (typeof schema.type === "string") types.push(schema.type);
+	if (!isPlainObject(schema)) {return types;}
+	if (typeof schema.type === "string") {types.push(schema.type);}
 	else if (Array.isArray(schema.type)) {
 		types.push(...schema.type.filter((t): t is string => typeof t === "string"));
 	}
 	for (const unionKey of ["anyOf", "oneOf"] as const) {
 		if (Array.isArray(schema[unionKey])) {
-			for (const member of schema[unionKey]) types.push(...declaredTypes(member));
+			for (const member of schema[unionKey]) {types.push(...declaredTypes(member));}
 		}
 	}
 	return types;
@@ -51,11 +51,11 @@ function declaredTypes(schema: unknown): string[] {
 
 /** True when the value is the degenerate default of the property's type. */
 function isEmptyForType(schema: unknown, value: unknown): boolean {
-	if (value === "") return true;
-	if (Array.isArray(value)) return value.length === 0;
+	if (value === "") {return true;}
+	if (Array.isArray(value)) {return value.length === 0;}
 	const types = declaredTypes(schema);
-	if (value === false && types.includes("boolean")) return true;
-	if (isPlainObject(value) && Object.keys(value).length === 0 && types.includes("object")) return true;
+	if (value === false && types.includes("boolean")) {return true;}
+	if (isPlainObject(value) && Object.keys(value).length === 0 && types.includes("object")) {return true;}
 	return false;
 }
 
@@ -72,7 +72,7 @@ function normalizeNode(schema: unknown, value: unknown): unknown {
 				out[key] = item;
 				continue;
 			}
-			if (!required.has(key) && isEmptyForType(propertySchema, item)) continue;
+			if (!required.has(key) && isEmptyForType(propertySchema, item)) {continue;}
 			out[key] = normalizeNode(propertySchema, item);
 		}
 		return out;
@@ -80,7 +80,7 @@ function normalizeNode(schema: unknown, value: unknown): unknown {
 	if (Array.isArray(value)) {
 		const items = isPlainObject(schema) ? schema.items : undefined;
 		// Tuple item schemas are positional; leave them alone.
-		if (!isPlainObject(items) || Array.isArray(items)) return value;
+		if (!isPlainObject(items) || Array.isArray(items)) {return value;}
 		return value.map((item) => normalizeNode(items, item));
 	}
 	return value;

@@ -477,11 +477,11 @@ function isRecord(value: unknown): value is UnknownRecord {
 }
 
 function stripPrivatePresentation<T>(value: T): T {
-	if (Array.isArray(value)) return value.map((child) => stripPrivatePresentation(child)) as T;
-	if (!isRecord(value)) return value;
+	if (Array.isArray(value)) {return value.map((child) => stripPrivatePresentation(child)) as T;}
+	if (!isRecord(value)) {return value;}
 	const copy: UnknownRecord = {};
 	for (const [key, child] of Object.entries(value)) {
-		if (key === "correlationId" || key === "correlation_id") continue;
+		if (key === "correlationId" || key === "correlation_id") {continue;}
 		copy[key] = stripPrivatePresentation(child);
 	}
 	return copy as T;
@@ -489,11 +489,11 @@ function stripPrivatePresentation<T>(value: T): T {
 
 function freezePresentationValue<T>(value: T): T {
 	if (Array.isArray(value)) {
-		for (const child of value) freezePresentationValue(child);
+		for (const child of value) {freezePresentationValue(child);}
 		return Object.freeze(value) as T;
 	}
 	if (isRecord(value)) {
-		for (const child of Object.values(value)) freezePresentationValue(child);
+		for (const child of Object.values(value)) {freezePresentationValue(child);}
 		return Object.freeze(value) as T;
 	}
 	return value;
@@ -556,7 +556,7 @@ function cloneUsage(value: AgentUsage | undefined): SubagentUsage {
 function contextFill(lastTurnInput: unknown, contextWindow: unknown): number | undefined {
 	const input = finiteNumber(lastTurnInput);
 	const window = finiteNumber(contextWindow);
-	if (window <= 0) return undefined;
+	if (window <= 0) {return undefined;}
 	return Math.max(0, Math.min(100, Math.round((input / window) * 100)));
 }
 
@@ -603,7 +603,7 @@ function sourceRecord(record: SubagentLifecycleRecord): UnknownRecord {
 
 function statusRecord(record: SubagentLifecycleRecord): UnknownRecord {
 	const data = isRecord(record.data) ? record.data : {};
-	if (isRecord(data.status)) return data.status;
+	if (isRecord(data.status)) {return data.status;}
 	return isRecord(data.snapshot) ? data.snapshot : {};
 }
 
@@ -687,11 +687,11 @@ function isPresentationState(value: unknown): value is PersistedSubagentContent[
 }
 
 function isPersistedPresentationContent(value: unknown): value is PersistedSubagentContent {
-	if (!isRecord(value) || typeof value.operationId !== "string" || !isPresentationKind(value.kind) || !isPresentationState(value.state)) return false;
-	if (value.source !== "tool" && value.source !== "custom_entry") return false;
-	if (!isRecord(value.data)) return false;
-	if (value.kind === "message_received" && value.source !== "custom_entry") return false;
-	if (value.data.operation !== (value.kind === "message_received" ? "send" : value.kind) && value.data.operation !== "protocol_error") return false;
+	if (!isRecord(value) || typeof value.operationId !== "string" || !isPresentationKind(value.kind) || !isPresentationState(value.state)) {return false;}
+	if (value.source !== "tool" && value.source !== "custom_entry") {return false;}
+	if (!isRecord(value.data)) {return false;}
+	if (value.kind === "message_received" && value.source !== "custom_entry") {return false;}
+	if (value.data.operation !== (value.kind === "message_received" ? "send" : value.kind) && value.data.operation !== "protocol_error") {return false;}
 	if (value.source === "tool") {
 		const placement = value.placement;
 		return isRecord(placement)
@@ -699,43 +699,47 @@ function isPersistedPresentationContent(value: unknown): value is PersistedSubag
 			&& typeof placement.contentIndex === "number"
 			&& (placement.entryId === undefined || typeof placement.entryId === "string");
 	}
-	if (value.placement === undefined) return true;
+	if (value.placement === undefined) {return true;}
 	return isRecord(value.placement) && typeof value.placement.entryId === "string";
 }
 
 function restoreAwaitResult(payload: PersistedSubagentContent, semantic: unknown): PersistedSubagentContent {
-	if (payload.source !== "tool" || payload.kind !== "await" || payload.data.operation !== "await") return payload;
+	if (payload.source !== "tool" || payload.kind !== "await" || payload.data.operation !== "await") {return payload;}
 	const result = payload.data.result;
-	if (!isRecord(result) || !Array.isArray(result.statuses)) return payload;
-	if (result.statuses.some((status) => !isRecord(status) || !validPath(status.path))) return payload;
+	if (!isRecord(result) || !Array.isArray(result.statuses)) {return payload;}
+	if (result.statuses.some((status) => !isRecord(status) || !validPath(status.path))) {return payload;}
 	const paths = new Set(result.statuses.map((status) => pathKey(status.path)));
 	const restored: SubagentAwaitStatus[] = [];
 	const facts = Array.isArray(semantic) ? semantic : [semantic];
 	const authoritative = new Set<string>();
 	for (const fact of facts) {
-		if (!isRecord(fact) || !isRecord(fact.data) || (fact.kind !== "await_interrupted" && fact.kind !== "await_released")) continue;
-		if (fact.data.invocationId !== payload.operationId && fact.data.invocationId !== payload.placement.toolCallId) continue;
-		if (!Array.isArray(fact.data.statuses) || !Array.isArray(fact.data.requested)) continue;
-		for (const path of fact.data.requested) if (validPath(path)) authoritative.add(pathKey(path));
+		if (!isRecord(fact) || !isRecord(fact.data) || (fact.kind !== "await_interrupted" && fact.kind !== "await_released")) {continue;}
+		if (fact.data.invocationId !== payload.operationId && fact.data.invocationId !== payload.placement.toolCallId) {continue;}
+		if (!Array.isArray(fact.data.statuses) || !Array.isArray(fact.data.requested)) {continue;}
+		for (const path of fact.data.requested) {
+			if (validPath(path)) {
+				authoritative.add(pathKey(path));
+			}
+		}
 	}
 	let interrupted = result.interrupted;
 	let error = result.error;
 	for (const fact of facts) {
-		if (!isRecord(fact) || !isRecord(fact.data)) continue;
+		if (!isRecord(fact) || !isRecord(fact.data)) {continue;}
 		if (fact.data.invocationId === payload.operationId || fact.data.invocationId === payload.placement.toolCallId) {
-			if (fact.kind === "await_interrupted" && interrupted === undefined) interrupted = true;
+			if (fact.kind === "await_interrupted" && interrupted === undefined) {interrupted = true;}
 			if (fact.kind === "await_released" && fact.data.reason === "message") {
 				interrupted ??= true;
 				error ??= "Cannot wait: requested agents must receive your response before settling.";
 			}
 		}
-		if (fact.kind !== "child_settled" || !Array.isArray(fact.data.statuses)) continue;
+		if (fact.kind !== "child_settled" || !Array.isArray(fact.data.statuses)) {continue;}
 		for (const status of fact.data.statuses) {
-			if (!isRecord(status) || !validPath(status.path) || status.path.length === 0) continue;
+			if (!isRecord(status) || !validPath(status.path) || status.path.length === 0) {continue;}
 			const state = status.state;
-			if (state !== "idle" && state !== "errored" && state !== "dead" && state !== "stopped") continue;
+			if (state !== "idle" && state !== "errored" && state !== "dead" && state !== "stopped") {continue;}
 			const key = pathKey(status.path);
-			if (paths.has(key) || authoritative.has(key)) continue;
+			if (paths.has(key) || authoritative.has(key)) {continue;}
 			paths.add(key);
 			restored.push({
 				path: copyPath(status.path),
@@ -746,7 +750,7 @@ function restoreAwaitResult(payload: PersistedSubagentContent, semantic: unknown
 			});
 		}
 	}
-	if (restored.length === 0 && interrupted === result.interrupted && error === result.error) return payload;
+	if (restored.length === 0 && interrupted === result.interrupted && error === result.error) {return payload;}
 	return { ...payload, data: { ...payload.data, result: {
 		...result,
 		statuses: [...result.statuses, ...restored],
@@ -803,12 +807,12 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	): NodeIdentity {
 		const key = pathKey(path);
 		const prior = identities.get(key);
-		if (prior && (candidate === undefined || candidate === prior.incarnation)) return prior;
+		if (prior && (candidate === undefined || candidate === prior.incarnation)) {return prior;}
 		const retiredForPath = retired.get(key) ?? new Set<string>();
 		let incarnation = candidate;
 		if (incarnation === undefined || retiredForPath.has(incarnation)) {
 			incarnation = candidate ?? `incarnation-${++incarnationCounter}`;
-			while (retiredForPath.has(incarnation)) incarnation = `${incarnation}-${++incarnationCounter}`;
+			while (retiredForPath.has(incarnation)) {incarnation = `${incarnation}-${++incarnationCounter}`;}
 		}
 		const identity = Object.freeze({ incarnation, explicit: candidate !== undefined });
 		identities.set(key, identity);
@@ -816,30 +820,30 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function retireIdentity(path: AgentPath, identity: NodeIdentity | undefined): void {
-		if (!identity) return;
+		if (!identity) {return;}
 		const key = pathKey(path);
 		const retired = retiredIncarnations.get(key) ?? new Set<string>();
 		retired.add(identity.incarnation);
 		retiredIncarnations.set(key, retired);
 		const prefix = `${key}:`;
 		for (const operationKey of [...presentationOperations]) {
-			if (operationKey.startsWith(prefix)) presentationOperations.delete(operationKey);
+			if (operationKey.startsWith(prefix)) {presentationOperations.delete(operationKey);}
 		}
 		for (const operationKey of [...activeOperations.keys()]) {
-			if (operationKey.startsWith(prefix)) activeOperations.delete(operationKey);
+			if (operationKey.startsWith(prefix)) {activeOperations.delete(operationKey);}
 		}
 	}
 
 	function projectWaiting(path: AgentPath, operational: AgentNodeSnapshot["operational"]): readonly AgentPath[] {
 		const resolved: AgentPath[] = [];
 		for (const target of operational.waitingForPaths ?? []) {
-			if (validPath(target)) resolved.push(copyPath(target));
+			if (validPath(target)) {resolved.push(copyPath(target));}
 		}
 		const waitingIds = Array.isArray(operational.waitingFor) ? operational.waitingFor : [];
 		const known = resolved.length;
 		for (let index = known; index < waitingIds.length; index++) {
 			const localId = waitingIds[index];
-			if (typeof localId !== "string" || localId.length === 0) continue;
+			if (typeof localId !== "string" || localId.length === 0) {continue;}
 			const target = localId === "parent"
 				? path.slice(0, -1)
 				: [...path.slice(0, -1), localId];
@@ -887,7 +891,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function setInitialNode(snapshot: AgentNodeSnapshot): void {
-		if (snapshot.path.length === 0 || snapshot.ownership !== "registry") return;
+		if (snapshot.path.length === 0 || snapshot.ownership !== "registry") {return;}
 		const key = pathKey(snapshot.path);
 		const identity = nextIncarnation(
 			snapshot.path,
@@ -905,7 +909,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		} catch {
 			nodes = [];
 		}
-		for (const snapshot of nodes) setInitialNode(snapshot);
+		for (const snapshot of nodes) {setInitialNode(snapshot);}
 	}
 
 	function appendEvent(
@@ -926,7 +930,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			cursor: eventCursor(epoch, ++sequence),
 		}) as SubagentEvent;
 		history.push(event);
-		while (history.length > historyLimit) history.shift();
+		while (history.length > historyLimit) {history.shift();}
 		if (deliver && !closed) {
 			for (const listener of Array.from(listeners)) {
 				try {
@@ -953,7 +957,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function mergeActiveData(prior: SubagentStartData, delta: SubagentDeltaData): SubagentStartData {
-		if (prior.operation === "delegation" && delta.operation === "delegation") return { ...prior, result: { children: delta.children } };
+		if (prior.operation === "delegation" && delta.operation === "delegation") {return { ...prior, result: { children: delta.children } };}
 		if (prior.operation === "send" && delta.operation === "send") {
 			if ("delta" in delta) {
 				return {
@@ -965,8 +969,8 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			}
 			return { ...prior, result: { ...prior.result, phase: delta.phase } };
 		}
-		if (prior.operation === "respond" && delta.operation === "respond") return { ...prior, parameters: { ...prior.parameters, message: String(prior.parameters.message ?? "") + delta.delta } };
-		if (prior.operation === "await" && delta.operation === "await") return { ...prior, result: { ...prior.result, statuses: delta.statuses } };
+		if (prior.operation === "respond" && delta.operation === "respond") {return { ...prior, parameters: { ...prior.parameters, message: String(prior.parameters.message ?? "") + delta.delta } };}
+		if (prior.operation === "await" && delta.operation === "await") {return { ...prior, result: { ...prior.result, statuses: delta.statuses } };}
 		return prior;
 	}
 
@@ -977,8 +981,8 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	function appendPresentationEvent(event: SemanticAdapterEvent, deliver = true): ProviderFeedEvent | undefined {
 		const target = presentationTarget(event);
 		const operationKey = presentationOperationKey(event);
-		if ((event.type === "end" || event.type === "snapshot") && presentationOperations.has(operationKey)) return undefined;
-		if (event.type === "start" && presentationOperations.has(operationKey)) return undefined;
+		if ((event.type === "end" || event.type === "snapshot") && presentationOperations.has(operationKey)) {return undefined;}
+		if (event.type === "start" && presentationOperations.has(operationKey)) {return undefined;}
 		if (event.type === "end" || event.type === "snapshot") {
 			presentationOperations.add(operationKey);
 		}
@@ -993,14 +997,14 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				cursor: eventCursor(epoch, ++sequence),
 			}) as unknown as SubagentStartEvent;
 			history.push(output);
-			while (history.length > historyLimit) history.shift();
-			if (deliver && !closed) for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }
+			while (history.length > historyLimit) {history.shift();}
+			if (deliver && !closed) {for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }}
 			return output;
 		}
 		if (event.type === "delta") {
 			const active = activeOperations.get(operationKey);
 			const safeData = freezePresentationValue(stripPrivatePresentation(event.data));
-			if (active) activeOperations.set(operationKey, Object.freeze({ ...active, data: freezePresentationValue(mergeActiveData(active.data, safeData)) }));
+			if (active) {activeOperations.set(operationKey, Object.freeze({ ...active, data: freezePresentationValue(mergeActiveData(active.data, safeData)) }));}
 			const output = Object.freeze({
 				type: "subagent_delta",
 				eventId: `provider:subagent_delta:${event.operationId}:${++eventCounter}`,
@@ -1009,8 +1013,8 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				cursor: eventCursor(epoch, ++sequence),
 			}) as unknown as SubagentDeltaEvent;
 			history.push(output);
-			while (history.length > historyLimit) history.shift();
-			if (deliver && !closed) for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }
+			while (history.length > historyLimit) {history.shift();}
+			if (deliver && !closed) {for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }}
 			return output;
 		}
 		if (event.type === "end") {
@@ -1024,11 +1028,11 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				cursor: eventCursor(epoch, ++sequence),
 			}) as unknown as SubagentEndEvent;
 			history.push(output);
-			while (history.length > historyLimit) history.shift();
-			if (deliver && !closed) for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }
+			while (history.length > historyLimit) {history.shift();}
+			if (deliver && !closed) {for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }}
 			return output;
 		}
-		if (event.type === "protocol_error") return undefined;
+		if (event.type === "protocol_error") {return undefined;}
 		activeOperations.delete(operationKey);
 		const output = Object.freeze({
 			type: "subagent_snapshot_event",
@@ -1039,14 +1043,14 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			cursor: eventCursor(epoch, ++sequence),
 		}) as unknown as SubagentFiniteEvent;
 		history.push(output);
-		while (history.length > historyLimit) history.shift();
-		if (deliver && !closed) for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }
+		while (history.length > historyLimit) {history.shift();}
+		if (deliver && !closed) {for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }}
 		return output;
 	}
 
 	function appendRegistryEvent(event: RegistryEvent): void {
-		if (closed) return;
-		if (event.node.path.length === 0) return;
+		if (closed) {return;}
+		if (event.node.path.length === 0) {return;}
 		const key = pathKey(event.node.path);
 		if (event.type === "node_added") {
 			const previous = liveNodes.get(key);
@@ -1095,7 +1099,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				const reboundKey = pathKey(next.path);
 				implicitRebinds.set(reboundKey, reboundSession);
 				queueMicrotask(() => {
-					if (implicitRebinds.get(reboundKey) === reboundSession) implicitRebinds.delete(reboundKey);
+					if (implicitRebinds.get(reboundKey) === reboundSession) {implicitRebinds.delete(reboundKey);}
 				});
 			}
 			appendEvent({
@@ -1127,11 +1131,11 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			return;
 		}
 
-		if (event.type !== "node_removed") return;
+		if (event.type !== "node_removed") {return;}
 		const identity = liveIdentity.get(key);
 		const node = liveNodes.get(key) ?? projectNode(event.node, identity ?? nextIncarnation(event.node.path, asString(event.node.incarnation), liveIdentity, retiredIncarnations));
 		for (const [candidateKey, candidate] of Array.from(liveNodes.entries())) {
-			if (!isPathPrefix(node.path, candidate.path)) continue;
+			if (!isPathPrefix(node.path, candidate.path)) {continue;}
 			const candidateIdentity = liveIdentity.get(candidateKey);
 			closeLeases(candidate.path, "removed");
 			retireIdentity(candidate.path, candidateIdentity);
@@ -1150,20 +1154,20 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	function historicalIdentityFor(record: SubagentLifecycleRecord, add: boolean): NodeIdentity {
 		const key = pathKey(record.path);
 		const prior = historicalIdentity.get(key);
-		if (prior && !add) return prior;
-		if (prior && add && historicalNodes.has(key)) return prior;
+		if (prior && !add) {return prior;}
+		if (prior && add && historicalNodes.has(key)) {return prior;}
 		const source = sourceRecord(record);
 		const candidate = asString(source.incarnation);
 		const retired = historicalRetired.get(key) ?? new Set<string>();
 		let incarnation = candidate ?? `lifecycle-${historicalIdentity.size + 1}`;
-		if (retired.has(incarnation)) incarnation = `${incarnation}-${historicalIdentity.size + 1}`;
+		if (retired.has(incarnation)) {incarnation = `${incarnation}-${historicalIdentity.size + 1}`;}
 		const identity = Object.freeze({ incarnation, explicit: candidate !== undefined });
 		historicalIdentity.set(key, identity);
 		return identity;
 	}
 
 	function appendLifecycleRecord(record: SubagentLifecycleRecord): void {
-		if (!validPath(record.path) || record.path.length === 0) return;
+		if (!validPath(record.path) || record.path.length === 0) {return;}
 		const key = pathKey(record.path);
 		if (record.kind === "node_added" || record.kind === "node_updated" || record.kind === "resurrect") {
 			const add = record.kind !== "node_updated";
@@ -1206,8 +1210,8 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function findRegistered(path: AgentPath): RegisteredAgentNode {
-		if (!validPath(path)) throw new Error(`Invalid subagent path ${JSON.stringify(path)}`);
-		if (path.length === 0) throw new Error("The root session is not a child view");
+		if (!validPath(path)) {throw new Error(`Invalid subagent path ${JSON.stringify(path)}`);}
+		if (path.length === 0) {throw new Error("The root session is not a child view");}
 		let node: ReturnType<AgentSessionRegistry["get"]>;
 		try {
 			node = options.registry.get(path);
@@ -1227,11 +1231,11 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		} catch (error) {
 			throw new Error(`Subagent runtime is unavailable: ${error instanceof Error ? error.message : String(error)}`);
 		}
-		if (!session) throw new Error("Subagent runtime is unavailable");
+		if (!session) {throw new Error("Subagent runtime is unavailable");}
 		let capabilities: SubagentCapabilities = EMPTY_CAPABILITIES;
 		try {
 			const candidate = (node.session as ManagedChildSession & { capabilities?: SubagentCapabilities }).capabilities;
-			if (candidate) capabilities = candidate;
+			if (candidate) {capabilities = candidate;}
 		} catch (error) {
 			throw new Error(`Subagent capabilities are unavailable: ${error instanceof Error ? error.message : String(error)}`);
 		}
@@ -1268,17 +1272,17 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function deactivateLease(record: LeaseRecord): boolean {
-		if (!record.active) return false;
+		if (!record.active) {return false;}
 		record.active = false;
 		record.currentSession = undefined;
 		const pathLeases = leases.get(record.key);
 		pathLeases?.delete(record);
-		if (pathLeases && pathLeases.size === 0) leases.delete(record.key);
+		if (pathLeases && pathLeases.size === 0) {leases.delete(record.key);}
 		return true;
 	}
 
 	function closeLease(record: LeaseRecord, reason: "removed" | "unavailable"): void {
-		if (!deactivateLease(record)) return;
+		if (!deactivateLease(record)) {return;}
 		notifyLeaseDetached(record.path, reason);
 		notifyLease(record, { kind: "closed", reason });
 		record.listeners.clear();
@@ -1287,36 +1291,36 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	function closeLeases(path: AgentPath, reason: "removed" | "unavailable"): void {
 		for (const [implicitKey] of Array.from(implicitRebinds.entries())) {
 			const implicitPath = JSON.parse(implicitKey) as AgentPath;
-			if (isPathPrefix(path, implicitPath)) implicitRebinds.delete(implicitKey);
+			if (isPathPrefix(path, implicitPath)) {implicitRebinds.delete(implicitKey);}
 		}
 		for (const [key, records] of Array.from(leases.entries())) {
 			const candidate = JSON.parse(key) as AgentPath;
-			if (!isPathPrefix(path, candidate)) continue;
-			for (const record of Array.from(records)) closeLease(record, reason);
+			if (!isPathPrefix(path, candidate)) {continue;}
+			for (const record of Array.from(records)) {closeLease(record, reason);}
 		}
 	}
 
 	function rebindLeases(path: AgentPath, force: boolean): BorrowedAgentSession | undefined {
 		const key = pathKey(path);
 		const records = leases.get(key);
-		if (!records || records.size === 0) return undefined;
+		if (!records || records.size === 0) {return undefined;}
 		let registered: RegisteredAgentNode;
 		try {
 			registered = findRegistered(path);
 		} catch {
-			for (const record of Array.from(records)) closeLease(record, "unavailable");
+			for (const record of Array.from(records)) {closeLease(record, "unavailable");}
 			return undefined;
 		}
 		let borrowed: { session: BorrowedAgentSession; capabilities: SubagentCapabilities };
 		try {
 			borrowed = borrow(registered);
 		} catch {
-			for (const record of Array.from(records)) closeLease(record, "unavailable");
+			for (const record of Array.from(records)) {closeLease(record, "unavailable");}
 			return undefined;
 		}
 		for (const record of Array.from(records)) {
-			if (!record.active) continue;
-			if (!force && record.currentSession === borrowed.session) continue;
+			if (!record.active) {continue;}
+			if (!force && record.currentSession === borrowed.session) {continue;}
 			record.currentSession = borrowed.session;
 			record.currentCapabilities = borrowed.capabilities;
 			const event: SubagentLeaseEvent = borrowed.capabilities === EMPTY_CAPABILITIES
@@ -1328,9 +1332,9 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function controlIdentity(path: AgentPath): { node: ProviderNode; explicit: boolean } {
-		if (path.length === 0) throw new Error("The root session is not a child view");
+		if (path.length === 0) {throw new Error("The root session is not a child view");}
 		const node = liveNodes.get(pathKey(path));
-		if (!node) throw new Error(`Unknown subagent path ${JSON.stringify(path)}`);
+		if (!node) {throw new Error(`Unknown subagent path ${JSON.stringify(path)}`);}
 		return { node, explicit: liveIdentity.get(pathKey(path))?.explicit === true };
 	}
 
@@ -1343,7 +1347,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function subscribe(listener: (event: SubagentProviderEvent) => void): () => void {
-		if (closed) return () => {};
+		if (closed) {return () => {};}
 		listeners.add(listener as unknown as (event: ProviderFeedEvent) => void);
 		return () => listeners.delete(listener as unknown as (event: ProviderFeedEvent) => void);
 	}
@@ -1371,7 +1375,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		if (after === undefined) {
 			return Object.freeze({ kind: "events", cursor, events: Object.freeze([...history]) });
 		}
-		if (after.epoch !== epoch) return { kind: "snapshot_required", reason: "epoch_changed" };
+		if (after.epoch !== epoch) {return { kind: "snapshot_required", reason: "epoch_changed" };}
 		if (!Number.isInteger(after.sequence) || after.sequence < 0 || after.sequence > sequence) {
 			return { kind: "snapshot_required", reason: "history_unavailable" };
 		}
@@ -1391,7 +1395,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	async function acquire(path: AgentPath): Promise<SubagentLease> {
-		if (closed) throw new Error("Subagent provider is shut down");
+		if (closed) {throw new Error("Subagent provider is shut down");}
 		if ([...removingPaths].some((removing) => isPathPrefix(JSON.parse(removing) as AgentPath, path))) {
 			throw new Error(`Subagent path is being removed ${JSON.stringify(path)}`);
 		}
@@ -1418,19 +1422,19 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		const lease: SubagentLease = {
 			path: record.path,
 			get session(): BorrowedAgentSession {
-				if (!record.active || record.currentSession === undefined) throw new Error("Subagent lease is closed");
+				if (!record.active || record.currentSession === undefined) {throw new Error("Subagent lease is closed");}
 				return record.currentSession;
 			},
 			get capabilities(): SubagentCapabilities {
 				return record.currentCapabilities;
 			},
 			subscribe(listener) {
-				if (!record.active) return () => {};
+				if (!record.active) {return () => {};}
 				record.listeners.add(listener);
 				return () => record.listeners.delete(listener);
 			},
 			release: async () => {
-				if (!deactivateLease(record)) return;
+				if (!deactivateLease(record)) {return;}
 				notifyLeaseDetached(record.path, "released");
 				record.listeners.clear();
 			},
@@ -1440,9 +1444,9 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 
 	async function teardown(path: AgentPath, incarnation: string): Promise<SubagentTeardownResult> {
 		assertIncarnation(path, incarnation);
-		if (closed) throw new Error("Subagent provider is shut down");
+		if (closed) {throw new Error("Subagent provider is shut down");}
 		const removalKey = pathKey(path);
-		if (removingPaths.has(removalKey)) throw new Error(`Subagent path is already being removed ${JSON.stringify(path)}`);
+		if (removingPaths.has(removalKey)) {throw new Error(`Subagent path is already being removed ${JSON.stringify(path)}`);}
 		removingPaths.add(removalKey);
 		try {
 			const result = await options.ownerControl.teardown(copyPath(path), incarnation);
@@ -1458,7 +1462,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 
 	async function stop(request: SubagentStopRequest): Promise<void> {
 		const node = assertIncarnation(request.path, request.incarnation);
-		if (closed) throw new Error("Subagent provider is shut down");
+		if (closed) {throw new Error("Subagent provider is shut down");}
 		if (node.sessionId !== request.expectedSessionId) {
 			throw new Error(`Stale subagent runtime for ${JSON.stringify(request.path)}`);
 		}
@@ -1469,7 +1473,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	async function resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult> {
-		if (closed) throw new Error("Subagent provider is shut down");
+		if (closed) {throw new Error("Subagent provider is shut down");}
 		if (request.parentPath.length !== 0 && !validPath(request.parentPath)) {
 			throw new Error("Invalid resurrection parent path");
 		}
@@ -1491,16 +1495,16 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 
 	function hasRetainedPersistedOperation(path: AgentPath, operationId: string): boolean {
 		return history.some((event) => {
-			if (!("type" in event) || event.type !== "subagent_snapshot_event") return false;
+			if (!("type" in event) || event.type !== "subagent_snapshot_event") {return false;}
 			const target = event.target;
-			if (!isRecord(target)) return false;
+			if (!isRecord(target)) {return false;}
 			return target.operationId === operationId && Array.isArray(target.path) && pathKey([...target.path] as unknown as AgentPath) === pathKey(path);
 		});
 	}
 
 	function appendPersistedPayload(payload: PersistedSubagentContent, path: AgentPath, entryId: string | undefined, force = false): void {
 		const operationKey = `${pathKey(path)}:${payload.operationId}`;
-		if (presentationOperations.has(operationKey) && !force) return;
+		if (presentationOperations.has(operationKey) && !force) {return;}
 		presentationOperations.add(operationKey);
 		const placement = payload.source === "tool"
 			? Object.freeze({
@@ -1523,12 +1527,12 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			cursor: eventCursor(epoch, ++sequence),
 		}) as unknown as SubagentFiniteEvent;
 		history.push(event);
-		while (history.length > historyLimit) history.shift();
-		if (!closed) for (const listener of Array.from(listeners)) { try { listener(event); } catch {} }
+		while (history.length > historyLimit) {history.shift();}
+		if (!closed) {for (const listener of Array.from(listeners)) { try { listener(event); } catch {} }}
 	}
 
 	async function rehydrate(input: { session: BorrowedAgentSession; path: AgentPath }): Promise<void> {
-		if (closed) return;
+		if (closed) {return;}
 		const identity = `${input.session.sessionId}:${pathKey(input.path)}`;
 		const alreadyHydrated = hydratedSessions.has(identity);
 		const manager = input.session.sessionManager;
@@ -1540,9 +1544,9 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		}
 		const toolArguments = new Map<string, unknown>();
 		for (const entry of entries) {
-			if (!isRecord(entry) || !isRecord(entry.message) || !Array.isArray(entry.message.content)) continue;
+			if (!isRecord(entry) || !isRecord(entry.message) || !Array.isArray(entry.message.content)) {continue;}
 			for (const part of entry.message.content) {
-				if (isRecord(part) && part.type === "toolCall" && typeof part.id === "string") toolArguments.set(part.id, part.arguments);
+				if (isRecord(part) && part.type === "toolCall" && typeof part.id === "string") {toolArguments.set(part.id, part.arguments);}
 			}
 		}
 		const saved: Array<{ payload: PersistedSubagentContent; entryId?: string }> = [];
@@ -1551,14 +1555,14 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 			const message = isRecord(candidateEntry.message) ? candidateEntry.message : candidateEntry;
 			const messageRecord = isRecord(message) ? message : {};
 			const details = messageRecord.details ?? candidateEntry.details ?? candidateEntry.data;
-			if (!isRecord(details) || !Array.isArray(details.subagentContent)) continue;
+			if (!isRecord(details) || !Array.isArray(details.subagentContent)) {continue;}
 			const entryId = typeof candidateEntry.id === "string" ? candidateEntry.id : undefined;
 			const customMessage = (candidateEntry.type === "custom_message" && candidateEntry.customType === "subagents")
 				|| (messageRecord.role === "custom" && messageRecord.customType === "subagents");
 			const awaitResult = messageRecord.role === "toolResult" && messageRecord.toolName === "await_agents";
 			for (const candidate of details.subagentContent) {
-				if (!isPersistedPresentationContent(candidate)) continue;
-				if (candidate.kind === "completion" && (candidate.source !== "custom_entry" || !customMessage)) continue;
+				if (!isPersistedPresentationContent(candidate)) {continue;}
+				if (candidate.kind === "completion" && (candidate.source !== "custom_entry" || !customMessage)) {continue;}
 				const repaired = awaitResult ? restoreAwaitResult(candidate, details.semantic) : candidate;
 				const kind = savedPresentationKind(repaired as unknown as Record<string, unknown>) as PresentationKind;
 				const argumentsValue = toolArguments.get(candidate.source === "tool" ? candidate.placement.toolCallId : candidate.operationId);
@@ -1584,7 +1588,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 	}
 
 	function shutdown(): void {
-		if (closed) return;
+		if (closed) {return;}
 		closed = true;
 		registryUnsubscribe?.();
 		semanticUnsubscribe?.();
@@ -1593,7 +1597,7 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		semanticUnsubscribe = undefined;
 		presentationUnsubscribe = undefined;
 		for (const records of Array.from(leases.values())) {
-			for (const record of Array.from(records)) closeLease(record, "unavailable");
+			for (const record of Array.from(records)) {closeLease(record, "unavailable");}
 		}
 		leases.clear();
 		implicitRebinds.clear();
@@ -1613,26 +1617,28 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 		} catch {
 			records = [];
 		}
-		for (const record of records) appendLifecycleRecord(record);
+		for (const record of records) {appendLifecycleRecord(record);}
 	}
 
 	registryUnsubscribe = options.registryEvents
 		? options.registryEvents.subscribe(appendRegistryEvent)
 		: options.registry.subscribe(appendRegistryEvent);
-	if (options.semanticEvents) semanticUnsubscribe = options.semanticEvents.subscribe((fact) => {
-		if (closed || options.presentationEvents || !isTopologyKind(fact.kind)) return;
+	if (options.semanticEvents) {semanticUnsubscribe = options.semanticEvents.subscribe((fact) => {
+		if (closed || options.presentationEvents || !isTopologyKind(fact.kind)) {return;}
 		const semantic = createSemanticEvent({
 			...fact,
 			path: copyPath(fact.path),
 			relatedPiEvents: cloneRefs(fact.relatedPiEvents),
 		});
 		appendEvent(semantic as Omit<SubagentEvent, "cursor">);
-	});
+	});}
 	const presentationSource = options.presentationEvents?.subscribePresentation;
-	if (presentationSource) presentationUnsubscribe = presentationSource((event) => {
-		if (closed) return;
-		appendPresentationEvent(event);
-	});
+	if (presentationSource) {
+		presentationUnsubscribe = presentationSource((event) => {
+			if (closed) {return;}
+			appendPresentationEvent(event);
+		});
+	}
 
 	return {
 		subscribe,

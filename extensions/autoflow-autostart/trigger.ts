@@ -23,9 +23,9 @@ export interface ArmFacts {
  * forks and subagent children never autostart.
  */
 export function shouldArm(facts: ArmFacts): boolean {
-	if (!facts.autoStart) return false;
-	if (facts.isSubagentChild) return false;
-	if (!(ARMABLE_REASONS as readonly string[]).includes(facts.reason)) return false;
+	if (!facts.autoStart) {return false;}
+	if (facts.isSubagentChild) {return false;}
+	if (!(ARMABLE_REASONS as readonly string[]).includes(facts.reason)) {return false;}
 	return !facts.hasPriorMessages;
 }
 
@@ -59,8 +59,8 @@ function commandName(token: string): string {
 /** Whether this input already invokes autoflow (however it is spelled). */
 export function isAutoflowInvocation(text: string, command: string): boolean {
 	const token = firstToken(text.trim());
-	if (!token.startsWith("/")) return false;
-	if (commandName(token) === "autoflow") return true;
+	if (!token.startsWith("/")) {return false;}
+	if (commandName(token) === "autoflow") {return true;}
 	return token === firstToken(command.trim());
 }
 
@@ -76,12 +76,12 @@ export function isAutoflowInvocation(text: string, command: string): boolean {
  * a rewrite.
  */
 export function planInput(armed: boolean, facts: PlanInputFacts): InputPlan {
-	if (!armed) return pass(false);
-	if (facts.streamingBehavior !== undefined) return pass(false);
+	if (!armed) {return pass(false);}
+	if (facts.streamingBehavior !== undefined) {return pass(false);}
 	const trimmed = facts.text.trim();
-	if (trimmed === "") return pass(true);
-	if (trimmed.startsWith("!")) return pass(true);
-	if (trimmed.startsWith("/")) return pass(!isAutoflowInvocation(trimmed, facts.command));
+	if (trimmed === "") {return pass(true);}
+	if (trimmed.startsWith("!")) {return pass(true);}
+	if (trimmed.startsWith("/")) {return pass(!isAutoflowInvocation(trimmed, facts.command));}
 	return {
 		armed: false,
 		action: { kind: "transform", text: `${facts.command} ${facts.text}` },

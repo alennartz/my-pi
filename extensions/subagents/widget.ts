@@ -41,7 +41,7 @@ const SUBGROUP_ICON = "\uDB81\uDEA9"; // nf-md-file_tree
 // Percentage formatting
 
 function fmtPct(input: number, window: number): string {
-	if (window <= 0) return "0%";
+	if (window <= 0) {return "0%";}
 	return `${Math.round((input / window) * 100)}%`;
 }
 
@@ -53,12 +53,12 @@ function fmtPct(input: number, window: number): string {
  * is the agent this card is about, the ancestors only hint at tree shape.
  */
 export function fitAgentId(id: string, max: number): string {
-	if (max <= 0) return "";
-	if (visibleWidth(id) <= max) return id;
+	if (max <= 0) {return "";}
+	if (visibleWidth(id) <= max) {return id;}
 	const segments = id.split("/");
 	for (let start = 1; start < segments.length; start++) {
 		const candidate = `…/${segments.slice(start).join("/")}`;
-		if (visibleWidth(candidate) <= max) return candidate;
+		if (visibleWidth(candidate) <= max) {return candidate;}
 	}
 	return truncateToWidth(segments[segments.length - 1] ?? id, max);
 }
@@ -84,13 +84,13 @@ export class SubagentDashboard implements Component {
 
 	/** Update the parent session name shown as the dashboard title. */
 	setSessionName(name: string | undefined): void {
-		if (this.sessionName === name) return;
+		if (this.sessionName === name) {return;}
 		this.sessionName = name;
 		this.invalidate();
 	}
 
 	render(width: number): string[] {
-		if (this.cachedWidth === width && this.cachedLines) return this.cachedLines;
+		if (this.cachedWidth === width && this.cachedLines) {return this.cachedLines;}
 		this.cachedLines = this.doRender(width);
 		this.cachedWidth = width;
 		return this.cachedLines;
@@ -104,7 +104,7 @@ export class SubagentDashboard implements Component {
 // Internal rendering
 
 	private doRender(width: number): string[] {
-		if (this.statuses.length === 0) return [];
+		if (this.statuses.length === 0) {return [];}
 
 		const MIN_BOX_WIDTH = 30;
 		const GAP = 1;
@@ -226,12 +226,12 @@ export class SubagentDashboard implements Component {
 		// Cumulative tokens
 		const tokParts: string[] = [];
 		const totalInput = s.usage.input + s.usage.cacheRead + s.usage.cacheWrite;
-		if (totalInput > 0) tokParts.push(`↑${formatTokenCount(totalInput)}`);
-		if (s.usage.output > 0) tokParts.push(`↓${formatTokenCount(s.usage.output)}`);
-		if (tokParts.length > 0) parts.push(tokParts.join(" "));
+		if (totalInput > 0) {tokParts.push(`↑${formatTokenCount(totalInput)}`);}
+		if (s.usage.output > 0) {tokParts.push(`↓${formatTokenCount(s.usage.output)}`);}
+		if (tokParts.length > 0) {parts.push(tokParts.join(" "));}
 
 		// Cost
-		if (s.usage.cost > 0) parts.push(`$${s.usage.cost.toFixed(2)}`);
+		if (s.usage.cost > 0) {parts.push(`$${s.usage.cost.toFixed(2)}`);}
 
 		// Layout: bl + leftFill + " " + stats + " " + rightFill + br. The stats
 		// segment needs at least leftFill(1) + 2 surrounding spaces, so truncate
@@ -264,7 +264,7 @@ export class SubagentDashboard implements Component {
 		for (let lineIdx = 0; lineIdx < BOX_HEIGHT; lineIdx++) {
 			let row = "";
 			for (let b = 0; b < boxes.length; b++) {
-				if (b > 0) row += " ".repeat(gap);
+				if (b > 0) {row += " ".repeat(gap);}
 				const boxLine = boxes[b]?.[lineIdx] ?? "";
 				// Pad to boxWidth if needed (for partial last rows)
 				const vis = visibleWidth(boxLine);
@@ -310,13 +310,13 @@ export class SubagentDashboard implements Component {
 		// Agent counts
 		const countParts: string[] = [];
 		for (const state of AGENT_STATES) {
-			if (counts[state] > 0) countParts.push(`${counts[state]} ${STATE_LABELS[state]}`);
+			if (counts[state] > 0) {countParts.push(`${counts[state]} ${STATE_LABELS[state]}`);}
 		}
 		const agentCount = this.statuses.length;
 		parts.push(`${agentCount} agent${agentCount === 1 ? "" : "s"}: ${countParts.join(" · ")}`);
 
 		// Cost
-		if (totalCost > 0) parts.push(`$${totalCost.toFixed(2)}`);
+		if (totalCost > 0) {parts.push(`$${totalCost.toFixed(2)}`);}
 
 		const inner = parts.map((p) => t.fg("dim", p)).join(t.fg("muted", " │ "));
 		const innerVis = visibleWidth(inner);
@@ -339,7 +339,7 @@ export class SubagentDashboard implements Component {
 		const ordered = [...waited, ...rest];
 
 		const parts = ordered.map((c) => {
-			if (waitSet.has(c)) return t.fg("warning", c);
+			if (waitSet.has(c)) {return t.fg("warning", c);}
 			return t.fg(dimmed ? "dim" : "muted", c);
 		});
 

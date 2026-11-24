@@ -78,7 +78,7 @@ export function readEvents(logFile: string): AgentLifecycleEvent[] {
 	const events: AgentLifecycleEvent[] = [];
 	for (const line of contents.split("\n")) {
 		const trimmed = line.trim();
-		if (!trimmed) continue;
+		if (!trimmed) {continue;}
 		try {
 			events.push(JSON.parse(trimmed));
 		} catch {
@@ -222,7 +222,7 @@ export function loadPersistedAgents(parentSessionFile: string): {
 	agents: PersistedAgentRecord[];
 } | null {
 	const paths = getPersistencePaths(parentSessionFile);
-	if (!fs.existsSync(paths.logFile)) return null;
+	if (!fs.existsSync(paths.logFile)) {return null;}
 
 	const liveAgents = new Map<string, PersistedAgentRecord>();
 
@@ -231,9 +231,9 @@ export function loadPersistedAgents(parentSessionFile: string): {
 			liveAgents.set(event.id, recordFromEvent(event));
 		} else if (event.type === "agent_removed") {
 			const current = liveAgents.get(event.id);
-			if (!current) continue;
-			if (event.sessionId && current.sessionId && event.sessionId !== current.sessionId) continue;
-			if (event.sessionFile && current.sessionFile !== event.sessionFile) continue;
+			if (!current) {continue;}
+			if (event.sessionId && current.sessionId && event.sessionId !== current.sessionId) {continue;}
+			if (event.sessionFile && current.sessionFile !== event.sessionFile) {continue;}
 			liveAgents.delete(event.id);
 		}
 	}

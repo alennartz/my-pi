@@ -46,7 +46,7 @@ describe("view-aware await gating", () => {
 	it("waits for every requested child in a larger group", async () => {
 		const paths = Array.from({ length: 32 }, (_, index) => [`child-${index}`]);
 		const gate = createAwaitGate({ requested: paths });
-		for (const path of paths.slice(0, -1)) gate.settle(idle(`answer-${path[0]}`, path));
+		for (const path of paths.slice(0, -1)) {gate.settle(idle(`answer-${path[0]}`, path));}
 		await expectPending(gate.result);
 		gate.settle(idle("last answer", paths[31]));
 

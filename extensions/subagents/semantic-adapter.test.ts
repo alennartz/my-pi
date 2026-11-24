@@ -144,13 +144,13 @@ describe('subagent semantic adapter', () => {
     const adapter = createSubagentSemanticAdapter({ delegation: () => [{ path: ['owner', 'worker'], task: 'inspect', persona: 'scout' }] });
     const input = call(toolName, toolName, ['owner']);
     const argumentEvents = adapter.acceptToolCallDelta({ ...input, phase: 'end', delta: JSON.stringify(parameters) });
-    if (operation === 'delegation') expect(argumentEvents[0]).toMatchObject({ type: 'start', data: { operation: 'delegation' } });
-    else expect(argumentEvents).toEqual([]);
+    if (operation === 'delegation') {expect(argumentEvents[0]).toMatchObject({ type: 'start', data: { operation: 'delegation' } });}
+    else {expect(argumentEvents).toEqual([]);}
     const [event] = adapter.acceptToolExecution({ ...input, result: { ...result, correlationId: 'private', metadata: { correlation_id: 'private', publicFlag: false } } });
-    if (toolName === 'interrupt') expect(event).toMatchObject({ data: { parameters: { agents: [['owner', 'worker']] }, result: { interrupted: [{ path: ['owner', 'worker'], output: 'done' }] } } });
-    else if (toolName === 'teardown') expect(event).toMatchObject({ data: { parameters: { agent: ['owner', 'worker'] }, result: { status: 'removed', affectedAgents: [{ path: ['owner', 'worker'], usageBaseline: { turns: 0 } }] } } });
-    else if (toolName === 'resurrect') expect(event).toMatchObject({ data: { parameters, result: { affectedAgents: [{ path: ['owner', 'worker'], state: 'running' }] } } });
-    else expect(event).toMatchObject({ data: { parameters, result: { children: [{ path: ['owner', 'worker'], task: 'inspect', persona: 'scout', status: 'running' }] } } });
+    if (toolName === 'interrupt') {expect(event).toMatchObject({ data: { parameters: { agents: [['owner', 'worker']] }, result: { interrupted: [{ path: ['owner', 'worker'], output: 'done' }] } } });}
+    else if (toolName === 'teardown') {expect(event).toMatchObject({ data: { parameters: { agent: ['owner', 'worker'] }, result: { status: 'removed', affectedAgents: [{ path: ['owner', 'worker'], usageBaseline: { turns: 0 } }] } } });}
+    else if (toolName === 'resurrect') {expect(event).toMatchObject({ data: { parameters, result: { affectedAgents: [{ path: ['owner', 'worker'], state: 'running' }] } } });}
+    else {expect(event).toMatchObject({ data: { parameters, result: { children: [{ path: ['owner', 'worker'], task: 'inspect', persona: 'scout', status: 'running' }] } } });}
     expect(JSON.stringify(event)).not.toContain('private');
   });
 

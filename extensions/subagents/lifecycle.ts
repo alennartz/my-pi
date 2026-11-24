@@ -82,7 +82,7 @@ function isPath(value: unknown): value is AgentPath {
 }
 
 function isPersistedEvent(value: unknown): value is PersistedRecord {
-	if (!isRecord(value) || (value.type !== "agent_added" && value.type !== "agent_removed")) return false;
+	if (!isRecord(value) || (value.type !== "agent_added" && value.type !== "agent_removed")) {return false;}
 	return typeof value.timestamp === "string" && typeof value.id === "string" && value.id.length > 0;
 }
 
@@ -100,7 +100,7 @@ function stringValue(value: unknown): string | undefined {
 
 function eventPath(event: { readonly path?: unknown; readonly id?: unknown }, parentPath: AgentPath): AgentPath | undefined {
 	const persistedPath = event.path;
-	if (isPath(persistedPath) && persistedPath.length > 0) return [...parentPath, ...persistedPath];
+	if (isPath(persistedPath) && persistedPath.length > 0) {return [...parentPath, ...persistedPath];}
 	const id = stringValue(event.id);
 	return id === undefined ? undefined : [...parentPath, id];
 }
@@ -148,7 +148,7 @@ function dataFor(
 
 function recordIdFor(event: { readonly recordId?: unknown; readonly type?: unknown; readonly kind?: unknown }, index: number): string {
 	const persistedId = stringValue(event.recordId);
-	if (persistedId !== undefined) return persistedId;
+	if (persistedId !== undefined) {return persistedId;}
 	const type = stringValue(event.type) ?? stringValue(event.kind) ?? "record";
 	return `${type}:${index + 1}`;
 }
@@ -163,10 +163,10 @@ function readRecords(options: LifecycleReaderOptions): readonly SubagentLifecycl
 
 	for (let index = 0; index < events.length; index++) {
 		const event = events[index];
-		if (!isPersistedEvent(event)) continue;
+		if (!isPersistedEvent(event)) {continue;}
 
 		const pathValue = eventPath(event, options.parentPath);
-		if (pathValue === undefined) continue;
+		if (pathValue === undefined) {continue;}
 		const key = pathKey(pathValue);
 		const current = active.get(key);
 		const prior = current ?? lastKnown.get(key);

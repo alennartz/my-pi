@@ -47,15 +47,15 @@ export function isPresentationRecord(value: unknown): value is RecordData {
 export function savedPresentationKind(value: RecordData): unknown {
 	const data = value.data;
 	if (value.kind !== 'send' || value.source !== 'custom_entry' || !isPresentationRecord(data)
-		|| data.operation !== 'send' || 'parameters' in data || !isPresentationRecord(data.result)) return value.kind;
+		|| data.operation !== 'send' || 'parameters' in data || !isPresentationRecord(data.result)) {return value.kind;}
 	const from = data.result.from;
 	return Array.isArray(from) && from.every((part) => typeof part === 'string' && part.length > 0)
 		? 'message_received' : value.kind;
 }
 
 function argumentRecord(value: unknown): RecordData | undefined {
-	if (isPresentationRecord(value)) return value;
-	if (typeof value !== 'string') return undefined;
+	if (isPresentationRecord(value)) {return value;}
+	if (typeof value !== 'string') {return undefined;}
 	try {
 		const parsed: unknown = JSON.parse(value);
 		return isPresentationRecord(parsed) ? parsed : undefined;
@@ -65,32 +65,32 @@ function argumentRecord(value: unknown): RecordData | undefined {
 }
 
 export function cleanPresentationValue(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map(cleanPresentationValue);
-	if (!isPresentationRecord(value)) return value;
+	if (Array.isArray(value)) {return value.map(cleanPresentationValue);}
+	if (!isPresentationRecord(value)) {return value;}
 	return Object.fromEntries(Object.entries(value)
 		.filter(([key]) => !privateIdentifierFields.includes(key) && !['toolCallId', 'semantic', 'semanticEvents', 'subagentContent'].includes(key))
 		.map(([key, child]) => [key, cleanPresentationValue(child)]));
 }
 
 export function presentationPath(owner: AgentPath, value: unknown): AgentPath {
-	if (Array.isArray(value)) return [...value.filter((part): part is string => typeof part === 'string' && part.length > 0)];
-	if (typeof value !== 'string' || value.length === 0) return [...owner];
-	if (value === 'parent') return owner.slice(0, -1);
+	if (Array.isArray(value)) {return [...value.filter((part): part is string => typeof part === 'string' && part.length > 0)];}
+	if (typeof value !== 'string' || value.length === 0) {return [...owner];}
+	if (value === 'parent') {return owner.slice(0, -1);}
 	const path = value.split('/').filter(Boolean);
 	return owner.length > 0 && owner.every((part, index) => part === path[index]) ? path : [...owner, ...path];
 }
 
 function privateIdentifiers(value: unknown): readonly string[] {
-	if (Array.isArray(value)) return value.flatMap(privateIdentifiers);
-	if (!isPresentationRecord(value)) return [];
+	if (Array.isArray(value)) {return value.flatMap(privateIdentifiers);}
+	if (!isPresentationRecord(value)) {return [];}
 	return Object.entries(value).flatMap(([key, child]) => privateIdentifierFields.includes(key)
 		? (Array.isArray(child) ? child : [child]).filter((id): id is string => typeof id === 'string' && id.length > 0)
 		: privateIdentifiers(child));
 }
 
 function redactErrors(value: unknown, identifiers: readonly string[]): unknown {
-	if (Array.isArray(value)) return value.map((child) => redactErrors(child, identifiers));
-	if (!isPresentationRecord(value)) return value;
+	if (Array.isArray(value)) {return value.map((child) => redactErrors(child, identifiers));}
+	if (!isPresentationRecord(value)) {return value;}
 	return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, key === 'error' && typeof child === 'string'
 		? identifiers.reduce((text, id) => text.replaceAll(id, '[redacted]'), child)
 		: redactErrors(child, identifiers)]));
@@ -103,20 +103,20 @@ function redactErrors(value: unknown, identifiers: readonly string[]): unknown {
  * explicit property name, never by looping over keys.
  */
 export function publicToolResult(value: unknown, isError = false, parameters?: unknown): RecordData {
-	if (!isPresentationRecord(value)) return redactErrors(isError ? { isError: true, ...(typeof value === 'string' ? { error: value } : {}) } : {}, privateIdentifiers(argumentRecord(parameters))) as RecordData;
+	if (!isPresentationRecord(value)) {return redactErrors(isError ? { isError: true, ...(typeof value === 'string' ? { error: value } : {}) } : {}, privateIdentifiers(argumentRecord(parameters))) as RecordData;}
 	const source = isPresentationRecord(value.structuredContent) ? value.structuredContent
 		: isPresentationRecord(value.details) ? value.details : value.role === 'toolResult' ? {} : value;
 	const result = cleanPresentationValue(source) as RecordData;
-	if (result.usage === undefined && value.usage !== undefined) result.usage = cleanPresentationValue(value.usage);
-	if (result.error === undefined && value.error !== undefined) result.error = cleanPresentationValue(value.error);
-	if (result.aborted === undefined && value.aborted !== undefined) result.aborted = cleanPresentationValue(value.aborted);
-	if (result.isError === undefined && value.isError !== undefined) result.isError = cleanPresentationValue(value.isError);
-	if (Array.isArray(value.content) && source === value) delete result.content;
+	if (result.usage === undefined && value.usage !== undefined) {result.usage = cleanPresentationValue(value.usage);}
+	if (result.error === undefined && value.error !== undefined) {result.error = cleanPresentationValue(value.error);}
+	if (result.aborted === undefined && value.aborted !== undefined) {result.aborted = cleanPresentationValue(value.aborted);}
+	if (result.isError === undefined && value.isError !== undefined) {result.isError = cleanPresentationValue(value.isError);}
+	if (Array.isArray(value.content) && source === value) {delete result.content;}
 	if (isError || result.isError === true) {
 		result.isError = true;
 		if (result.error === undefined && Array.isArray(value.content)) {
 			const text = value.content.flatMap((part) => isPresentationRecord(part) && part.type === 'text' && typeof part.text === 'string' ? [part.text] : []).join('\n');
-			if (text.length > 0) result.error = text;
+			if (text.length > 0) {result.error = text;}
 		}
 	}
 	return redactErrors(result, [...privateIdentifiers(value), ...privateIdentifiers(argumentRecord(parameters))]) as RecordData;
@@ -129,13 +129,13 @@ export function normalizeToolParameters(operation: SubagentOperationKind, value:
 		parameters.to = target !== undefined ? [...target] : presentationPath(owner, parameters.to);
 	}
 	if (operation === 'await' || operation === 'interrupt') {
-		if (Array.isArray(parameters.agents) && parameters.agents.length > 0) parameters.agents = parameters.agents.map((agent) => presentationPath(owner, agent));
-		else delete parameters.agents;
+		if (Array.isArray(parameters.agents) && parameters.agents.length > 0) {parameters.agents = parameters.agents.map((agent) => presentationPath(owner, agent));}
+		else {delete parameters.agents;}
 	}
-	if (operation === 'teardown' && parameters.agent !== undefined) parameters.agent = presentationPath(owner, parameters.agent);
+	if (operation === 'teardown' && parameters.agent !== undefined) {parameters.agent = presentationPath(owner, parameters.agent);}
 	if (operation === 'delegation' && Array.isArray(parameters.agents)) {
 		parameters.agents = parameters.agents.map((agent) => {
-			if (!isPresentationRecord(agent)) return agent;
+			if (!isPresentationRecord(agent)) {return agent;}
 			const { agent: legacyPersona, ...fields } = agent;
 			return { ...fields, ...(fields.persona === undefined && legacyPersona !== undefined ? { persona: legacyPersona } : {}) };
 		});
@@ -145,12 +145,12 @@ export function normalizeToolParameters(operation: SubagentOperationKind, value:
 
 export function normalizeAwaitStatuses(values: readonly unknown[], owner: AgentPath): readonly SubagentAwaitStatus[] {
 	return values.flatMap((value) => {
-		if (!isPresentationRecord(value)) return [];
+		if (!isPresentationRecord(value)) {return [];}
 		const { id, path, status, state, output, error, sessionId } = value;
 		const canonicalPath = presentationPath(owner, path ?? id);
-		if (canonicalPath.length === 0) return [];
+		if (canonicalPath.length === 0) {return [];}
 		const candidate = state ?? status;
-		if (!isAwaitState(candidate)) return [];
+		if (!isAwaitState(candidate)) {return [];}
 		const decoded: SubagentAwaitStatus = {
 			path: canonicalPath,
 			state: candidate,
@@ -187,7 +187,7 @@ function finiteNumber(value: unknown): number {
 }
 
 function decodeUsage(value: unknown): SubagentUsage {
-	if (!isPresentationRecord(value)) return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
+	if (!isPresentationRecord(value)) {return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };}
 	const breakdown = value.costBreakdown;
 	const costBreakdown = isPresentationRecord(breakdown)
 		? {
@@ -209,7 +209,7 @@ function decodeUsage(value: unknown): SubagentUsage {
 }
 
 function decodeChildAgent(value: unknown, owner: AgentPath): SubagentDelegatedChild {
-	if (!isPresentationRecord(value)) return { path: presentationPath(owner, value), task: '' };
+	if (!isPresentationRecord(value)) {return { path: presentationPath(owner, value), task: '' };}
 	const { id, path, task, persona, status } = value;
 	return {
 		path: presentationPath(owner, path ?? id),
@@ -230,7 +230,7 @@ function decodeAffectedCore<S extends AwaitState>(value: unknown, owner: AgentPa
 	model?: string;
 	usageBaseline?: SubagentUsage;
 }> {
-	if (!isPresentationRecord(value)) return { path: presentationPath(owner, value), sessionId: '', incarnation: 'unknown', state: 'idle' as S, usage: decodeUsage(undefined) };
+	if (!isPresentationRecord(value)) {return { path: presentationPath(owner, value), sessionId: '', incarnation: 'unknown', state: 'idle' as S, usage: decodeUsage(undefined) };}
 	const { id, path, state, status, usage, usageBaseline, task, channels, model } = value;
 	const candidate = state ?? status;
 	return {
@@ -257,7 +257,7 @@ function decodeAffectedAgent<S extends AwaitState>(value: unknown, owner: AgentP
 	error?: string;
 }> {
 	const core = decodeAffectedCore(value, owner, isState);
-	if (!isPresentationRecord(value)) return core;
+	if (!isPresentationRecord(value)) {return core;}
 	const { output, error } = value;
 	return {
 		...core,
@@ -267,7 +267,7 @@ function decodeAffectedAgent<S extends AwaitState>(value: unknown, owner: AgentP
 }
 
 function decodeInterruptTarget(value: unknown, owner: AgentPath): InterruptTarget {
-	if (!isPresentationRecord(value)) return { path: presentationPath(owner, value) };
+	if (!isPresentationRecord(value)) {return { path: presentationPath(owner, value) };}
 	const { id, path, output, error } = value;
 	return {
 		path: presentationPath(owner, path ?? id),
@@ -337,7 +337,7 @@ function buildFinal(operation: SubagentOperationKind, source: RecordData, parame
 		return { operation: 'await', parameters, result };
 	}
 	if (operation === 'respond') {
-		if (toolBacked) return { operation: 'respond', parameters, result: { ...source } };
+		if (toolBacked) {return { operation: 'respond', parameters, result: { ...source } };}
 		const { body, ...rest } = source;
 		const result: RespondFinal['result'] = {
 			...rest,
@@ -440,7 +440,7 @@ function mergedError(native: Readonly<{ error?: string }>, saved: Readonly<{ err
 }
 
 function mergeFinalData(native: SubagentFinalData, saved: SubagentFinalData): SubagentFinalData {
-	if (native.operation !== saved.operation) return saved;
+	if (native.operation !== saved.operation) {return saved;}
 	if (saved.operation === 'delegation' && native.operation === 'delegation') {
 		const savedChildren = saved.result.children;
 		const byPath = new Map(native.result.children.map((child) => [JSON.stringify(child.path), child]));

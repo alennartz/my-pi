@@ -18,7 +18,7 @@ async function resolveMergeTarget(
 	cwd: string,
 	requested: string | undefined,
 ): Promise<string> {
-	if (requested) return requested;
+	if (requested) {return requested;}
 	const detected = await git.detectDefaultBranch(cwd);
 	return detected ?? DEFAULT_MERGE_TARGET_FALLBACK;
 }

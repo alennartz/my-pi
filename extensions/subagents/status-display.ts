@@ -45,8 +45,8 @@ const MAX_DETAIL_LENGTH = 200;
 
 /** Display a model reference with the effort level used for its requests. */
 export function modelDisplayName(model: string | undefined, thinkingLevel: string | undefined): string {
-	if (!model) return "—";
-	if (!thinkingLevel || model.endsWith(`:${thinkingLevel}`)) return model;
+	if (!model) {return "—";}
+	if (!thinkingLevel || model.endsWith(`:${thinkingLevel}`)) {return model;}
 	return `${model}:${thinkingLevel}`;
 }
 
@@ -60,7 +60,7 @@ export function stateDetail(status: AgentStatus): string {
 				? `waiting → ${status.waitingFor.join(", ")}`
 				: "waiting for response";
 		case "errored":
-			if (!status.lastError) return "errored";
+			if (!status.lastError) {return "errored";}
 			const error = status.lastError.length > MAX_DETAIL_LENGTH
 				? `${status.lastError.slice(0, MAX_DETAIL_LENGTH)}…`
 				: status.lastError;

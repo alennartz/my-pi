@@ -64,7 +64,7 @@ export function firstHitSnapshot(
 /** Pro-rated line: quota × clamp((t − windowStart) / (windowEnd − windowStart), 0, 1). */
 export function proratedLine(snapshot: UsageSnapshot, t: number): number {
   const windowLength = snapshot.windowEnd - snapshot.windowStart;
-  if (windowLength <= 0 || snapshot.quota <= 0) return 0;
+  if (windowLength <= 0 || snapshot.quota <= 0) {return 0;}
   const fraction = clamp((t - snapshot.windowStart) / windowLength, 0, 1);
   return snapshot.quota * fraction;
 }
@@ -81,7 +81,7 @@ export function daysAhead(
 ): number {
   const { quota, windowStart, windowEnd } = snapshot;
   const windowLength = windowEnd - windowStart;
-  if (quota <= 0 || windowLength <= 0) return 0;
+  if (quota <= 0 || windowLength <= 0) {return 0;}
   return ((spend / quota) * windowLength - (now - windowStart)) / DAY_MS;
 }
 

@@ -125,7 +125,7 @@ function normalizeRequested(paths: readonly AgentPath[]): string[] {
 	const seen = new Set<string>();
 	for (const path of paths) {
 		const key = pathKey(path);
-		if (seen.has(key)) continue;
+		if (seen.has(key)) {continue;}
 		keys.push(key);
 		seen.add(key);
 	}
@@ -157,15 +157,15 @@ function releaseCycle(
 	reason: "settled" | "detach" | "stop",
 	statuses: readonly AwaitChildStatus[] = cycleStatuses(state, cycle),
 ): void {
-	if (cycle.resolved) return;
+	if (cycle.resolved) {return;}
 	cycle.resolved = true;
 	cycle.deferred.resolve({ kind: "released", reason, statuses });
 }
 
 function tryRelease(state: GateState, cycle: AwaitCycle, reason: "settled" | "detach"): void {
-	if (cycle.resolved || cycle.parentStopped) return;
-	if (!allRequestedSettled(state, cycle)) return;
-	if (requestedSettlementBlocked(state, cycle)) return;
+	if (cycle.resolved || cycle.parentStopped) {return;}
+	if (!allRequestedSettled(state, cycle)) {return;}
+	if (requestedSettlementBlocked(state, cycle)) {return;}
 	releaseCycle(state, cycle, reason);
 }
 
@@ -190,10 +190,10 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 	function releaseHeld(path: AgentPath): boolean {
 		const key = pathKey(path);
 		const held = state.heldSettlements.get(key);
-		if (!held) return false;
+		if (!held) {return false;}
 		state.heldSettlements.delete(key);
 		// A stop is not a completion. Release the wait, deliver no notification.
-		if (deliverHeldIdle && held.status.state !== "stopped") deliverHeldIdle(copyStatus(held.status));
+		if (deliverHeldIdle && held.status.state !== "stopped") {deliverHeldIdle(copyStatus(held.status));}
 		return true;
 	}
 
@@ -204,7 +204,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		const held = state.heldSettlements.get(key);
 		// A new run discards a held answer the parent never saw. A stop delivered
 		// nothing on purpose, so it displaces nothing.
-		if (held && !held.delivered && held.status.state !== "stopped") state.displaced.add(key);
+		if (held && !held.delivered && held.status.state !== "stopped") {state.displaced.add(key);}
 		state.heldSettlements.delete(key);
 	}
 
@@ -213,10 +213,10 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		state.leases.set(key, countLease(state, key) + 1);
 
 		const status = state.settlements.get(key);
-		if (!status || status.state === "stopped") return;
+		if (!status || status.state === "stopped") {return;}
 		state.blocked.add(key);
 		// A view opened after delivery re-holds a settlement the parent already has.
-		if (!state.heldSettlements.has(key)) state.heldSettlements.set(key, { status, delivered: true });
+		if (!state.heldSettlements.has(key)) {state.heldSettlements.set(key, { status, delivered: true });}
 	}
 
 	function settle(status: AwaitChildStatus): boolean {
@@ -239,7 +239,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 
 	function message(incoming: AwaitMessage): void {
 		const cycle = state.cycle;
-		if (cycle.resolved || cycle.parentStopped) return;
+		if (cycle.resolved || cycle.parentStopped) {return;}
 		cycle.resolved = true;
 		cycle.deferred.resolve({
 			kind: "interrupted",
@@ -251,7 +251,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 	function detach(path: AgentPath): void {
 		const key = pathKey(path);
 		const current = countLease(state, key);
-		if (current === 0) return;
+		if (current === 0) {return;}
 		if (current === 1) {
 			state.leases.delete(key);
 			state.blocked.delete(key);
@@ -294,7 +294,7 @@ export function createAwaitGate(options: AwaitGateOptions): AwaitGate {
 		clearPath(path);
 	}
 
-	for (const path of options.attached ?? []) attach(path);
+	for (const path of options.attached ?? []) {attach(path);}
 	if (state.cycle.requestedKeys.length === 0) {
 		releaseCycle(state, state.cycle, "settled", []);
 	}

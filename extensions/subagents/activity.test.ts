@@ -14,7 +14,11 @@ function createMockEventBus(): EventBus & { handlers: Map<string, Set<(data: unk
 		handlers,
 		emit(channel: string, data: unknown): void {
 			const set = handlers.get(channel);
-			if (set) for (const handler of set) handler(data);
+			if (set) {
+				for (const handler of set) {
+					handler(data);
+				}
+			}
 		},
 		on(channel: string, handler: (data: unknown) => void): () => void {
 			let set = handlers.get(channel);

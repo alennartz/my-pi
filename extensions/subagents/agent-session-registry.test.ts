@@ -401,12 +401,12 @@ describe("AgentSessionRegistry removal, attachment, and lifecycle", () => {
 			sessions.push(node.session);
 		}
 
-		if (operation === "remove") await registry.remove(["worker"]);
-		else await registry.dispose();
+		if (operation === "remove") {await registry.remove(["worker"]);}
+		else {await registry.dispose();}
 
 		expect(disposalOrder).toEqual([...paths].reverse());
 		expect(registry.listDescendants([])).toEqual([]);
-		for (const session of sessions) expect(session.dispose).toHaveBeenCalledTimes(1);
+		for (const session of sessions) {expect(session.dispose).toHaveBeenCalledTimes(1);}
 	}, 1000);
 
 	it("keeps overlapping removals pending while the requested node is still live", async () => {
@@ -464,7 +464,7 @@ describe("AgentSessionRegistry removal, attachment, and lifecycle", () => {
 		const [child] = await registry.createChildren(["worker"], [request("scout")]);
 		const removed: string[][] = [];
 		registry.subscribe((event) => {
-			if (event.type === "node_removed") removed.push([...event.node.path]);
+			if (event.type === "node_removed") {removed.push([...event.node.path]);}
 		});
 
 		await registry.dispose();

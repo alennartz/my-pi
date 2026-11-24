@@ -71,7 +71,7 @@ describe("parseQuotaAttachments", () => {
 		const { attachments } = parseQuotaAttachments(raw, noExpand);
 		const { settings } = attachments[0];
 
-		for (const key of POLICY_KEYS) expect(settings).not.toHaveProperty(key);
+		for (const key of POLICY_KEYS) {expect(settings).not.toHaveProperty(key);}
 		expect(settings.endpoint).toBe("https://example.com");
 		expect(settings.resourceGroup).toBe("my-rg");
 	});

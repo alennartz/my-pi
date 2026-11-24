@@ -76,11 +76,11 @@ const sdk = vi.hoisted(() => {
 			bindExtensions: vi.fn(async (bindings: any) => {
 				state.bindings.push({ session, bindings });
 				if (state.eventDuringBind) {
-					for (const listener of listeners) listener(state.eventDuringBind);
+					for (const listener of listeners) {listener(state.eventDuringBind);}
 				}
 			}),
 			emit(event: any) {
-				for (const listener of listeners) listener(event);
+				for (const listener of listeners) {listener(event);}
 			},
 		};
 		state.sessions.push(session);

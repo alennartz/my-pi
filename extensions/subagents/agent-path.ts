@@ -18,7 +18,7 @@ export function formatAgentPath(path: AgentPath): string {
  * fallback identity they already have.
  */
 export function qualifiedAgentId(owner: AgentPath, path: AgentPath): string {
-	if (path.length <= owner.length) return "";
-	if (!owner.every((segment, index) => segment === path[index])) return "";
+	if (path.length <= owner.length) {return "";}
+	if (!owner.every((segment, index) => segment === path[index])) {return "";}
 	return path.slice(owner.length).join("/");
 }

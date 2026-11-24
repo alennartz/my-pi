@@ -34,9 +34,9 @@ export interface ActivityNode {
 /** True when closing the tree these nodes describe would destroy live work. */
 export function hasLiveBackgroundWork(nodes: readonly ActivityNode[]): boolean {
 	return nodes.some((node) => {
-		if (node.operational.state === "running") return true;
-		if (node.operational.state !== "waiting") return false;
-		if (node.path.length > 1) return true;
+		if (node.operational.state === "running") {return true;}
+		if (node.operational.state !== "waiting") {return false;}
+		if (node.path.length > 1) {return true;}
 		return node.operational.waitingFor.some((target) => target !== "parent");
 	});
 }

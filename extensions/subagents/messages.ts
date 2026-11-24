@@ -103,8 +103,8 @@ export interface AgentLifecycleNoticeData {
 export function serializeAgentResurrected(data: AgentLifecycleNoticeData): string {
 	const sessionAttr = data.sessionId ? ` session_id="${data.sessionId}"` : "";
 	const lines: string[] = [`<agent_resurrected id="${data.id}"${sessionAttr}>`];
-	if (data.task) lines.push(`  <task>${data.task}</task>`);
-	if (data.model) lines.push(`  <model>${data.model}</model>`);
+	if (data.task) {lines.push(`  <task>${data.task}</task>`);}
+	if (data.model) {lines.push(`  <model>${data.model}</model>`);}
 	lines.push(`  <hint>The user restored this agent from its saved session. It is live again and working on its task.</hint>`);
 	lines.push("</agent_resurrected>");
 	return lines.join("\n");
@@ -135,7 +135,7 @@ function serializeGroupReport(data: ActiveAgentsCompleteData, opts: { elementNam
 	let anySessionId = false;
 	for (const agent of data.agents) {
 		const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
-		if (agent.sessionId) anySessionId = true;
+		if (agent.sessionId) {anySessionId = true;}
 		lines.push(`  <agent id="${agent.id}" status="${agent.status}"${sessionAttr} />`);
 	}
 	if (anySessionId) {
@@ -167,7 +167,7 @@ export function serializeSubagentIdentity(data: SubagentIdentityData): string {
 	lines.push("  <peers>");
 	for (const peer of data.peers) {
 		const attrs: string[] = [`id="${peer.id}"`];
-		if (peer.isDefault) attrs.push(`default="true"`);
+		if (peer.isDefault) {attrs.push(`default="true"`);}
 		if (peer.description) {
 			lines.push(`    <peer ${attrs.join(" ")}>${peer.description}</peer>`);
 		} else {

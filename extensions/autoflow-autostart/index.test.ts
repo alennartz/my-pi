@@ -37,7 +37,7 @@ function setup(agentDir: string) {
 
 function agentDirWithConfig(config: unknown): string {
 	const dir = mkdtempSync(join(tmpdir(), "autoflow-autostart-"));
-	if (config !== undefined) writeFileSync(join(dir, "autoflow.json"), JSON.stringify(config));
+	if (config !== undefined) {writeFileSync(join(dir, "autoflow.json"), JSON.stringify(config));}
 	return dir;
 }
 

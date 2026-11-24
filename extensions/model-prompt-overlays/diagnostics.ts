@@ -7,7 +7,7 @@ export function createDiagnosticsTracker(): {
 		// Every diagnostic message already embeds its file path, so the message
 		// alone is a sufficient dedupe key.
 		shouldNotify(message: string): boolean {
-			if (seen.has(message)) return false;
+			if (seen.has(message)) {return false;}
 			seen.add(message);
 			return true;
 		},

@@ -29,10 +29,10 @@ const PROMPT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 /** Return the safe prompt basename from `/nprompt` arguments. */
 export function parsePromptName(args: string): string | undefined {
 	const trimmed = args.trim();
-	if (!trimmed || /\s/.test(trimmed)) return undefined;
+	if (!trimmed || /\s/.test(trimmed)) {return undefined;}
 
 	const name = trimmed.endsWith(".md") ? trimmed.slice(0, -3) : trimmed;
-	if (!PROMPT_NAME_PATTERN.test(name)) return undefined;
+	if (!PROMPT_NAME_PATTERN.test(name)) {return undefined;}
 	return name;
 }
 
@@ -65,7 +65,7 @@ export default function newPrompt(pi: ExtensionAPI): void {
 			try {
 				prefill = await readFile(path, "utf-8");
 			} catch (error) {
-				if (!isMissingFile(error)) throw error;
+				if (!isMissingFile(error)) {throw error;}
 			}
 
 			const edited = await ctx.ui.editor(title, prefill);

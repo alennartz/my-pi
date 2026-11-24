@@ -27,7 +27,7 @@ const DEFAULT_MAX_OUTPUT_CHARS = 20_000;
 
 function findLiteral(haystackLower: string, needleLower: string): Range[] {
 	const matches: Range[] = [];
-	if (needleLower.length === 0) return matches;
+	if (needleLower.length === 0) {return matches;}
 	for (
 		let i = haystackLower.indexOf(needleLower);
 		i >= 0;
@@ -39,7 +39,7 @@ function findLiteral(haystackLower: string, needleLower: string): Range[] {
 }
 
 function mergeRanges(ranges: Range[]): Range[] {
-	if (ranges.length === 0) return [];
+	if (ranges.length === 0) {return [];}
 	const sorted = [...ranges].sort((a, b) => a.start - b.start || a.end - b.end);
 	const merged: Range[] = [{ ...sorted[0] }];
 	for (const range of sorted.slice(1)) {
@@ -107,7 +107,7 @@ export function findInText(
 				count: matches.filter((m) => m.start >= passage.start && m.end <= passage.end).length,
 			}))
 			.filter((c) => c.count > 0);
-		if (counts.length === 0) continue;
+		if (counts.length === 0) {continue;}
 
 		const prefix = passage.start > 0 ? "…" : "";
 		const suffix = passage.end < markdown.length ? "…" : "";

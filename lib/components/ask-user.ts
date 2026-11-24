@@ -108,11 +108,11 @@ class AskUserComponent implements Component, Focusable {
 		}
 
 		if (matchesKey(data, Key.up)) {
-			if (this.highlight > 0) this.highlight--;
+			if (this.highlight > 0) {this.highlight--;}
 			return;
 		}
 		if (matchesKey(data, Key.down)) {
-			if (this.highlight < this.options.length - 1) this.highlight++;
+			if (this.highlight < this.options.length - 1) {this.highlight++;}
 			return;
 		}
 		if (matchesKey(data, Key.tab)) {
@@ -142,13 +142,13 @@ class AskUserComponent implements Component, Focusable {
 		if (matchesKey(data, Key.up)) {
 			this.input.setValue("");
 			this.mode = "navigation";
-			if (this.highlight > 0) this.highlight--;
+			if (this.highlight > 0) {this.highlight--;}
 			return;
 		}
 		if (matchesKey(data, Key.down)) {
 			this.input.setValue("");
 			this.mode = "navigation";
-			if (this.highlight < this.options.length - 1) this.highlight++;
+			if (this.highlight < this.options.length - 1) {this.highlight++;}
 			return;
 		}
 
@@ -290,15 +290,15 @@ export async function showAskUser(
 	// Fallback: use ctx.ui.select() which works via the RPC bridge
 	const selectLabels = options.map((opt, i) => {
 		let label = `${i + 1}. ${opt.label}`;
-		if (opt.description) label += ` — ${opt.description}`;
+		if (opt.description) {label += ` — ${opt.description}`;}
 		return label;
 	});
 
 	const selected = await ctx.ui.select(title, selectLabels);
-	if (selected === undefined) return undefined;
+	if (selected === undefined) {return undefined;}
 
 	const selectedIndex = selectLabels.indexOf(selected);
-	if (selectedIndex === -1) return undefined;
+	if (selectedIndex === -1) {return undefined;}
 
 	return {
 		index: selectedIndex,

@@ -83,7 +83,7 @@ function cleanEnv() {
 		"PI_MODEL",
 		"PI_PROVIDER",
 		"PI_REASONING_LEVEL",
-	]) delete env[key];
+	]) {delete env[key];}
 	return env;
 }
 
@@ -97,8 +97,8 @@ function attach(stream, onObj) {
 		while ((i = buf.indexOf("\n")) !== -1) {
 			let line = buf.slice(0, i);
 			buf = buf.slice(i + 1);
-			if (line.endsWith("\r")) line = line.slice(0, -1);
-			if (!line) continue;
+			if (line.endsWith("\r")) {line = line.slice(0, -1);}
+			if (!line) {continue;}
 			let obj;
 			try {
 				obj = JSON.parse(line);
@@ -134,8 +134,8 @@ function piArgs(extra) {
 	} else if (provider && model?.startsWith(`${provider}/`)) {
 		model = model.slice(provider.length + 1);
 	}
-	if (provider) base.push("--provider", provider);
-	if (model) base.push("--model", model);
+	if (provider) {base.push("--provider", provider);}
+	if (model) {base.push("--model", model);}
 	return [...base, ...extra];
 }
 
@@ -148,35 +148,35 @@ function persistencePaths(parentSessionFile) {
 }
 
 function agentRecords(logFile) {
-	if (!fs.existsSync(logFile)) return [];
+	if (!fs.existsSync(logFile)) {return [];}
 	const records = new Map();
 	for (const raw of fs.readFileSync(logFile, "utf8").split("\n")) {
 		const line = raw.trim();
-		if (!line) continue;
+		if (!line) {continue;}
 		let entry;
 		try {
 			entry = JSON.parse(line);
 		} catch {
 			continue;
 		}
-		if (entry.type === "agent_added" && typeof entry.id === "string") records.set(entry.id, entry);
+		if (entry.type === "agent_added" && typeof entry.id === "string") {records.set(entry.id, entry);}
 	}
 	return [...records.values()];
 }
 
 function liveAgents(logFile) {
-	if (!fs.existsSync(logFile)) return [];
+	if (!fs.existsSync(logFile)) {return [];}
 	const records = new Map(agentRecords(logFile).map((entry) => [entry.id, entry]));
 	for (const raw of fs.readFileSync(logFile, "utf8").split("\n")) {
 		const line = raw.trim();
-		if (!line) continue;
+		if (!line) {continue;}
 		let entry;
 		try {
 			entry = JSON.parse(line);
 		} catch {
 			continue;
 		}
-		if (entry.type === "agent_removed" && typeof entry.id === "string") records.delete(entry.id);
+		if (entry.type === "agent_removed" && typeof entry.id === "string") {records.delete(entry.id);}
 	}
 	return [...records.values()];
 }
@@ -193,14 +193,14 @@ function reparse(sessionFile) {
 	}
 	for (const raw of contents.split("\n")) {
 		const l = raw.trim();
-		if (!l || !l.includes('"role":"assistant"')) continue;
+		if (!l || !l.includes('"role":"assistant"')) {continue;}
 		let e;
 		try {
 			e = JSON.parse(l);
 		} catch {
 			continue;
 		}
-		if (e.type !== "message" || e.message?.role !== "assistant") continue;
+		if (e.type !== "message" || e.message?.role !== "assistant") {continue;}
 		const m = e.message;
 		const u = m.usage || {};
 		snap.turns += 1;
@@ -209,11 +209,15 @@ function reparse(sessionFile) {
 		snap.cacheRead += u.cacheRead ?? 0;
 		snap.cacheWrite += u.cacheWrite ?? 0;
 		snap.cost += u.cost?.total ?? 0;
-		if (typeof m.model === "string") snap.model = m.model;
+		if (typeof m.model === "string") {snap.model = m.model;}
 		if (Array.isArray(m.content)) {
 			let lastText;
-			for (const p of m.content) if (p?.type === "text" && typeof p.text === "string") lastText = p.text;
-			if (lastText !== undefined) snap.lastOutput = lastText;
+			for (const p of m.content) {
+				if (p?.type === "text" && typeof p.text === "string") {
+					lastText = p.text;
+				}
+			}
+			if (lastText !== undefined) {snap.lastOutput = lastText;}
 		}
 	}
 	return snap;
@@ -237,10 +241,10 @@ function spawnPhase(sessionDir, workCwd) {
 		let stderr = "";
 		let poll;
 		const fail = (error) => {
-			if (settled) return;
+			if (settled) {return;}
 			settled = true;
 			clearTimeout(to);
-			if (poll) clearInterval(poll);
+			if (poll) {clearInterval(poll);}
 			killGroup(proc);
 			reject(errorWithStderr(error.message, stderr));
 		};
@@ -270,20 +274,20 @@ function spawnPhase(sessionDir, workCwd) {
 		});
 		proc.once("error", (error) => fail(error));
 		proc.once("exit", (code, signal) => {
-			if (!settled) fail(new Error(`spawn process exited (code=${code} signal=${signal})`));
+			if (!settled) {fail(new Error(`spawn process exited (code=${code} signal=${signal})`));}
 		});
 		proc.on("spawn", () => setTimeout(() => send({ type: "get_state", id: "s1" }), 800));
 
 		// Poll persistence for a completed worker turn. The added record remains
 		// usable after an LLM tears the worker down before we inspect its file.
 		poll = setInterval(() => {
-			if (!parentSessionFile) return;
+			if (!parentSessionFile) {return;}
 			const { logFile } = persistencePaths(parentSessionFile);
 			const agents = agentRecords(logFile);
 			const worker = agents.find((a) => a.id === "worker");
-			if (!worker || !fs.existsSync(worker.sessionFile)) return;
+			if (!worker || !fs.existsSync(worker.sessionFile)) {return;}
 			const cc = fs.readFileSync(worker.sessionFile, "utf8");
-			if (!cc.includes('"role":"assistant"')) return;
+			if (!cc.includes('"role":"assistant"')) {return;}
 			// Nested mode is best effort because the parent is a real LLM. Record
 			// the topology it actually produced instead of timing out when it
 			// spawns a helper as a sibling or skips it.
@@ -310,7 +314,7 @@ function resumePhase(parentSessionFile, sessionDir, workCwd) {
 		let settled = false;
 		let stderr = "";
 		const fail = (error) => {
-			if (settled) return;
+			if (settled) {return;}
 			settled = true;
 			clearTimeout(to);
 			killGroup(proc);
@@ -329,7 +333,7 @@ function resumePhase(parentSessionFile, sessionDir, workCwd) {
 		let attempts = 0;
 		let settleTimer;
 		const drive = () => {
-			if (settled || attempts >= 5) return;
+			if (settled || attempts >= 5) {return;}
 			attempts += 1;
 			log(`driving check_status (attempt ${attempts})`);
 			send({ type: "prompt", id: `drive-${attempts}`, message: DRIVE_MSG });
@@ -361,7 +365,7 @@ function resumePhase(parentSessionFile, sessionDir, workCwd) {
 					const txt = (Array.isArray(m.content) ? m.content : []).filter((x) => x.type === "text").map((x) => x.text).join("|");
 					const tc = (Array.isArray(m.content) ? m.content : []).filter((x) => x.type === "toolCall").map((x) => x.name);
 					log("MSG", m.role, "text:", txt.slice(0, 160), "tools:", JSON.stringify(tc));
-				} else if (p.type === "extension_error") log("EXT_ERR", p.error);
+				} else if (p.type === "extension_error") {log("EXT_ERR", p.error);}
 			}
 			if (p.type === "tool_execution_end" && p.toolName === "check_status") {
 				clearTimeout(settleTimer);
@@ -378,7 +382,7 @@ function resumePhase(parentSessionFile, sessionDir, workCwd) {
 		});
 		proc.once("error", (error) => fail(error));
 		proc.once("exit", (code, signal) => {
-			if (!settled) fail(new Error(`resume process exited (code=${code} signal=${signal})`));
+			if (!settled) {fail(new Error(`resume process exited (code=${code} signal=${signal})`));}
 		});
 		proc.on("spawn", () => setTimeout(() => send({ type: "get_state", id: "s1" }), 1200));
 	});
@@ -386,7 +390,7 @@ function resumePhase(parentSessionFile, sessionDir, workCwd) {
 
 /** Split the display-only thinking suffix from a status model reference. */
 function normalizeModelRef(value) {
-	if (typeof value !== "string") return { model: value, thinkingLevel: undefined };
+	if (typeof value !== "string") {return { model: value, thinkingLevel: undefined };}
 	const match = /^(.*):(off|minimal|low|medium|high|xhigh|max)$/.exec(value.trim());
 	return match
 		? { model: match[1], thinkingLevel: match[2] }

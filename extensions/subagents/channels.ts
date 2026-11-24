@@ -46,7 +46,7 @@ export function validateTopology(agents: AgentChannelSpec[]): string | null {
 	const errors: string[] = [];
 
 	for (const agent of agents) {
-		if (!agent.channels) continue;
+		if (!agent.channels) {continue;}
 		for (const target of agent.channels) {
 			if (!allIds.has(target)) {
 				errors.push(`Agent "${agent.id}" references unknown peer "${target}"`);
@@ -79,7 +79,7 @@ export function addToTopology(
 	// Validate: declared channels must reference existing or new-batch IDs
 	// ("parent" is always valid — auto-injected into every channel list).
 	for (const agent of agents) {
-		if (!agent.channels) continue;
+		if (!agent.channels) {continue;}
 		for (const target of agent.channels) {
 			if (target !== "parent" && !existingIds.has(target) && !newIds.has(target)) {
 				throw new Error(`Agent "${agent.id}" references unknown peer "${target}"`);
@@ -93,7 +93,7 @@ export function addToTopology(
 			// Fork agents get parent-equivalent access: all existing + same-batch IDs + parent
 			const targets = new Set<string>(existingIds);
 			for (const id of newIds) {
-				if (id !== agent.id) targets.add(id);
+				if (id !== agent.id) {targets.add(id);}
 			}
 			targets.add("parent");
 			topology.set(agent.id, targets);
@@ -131,6 +131,6 @@ export function removeFromTopology(topology: Topology, agentId: string): void {
  */
 export function canSend(topology: Topology, from: string, to: string): boolean {
 	const allowed = topology.get(from);
-	if (!allowed) return false;
+	if (!allowed) {return false;}
 	return allowed.has(to);
 }

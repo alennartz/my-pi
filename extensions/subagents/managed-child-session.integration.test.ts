@@ -14,7 +14,7 @@ const registry = {
 let tmpRoot: string | undefined;
 
 afterEach(() => {
-	if (tmpRoot) fs.rmSync(tmpRoot, { recursive: true, force: true });
+	if (tmpRoot) {fs.rmSync(tmpRoot, { recursive: true, force: true });}
 	tmpRoot = undefined;
 });
 
@@ -147,7 +147,7 @@ describe("ManagedChildSession lifecycle and legacy compatibility", () => {
 			{ agentDir },
 			{
 				onEvent: (event) => {
-					if (event.type === "agent_settled") settled();
+					if (event.type === "agent_settled") {settled();}
 				},
 				onDiagnostic: (message) => diagnostics.push(message),
 				onSessionChanged: () => {},

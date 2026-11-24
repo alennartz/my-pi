@@ -20,7 +20,7 @@ function cloneSemanticValue<T>(value: T): T {
 	}
 	if (value && typeof value === "object") {
 		const prototype = Object.getPrototypeOf(value);
-		if (prototype !== Object.prototype && prototype !== null) return value;
+		if (prototype !== Object.prototype && prototype !== null) {return value;}
 		const copy: Record<string, unknown> = {};
 		for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
 			copy[key] = cloneSemanticValue(child);

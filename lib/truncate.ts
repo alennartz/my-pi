@@ -31,9 +31,9 @@ export interface MiddleTruncationResult {
 }
 
 function splitLinesForCounting(content: string): string[] {
-	if (content.length === 0) return [];
+	if (content.length === 0) {return [];}
 	const lines = content.split("\n");
-	if (content.endsWith("\n")) lines.pop();
+	if (content.endsWith("\n")) {lines.pop();}
 	return lines;
 }
 
@@ -51,9 +51,9 @@ export function truncateMiddle(content: string, maxBytes = OUTPUT_MAX_BYTES): Mi
 	// Continuation bytes (10xxxxxx) are not character starts.
 	const isBoundary = (index: number) => index >= buf.length || (buf[index] & 0xc0) !== 0x80;
 	let headEnd = Math.floor(maxBytes / 2);
-	while (headEnd > 0 && !isBoundary(headEnd)) headEnd--;
+	while (headEnd > 0 && !isBoundary(headEnd)) {headEnd--;}
 	let tailStart = buf.length - (maxBytes - Math.floor(maxBytes / 2));
-	while (tailStart < buf.length && !isBoundary(tailStart)) tailStart++;
+	while (tailStart < buf.length && !isBoundary(tailStart)) {tailStart++;}
 	const head = buf.subarray(0, headEnd).toString("utf-8");
 	const tail = buf.subarray(tailStart).toString("utf-8");
 	const removedChars = Array.from(buf.subarray(headEnd, tailStart).toString("utf-8")).length;

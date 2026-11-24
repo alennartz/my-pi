@@ -153,10 +153,10 @@ async function cleanFirstSession(events: Map<string, Function>, ctx: any): Promi
 }
 
 afterEach(async () => {
-	for (const cleanup of cleanups.splice(0)) await cleanup();
+	for (const cleanup of cleanups.splice(0)) {await cleanup();}
 	vi.unstubAllEnvs();
 	vi.unstubAllGlobals();
-	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	for (const dir of dirs.splice(0)) {rmSync(dir, { recursive: true, force: true });}
 });
 
 describe("quota provider review follow-up", () => {
@@ -217,7 +217,7 @@ describe("quota provider review follow-up", () => {
 	it("preserves the refreshed DevPass catalog before refresh resolves", async () => {
 		let refreshed = false;
 		const attachment = await createDynamicAttachment("dynamic-provider", async (context) => {
-			if (!context.allowNetwork) return [model("initial", "dynamic-provider")];
+			if (!context.allowNetwork) {return [model("initial", "dynamic-provider")];}
 			return [model(refreshed ? "refreshed" : "initial", "dynamic-provider")];
 		});
 		await new Promise((resolve) => setTimeout(resolve, 25));
@@ -233,7 +233,7 @@ describe("quota provider review follow-up", () => {
 		let aborted = 0;
 		const gates: (() => void)[] = [];
 		const attachment = await createDynamicAttachment("overlap-provider", async (context) => {
-			if (!context.allowNetwork) return [model("initial", "overlap-provider")];
+			if (!context.allowNetwork) {return [model("initial", "overlap-provider")];}
 			const index = calls++;
 			return new Promise<any[]>((resolve, reject) => {
 				gates[index] = () => resolve([model(`refresh-${index}`, "overlap-provider")]);
@@ -253,7 +253,7 @@ describe("quota provider review follow-up", () => {
 		for (let index = 0; index < 100 && calls < 2; index += 1) {
 			await new Promise((resolve) => setTimeout(resolve, 0));
 		}
-		if (calls < 2) throw new Error("overlapping refreshes did not start");
+		if (calls < 2) {throw new Error("overlapping refreshes did not start");}
 
 		gates[0]!();
 		await first;

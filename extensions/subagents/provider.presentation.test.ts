@@ -44,7 +44,7 @@ async function rehydratedFinals(entries: readonly unknown[], path: readonly stri
   await provider.rehydrate({ session: savedSession, path });
   const replay = provider.replay();
   provider.shutdown();
-  if (replay.kind !== 'events') throw new Error('Expected replay');
+  if (replay.kind !== 'events') {throw new Error('Expected replay');}
   return replay.events.filter((event) => 'type' in event && event.type === 'subagent_snapshot_event');
 }
 
@@ -72,7 +72,7 @@ describe('subagent presentation provider', () => {
 
     const replay = provider.replay(boundary);
     expect(replay.kind).toBe('events');
-    if (replay.kind !== 'events') throw new Error('Expected replay');
+    if (replay.kind !== 'events') {throw new Error('Expected replay');}
     expect(replay.events).toEqual(observed);
     const finalEvents = replay.events.filter((event) => 'type' in event && event.type === 'subagent_snapshot_event');
     expect(finalEvents).toHaveLength(1);
@@ -125,7 +125,7 @@ describe('subagent presentation provider', () => {
     await provider.rehydrate({ session: savedSession, path: ['worker'] });
     const replay = provider.replay(before);
     expect(replay.kind).toBe('events');
-    if (replay.kind !== 'events') throw new Error('Expected replay');
+    if (replay.kind !== 'events') {throw new Error('Expected replay');}
     expect(replay.events).toContainEqual(expect.objectContaining({ type: 'subagent_snapshot_event', target: expect.objectContaining({ operationId: 'send-call', path: ['worker'] }) }));
   });
 
@@ -154,7 +154,7 @@ describe('subagent presentation provider', () => {
     const awaits = events.filter((event) => event.target.kind === 'await');
     expect(awaits).toHaveLength(1);
     expect(awaits[0]).toMatchObject({ data: { ...awaited.data, parameters: {} } });
-    if (interrupted) expect(events).toContainEqual(expect.objectContaining({ target: expect.objectContaining({ kind: 'message_received' }), data: { operation: 'send', result: { from: ['owner', 'worker'], to: ['owner'], message: 'need a decision', responseExpected: false } } }));
+    if (interrupted) {expect(events).toContainEqual(expect.objectContaining({ target: expect.objectContaining({ kind: 'message_received' }), data: { operation: 'send', result: { from: ['owner', 'worker'], to: ['owner'], message: 'need a decision', responseExpected: false } } }));}
   });
 
   it('rehydrates received messages without reclassifying outgoing or ambiguous sends', async () => {
@@ -301,11 +301,11 @@ describe('subagent presentation provider', () => {
     expect(normalized).toMatchObject({ operation: kind, parameters: kind === 'send' ? { ...parameters, to: ['owner', 'worker'] }
       : kind === 'respond' ? { message: 'answer' } : kind === 'interrupt' ? { agents: [['owner', 'worker']] }
       : kind === 'teardown' ? { agent: ['owner', 'worker'] } : parameters });
-    if (kind === 'send') expect(normalized).toMatchObject({ result: { response: 'ready', deferred: false } });
-    if (kind === 'respond') expect(normalized).toMatchObject({ result: { error: 'refused' } });
-    if (kind === 'delegation') expect(normalized).toMatchObject({ result: { children: [{ path: ['owner', 'worker'], status: 'running' }] } });
-    if (kind === 'teardown') expect(normalized).toMatchObject({ result: { affectedAgents: [{ usageBaseline: { turns: 0 } }] } });
-    if (kind === 'resurrect') expect(normalized).toMatchObject({ result: { affectedAgents: [{ path: ['owner', 'worker'], state: 'running' }] } });
+    if (kind === 'send') {expect(normalized).toMatchObject({ result: { response: 'ready', deferred: false } });}
+    if (kind === 'respond') {expect(normalized).toMatchObject({ result: { error: 'refused' } });}
+    if (kind === 'delegation') {expect(normalized).toMatchObject({ result: { children: [{ path: ['owner', 'worker'], status: 'running' }] } });}
+    if (kind === 'teardown') {expect(normalized).toMatchObject({ result: { affectedAgents: [{ usageBaseline: { turns: 0 } }] } });}
+    if (kind === 'resurrect') {expect(normalized).toMatchObject({ result: { affectedAgents: [{ path: ['owner', 'worker'], state: 'running' }] } });}
     expect(JSON.stringify(normalized)).not.toContain('private');
   });
 
@@ -314,9 +314,9 @@ describe('subagent presentation provider', () => {
       semantic: [{ kind: outcome === 'interrupted' ? 'await_interrupted' : 'await_released', data: { invocationId: 'saved-await', reason: outcome === 'settled' ? 'settled' : 'message', correlationId: 'private' } }],
       subagentContent: [{ operationId: 'saved-await', kind: 'await', source: 'tool', state: 'complete', placement: { toolCallId: 'saved-await', contentIndex: 0 }, data: { operation: 'await', result: { statuses: [] } } }],
     } } }]);
-    if (outcome === 'settled') expect(events[0].data).toEqual({ operation: 'await', parameters: {}, result: { statuses: [] } });
-    else expect(events[0].data).toMatchObject({ result: { interrupted: true } });
-    if (outcome === 'refused') expect(events[0].data).toMatchObject({ result: { error: expect.stringContaining('Cannot wait') } });
+    if (outcome === 'settled') {expect(events[0].data).toEqual({ operation: 'await', parameters: {}, result: { statuses: [] } });}
+    else {expect(events[0].data).toMatchObject({ result: { interrupted: true } });}
+    if (outcome === 'refused') {expect(events[0].data).toMatchObject({ result: { error: expect.stringContaining('Cannot wait') } });}
     expect(JSON.stringify(events[0].data)).not.toContain('private');
   });
 
@@ -343,8 +343,8 @@ describe('subagent presentation provider', () => {
       }],
     };
     const events = await rehydratedFinals([{ type: 'message', message: { role: 'toolResult', toolName: kind === 'delegation' ? 'subagent' : kind, toolCallId: 'saved-output', details } }]);
-    if (kind === 'delegation') expect(events[0].data).toMatchObject({ result: { children: [{ path, task: 'inspect', persona: 'scout', status: 'running' }] } });
-    else expect(events[0].data).toMatchObject({ result: { status: 'removed', affectedAgents: [{ path, sessionId: 'saved', state: 'idle', task: 'Continue the review', channels: ['parent', 'scout'], model: 'provider/model' }] } });
+    if (kind === 'delegation') {expect(events[0].data).toMatchObject({ result: { children: [{ path, task: 'inspect', persona: 'scout', status: 'running' }] } });}
+    else {expect(events[0].data).toMatchObject({ result: { status: 'removed', affectedAgents: [{ path, sessionId: 'saved', state: 'idle', task: 'Continue the review', channels: ['parent', 'scout'], model: 'provider/model' }] } });}
     expect(JSON.stringify(events[0].data)).not.toContain('private');
   });
 

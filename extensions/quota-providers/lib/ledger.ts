@@ -72,7 +72,7 @@ export function parseLedger(raw: string): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!trimmed) {continue;}
     try {
       const parsed = JSON.parse(trimmed);
       if (
@@ -133,7 +133,7 @@ export function readLedger(path: string): LedgerEntry[] {
   try {
     return parseLedger(readFileSync(path, { encoding: "utf8" }));
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {return [];}
     throw err;
   }
 }

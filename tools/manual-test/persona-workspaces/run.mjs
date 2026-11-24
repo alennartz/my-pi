@@ -150,7 +150,7 @@ const checks = {};
 const observed = {};
 function check(id, ok, detail) {
 	checks[id] = !!ok;
-	if (detail !== undefined) observed[id] = detail;
+	if (detail !== undefined) {observed[id] = detail;}
 	log(ok ? "PASS" : "FAIL", id, detail !== undefined ? JSON.stringify(detail).slice(0, 160) : "");
 }
 function wanted(id) {
@@ -177,8 +177,8 @@ function attach(stream, onObj) {
 		while ((i = buf.indexOf("\n")) !== -1) {
 			let line = buf.slice(0, i);
 			buf = buf.slice(i + 1);
-			if (line.endsWith("\r")) line = line.slice(0, -1);
-			if (!line) continue;
+			if (line.endsWith("\r")) {line = line.slice(0, -1);}
+			if (!line) {continue;}
 			let obj;
 			try {
 				obj = JSON.parse(line);
@@ -207,8 +207,8 @@ async function waitFor(pred, ms, every = 300) {
 	const deadline = Date.now() + ms;
 	for (;;) {
 		const v = await pred();
-		if (v) return v;
-		if (Date.now() > deadline) return undefined;
+		if (v) {return v;}
+		if (Date.now() > deadline) {return undefined;}
 		await sleep(every);
 	}
 }
@@ -231,7 +231,7 @@ function rpcSession({ cwd, agentDir, extraArgs = [], probeOut }) {
 	attach(proc.stdout, (o) => events.push(o));
 	proc.stderr.on("data", (d) => {
 		stderr += d;
-		if (process.env.PW_VERBOSE) process.stderr.write("[pi] " + d);
+		if (process.env.PW_VERBOSE) {process.stderr.write("[pi] " + d);}
 	});
 	s.stderr = () => stderr;
 	s.waitEvent = (pred, ms = TIMEOUT) =>
@@ -253,8 +253,8 @@ function rpcSession({ cwd, agentDir, extraArgs = [], probeOut }) {
 				(e) => e.type === "response" && e.id === id,
 				Math.min(2500, deadline - Date.now() || 0),
 			);
-			if (resp && resp.data?.model?.id && resp.data.model.id !== "unknown") return resp;
-			if (Date.now() > deadline) throw new Error("rpc session did not become ready (model never resolved)");
+			if (resp && resp.data?.model?.id && resp.data.model.id !== "unknown") {return resp;}
+			if (Date.now() > deadline) {throw new Error("rpc session did not become ready (model never resolved)");}
 		}
 	};
 	s.prompt = async (message) => {
@@ -294,7 +294,7 @@ function readNdjson(file) {
 
 /** The assembled system prompt of a captured provider payload. */
 function systemOf(p) {
-	if (typeof p.system === "string") return p.system;
+	if (typeof p.system === "string") {return p.system;}
 	return (p.messages || [])
 		.filter((m) => m.role === "system" || m.role === "developer")
 		.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
@@ -352,7 +352,7 @@ function persistencePaths(parentSessionFile) {
 function agentRecords(logFile) {
 	const all = new Map();
 	for (const e of readNdjson(logFile)) {
-		if (e.type === "agent_added") all.set(e.id, e);
+		if (e.type === "agent_added") {all.set(e.id, e);}
 	}
 	return all;
 }
@@ -795,7 +795,7 @@ async function D1(root, agentDir, probeOut) {
 			return zeta && eta && fxc && turned(zeta) && turned(eta) && turned(fxc) ? m : undefined;
 		}, 120000, 1000);
 		check("j1_children_live", !!agents, { ids: agents ? [...agents.keys()] : [] });
-		if (!agents) return;
+		if (!agents) {return;}
 
 		const zetaEntries = sessionEntries(agents.get("zeta-child").sessionFile);
 		const zetaNotices = noticesIn(zetaEntries);
@@ -955,7 +955,7 @@ async function D2(root, agentDir, probeOut) {
 			{ model: zetaV1?.raw.model },
 		);
 
-		if (!sid) return;
+		if (!sid) {return;}
 		// The active file changes while the agent is torn down: a resurrect
 		// must re-resolve capability gates and the declared persona model. A
 		// persona pin outranks the persisted model under the DR-038 amendment.
@@ -1154,7 +1154,7 @@ async function main() {
 	];
 	try {
 		for (const [id, fn] of steps) {
-			if (!wanted(id)) continue;
+			if (!wanted(id)) {continue;}
 			try {
 				await fn(root, agentDir, probeOut);
 			} catch (e) {

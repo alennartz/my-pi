@@ -83,7 +83,7 @@ export function parseQuotaAttachments(
 
 		const settings: Record<string, unknown> = {};
 		for (const [key, value] of Object.entries(entry)) {
-			if (!policyKeySet.has(key)) settings[key] = value;
+			if (!policyKeySet.has(key)) {settings[key] = value;}
 		}
 
 		attachments.push({
@@ -101,7 +101,7 @@ export function parseQuotaAttachments(
 /** Load and parse the configured quota attachment file. */
 export function loadQuotaAttachments(path?: string): ParsedQuotaAttachments {
 	const configPath = path ?? join(resolveAgentDir(), "quota-providers.json");
-	if (!existsSync(configPath)) return { attachments: [], warnings: [] };
+	if (!existsSync(configPath)) {return { attachments: [], warnings: [] };}
 
 	return parseQuotaAttachments(readFileSync(configPath, "utf-8"), expandHome);
 }

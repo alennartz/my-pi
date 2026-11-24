@@ -96,7 +96,7 @@ describe("DevPass quota source", () => {
 		const fetchMock = vi.mocked(fetch);
 		fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
 			const url = String(input);
-			if (url.endsWith("/key")) return response({ data: MONTHLY_KEY });
+			if (url.endsWith("/key")) {return response({ data: MONTHLY_KEY });}
 			return response({
 				data: [{
 					id: "median-premium",

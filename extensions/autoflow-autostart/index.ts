@@ -23,7 +23,7 @@ export default function autoflowAutostart(pi: ExtensionAPI) {
 	pi.on("session_start", (event, ctx) => {
 		const { config, warning } = loadAutoflowConfig(getAgentDir());
 		command = config.command;
-		if (warning) ctx.ui.notify(warning, "warning");
+		if (warning) {ctx.ui.notify(warning, "warning");}
 		armed = shouldArm({
 			reason: event.reason,
 			hasPriorMessages: ctx.sessionManager.getEntries().some(

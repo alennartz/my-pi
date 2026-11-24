@@ -146,7 +146,7 @@ const hostPatches = new Map<string, HostPatch>();
  */
 function hostPatchFor(piPackageDir: string): HostPatch {
 	const existing = hostPatches.get(piPackageDir);
-	if (existing) return existing;
+	if (existing) {return existing;}
 	const status = ensurePreamblePatch(piPackageDir);
 	const hostPatch: HostPatch = {
 		mode: status.kind === "already-patched" ? "override" : "stacked",
@@ -168,7 +168,7 @@ export function personaBindingMode(): PreambleMode {
  * Both need a `ctx`, so this runs inside the first persona-bound request.
  */
 function warnOnceAboutHostPatch(hostPatch: HostPatch, ctx: ExtensionContext): void {
-	if (hostPatch.warned) return;
+	if (hostPatch.warned) {return;}
 	if (hostPatch.status.kind === "patched") {
 		hostPatch.warned = true;
 		ctx.ui.notify("Patched pi preamble override; restart pi to activate it in this session.", "info");
@@ -223,9 +223,9 @@ export default function personaWorkspaces(pi: ExtensionAPI) {
 		// tool whitelist to pi's defaults).
 		// A subagent child's model/tools/skills are construction-set by the
 		// spawn path; binding here would slap that state back.
-		if (getSubagentPersona(ctx.sessionManager) || isSubagentChildSession(ctx.sessionManager)) return;
+		if (getSubagentPersona(ctx.sessionManager) || isSubagentChildSession(ctx.sessionManager)) {return;}
 		const workspace = loadWorkspacePersona(ctx.cwd);
-		if (!workspace) return;
+		if (!workspace) {return;}
 		return bindDeclaredFrontMatter(pi, ctx, workspace);
 	});
 
@@ -237,11 +237,11 @@ export default function personaWorkspaces(pi: ExtensionAPI) {
 			continuation: recordedContinuation(sessionStart, ctx.sessionManager),
 			transcript: transcriptEntries(ctx.sessionManager),
 		});
-		if (!plan) return undefined;
+		if (!plan) {return undefined;}
 		const hostPatch = hostPatchFor(getPackageDir());
 		warnOnceAboutHostPatch(hostPatch, ctx);
 		applyRunPlan(event.systemPromptOptions, plan, hostPatch.mode);
-		if (!plan.notice) return undefined;
+		if (!plan.notice) {return undefined;}
 		return { message: noticeMessage(plan.notice) };
 	});
 }
@@ -262,8 +262,8 @@ export function planRunBinding(input: {
 	// One active persona per session, all or nothing: the workspace declaration
 	// wins wholesale over the spawn-declared payload; fields never merge.
 	const persona = input.workspace ?? input.spawned;
-	if (!persona) return undefined;
-	if (input.explicitCustomPrompt) return undefined;
+	if (!persona) {return undefined;}
+	if (input.explicitCustomPrompt) {return undefined;}
 	return {
 		body: persona.body,
 		dropContextPath: input.workspace?.sourcePath,
@@ -288,9 +288,9 @@ function planNotice(input: {
 	continuation: boolean;
 	transcript: readonly unknown[];
 }): PersonaNotice | undefined {
-	if (input.continuation) return undefined;
+	if (input.continuation) {return undefined;}
 	const notice = composeNotice(input.workspace, input.spawned);
-	if (!notice || noticeAlreadyAnnounced(input.transcript, notice.condition)) return undefined;
+	if (!notice || noticeAlreadyAnnounced(input.transcript, notice.condition)) {return undefined;}
 	return notice;
 }
 
@@ -365,10 +365,10 @@ function noticeMessage(notice: PersonaNotice): BeforeAgentStartEventResult["mess
  * persona is new to its lineage (see `planNotice`).
  */
 function isContinuation(reason: SessionReason, manager: object): boolean {
-	if (CONTINUATION_REASONS.has(reason)) return true;
-	if (reason !== "startup") return false; // `new`/`fork`: the transcript decides
+	if (CONTINUATION_REASONS.has(reason)) {return true;}
+	if (reason !== "startup") {return false;} // `new`/`fork`: the transcript decides
 	const header = sessionHeader(manager);
-	if (header?.parentSession !== undefined) return false;
+	if (header?.parentSession !== undefined) {return false;}
 	return hasConversation(transcriptEntries(manager));
 }
 
@@ -423,8 +423,8 @@ function noticeAlreadyAnnounced(
 ): boolean {
 	for (const entry of transcript) {
 		const seen = personaNoticeCondition(entry);
-		if (seen === undefined) continue;
-		if (seen === "unknown" || seen === condition) return true;
+		if (seen === undefined) {continue;}
+		if (seen === "unknown" || seen === condition) {return true;}
 	}
 	return false;
 }
@@ -444,11 +444,11 @@ function personaNoticeCondition(entry: unknown): NoticeCondition | "unknown" | u
 		return undefined;
 	}
 	const condition = record.details?.condition;
-	if (condition === "boot" || condition === "override") return condition;
+	if (condition === "boot" || condition === "override") {return condition;}
 	// Plain-message fallback: the content wording identifies the condition.
 	const text = typeof record.content === "string" ? record.content : "";
-	if (text.startsWith("Persona override")) return "override";
-	if (text.startsWith("Persona takeover")) return "boot";
+	if (text.startsWith("Persona override")) {return "override";}
+	if (text.startsWith("Persona takeover")) {return "boot";}
 	return "unknown";
 }
 
@@ -475,7 +475,7 @@ async function bindDeclaredFrontMatter(
 	ctx: ExtensionContext,
 	declaration: PersonaDeclaration,
 ): Promise<void> {
-	if (declaration.model) await bindDeclaredModel(pi, ctx, declaration.model);
+	if (declaration.model) {await bindDeclaredModel(pi, ctx, declaration.model);}
 	if (declaration.tools) {
 		// Exactly the child-side normalization, shared semantics included.
 		pi.setActiveTools(resolveChildToolPolicy({ kind: "persona", tools: declaration.tools }).allowedTools);
@@ -518,7 +518,7 @@ async function bindDeclaredModel(
 		ctx.ui.notify(diagnostic, "warning");
 		return;
 	}
-	if (resolution.model === undefined) return;
+	if (resolution.model === undefined) {return;}
 	const bound = await pi.setModel(resolution.model);
 	if (!bound) {
 		// `setModel` returns false when the model's provider has no configured
@@ -530,12 +530,12 @@ async function bindDeclaredModel(
 		);
 		return;
 	}
-	if (resolution.thinking) pi.setThinkingLevel(resolution.thinking);
+	if (resolution.thinking) {pi.setThinkingLevel(resolution.thinking);}
 }
 
 /** The informational text of a custom message (string content, or its text parts). */
 function noticeText(message: { content: unknown }): string {
-	if (typeof message.content === "string") return message.content;
+	if (typeof message.content === "string") {return message.content;}
 	if (Array.isArray(message.content)) {
 		return message.content
 			.filter((part) => (part as { type?: string }).type === "text")

@@ -40,7 +40,7 @@ type MarkedProvider = Provider & { readonly [QUOTA_WRAPPER]?: WrapperState };
 
 function wrapperState(provider: Provider): WrapperState | undefined {
 	const value = (provider as unknown as Record<PropertyKey, unknown>)[QUOTA_WRAPPER];
-	if (!value || typeof value !== "object") return undefined;
+	if (!value || typeof value !== "object") {return undefined;}
 	const state = value as Partial<WrapperState>;
 	return state.kind === "provider" || state.kind === "stream"
 		? value as WrapperState
@@ -67,7 +67,7 @@ export function unwrapQuotaProvider(provider: Provider): Provider {
 	while (!seen.has(current)) {
 		seen.add(current);
 		const state = wrapperState(current);
-		if (!state) return current;
+		if (!state) {return current;}
 		if (state.kind === "stream") {
 			restoreQuotaStreamGuard(current);
 			return current;
@@ -80,7 +80,7 @@ export function unwrapQuotaProvider(provider: Provider): Provider {
 /** Restore a guard installed directly on a provider object. */
 export function restoreQuotaStreamGuard(provider: Provider): boolean {
 	const state = wrapperState(provider);
-	if (!state || state.kind !== "stream") return false;
+	if (!state || state.kind !== "stream") {return false;}
 	try {
 		Object.defineProperty(provider, "streamSimple", {
 			configurable: true,
@@ -110,7 +110,7 @@ function guardedStream(
 		try {
 			if (!nested) {
 				const decision = state.evaluate(model, options);
-				if (decision?.blocked) throw new Error(decision.message);
+				if (decision?.blocked) {throw new Error(decision.message);}
 			}
 			return Reflect.apply(original, receiver, [model, context, options]);
 		} finally {
@@ -192,8 +192,8 @@ export function wrapProviderWithQuota(
 
 	return new Proxy(target, {
 		get(wrapper, property) {
-			if (property === QUOTA_WRAPPER) return wrapper[QUOTA_WRAPPER];
-			if (property === "streamSimple") return guardedStreamSimple;
+			if (property === QUOTA_WRAPPER) {return wrapper[QUOTA_WRAPPER];}
+			if (property === "streamSimple") {return guardedStreamSimple;}
 
 			const value = Reflect.get(provider, property, provider);
 			return typeof value === "function" ? value.bind(provider) : value;

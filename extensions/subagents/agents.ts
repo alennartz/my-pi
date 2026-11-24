@@ -166,7 +166,7 @@ export function resolveAgentCwds(
 ): Map<string, string> {
 	const result = new Map<string, string>();
 	for (const agent of agents) {
-		if (agent.cwd === undefined) continue;
+		if (agent.cwd === undefined) {continue;}
 		const resolved = path.isAbsolute(agent.cwd)
 			? agent.cwd
 			: path.resolve(parentCwd, agent.cwd);
@@ -192,7 +192,7 @@ export function parseAgentConfig(
 	filePath: string,
 ): AgentConfig | undefined {
 	const { frontmatter, body } = parseFrontmatter<Record<string, string>>(content);
-	if (!frontmatter.name || !frontmatter.description) return undefined;
+	if (!frontmatter.name || !frontmatter.description) {return undefined;}
 
 	const tools = frontmatter.tools
 		?.split(",")
@@ -221,7 +221,7 @@ export function parseAgentConfig(
 function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
-	if (!fs.existsSync(dir)) return agents;
+	if (!fs.existsSync(dir)) {return agents;}
 
 	let entries: fs.Dirent[];
 	try {
@@ -231,8 +231,8 @@ function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentCon
 	}
 
 	for (const entry of entries) {
-		if (!entry.name.endsWith(".md")) continue;
-		if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+		if (!entry.name.endsWith(".md")) {continue;}
+		if (!entry.isFile() && !entry.isSymbolicLink()) {continue;}
 
 		const filePath = path.join(dir, entry.name);
 		let content: string;
@@ -243,7 +243,7 @@ function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentCon
 		}
 
 		const agent = parseAgentConfig(content, source, filePath);
-		if (agent) agents.push(agent);
+		if (agent) {agents.push(agent);}
 	}
 
 	return agents;
@@ -261,10 +261,10 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 	let currentDir = cwd;
 	while (true) {
 		const candidate = path.join(currentDir, ".pi", "agents");
-		if (isDirectory(candidate)) return candidate;
+		if (isDirectory(candidate)) {return candidate;}
 
 		const parentDir = path.dirname(currentDir);
-		if (parentDir === currentDir) return null;
+		if (parentDir === currentDir) {return null;}
 		currentDir = parentDir;
 	}
 }
@@ -308,7 +308,7 @@ export async function discoverPackageAgents(cwd: string): Promise<{ user: AgentC
 		}
 
 		const agentDirs: string[] = pkgJson?.pi?.agents;
-		if (!Array.isArray(agentDirs) || agentDirs.length === 0) continue;
+		if (!Array.isArray(agentDirs) || agentDirs.length === 0) {continue;}
 
 		const source: AgentConfig["source"] = scope === "project" ? "package:project" : "package:user";
 
@@ -340,19 +340,19 @@ export function discoverAgents(
 	// Each layer's map.set overwrites earlier layers, so more-local wins.
 	const agentMap = new Map<string, AgentConfig>();
 	if (packageAgents) {
-		for (const agent of packageAgents.user) agentMap.set(agent.name, agent);
+		for (const agent of packageAgents.user) {agentMap.set(agent.name, agent);}
 	}
-	for (const agent of userAgents) agentMap.set(agent.name, agent);
+	for (const agent of userAgents) {agentMap.set(agent.name, agent);}
 	if (packageAgents) {
-		for (const agent of packageAgents.project) agentMap.set(agent.name, agent);
+		for (const agent of packageAgents.project) {agentMap.set(agent.name, agent);}
 	}
-	for (const agent of projectAgents) agentMap.set(agent.name, agent);
+	for (const agent of projectAgents) {agentMap.set(agent.name, agent);}
 
 	return { agents: Array.from(agentMap.values()), projectAgentsDir };
 }
 
 export function formatAgentList(agents: AgentConfig[], maxItems: number): { text: string; remaining: number } {
-	if (agents.length === 0) return { text: "none", remaining: 0 };
+	if (agents.length === 0) {return { text: "none", remaining: 0 };}
 	const listed = agents.slice(0, maxItems);
 	const remaining = agents.length - listed.length;
 	return {

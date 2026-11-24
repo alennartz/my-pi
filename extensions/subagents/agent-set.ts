@@ -97,7 +97,7 @@ export function selectActivePersona(
 	spawned: AgentConfig | undefined,
 ): PersonaCapabilities | undefined {
 	const active = workspace ?? spawned;
-	if (active === undefined) return undefined;
+	if (active === undefined) {return undefined;}
 	return {
 		name: active.name,
 		...(active.icon !== undefined ? { icon: active.icon } : {}),
@@ -169,7 +169,7 @@ async function boundedSettle(
 			settled.then(() => "settled" as const),
 			new Promise<InterruptOutcome>((resolve) => {
 				timer = setTimeout(() => resolve("pending"), timeoutMs);
-				if (!signal) return;
+				if (!signal) {return;}
 				if (signal.aborted) {
 					resolve("pending");
 					return;
@@ -179,8 +179,8 @@ async function boundedSettle(
 			}),
 		]);
 	} finally {
-		if (timer !== undefined) clearTimeout(timer);
-		if (onAbort) signal?.removeEventListener("abort", onAbort);
+		if (timer !== undefined) {clearTimeout(timer);}
+		if (onAbort) {signal?.removeEventListener("abort", onAbort);}
 		settled.catch(() => {});
 	}
 }
@@ -296,9 +296,9 @@ export class SubagentManager {
 
 	private markRecipientActive(id: string): void {
 		const entry = this.findEntry(id);
-		if (!entry) return;
+		if (!entry) {return;}
 		const current = this.operationalFor(entry);
-		if (current.state !== "idle" && current.state !== "errored") return;
+		if (current.state !== "idle" && current.state !== "errored") {return;}
 		this.opts.onAgentStart?.(this, id);
 		entry.completionNotified = false;
 		entry.pendingTerminalError = undefined;
@@ -360,7 +360,7 @@ export class SubagentManager {
 	/** Mark a held completion after its notification actually leaves the gate. */
 	markCompletionDelivered(agentId: string): void {
 		const entry = this.findEntry(agentId);
-		if (entry) entry.completionNotified = true;
+		if (entry) {entry.completionNotified = true;}
 	}
 
 	/** Usage consumed since the entry was created, including its live subtree. */
@@ -368,7 +368,7 @@ export class SubagentManager {
 		const entry = this.findEntry(agentId);
 		const targetPath = childAgentPath(this.opts.ownerPath, agentId);
 		const target = this.opts.registry.getSnapshot(targetPath);
-		if (!entry || !target) return undefined;
+		if (!entry || !target) {return undefined;}
 
 		const descendants = typeof this.opts.registry.listDescendants === "function"
 			? this.opts.registry.listDescendants(targetPath)
@@ -427,13 +427,13 @@ export class SubagentManager {
 	async stopGuarded(request: SubagentStopRequest): Promise<void> {
 		return this.serializeMutation(async () => {
 			const childPath = childAgentPath(this.opts.ownerPath, request.path.at(-1) ?? "");
-			if (!samePath(request.path, childPath)) throw new Error("Stale child stop path");
+			if (!samePath(request.path, childPath)) {throw new Error("Stale child stop path");}
 			const node = this.opts.registry.get(childPath);
-			if (!node || node.snapshot.ownership !== "registry") throw new Error(`Unknown agent: "${request.path.at(-1) ?? ""}"`);
-			if (node.snapshot.incarnation !== request.incarnation) throw new Error("Stale child incarnation");
-			if (node.snapshot.sessionId !== request.expectedSessionId) throw new Error("Stale child session");
+			if (!node || node.snapshot.ownership !== "registry") {throw new Error(`Unknown agent: "${request.path.at(-1) ?? ""}"`);}
+			if (node.snapshot.incarnation !== request.incarnation) {throw new Error("Stale child incarnation");}
+			if (node.snapshot.sessionId !== request.expectedSessionId) {throw new Error("Stale child session");}
 			const localId = request.path.at(-1) ?? "";
-			if (isSettledState(node.snapshot.operational.state)) return;
+			if (isSettledState(node.snapshot.operational.state)) {return;}
 			this.stopRequested.add(localId);
 			try {
 				await this.interruptUnlocked(localId);
@@ -478,7 +478,7 @@ export class SubagentManager {
 			throw new Error(`Unknown agent: "${agentId}"`);
 		}
 		const state = node.snapshot.operational.state;
-		if (state === "errored" || state === "dead") return "settled";
+		if (state === "errored" || state === "dead") {return "settled";}
 		return boundedSettle(node.session.abort(), options?.timeoutMs ?? INTERRUPT_SETTLE_TIMEOUT_MS, options?.signal);
 	}
 
@@ -571,7 +571,7 @@ export class SubagentManager {
 			for (const entry of createdEntries) {
 				this.pendingEntries.delete(entry);
 			}
-			for (const spec of agents) this.router.removeAgent(spec.id);
+			for (const spec of agents) {this.router.removeAgent(spec.id);}
 			throw error;
 		}
 	}
@@ -581,16 +581,16 @@ export class SubagentManager {
 	}
 
 	private async restoreFromPersistenceUnlocked(agentConfigs: AgentConfig[]): Promise<void> {
-		if (this.restoreAttempted || this.hasAgents()) return;
+		if (this.restoreAttempted || this.hasAgents()) {return;}
 		this.restoreAttempted = true;
 		const parentSessionFile = this.opts.parentSessionFile;
-		if (!parentSessionFile) return;
+		if (!parentSessionFile) {return;}
 
 		const persisted = loadPersistedAgents(parentSessionFile);
-		if (!persisted || persisted.agents.length === 0) return;
+		if (!persisted || persisted.agents.length === 0) {return;}
 
 		const survivors = pruneInvalidPersistedAgents(persisted.paths, persisted.agents, isValidCwd);
-		if (survivors.length === 0) return;
+		if (survivors.length === 0) {return;}
 
 		this.persistence = persisted.paths;
 		this.sessionDir = persisted.paths.childSessionsDir;
@@ -640,10 +640,10 @@ export class SubagentManager {
 		let sessionsDir = this.sessionDir;
 		if (!sessionsDir) {
 			const parentSessionFile = this.opts.parentSessionFile;
-			if (!parentSessionFile) return undefined;
+			if (!parentSessionFile) {return undefined;}
 			sessionsDir = getPersistencePaths(parentSessionFile).childSessionsDir;
 		}
-		if (!fs.existsSync(sessionsDir)) return undefined;
+		if (!fs.existsSync(sessionsDir)) {return undefined;}
 		try {
 			const suffix = `_${sessionId}.jsonl`;
 			const match = fs.readdirSync(sessionsDir).find((name) => name.endsWith(suffix));
@@ -666,9 +666,9 @@ export class SubagentManager {
 	}
 
 	private ensureSessionDirectory(): void {
-		if (this.sessionDir) return;
+		if (this.sessionDir) {return;}
 		const parentSessionFile = this.opts.parentSessionFile;
-		if (!parentSessionFile) throw new Error("Subagents require a persisted parent session file");
+		if (!parentSessionFile) {throw new Error("Subagents require a persisted parent session file");}
 		const paths = this.persistence ?? getPersistencePaths(parentSessionFile);
 		fs.mkdirSync(paths.childSessionsDir, { recursive: true });
 		this.sessionDir = paths.childSessionsDir;
@@ -677,8 +677,8 @@ export class SubagentManager {
 	private assertSpawnableIds(agents: AgentSpec[]): void {
 		const ids = new Set<string>();
 		for (const agent of agents) {
-			if (agent.id === "parent") throw new Error('"parent" is a reserved agent id');
-			if (ids.has(agent.id)) throw new Error(`Duplicate agent id: "${agent.id}"`);
+			if (agent.id === "parent") {throw new Error('"parent" is a reserved agent id');}
+			if (ids.has(agent.id)) {throw new Error(`Duplicate agent id: "${agent.id}"`);}
 			ids.add(agent.id);
 			if (this.opts.registry.get(childAgentPath(this.opts.ownerPath, agent.id))) {
 				throw new Error(`Agent id "${agent.id}" already exists`);
@@ -809,9 +809,9 @@ export class SubagentManager {
 		}
 		const channels = this.getAgentStatuses().map((status) => status.id);
 		for (const candidate of batch) {
-			if (candidate.id !== spec.id && !channels.includes(candidate.id)) channels.push(candidate.id);
+			if (candidate.id !== spec.id && !channels.includes(candidate.id)) {channels.push(candidate.id);}
 		}
-		if (!channels.includes("parent")) channels.push("parent");
+		if (!channels.includes("parent")) {channels.push("parent");}
 		return channels;
 	}
 
@@ -887,7 +887,7 @@ export class SubagentManager {
 
 	private submitInitialTask(entry: AgentEntry): void {
 		const node = this.opts.registry.get(entry.path);
-		if (!node || !isRegisteredAgentNode(node)) return;
+		if (!node || !isRegisteredAgentNode(node)) {return;}
 		// Every child can have a startup continuation in flight when its session
 		// binds (for example, a continuation another session-start handler
 		// triggers). Queue the task behind that turn instead of treating the
@@ -899,13 +899,13 @@ export class SubagentManager {
 		void submission.catch((error: unknown) => {
 			// A rejected submit means the task never landed, but the session is
 			// still there: treat it as errored so a send can retry the prompt.
-			if (!this.isActiveEntry(entry)) return;
+			if (!this.isActiveEntry(entry)) {return;}
 			this.settleErrored(entry, errorMessage(error) || "Child rejected its initial task");
 		});
 	}
 
 	private applyChildEvent(entry: AgentEntry, event: any): void {
-		if (!this.isActiveEntry(entry)) return;
+		if (!this.isActiveEntry(entry)) {return;}
 
 		if (event.type === "tool_execution_start") {
 			const current = this.operationalFor(entry);
@@ -922,7 +922,7 @@ export class SubagentManager {
 						: current.hasSubgroup,
 			});
 			this.replaceOperational(entry, next);
-			if (current.state !== "dead") entry.pendingTerminalError = undefined;
+			if (current.state !== "dead") {entry.pendingTerminalError = undefined;}
 			return;
 		}
 
@@ -937,7 +937,7 @@ export class SubagentManager {
 			// Pi places nested model work on the direct tool result's `usage`.
 			// Nested execution events carry a parent id, while the enclosing result
 			// already contains their combined usage, so count only that outer result.
-			if (!event.parentToolCallId) this.recordToolUsage(entry, event.result?.usage);
+			if (!event.parentToolCallId) {this.recordToolUsage(entry, event.result?.usage);}
 			return;
 		}
 
@@ -947,7 +947,7 @@ export class SubagentManager {
 		}
 
 		if (event.type === "thinking_level_changed") {
-			if (typeof event.level !== "string") return;
+			if (typeof event.level !== "string") {return;}
 			this.replaceOperational(entry, operationalWith(this.operationalFor(entry), {
 				thinkingLevel: event.level,
 			}));
@@ -971,7 +971,7 @@ export class SubagentManager {
 		}
 
 		if (event.type === "agent_end") {
-			if (event.willRetry) return;
+			if (event.willRetry) {return;}
 			entry.pendingTerminalError = finalAssistantError(event.messages);
 			return;
 		}
@@ -982,7 +982,7 @@ export class SubagentManager {
 	}
 
 	private recordToolUsage(entry: AgentEntry, usage: any): void {
-		if (!usage || typeof usage !== "object") return;
+		if (!usage || typeof usage !== "object") {return;}
 		const current = this.operationalFor(entry);
 		const costBreakdown = addCostBreakdown(
 			current.usage.costBreakdown,
@@ -1003,7 +1003,7 @@ export class SubagentManager {
 
 	private recordAssistantMessage(entry: AgentEntry, message: any): void {
 		if (message && typeof message === "object") {
-			if (entry.seenAssistantMessages.has(message)) return;
+			if (entry.seenAssistantMessages.has(message)) {return;}
 			entry.seenAssistantMessages.add(message);
 		}
 
@@ -1051,7 +1051,7 @@ export class SubagentManager {
 		}));
 		// An assistant message proves the child reached a live model run. Clear a
 		// pending terminal error if event delivery left one behind. Dead stays terminal.
-		if (current.state !== "dead") entry.pendingTerminalError = undefined;
+		if (current.state !== "dead") {entry.pendingTerminalError = undefined;}
 	}
 
 	private applyChildDiagnostic(
@@ -1059,7 +1059,7 @@ export class SubagentManager {
 		message: string,
 		type?: "info" | "warning" | "error",
 	): void {
-		if (!this.isActiveEntry(entry)) return;
+		if (!this.isActiveEntry(entry)) {return;}
 		const label = type === "error" ? "Child resource error" : "Child resource diagnostic";
 		const body = `${label}: ${message}`;
 		this.opts.onParentMessage(
@@ -1072,7 +1072,7 @@ export class SubagentManager {
 	private settleAtBoundary(entry: AgentEntry, aborted = false): void {
 		const stopRequested = this.stopRequested.delete(entry.id);
 		const current = this.operationalFor(entry);
-		if (isSettledState(current.state)) return;
+		if (isSettledState(current.state)) {return;}
 		const stopped = aborted || stopRequested;
 		if (entry.pendingTerminalError && !stopped) {
 			this.settleErrored(entry, entry.pendingTerminalError);
@@ -1093,7 +1093,7 @@ export class SubagentManager {
 	 */
 	private settleErrored(entry: AgentEntry, error: string): void {
 		const current = this.operationalFor(entry);
-		if (current.state === "errored" || current.state === "dead") return;
+		if (current.state === "errored" || current.state === "dead") {return;}
 		entry.pendingTerminalError = undefined;
 		this.replaceOperational(entry, operationalWith(current, {
 			state: "errored",
@@ -1109,9 +1109,9 @@ export class SubagentManager {
 	 * back.
 	 */
 	private markRuntimeDead(entry: AgentEntry, error: string): void {
-		if (!this.isActiveEntry(entry)) return;
+		if (!this.isActiveEntry(entry)) {return;}
 		const current = this.operationalFor(entry);
-		if (current.state === "dead") return;
+		if (current.state === "dead") {return;}
 		const failure = error || "Child runtime became unavailable";
 		entry.pendingTerminalError = undefined;
 		this.replaceOperational(entry, operationalWith(current, {
@@ -1134,7 +1134,7 @@ export class SubagentManager {
 		const delivered = outcome === undefined
 			? this.opts.onAgentComplete(this, entry.id, this.allDone())
 			: this.opts.onAgentComplete(this, entry.id, this.allDone(), outcome);
-		if (delivered !== false) entry.completionNotified = true;
+		if (delivered !== false) {entry.completionNotified = true;}
 	}
 
 	private markAgentWaiting(agentId: string, correlationId: string, targetId: string): void {
@@ -1147,9 +1147,9 @@ export class SubagentManager {
 		this.correlationToTarget.set(correlationId, target);
 		if (agentId === "parent") {
 			const owner = this.opts.registry.get(this.opts.ownerPath);
-			if (!owner) return;
+			if (!owner) {return;}
 			const current = owner.snapshot.operational;
-			if (current.state === "dead") return;
+			if (current.state === "dead") {return;}
 			this.opts.registry.updateOperational(this.opts.ownerPath, operationalWith(current, {
 				state: "waiting",
 				pendingCorrelations: [...current.pendingCorrelations, correlationId],
@@ -1159,9 +1159,9 @@ export class SubagentManager {
 			return;
 		}
 		const entry = this.findEntry(agentId);
-		if (!entry) return;
+		if (!entry) {return;}
 		const current = this.operationalFor(entry);
-		if (current.state === "dead") return;
+		if (current.state === "dead") {return;}
 		this.replaceOperational(entry, operationalWith(current, {
 			state: "waiting",
 			pendingCorrelations: [...current.pendingCorrelations, correlationId],
@@ -1175,7 +1175,7 @@ export class SubagentManager {
 		this.correlationToTarget.delete(correlationId);
 		if (agentId === "parent") {
 			const owner = this.opts.registry.get(this.opts.ownerPath);
-			if (!owner) return;
+			if (!owner) {return;}
 			const current = owner.snapshot.operational;
 			const pendingCorrelations = current.pendingCorrelations.filter((id) => id !== correlationId);
 			const waitingFor = removeCorrelationTarget(current, correlationId, target);
@@ -1188,7 +1188,7 @@ export class SubagentManager {
 			return;
 		}
 		const entry = this.findEntry(agentId);
-		if (!entry) return;
+		if (!entry) {return;}
 		const current = this.operationalFor(entry);
 		const pendingCorrelations = current.pendingCorrelations.filter((id) => id !== correlationId);
 		const waitingFor = removeCorrelationTarget(current, correlationId, target);
@@ -1211,13 +1211,13 @@ export class SubagentManager {
 	}
 
 	private persistReplacement(entry: AgentEntry): void {
-		if (!entry.committed || !this.isActiveEntry(entry)) return;
+		if (!entry.committed || !this.isActiveEntry(entry)) {return;}
 		this.appendCurrentAgentRecord(entry, true);
 	}
 
 	private appendCurrentAgentRecord(entry: AgentEntry, replacement: boolean): void {
 		const snapshot = this.opts.registry.getSnapshot(entry.path);
-		if (!snapshot?.sessionFile) return;
+		if (!snapshot?.sessionFile) {return;}
 		const persistence = this.ensurePersistence();
 		appendAgentAdded(persistence, {
 			id: entry.id,
@@ -1236,9 +1236,9 @@ export class SubagentManager {
 	}
 
 	private ensurePersistence(): PersistencePaths {
-		if (this.persistence) return this.persistence;
+		if (this.persistence) {return this.persistence;}
 		const parentSessionFile = this.opts.parentSessionFile;
-		if (!parentSessionFile) throw new Error("Subagents require a persisted parent session file");
+		if (!parentSessionFile) {throw new Error("Subagents require a persisted parent session file");}
 		this.persistence = ensurePersistence(parentSessionFile);
 		this.sessionDir = this.persistence.childSessionsDir;
 		return this.persistence;
@@ -1252,10 +1252,10 @@ export class SubagentManager {
 
 	private replaceOperational(entry: AgentEntry, next: AgentOperationalSnapshot): void {
 		const current = this.operationalFor(entry);
-		if (operationalEqual(current, next)) return;
-		if (!entry.committed) entry.provisionalOperational = next;
+		if (operationalEqual(current, next)) {return;}
+		if (!entry.committed) {entry.provisionalOperational = next;}
 		this.opts.registry.updateOperational(entry.path, next);
-		if (entry.committed) this.opts.onUpdate(this);
+		if (entry.committed) {this.opts.onUpdate(this);}
 	}
 
 	private findEntry(agentId: string): AgentEntry | undefined {
@@ -1299,7 +1299,7 @@ export class SubagentManager {
 		let cost = 0;
 		for (const entry of this.entries) {
 			const usage = this.getUsageDelta(entry.id)?.delta;
-			if (!usage) continue;
+			if (!usage) {continue;}
 			input += usage.input + usage.cacheRead + usage.cacheWrite;
 			output += usage.output;
 			cost += usage.cost;
@@ -1322,10 +1322,10 @@ export class SubagentManager {
 
 	private async teardownSingle(agentId: string): Promise<{ report: string; empty: boolean }> {
 		const index = this.entries.findIndex((entry) => entry.id === agentId);
-		if (index === -1) throw new Error(`Unknown agent: "${agentId}"`);
+		if (index === -1) {throw new Error(`Unknown agent: "${agentId}"`);}
 		const entry = this.entries[index];
 		const snapshot = this.opts.registry.getSnapshot(entry.path);
-		if (!snapshot) throw new Error(`Unknown agent: "${agentId}"`);
+		if (!snapshot) {throw new Error(`Unknown agent: "${agentId}"`);}
 
 		const data: AgentCompleteData = {
 			id: entry.id,
@@ -1345,7 +1345,7 @@ export class SubagentManager {
 	}
 
 	private appendRemovalRecord(entry: AgentEntry): void {
-		if (!this.persistence) return;
+		if (!this.persistence) {return;}
 		const snapshot = this.opts.registry.getSnapshot(entry.path);
 		appendAgentRemoved(this.persistence, {
 			id: entry.id,
@@ -1356,7 +1356,7 @@ export class SubagentManager {
 
 	private dropTargetCorrelations(agentId: string): void {
 		for (const [correlationId, targetId] of this.correlationToTarget) {
-			if (targetId.localId === agentId) this.correlationToTarget.delete(correlationId);
+			if (targetId.localId === agentId) {this.correlationToTarget.delete(correlationId);}
 		}
 	}
 
@@ -1445,7 +1445,7 @@ export class SubagentManager {
 function createChildCapabilities(session: any): Record<string, unknown> {
 	const executeBash = (...args: readonly unknown[]) => {
 		const command = args[0];
-		if (typeof command !== "string") throw new TypeError("Child bash command must be a string");
+		if (typeof command !== "string") {throw new TypeError("Child bash command must be a string");}
 		return session.executeBash(command, undefined, args[1]);
 	};
 	return {
@@ -1580,30 +1580,30 @@ function removeCorrelationTarget(
 	const local = [...current.waitingFor];
 	const paths = (current.waitingForPaths ?? []).map((path) => [...path]);
 	if (correlationIndex >= 0) {
-		if (correlationIndex < local.length) local.splice(correlationIndex, 1);
-		if (correlationIndex < paths.length) paths.splice(correlationIndex, 1);
+		if (correlationIndex < local.length) {local.splice(correlationIndex, 1);}
+		if (correlationIndex < paths.length) {paths.splice(correlationIndex, 1);}
 	} else if (target) {
 		const localIndex = local.indexOf(target.localId);
-		if (localIndex >= 0) local.splice(localIndex, 1);
+		if (localIndex >= 0) {local.splice(localIndex, 1);}
 		const pathIndex = paths.findIndex((path) => samePath(path, target.path));
-		if (pathIndex >= 0) paths.splice(pathIndex, 1);
+		if (pathIndex >= 0) {paths.splice(pathIndex, 1);}
 	}
 	return { local, paths };
 }
 
 /** Project a settled agent state onto the vocabulary the model is shown. */
 function completionStatus(state: AgentState): AgentCompleteData["status"] {
-	if (state === "errored") return "errored";
-	if (state === "dead") return "dead";
+	if (state === "errored") {return "errored";}
+	if (state === "dead") {return "dead";}
 	return "idle";
 }
 
 function finalAssistantError(messages: unknown): string | undefined {
-	if (!Array.isArray(messages)) return undefined;
+	if (!Array.isArray(messages)) {return undefined;}
 	for (let index = messages.length - 1; index >= 0; index--) {
 		const message = messages[index] as { role?: unknown; stopReason?: unknown; errorMessage?: unknown } | undefined;
-		if (message?.role !== "assistant") continue;
-		if (message.stopReason !== "error") return undefined;
+		if (message?.role !== "assistant") {continue;}
+		if (message.stopReason !== "error") {return undefined;}
 		return typeof message.errorMessage === "string"
 			? message.errorMessage
 			: "Agent run ended with an error";
@@ -1627,12 +1627,12 @@ function spawnAcknowledgement(agents: AgentSpec[], restoring: boolean, firstStar
 }
 
 function summarizeArgs(args: Record<string, any>): string {
-	if (!args) return "";
+	if (!args) {return "";}
 	if (args.command) {
 		const command = String(args.command).replace(/[\r\n\t]+/g, " ").replace(/  +/g, " ").trim();
 		return command.length > 40 ? `${command.slice(0, 40)}…` : command;
 	}
-	if (args.path) return String(args.path);
+	if (args.path) {return String(args.path);}
 	const keys = Object.keys(args);
 	return keys.length === 0 ? "" : keys.slice(0, 2).join(", ");
 }

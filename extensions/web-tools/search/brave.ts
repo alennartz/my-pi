@@ -72,11 +72,11 @@ export async function braveSearch(params: BraveSearchParams): Promise<SearchResp
 	const raw = (data as { web?: { results?: unknown[] } })?.web?.results ?? [];
 	const results: SearchResult[] = [];
 	for (const item of raw) {
-		if (results.length >= count) break;
+		if (results.length >= count) {break;}
 		const r = item as Record<string, unknown>;
 		const url = typeof r.url === "string" ? r.url : "";
 		const title = typeof r.title === "string" ? r.title.trim() : "";
-		if (!url || !title) continue;
+		if (!url || !title) {continue;}
 		results.push({
 			sourceId: `s${results.length + 1}`,
 			url,

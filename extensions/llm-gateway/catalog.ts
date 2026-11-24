@@ -44,14 +44,14 @@ function asProvider(value: unknown): GatewayProvider | undefined {
 }
 
 function parsePrice(value: unknown): number | undefined {
-	if (typeof value !== "string" && typeof value !== "number") return undefined;
-	if (typeof value === "string" && value.trim() === "") return undefined;
+	if (typeof value !== "string" && typeof value !== "number") {return undefined;}
+	if (typeof value === "string" && value.trim() === "") {return undefined;}
 	const price = Number(value);
 	return Number.isFinite(price) && price >= 0 ? price : undefined;
 }
 
 function median(values: number[]): number | undefined {
-	if (values.length === 0) return undefined;
+	if (values.length === 0) {return undefined;}
 	const sorted = [...values].sort((a, b) => a - b);
 	const mid = Math.floor(sorted.length / 2);
 	return sorted.length % 2 === 1
@@ -80,7 +80,7 @@ function providerPrices(providers: GatewayProvider[]): ProviderPrice[] {
 function modelInput(model: GatewayModel): ("text" | "image")[] {
 	const architecture = asRecord(model.architecture);
 	const modalities = architecture?.input_modalities;
-	if (!Array.isArray(modalities)) return ["text"];
+	if (!Array.isArray(modalities)) {return ["text"];}
 	const supported = modalities.filter(
 		(value): value is "text" | "image" => value === "text" || value === "image",
 	);
@@ -128,7 +128,7 @@ function normalizeEffort(value: string): string {
 
 /** The provider's declared effort list, or undefined when it declares none. */
 function declaredEfforts(provider: GatewayProvider): string[] | undefined {
-	if (!Array.isArray(provider.reasoning_efforts)) return undefined;
+	if (!Array.isArray(provider.reasoning_efforts)) {return undefined;}
 	const values = provider.reasoning_efforts
 		.filter((value): value is string =>
 			typeof value === "string" && normalizeEffort(value).length > 0)
@@ -145,7 +145,7 @@ function agreedEfforts(eligibleProviders: GatewayProvider[]): string[] | undefin
 	let agreed: string[] | undefined;
 	for (const provider of eligibleProviders) {
 		const declared = declaredEfforts(provider);
-		if (!declared) continue;
+		if (!declared) {continue;}
 		agreed = agreed === undefined
 			? declared
 			: declared.filter((value) =>
@@ -157,7 +157,7 @@ function agreedEfforts(eligibleProviders: GatewayProvider[]): string[] | undefin
 /** Ladder rung of an effort value, or -1 when the name is not a pi level. */
 function effortRank(value: string): number {
 	const normalized = normalizeEffort(value);
-	if (DISABLE_VALUES.has(normalized)) return 0;
+	if (DISABLE_VALUES.has(normalized)) {return 0;}
 	return THINKING_LEVELS.indexOf(normalized as ThinkingLevel);
 }
 
@@ -173,19 +173,19 @@ function effortRank(value: string): number {
  */
 export function buildThinkingLevelMap(eligibleProviders: GatewayProvider[]): ThinkingLevelMap | undefined {
 	const agreed = agreedEfforts(eligibleProviders);
-	if (!agreed) return undefined;
+	if (!agreed) {return undefined;}
 
 	// Canonical ladder order when every name is known; otherwise trust the
 	// catalog's own ordering (it lists efforts weakest → strongest).
 	const allKnown = agreed.every((value) => effortRank(value) >= 0);
 	const values = allKnown ? [...agreed].sort((a, b) => effortRank(a) - effortRank(b)) : agreed;
-	if (values.length > THINKING_LEVELS.length) return undefined;
-	if (values.every((value) => DISABLE_VALUES.has(normalizeEffort(value)))) return undefined;
+	if (values.length > THINKING_LEVELS.length) {return undefined;}
+	if (values.every((value) => DISABLE_VALUES.has(normalizeEffort(value)))) {return undefined;}
 
 	// Preferred rung per value: name match, else position along the ladder.
 	const preferred = values.map((value, index) => {
 		const rank = effortRank(value);
-		if (rank >= 0) return rank;
+		if (rank >= 0) {return rank;}
 		return values.length === 1
 			? Math.floor((THINKING_LEVELS.length - 1) / 2)
 			: Math.round((index * (THINKING_LEVELS.length - 1)) / (values.length - 1));
@@ -194,7 +194,7 @@ export function buildThinkingLevelMap(eligibleProviders: GatewayProvider[]): Thi
 	const slots: number[] = [];
 	const slotValues: string[] = [];
 	preferred.forEach((rank, index) => {
-		if (allKnown && slots.includes(rank)) return;
+		if (allKnown && slots.includes(rank)) {return;}
 		slots.push(rank);
 		slotValues.push(values[index]);
 	});
@@ -212,7 +212,7 @@ export function buildThinkingLevelMap(eligibleProviders: GatewayProvider[]): Thi
 	const map: ThinkingLevelMap = {};
 	const disableIndex = slotValues.findIndex((value, index) =>
 		slots[index] === 0 && DISABLE_VALUES.has(normalizeEffort(value)));
-	if (disableIndex >= 0) map.off = slotValues[disableIndex];
+	if (disableIndex >= 0) {map.off = slotValues[disableIndex];}
 	for (let levelIndex = 1; levelIndex < THINKING_LEVELS.length; levelIndex++) {
 		const slot = slots.findIndex((rung) => rung >= levelIndex);
 		map[THINKING_LEVELS[levelIndex]] =
@@ -231,20 +231,20 @@ export function buildProviderModelConfigs(records: unknown[]): ProviderModelConf
 	const entries: ProviderModelConfig[] = [];
 	for (const raw of records) {
 		const model = asRecord(raw) as GatewayModel | undefined;
-		if (!model || typeof model.id !== "string" || model.id.length === 0) continue;
-		if (!Array.isArray(model.providers)) continue;
+		if (!model || typeof model.id !== "string" || model.id.length === 0) {continue;}
+		if (!Array.isArray(model.providers)) {continue;}
 
 		const eligibleProviders = model.providers
 			.map(asProvider)
 			.filter((provider): provider is GatewayProvider =>
 				provider !== undefined && provider.streaming === true && provider.tools === true,
 			);
-		if (eligibleProviders.length === 0) continue;
+		if (eligibleProviders.length === 0) {continue;}
 
 		const prices = providerPrices(eligibleProviders);
 		const inputRate = medianRate(prices, "prompt");
 		const outputRate = medianRate(prices, "completion");
-		if (inputRate === undefined || outputRate === undefined) continue;
+		if (inputRate === undefined || outputRate === undefined) {continue;}
 		const input = perMillion(inputRate)!;
 		const output = perMillion(outputRate)!;
 		const cacheRead = perMillion(medianRate(prices, "input_cache_read") ?? inputRate)!;

@@ -41,12 +41,12 @@ export function resolveChildToolPolicy(input: ChildToolPolicyInput): ChildToolPo
 	const seen = new Set<string>();
 
 	for (const tool of tools) {
-		if (tool === "ask_user" || seen.has(tool)) continue;
+		if (tool === "ask_user" || seen.has(tool)) {continue;}
 		seen.add(tool);
 		allowedTools.push(tool);
 	}
 
-	if (!seen.has("respond")) allowedTools.push("respond");
+	if (!seen.has("respond")) {allowedTools.push("respond");}
 
 	return {
 		allowedTools,

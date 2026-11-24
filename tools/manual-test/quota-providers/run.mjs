@@ -76,11 +76,11 @@ function attachJsonLines(stream, onObject) {
 		buffer += decoder.write(chunk);
 		for (;;) {
 			const newline = buffer.indexOf("\n");
-			if (newline < 0) break;
+			if (newline < 0) {break;}
 			let line = buffer.slice(0, newline);
 			buffer = buffer.slice(newline + 1);
-			if (line.endsWith("\r")) line = line.slice(0, -1);
-			if (!line) continue;
+			if (line.endsWith("\r")) {line = line.slice(0, -1);}
+			if (!line) {continue;}
 			try {
 				onObject(JSON.parse(line));
 			} catch {
@@ -104,17 +104,17 @@ function rpcSession({ cwd, agentDir, transportFile, extraArgs = [] }) {
 	attachJsonLines(child.stdout, (event) => state.events.push(event));
 	child.stderr.on("data", (chunk) => {
 		state.stderr += chunk.toString();
-		if (VERBOSE) process.stderr.write(`[pi] ${chunk}`);
+		if (VERBOSE) {process.stderr.write(`[pi] ${chunk}`);}
 	});
 	state.send = (message) => {
-		if (!child.stdin.destroyed) child.stdin.write(`${JSON.stringify(message)}\n`);
+		if (!child.stdin.destroyed) {child.stdin.write(`${JSON.stringify(message)}\n`);}
 	};
 	state.waitFor = async (predicate, timeout = TIMEOUT) => {
 		const deadline = Date.now() + timeout;
 		for (;;) {
 			const found = state.events.find(predicate);
-			if (found) return found;
-			if (Date.now() >= deadline) return undefined;
+			if (found) {return found;}
+			if (Date.now() >= deadline) {return undefined;}
 			await sleep(100);
 		}
 	};
@@ -131,8 +131,8 @@ function rpcSession({ cwd, agentDir, transportFile, extraArgs = [] }) {
 		const deadline = Date.now() + TIMEOUT;
 		for (;;) {
 			const response = await state.request({ type: "get_state" }, () => true, Math.min(3_000, Math.max(1, deadline - Date.now())));
-			if (response?.data?.model?.id && response.data.model.id !== "unknown") return response;
-			if (Date.now() >= deadline) throw new Error("pi RPC session did not resolve a model");
+			if (response?.data?.model?.id && response.data.model.id !== "unknown") {return response;}
+			if (Date.now() >= deadline) {throw new Error("pi RPC session did not resolve a model");}
 			await sleep(500);
 		}
 	};
@@ -150,7 +150,7 @@ function rpcSession({ cwd, agentDir, transportFile, extraArgs = [] }) {
 		const id = `qp-command-${++state.sequence}`;
 		state.send({ type: "prompt", id, message });
 		await state.waitFor((event) => {
-			if (state.events.indexOf(event) < before) return false;
+			if (state.events.indexOf(event) < before) {return false;}
 			return event.type === "agent_end" || (event.type === "extension_ui_request" && event.method === "notify");
 		}, timeout);
 		await sleep(100);
@@ -294,8 +294,8 @@ async function runLocalCase(root, name, options = {}) {
 	try {
 		const stateResponse = await session.ready();
 		const state = stateResponse?.data || {};
-		if (options.command) await session.command(options.command);
-		if (options.message) await session.prompt(options.message);
+		if (options.command) {await session.command(options.command);}
+		if (options.message) {await session.prompt(options.message);}
 		const events = session.events.slice();
 		return {
 			fixture,
@@ -491,7 +491,7 @@ async function checkGateway(root) {
 		const catalogDeadline = Date.now() + TIMEOUT;
 		while (Date.now() < catalogDeadline) {
 			const store = readJson(modelsStorePath);
-			if (Array.isArray(store?.llmgateway?.models) && store.llmgateway.models.length > 0) break;
+			if (Array.isArray(store?.llmgateway?.models) && store.llmgateway.models.length > 0) {break;}
 			await sleep(250);
 		}
 		await sleep(100);
@@ -548,7 +548,7 @@ async function main() {
 		const gateway = await checkGateway(root);
 		Object.assign(checks, gateway.checks);
 		observed.gateway = gateway.observed;
-		if (gateway.limitation) limitations.push(gateway.limitation);
+		if (gateway.limitation) {limitations.push(gateway.limitation);}
 	} catch (error) {
 		checks.error = false;
 		observed.error = error instanceof Error && error.stack ? error.stack : String(error);

@@ -20,13 +20,13 @@ function isFresh(checkedAt: unknown, now: number): checkedAt is number {
 }
 
 function asProviderModelConfig(model: AnyModel): ProviderModelConfig | undefined {
-	if (model.provider !== PROVIDER_ID || model.api !== "openai-completions") return undefined;
+	if (model.provider !== PROVIDER_ID || model.api !== "openai-completions") {return undefined;}
 	const { provider: _provider, baseUrl: _baseUrl, ...config } = model;
 	return config as ProviderModelConfig;
 }
 
 function restoreStoredModels(stored: Readonly<ModelsStoreEntry> | undefined): ProviderModelConfig[] {
-	if (!stored) return [];
+	if (!stored) {return [];}
 	return stored.models
 		.map(asProviderModelConfig)
 		.filter((model): model is ProviderModelConfig => model !== undefined);
@@ -56,19 +56,19 @@ function configuredApiKey(context: RefreshModelsContext): string {
 	const credential = context.credential;
 	if (credential?.type === "api_key" && typeof credential.key === "string") {
 		const key = credential.key.trim();
-		if (key) return key;
+		if (key) {return key;}
 	}
 	const key = process.env[API_KEY_ENV]?.trim();
-	if (key) return key;
+	if (key) {return key;}
 	throw new Error(`LLM Gateway ${API_KEY_ENV} must be set`);
 }
 
 async function refreshModels(context: RefreshModelsContext): Promise<ProviderModelConfig[]> {
-	if (context.signal.aborted) return [];
+	if (context.signal.aborted) {return [];}
 
 	const restored = restoreStoredModels(context.stored);
-	if (!context.allowNetwork || context.signal.aborted) return restored;
-	if (!context.force && isFresh(context.stored?.checkedAt, Date.now())) return restored;
+	if (!context.allowNetwork || context.signal.aborted) {return restored;}
+	if (!context.force && isFresh(context.stored?.checkedAt, Date.now())) {return restored;}
 
 	const response = await fetch(MODELS_URL, {
 		headers: {
@@ -77,23 +77,23 @@ async function refreshModels(context: RefreshModelsContext): Promise<ProviderMod
 		},
 		signal: context.signal,
 	});
-	if (context.signal.aborted) return [];
+	if (context.signal.aborted) {return [];}
 	if (!response.ok) {
 		throw new Error(`LLM Gateway /v1/models request failed (${response.status} ${response.statusText})`);
 	}
 
 	const records = catalogRecords(await response.json());
-	if (context.signal.aborted) return [];
+	if (context.signal.aborted) {return [];}
 	const models = buildProviderModelConfigs(records);
-	if (context.signal.aborted) return [];
+	if (context.signal.aborted) {return [];}
 
 	const persisted: ModelsStoreEntry = {
 		models: models.map(toStoredModel),
 		checkedAt: Date.now(),
 	};
-	if (context.signal.aborted) return [];
+	if (context.signal.aborted) {return [];}
 	const published = await context.publish({ persist: persisted });
-	if (!published || context.signal.aborted) return [];
+	if (!published || context.signal.aborted) {return [];}
 	return models;
 }
 

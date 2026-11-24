@@ -345,7 +345,7 @@ export function statusData(status: AgentStatus): StatusAgentData {
 
 /** Same 200-char bound as the check_status text output. */
 export function outputPreview(text: string | undefined): string | undefined {
-	if (!text) return undefined;
+	if (!text) {return undefined;}
 	return text.length > 200 ? text.slice(0, 200) + "..." : text;
 }
 

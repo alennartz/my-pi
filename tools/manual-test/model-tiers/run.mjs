@@ -100,8 +100,8 @@ function attach(stream, onObj) {
 		while ((i = buf.indexOf("\n")) !== -1) {
 			let line = buf.slice(0, i);
 			buf = buf.slice(i + 1);
-			if (line.endsWith("\r")) line = line.slice(0, -1);
-			if (!line) continue;
+			if (line.endsWith("\r")) {line = line.slice(0, -1);}
+			if (!line) {continue;}
 			let obj;
 			try {
 				obj = JSON.parse(line);
@@ -160,7 +160,7 @@ function makeAgentDir(root, name, { global, project, trust = "always" }) {
 			2,
 		),
 	);
-	if (global) fs.writeFileSync(path.join(agentDir, "model-tiers.json"), JSON.stringify(global));
+	if (global) {fs.writeFileSync(path.join(agentDir, "model-tiers.json"), JSON.stringify(global));}
 	if (process.env.LLMGATEWAY_API_KEY) {
 		// DevPass quota support (used with the llmgateway provider): register
 		// the quota source from this repo with the spend-backpressure lookahead
@@ -197,35 +197,35 @@ function persistencePaths(parentSessionFile) {
 }
 
 function agentRecords(logFile) {
-	if (!fs.existsSync(logFile)) return [];
+	if (!fs.existsSync(logFile)) {return [];}
 	const records = new Map();
 	for (const raw of fs.readFileSync(logFile, "utf8").split("\n")) {
 		const line = raw.trim();
-		if (!line) continue;
+		if (!line) {continue;}
 		let entry;
 		try {
 			entry = JSON.parse(line);
 		} catch {
 			continue;
 		}
-		if (entry.type === "agent_added" && typeof entry.id === "string") records.set(entry.id, entry);
+		if (entry.type === "agent_added" && typeof entry.id === "string") {records.set(entry.id, entry);}
 	}
 	return [...records.values()];
 }
 
 function liveAgents(logFile) {
-	if (!fs.existsSync(logFile)) return [];
+	if (!fs.existsSync(logFile)) {return [];}
 	const records = new Map(agentRecords(logFile).map((entry) => [entry.id, entry]));
 	for (const raw of fs.readFileSync(logFile, "utf8").split("\n")) {
 		const line = raw.trim();
-		if (!line) continue;
+		if (!line) {continue;}
 		let entry;
 		try {
 			entry = JSON.parse(line);
 		} catch {
 			continue;
 		}
-		if (entry.type === "agent_removed" && typeof entry.id === "string") records.delete(entry.id);
+		if (entry.type === "agent_removed" && typeof entry.id === "string") {records.delete(entry.id);}
 	}
 	return [...records.values()];
 }
@@ -242,14 +242,14 @@ function sessionModel(sessionFile) {
 	let model;
 	for (const raw of contents.split("\n")) {
 		const l = raw.trim();
-		if (!l) continue;
+		if (!l) {continue;}
 		let e;
 		try {
 			e = JSON.parse(l);
 		} catch {
 			continue;
 		}
-		if (e.type === "model_change" && typeof e.modelId === "string") model = e.modelId;
+		if (e.type === "model_change" && typeof e.modelId === "string") {model = e.modelId;}
 		if (e.type === "message" && e.message?.role === "assistant" && typeof e.message.model === "string") {
 			return e.message.model; // assistant-recorded model is authoritative
 		}
@@ -260,7 +260,7 @@ function sessionModel(sessionFile) {
 // The assembled system prompt of a provider payload: anthropic-style payloads
 // carry a `system` field, openai-style payloads a system/developer message.
 function extractSystem(payload) {
-	if (typeof payload.system === "string") return payload.system;
+	if (typeof payload.system === "string") {return payload.system;}
 	const parts = (payload.messages || [])
 		.filter((m) => m.role === "system" || m.role === "developer")
 		.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)));
@@ -343,7 +343,7 @@ function driveSpawn(agentDir, workDir, sessionDir, { spawns, wantListModels }) {
 			if (parentSessionFile) {
 				const { logFile } = persistencePaths(parentSessionFile);
 				for (const record of agentRecords(logFile)) {
-					if (spawns.some((spawnSpec) => spawnSpec.id === record.id)) spawnedIds.add(record.id);
+					if (spawns.some((spawnSpec) => spawnSpec.id === record.id)) {spawnedIds.add(record.id);}
 				}
 			}
 			const spawnsDone = spawns.every((s) => spawnedIds.has(s.id));
@@ -385,31 +385,31 @@ function driveSpawn(agentDir, workDir, sessionDir, { spawns, wantListModels }) {
 			if (p.type === "tool_execution_end" && p.toolName === "subagent") {
 				const agents = p.result?.details?.agents || p.result?.structuredContent?.agents || [];
 				for (const agent of agents) {
-					if (typeof agent?.id === "string") spawnedIds.add(agent.id);
+					if (typeof agent?.id === "string") {spawnedIds.add(agent.id);}
 				}
 				finishIfReady();
 			}
 			if (p.type === "tool_execution_end" && p.toolName === "list_models") {
 				listModelsText = (p.result?.content || []).map((c) => c.text).join("\n");
 			}
-			if (p.type === "agent_end") finishIfReady();
+			if (p.type === "agent_end") {finishIfReady();}
 			if (process.env.MT_VERBOSE && p.type === "tool_execution_end") {
 				log("tool_end", p.toolName);
 			}
 		});
 		proc.stderr.on("data", (d) => {
 			stderr += d.toString();
-			if (process.env.MT_VERBOSE) process.stderr.write("[pi] " + d);
+			if (process.env.MT_VERBOSE) {process.stderr.write("[pi] " + d);}
 		});
 		proc.once("error", (error) => {
-			if (settled) return;
+			if (settled) {return;}
 			settled = true;
 			clearTimeout(to);
 			killGroup(proc);
 			reject(new Error(`${error.message}${stderr.trim() ? `\\n${stderr.trim()}` : ""}`));
 		});
 		proc.once("exit", (code, signal) => {
-			if (settled) return;
+			if (settled) {return;}
 			settled = true;
 			clearTimeout(to);
 			reject(new Error(`spawn process exited (code=${code} signal=${signal})${stderr.trim() ? `\\n${stderr.trim()}` : ""}`));
@@ -445,14 +445,14 @@ function tierTableBlock(systemPrompt) {
 	let from = 0;
 	while (true) {
 		const index = systemPrompt.indexOf("## Model Tiers", from);
-		if (index < 0) break;
+		if (index < 0) {break;}
 		headings.push(index);
 		from = index + 1;
 	}
 	for (const start of headings.reverse()) {
 		const end = systemPrompt.indexOf("\n## ", start + 1);
 		const block = systemPrompt.slice(start, end < 0 ? undefined : end);
-		if (block.includes("| Tier | Use when |")) return block;
+		if (block.includes("| Tier | Use when |")) {return block;}
 	}
 	return "";
 }

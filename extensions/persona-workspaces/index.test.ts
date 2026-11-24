@@ -336,7 +336,7 @@ describe("override notices", () => {
 		const first = (await s.beforeAgentStart(agentStartEvent(), ctx)) as
 			| { message?: unknown }
 			| undefined;
-		if (first?.message) transcript.ingest(first.message);
+		if (first?.message) {transcript.ingest(first.message);}
 		const second = (await s.beforeAgentStart(agentStartEvent(), ctx)) as
 			| { message?: unknown }
 			| undefined;

@@ -116,8 +116,8 @@ describe("createSubagentsExtension root scope", () => {
 			const names = pi.registerTool.mock.calls.map(([tool]) => tool.name);
 			expect([...names].sort()).toEqual([...ALL_TOOLS].sort());
 		} finally {
-			if (previous === undefined) delete process.env.PI_PARENT_LINK;
-			else process.env.PI_PARENT_LINK = previous;
+			if (previous === undefined) {delete process.env.PI_PARENT_LINK;}
+			else {process.env.PI_PARENT_LINK = previous;}
 		}
 	});
 });

@@ -22,7 +22,7 @@ type ChildSessionRegistry = WeakMap<object, PersonaPayload | undefined>;
 function getRegistry(): ChildSessionRegistry {
 	const globals = globalThis as Record<symbol, unknown>;
 	const existing = globals[REGISTRY_KEY];
-	if (existing instanceof WeakMap) return existing as ChildSessionRegistry;
+	if (existing instanceof WeakMap) {return existing as ChildSessionRegistry;}
 	const created: ChildSessionRegistry = new WeakMap();
 	globals[REGISTRY_KEY] = created;
 	return created;

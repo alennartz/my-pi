@@ -32,7 +32,7 @@ function registerExtension() {
 		}),
 	};
 	newPrompt(pi as never);
-	if (!command) throw new Error("nprompt command was not registered");
+	if (!command) {throw new Error("nprompt command was not registered");}
 	return { command, pi };
 }
 

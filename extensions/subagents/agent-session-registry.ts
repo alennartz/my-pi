@@ -31,13 +31,13 @@ export type AgentUsage = Readonly<{
 
 /** Read the per-category costs when the source recorded them. */
 export function costBreakdownFromUsage(usage: unknown): AgentCostBreakdown | undefined {
-	if (!usage || typeof usage !== "object") return undefined;
+	if (!usage || typeof usage !== "object") {return undefined;}
 	const cost = (usage as { cost?: unknown }).cost;
-	if (!cost || typeof cost !== "object") return undefined;
+	if (!cost || typeof cost !== "object") {return undefined;}
 	const raw = cost as Record<string, unknown>;
 	const hasBreakdown = ["input", "output", "cacheRead", "cacheWrite"]
 		.some((field) => typeof raw[field] === "number");
-	if (!hasBreakdown) return undefined;
+	if (!hasBreakdown) {return undefined;}
 	return {
 		input: typeof raw.input === "number" ? raw.input : 0,
 		output: typeof raw.output === "number" ? raw.output : 0,
@@ -51,7 +51,7 @@ export function addCostBreakdown(
 	first: AgentCostBreakdown | undefined,
 	second: AgentCostBreakdown | undefined,
 ): AgentCostBreakdown | undefined {
-	if (first === undefined && second === undefined) return undefined;
+	if (first === undefined && second === undefined) {return undefined;}
 	return {
 		input: (first?.input ?? 0) + (second?.input ?? 0),
 		output: (first?.output ?? 0) + (second?.output ?? 0),
@@ -65,7 +65,7 @@ export function subtractCostBreakdown(
 	current: AgentCostBreakdown | undefined,
 	baseline: AgentCostBreakdown | undefined,
 ): AgentCostBreakdown | undefined {
-	if (current === undefined && baseline === undefined) return undefined;
+	if (current === undefined && baseline === undefined) {return undefined;}
 	return {
 		input: (current?.input ?? 0) - (baseline?.input ?? 0),
 		output: (current?.output ?? 0) - (baseline?.output ?? 0),
@@ -176,10 +176,10 @@ function key(path: AgentPath): string { return JSON.stringify(path); }
 function samePath(a: AgentPath, b: AgentPath): boolean { return a.length === b.length && a.every((part, i) => part === b[i]); }
 function isPrefix(prefix: AgentPath, path: AgentPath): boolean { return prefix.length <= path.length && prefix.every((part, i) => part === path[i]); }
 function cloneFreeze<T>(value: T): T {
-	if (Array.isArray(value)) return Object.freeze(value.map((item) => cloneFreeze(item))) as T;
+	if (Array.isArray(value)) {return Object.freeze(value.map((item) => cloneFreeze(item))) as T;}
 	if (value && typeof value === "object") {
 		const result: Record<string, unknown> = {};
-		for (const [name, child] of Object.entries(value as Record<string, unknown>)) result[name] = cloneFreeze(child);
+		for (const [name, child] of Object.entries(value as Record<string, unknown>)) {result[name] = cloneFreeze(child);}
 		return Object.freeze(result) as T;
 	}
 	return value;
@@ -216,7 +216,7 @@ export class AgentSessionRegistry {
 	private disposal?: Promise<void>;
 
 	constructor(options: AgentSessionRegistryOptions) {
-		if (options.root.path.length !== 0 || options.root.ownership !== "external") throw new Error("Registry root must be external path []");
+		if (options.root.path.length !== 0 || options.root.ownership !== "external") {throw new Error("Registry root must be external path []");}
 		this.rootSnapshot = cloneFreeze({
 			...options.root,
 			path: [],
@@ -238,9 +238,9 @@ export class AgentSessionRegistry {
 	}
 
 	get(path: AgentPath): AgentRegistryNode | undefined {
-		if (path.length === 0) return this.root;
+		if (path.length === 0) {return this.root;}
 		const node = this.nodes.get(key(path));
-		if (!node) return undefined;
+		if (!node) {return undefined;}
 		return this.publicNode(node);
 	}
 
@@ -251,7 +251,7 @@ export class AgentSessionRegistry {
 	/** Usage captured when a live node entered this registry. */
 	getUsageBaseline(path: AgentPath): AgentUsage | undefined {
 		const baseline = this.usageBaselines.get(key(path));
-		if (!baseline) return undefined;
+		if (!baseline) {return undefined;}
 		return {
 			...baseline,
 			...(baseline.costBreakdown ? { costBreakdown: { ...baseline.costBreakdown } } : {}),
@@ -261,7 +261,7 @@ export class AgentSessionRegistry {
 	listChildren(parent: AgentPath): AgentNodeSnapshot[] {
 		const result: AgentNodeSnapshot[] = [];
 		for (const node of this.nodes.values()) {
-			if (node.snapshot.parentPath && samePath(node.snapshot.parentPath, parent)) result.push(node.snapshot);
+			if (node.snapshot.parentPath && samePath(node.snapshot.parentPath, parent)) {result.push(node.snapshot);}
 		}
 		return result;
 	}
@@ -277,12 +277,12 @@ export class AgentSessionRegistry {
 	 */
 	waitForLiveNode(path: AgentPath): Promise<boolean> {
 		const pathKey = key(path);
-		if (this.nodes.has(pathKey)) return Promise.resolve(true);
-		if (!this.reservations.has(pathKey)) return Promise.resolve(false);
+		if (this.nodes.has(pathKey)) {return Promise.resolve(true);}
+		if (!this.reservations.has(pathKey)) {return Promise.resolve(false);}
 		return new Promise((resolve) => {
 			const waiters = this.liveWaiters.get(pathKey);
-			if (waiters) waiters.add(resolve);
-			else this.liveWaiters.set(pathKey, new Set([resolve]));
+			if (waiters) {waiters.add(resolve);}
+			else {this.liveWaiters.set(pathKey, new Set([resolve]));}
 		});
 	}
 
@@ -296,10 +296,10 @@ export class AgentSessionRegistry {
 		const byParent = new Map<string, AgentNodeSnapshot[]>();
 		for (const node of this.nodes.values()) {
 			const parentPath = node.snapshot.parentPath;
-			if (!parentPath) continue;
+			if (!parentPath) {continue;}
 			const bucket = byParent.get(key(parentPath));
-			if (bucket) bucket.push(node.snapshot);
-			else byParent.set(key(parentPath), [node.snapshot]);
+			if (bucket) {bucket.push(node.snapshot);}
+			else {byParent.set(key(parentPath), [node.snapshot]);}
 		}
 		const result: AgentNodeSnapshot[] = [];
 		const visit = (path: AgentPath): void => {
@@ -317,8 +317,8 @@ export class AgentSessionRegistry {
 		const localIds = new Set<string>();
 		const paths: AgentPath[] = [];
 		for (const request of requests) {
-			if (request.localId === "parent") throw new Error("Reserved parent agent ID");
-			if (localIds.has(request.localId)) throw new Error(`Duplicate sibling id ${request.localId}`);
+			if (request.localId === "parent") {throw new Error("Reserved parent agent ID");}
+			if (localIds.has(request.localId)) {throw new Error(`Duplicate sibling id ${request.localId}`);}
 			localIds.add(request.localId);
 			const path = childAgentPath(parent, request.localId);
 			const pathKey = key(path);
@@ -331,7 +331,7 @@ export class AgentSessionRegistry {
 		// Reserve every path synchronously before the first await. A removal that
 		// starts after this point waits for these reservations and the commit check
 		// below rejects a batch that races with subtree teardown.
-		for (const path of paths) this.reserve(path);
+		for (const path of paths) {this.reserve(path);}
 		const staged = new Map<string, InternalNode>();
 		const created: InternalNode[] = [];
 		try {
@@ -456,7 +456,7 @@ export class AgentSessionRegistry {
 	updateOperational(path: AgentPath, next: AgentOperationalSnapshot): void {
 		if (path.length === 0) {
 			const snapshot = cloneFreeze({ ...this.rootSnapshot, operational: next }) as AgentNodeSnapshot & { ownership: "external"; path: [] };
-			if (snapshotEqual(this.rootSnapshot, snapshot)) return;
+			if (snapshotEqual(this.rootSnapshot, snapshot)) {return;}
 			const previous = this.rootSnapshot;
 			this.rootSnapshot = snapshot;
 			this.emit({ type: "node_updated", previous, node: snapshot });
@@ -466,9 +466,9 @@ export class AgentSessionRegistry {
 		const pathKey = key(path);
 		const node = this.nodes.get(pathKey);
 		const current = node?.snapshot ?? this.stagedSnapshots.get(pathKey);
-		if (!current) return;
+		if (!current) {return;}
 		const snapshot = cloneFreeze({ ...current, operational: next }) as AgentNodeSnapshot;
-		if (snapshotEqual(current, snapshot)) return;
+		if (snapshotEqual(current, snapshot)) {return;}
 		if (node) {
 			const previous = node.snapshot;
 			node.snapshot = snapshot;
@@ -481,20 +481,20 @@ export class AgentSessionRegistry {
 	}
 
 	remove(path: AgentPath): Promise<void> {
-		if (path.length === 0) return Promise.reject(new Error("Cannot remove external root"));
+		if (path.length === 0) {return Promise.reject(new Error("Cannot remove external root"));}
 		const pathKey = key(path);
 		const exact = this.removals.get(pathKey);
-		if (exact) return exact;
-		if (!this.nodes.has(pathKey) && !this.reservations.has(pathKey)) return Promise.resolve();
+		if (exact) {return exact;}
+		if (!this.nodes.has(pathKey) && !this.reservations.has(pathKey)) {return Promise.resolve();}
 		for (const [removingKey, operation] of this.removals) {
 			const removingPath = JSON.parse(removingKey) as AgentPath;
-			if (!isPrefix(removingPath, path)) continue;
+			if (!isPrefix(removingPath, path)) {continue;}
 			// A managed child runtime invokes its own session_shutdown hook while
 			// the ancestor registry removal is disposing that node. Its manager may
 			// ask to remove an already-covered descendant; waiting on the ancestor
 			// operation here would deadlock runtime.dispose(). The ancestor operation
 			// already owns that descendant's disposal, so this nested request is done.
-			if (this.nodes.get(removingKey)?.disposing) return Promise.resolve();
+			if (this.nodes.get(removingKey)?.disposing) {return Promise.resolve();}
 			return operation;
 		}
 
@@ -509,7 +509,7 @@ export class AgentSessionRegistry {
 	}
 
 	dispose(): Promise<void> {
-		if (this.disposal) return this.disposal;
+		if (this.disposal) {return this.disposal;}
 		this.disposed = true;
 		this.disposal = (async () => {
 			await this.waitForReservations([]);
@@ -571,14 +571,14 @@ export class AgentSessionRegistry {
 	}
 
 	private assertCanCreate(parent: AgentPath): void {
-		if (this.disposed || this.disposal) throw new Error("Registry is disposed");
-		if (!this.get(parent)) throw new Error(`Unknown parent path ${JSON.stringify(parent)}`);
-		if (this.isPathRemoving(parent)) throw new Error(`Registry subtree ${JSON.stringify(parent)} is being removed`);
+		if (this.disposed || this.disposal) {throw new Error("Registry is disposed");}
+		if (!this.get(parent)) {throw new Error(`Unknown parent path ${JSON.stringify(parent)}`);}
+		if (this.isPathRemoving(parent)) {throw new Error(`Registry subtree ${JSON.stringify(parent)} is being removed`);}
 	}
 
 	private isPathRemoving(path: AgentPath): boolean {
 		for (let length = 1; length <= path.length; length++) {
-			if (this.removing.has(key(path.slice(0, length)))) return true;
+			if (this.removing.has(key(path.slice(0, length)))) {return true;}
 		}
 		return false;
 	}
@@ -592,20 +592,20 @@ export class AgentSessionRegistry {
 
 	private releaseReservation(pathKey: string, isLive = false): void {
 		const reservation = this.reservations.get(pathKey);
-		if (!reservation) return;
+		if (!reservation) {return;}
 		this.reservations.delete(pathKey);
 		reservation.resolve();
 		const waiters = this.liveWaiters.get(pathKey);
-		if (!waiters) return;
+		if (!waiters) {return;}
 		this.liveWaiters.delete(pathKey);
-		for (const resolve of waiters) resolve(isLive);
+		for (const resolve of waiters) {resolve(isLive);}
 	}
 
 	private async waitForReservations(prefix: AgentPath): Promise<void> {
 		const waits = [...this.reservations.values()]
 			.filter((reservation) => isPrefix(prefix, reservation.path))
 			.map((reservation) => reservation.promise);
-		if (waits.length > 0) await Promise.all(waits);
+		if (waits.length > 0) {await Promise.all(waits);}
 	}
 
 	private async removeSubtree(path: AgentPath, pathKey: string): Promise<void> {
@@ -626,16 +626,16 @@ export class AgentSessionRegistry {
 				}
 			}
 			for (const [nodeKey, node] of targets) {
-				if (this.nodes.get(nodeKey) !== node) continue;
+				if (this.nodes.get(nodeKey) !== node) {continue;}
 				await this.disposeNode(node);
-				if (this.nodes.get(nodeKey) !== node) continue;
+				if (this.nodes.get(nodeKey) !== node) {continue;}
 				this.nodes.delete(nodeKey);
 				this.usageBaselines.delete(nodeKey);
 				this.stagedSnapshots.delete(nodeKey);
 				this.emit({ type: "node_removed", node: node.snapshot });
 			}
 		} finally {
-			for (const nodeKey of marked) this.removing.delete(nodeKey);
+			for (const nodeKey of marked) {this.removing.delete(nodeKey);}
 			this.removals.delete(pathKey);
 		}
 	}

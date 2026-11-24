@@ -28,7 +28,7 @@ function ensureNotAborted(context: ImplContext): void {
 
 function readApiKey(): string {
 	const key = process.env[API_KEY_ENV]?.trim();
-	if (!key) throw new Error(`devpass quota: ${API_KEY_ENV} must be set`);
+	if (!key) {throw new Error(`devpass quota: ${API_KEY_ENV} must be set`);}
 	return key;
 }
 
@@ -61,14 +61,14 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function parseNumber(value: unknown): number | undefined {
-	if (typeof value !== "string" && typeof value !== "number") return undefined;
-	if (typeof value === "string" && value.trim() === "") return undefined;
+	if (typeof value !== "string" && typeof value !== "number") {return undefined;}
+	if (typeof value === "string" && value.trim() === "") {return undefined;}
 	const parsed = Number(value);
 	return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function median(values: number[]): number | undefined {
-	if (values.length === 0) return undefined;
+	if (values.length === 0) {return undefined;}
 	const sorted = [...values].sort((a, b) => a - b);
 	const middle = Math.floor(sorted.length / 2);
 	return sorted.length % 2 === 1
@@ -106,14 +106,14 @@ function findPremiumModelIds(records: unknown[]): Record<string, string[]> {
 	const modelLimitIds = Object.create(null) as Record<string, string[]>;
 	for (const raw of records) {
 		const model = asRecord(raw) as DevPassModel | undefined;
-		if (!model || typeof model.id !== "string" || model.id.length === 0) continue;
-		if (!Array.isArray(model.providers)) continue;
+		if (!model || typeof model.id !== "string" || model.id.length === 0) {continue;}
+		if (!Array.isArray(model.providers)) {continue;}
 		const eligibleProviders = model.providers
 			.map((value) => asRecord(value) as DevPassProvider | undefined)
 			.filter((provider): provider is DevPassProvider =>
 				provider !== undefined && provider.streaming === true && provider.tools === true,
 			);
-		if (eligibleProviders.length === 0) continue;
+		if (eligibleProviders.length === 0) {continue;}
 		if (isPremiumModel(model.pricing, providerPrices(eligibleProviders))) {
 			modelLimitIds[model.id] = ["premium-weekly"];
 		}
@@ -131,7 +131,7 @@ function usageAmount(data: Record<string, unknown>, field: string): number {
 
 function readBillingCycleAnchor(settings: Record<string, unknown>): number | undefined {
 	const configured = settings.billingCycleAnchor;
-	if (typeof configured !== "string" || configured.trim() === "") return undefined;
+	if (typeof configured !== "string" || configured.trim() === "") {return undefined;}
 
 	let value = configured.trim();
 	const envReference = /^\$([A-Za-z_][A-Za-z0-9_]*)$/.exec(value);
@@ -200,7 +200,7 @@ function monthlyWindow(anchorMs: number, now: number): { windowStart: number; wi
 }
 
 function premiumResetAt(value: unknown): number | undefined {
-	if (value === null || value === undefined) return undefined;
+	if (value === null || value === undefined) {return undefined;}
 	if (typeof value !== "string" || !value.endsWith("Z")) {
 		throw new Error("devpass quota: /v1/key returned an invalid premium reset timestamp");
 	}
@@ -216,7 +216,7 @@ function buildUsageSnapshots(
 	settings: Record<string, unknown>,
 	now: number,
 ): UsageSnapshot[] {
-	if (data.devPlan === "none") return [];
+	if (data.devPlan === "none") {return [];}
 
 	const monthlySpend = usageAmount(data, "devPlanCreditsUsed");
 	const monthlyQuota = usageAmount(data, "devPlanCreditsLimit");

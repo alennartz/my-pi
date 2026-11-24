@@ -23,8 +23,8 @@ export function resolveExplicitAwait(
   const pending: AgentPath[] = [];
   for (const path of requested) {
     const settlement = byPath.get(JSON.stringify(path));
-    if (settlement) statuses.push(settlement);
-    else pending.push(path);
+    if (settlement) {statuses.push(settlement);}
+    else {pending.push(path);}
   }
   return { statuses, pending };
 }

@@ -27,10 +27,10 @@ const TEXT_APPLICATION_TYPES = new Set([
  */
 export function classifyContentType(contentType: string): ContentKind {
 	const mediaType = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
-	if (!mediaType) return "binary";
-	if (EXTRACT_TYPES.has(mediaType)) return "html";
-	if (mediaType.startsWith("text/")) return "text";
-	if (TEXT_APPLICATION_TYPES.has(mediaType)) return "text";
-	if (/^application\/\S+\+(?:json|xml)$/.test(mediaType)) return "text";
+	if (!mediaType) {return "binary";}
+	if (EXTRACT_TYPES.has(mediaType)) {return "html";}
+	if (mediaType.startsWith("text/")) {return "text";}
+	if (TEXT_APPLICATION_TYPES.has(mediaType)) {return "text";}
+	if (/^application\/\S+\+(?:json|xml)$/.test(mediaType)) {return "text";}
 	return "binary";
 }

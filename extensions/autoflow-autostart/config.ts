@@ -68,14 +68,14 @@ export function parseAutoflowConfig(raw: string): ParsedAutoflowConfig {
 
 	let autoStart = false;
 	if (record.autoStart !== undefined) {
-		if (typeof record.autoStart === "boolean") autoStart = record.autoStart;
-		else warnings.push(`autoflow: "autoStart" in ${CONFIG_FILE_NAME} must be a boolean; ignoring.`);
+		if (typeof record.autoStart === "boolean") {autoStart = record.autoStart;}
+		else {warnings.push(`autoflow: "autoStart" in ${CONFIG_FILE_NAME} must be a boolean; ignoring.`);}
 	}
 
 	let command = DEFAULT_AUTOFLOW_COMMAND;
 	if (record.command !== undefined) {
-		if (isCommand(record.command)) command = record.command;
-		else warnings.push(`autoflow: "command" in ${CONFIG_FILE_NAME} must be a slash command; using ${DEFAULT_AUTOFLOW_COMMAND}.`);
+		if (isCommand(record.command)) {command = record.command;}
+		else {warnings.push(`autoflow: "command" in ${CONFIG_FILE_NAME} must be a slash command; using ${DEFAULT_AUTOFLOW_COMMAND}.`);}
 	}
 
 	return {

@@ -36,7 +36,7 @@ function assistantLine(opts: {
 	const texts = opts.text === undefined ? [] : Array.isArray(opts.text) ? opts.text : [opts.text];
 	const content = texts.map((t) => ({ type: "text", text: t }));
 	const message: Record<string, unknown> = { role: "assistant", content };
-	if (opts.model !== undefined) message.model = opts.model;
+	if (opts.model !== undefined) {message.model = opts.model;}
 	if (opts.usage) {
 		const { cost, ...rest } = opts.usage;
 		message.usage = { ...rest, ...(cost !== undefined ? { cost: { total: cost } } : {}) };

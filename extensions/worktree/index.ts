@@ -193,7 +193,7 @@ function createGitClient() {
 				const symbolic = runGit(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd);
 				if (symbolic.startsWith("origin/")) {
 					const name = symbolic.slice("origin/".length);
-					if (name) return name;
+					if (name) {return name;}
 				}
 			} catch {
 				// no origin/HEAD; fall through
@@ -203,7 +203,7 @@ function createGitClient() {
 				const configured = runGit(["config", "--get", "init.defaultBranch"], cwd);
 				if (configured) {
 					const exists = listGitBranches(cwd).includes(configured);
-					if (exists) return configured;
+					if (exists) {return configured;}
 				}
 			} catch {
 				// no config; fall through
@@ -211,7 +211,7 @@ function createGitClient() {
 			// 3. probe common names locally.
 			const branches = listGitBranches(cwd);
 			for (const candidate of ["main", "master", "trunk", "develop"]) {
-				if (branches.includes(candidate)) return candidate;
+				if (branches.includes(candidate)) {return candidate;}
 			}
 			return undefined;
 		},
@@ -344,12 +344,12 @@ export default function worktreeExtension(pi: ExtensionAPI) {
 	pi.on("agent_start", () => {
 		agentRunning = true;
 		const pending = startWaiters.splice(0);
-		for (const resolve of pending) resolve();
+		for (const resolve of pending) {resolve();}
 	});
 	pi.on("agent_end", () => {
 		agentRunning = false;
 		const pending = endWaiters.splice(0);
-		for (const resolve of pending) resolve();
+		for (const resolve of pending) {resolve();}
 	});
 
 	async function sendUserMessageAndAwaitTurn(ctx: ExtensionCommandContext, message: string): Promise<void> {

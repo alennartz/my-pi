@@ -38,15 +38,15 @@ async function setup(origin: "builtin" | "models.json" | "legacy" | "native", sn
 	vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("unexpected network request"); }));
 	const id = origin === "builtin" ? "openai" : `test-${origin.replace(".", "-")}`;
 	const modelsPath = join(dir, "models.json");
-	if (origin === "models.json") writeFileSync(modelsPath, JSON.stringify({ providers: { [id]: {
+	if (origin === "models.json") {writeFileSync(modelsPath, JSON.stringify({ providers: { [id]: {
 		baseUrl: "https://example.test/v1", api: "openai-completions", apiKey: "test-key",
 		models: [{ id: "standard", name: "standard", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 8192, maxTokens: 1024 }],
-	} } }));
+	} } }));}
 	const runtime = await ModelRuntime.create({ modelsPath: origin === "models.json" ? modelsPath : null, authPath: join(dir, "auth.json"), modelsStore: new InMemoryModelsStore(), refreshOnCreate: false });
 	const registry = new ModelRegistry(runtime);
-	if (origin === "legacy") registry.registerProvider(id, { baseUrl: "https://example.test/v1", api: "openai-completions", apiKey: "test-key", models: [{ id: "standard", name: "standard", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 8192, maxTokens: 1024 }] });
+	if (origin === "legacy") {registry.registerProvider(id, { baseUrl: "https://example.test/v1", api: "openai-completions", apiKey: "test-key", models: [{ id: "standard", name: "standard", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 8192, maxTokens: 1024 }] });}
 	const native = nativeProvider(id);
-	if (origin === "native") registry.registerProvider(native);
+	if (origin === "native") {registry.registerProvider(native);}
 	const other = nativeProvider("unattached");
 	registry.registerProvider(other);
 	const original = registry.getProvider(id)!;
@@ -82,10 +82,10 @@ function stream(registry: ModelRegistry, provider: string, id = "standard", sess
 }
 
 afterEach(async () => {
-	for (const cleanup of cleanups.splice(0)) await cleanup();
+	for (const cleanup of cleanups.splice(0)) {await cleanup();}
 	vi.unstubAllEnvs();
 	vi.unstubAllGlobals();
-	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	for (const dir of dirs.splice(0)) {rmSync(dir, { recursive: true, force: true });}
 });
 
 describe("quota attachments through the provider registry", () => {
@@ -95,9 +95,9 @@ describe("quota attachments through the provider registry", () => {
 		expect(wrapped.id).toBe(id);
 		expect(wrapped.getModels().map((m) => m.id)).toEqual(before);
 		expect(wrapped.auth).toBeDefined();
-		if (origin === "native") expect(await wrapped.auth.apiKey!.resolve({} as any)).toEqual({ auth: { apiKey: "secret" } });
+		if (origin === "native") {expect(await wrapped.auth.apiKey!.resolve({} as any)).toEqual({ auth: { apiKey: "secret" } });}
 		expect(() => stream(registry, id)).toThrow(/quota/i);
-		if (origin === "native") expect(native.streamSimple).not.toHaveBeenCalled();
+		if (origin === "native") {expect(native.streamSimple).not.toHaveBeenCalled();}
 		expect(stream(registry, "unattached")).toBe("native-result");
 		expect(other.streamSimple).toHaveBeenCalled();
 	});

@@ -62,7 +62,7 @@ function projectPersonaPreamble(
 		continuation: true, // projection only; never plans a notice
 		transcript: [],
 	});
-	if (!plan) return base;
+	if (!plan) {return base;}
 	// Stacked tier (unpatched host): pi's preamble stays; the persona rides
 	// as the section it will bind under at the first run.
 	if (personaBindingMode() === "stacked") {

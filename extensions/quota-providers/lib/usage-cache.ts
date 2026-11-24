@@ -9,7 +9,7 @@ export interface UsageCacheFile {
 }
 
 function isUsageSnapshot(value: unknown): value is UsageSnapshot {
-	if (!isRecord(value)) return false;
+	if (!isRecord(value)) {return false;}
 	const snapshot = value as Record<string, unknown>;
 	return typeof snapshot.spend === "number" && Number.isFinite(snapshot.spend)
 		&& typeof snapshot.quota === "number" && Number.isFinite(snapshot.quota)
@@ -25,7 +25,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isModelLimitIds(value: unknown): value is Record<string, string[]> {
-	if (!isRecord(value)) return false;
+	if (!isRecord(value)) {return false;}
 	return Object.values(value).every(
 		(limitIds) => Array.isArray(limitIds) && limitIds.every((limitId) => typeof limitId === "string"),
 	);
@@ -33,7 +33,7 @@ function isModelLimitIds(value: unknown): value is Record<string, string[]> {
 
 function copyModelLimitIds(value: Record<string, string[]>): Record<string, string[]> {
 	const copy = Object.create(null) as Record<string, string[]>;
-	for (const [modelId, limitIds] of Object.entries(value)) copy[modelId] = limitIds;
+	for (const [modelId, limitIds] of Object.entries(value)) {copy[modelId] = limitIds;}
 	return copy;
 }
 
@@ -50,13 +50,13 @@ export function modelLimitIdsFor(
 
 /** Read one complete snapshot-plus-model-map cache record. */
 export function readUsageCache(path: string): UsageCacheFile | null {
-	if (!existsSync(path)) return null;
+	if (!existsSync(path)) {return null;}
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(path, { encoding: "utf8" }));
-		if (!isRecord(parsed)) return null;
-		if (typeof parsed.writtenAt !== "number" || !Number.isFinite(parsed.writtenAt)) return null;
-		if (!Array.isArray(parsed.snapshots) || !parsed.snapshots.every(isUsageSnapshot)) return null;
-		if (!isModelLimitIds(parsed.modelLimitIds)) return null;
+		if (!isRecord(parsed)) {return null;}
+		if (typeof parsed.writtenAt !== "number" || !Number.isFinite(parsed.writtenAt)) {return null;}
+		if (!Array.isArray(parsed.snapshots) || !parsed.snapshots.every(isUsageSnapshot)) {return null;}
+		if (!isModelLimitIds(parsed.modelLimitIds)) {return null;}
 
 		return {
 			writtenAt: parsed.writtenAt,

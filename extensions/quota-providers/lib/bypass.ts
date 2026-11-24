@@ -11,8 +11,8 @@ export function readBypass(store: SessionTreeStore): boolean {
 
 /** Store only an enabled flag; disabling removes the key entirely. */
 export function writeBypass(store: SessionTreeStore, enabled: boolean): void {
-	if (enabled) store.set(BYPASS_KEY, true);
-	else store.delete(BYPASS_KEY);
+	if (enabled) {store.set(BYPASS_KEY, true);}
+	else {store.delete(BYPASS_KEY);}
 }
 
 /**

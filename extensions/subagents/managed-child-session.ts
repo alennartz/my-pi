@@ -133,7 +133,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function createDefaultCapabilities(session: AgentSession): SubagentCapabilities {
 	const executeBash = (...args: readonly unknown[]): Promise<unknown> => {
 		const command = args[0];
-		if (typeof command !== "string") throw new TypeError("Child bash command must be a string");
+		if (typeof command !== "string") {throw new TypeError("Child bash command must be a string");}
 		const options = isRecord(args[1]) ? args[1] as BashOptions : undefined;
 		return session.executeBash(command, undefined, options);
 	};
@@ -189,7 +189,7 @@ export class ManagedChildSession {
 		this.hooks = hooks;
 		this.activeSession = runtime.session;
 		const binding = bindingsBySession.get(runtime.session);
-		if (!binding) throw new Error("Managed child session is missing runtime bindings");
+		if (!binding) {throw new Error("Managed child session is missing runtime bindings");}
 		this.activeEventBus = binding.eventBus;
 		// The initial bind recomputes owner capabilities after extensions are ready.
 		// Keep a safe projection available for callers that inspect the object while
@@ -223,10 +223,10 @@ export class ManagedChildSession {
 		return new Promise<void>((resolve, reject) => {
 			let settled = false;
 			const settlePreflight = (disposition: Parameters<NonNullable<PromptOptions["preflightResult"]>>[0]): void => {
-				if (settled) return;
+				if (settled) {return;}
 				settled = true;
-				if (disposition) resolve();
-				else reject(new Error("Prompt rejected by child session"));
+				if (disposition) {resolve();}
+				else {reject(new Error("Prompt rejected by child session"));}
 			};
 			let promptResult: Promise<void> | void;
 			try {
@@ -245,7 +245,7 @@ export class ManagedChildSession {
 			// Observe the complete run even though callers receive preflight promptly.
 			Promise.resolve(promptResult).then(
 				() => {
-					if (!settled) settlePreflight("started");
+					if (!settled) {settlePreflight("started");}
 				},
 				(error) => {
 					if (!settled) {
@@ -262,7 +262,7 @@ export class ManagedChildSession {
 	}
 
 	dispose(): Promise<void> {
-		if (this.disposal) return this.disposal;
+		if (this.disposal) {return this.disposal;}
 		this.disposal = (async () => {
 			this.unsubscribeSession?.();
 			this.unsubscribeSession = undefined;
@@ -288,7 +288,7 @@ export class ManagedChildSession {
 		const binding = this.bindingsBySession.get(session);
 		if (!binding) {
 			const error = new Error("Managed child session replacement is missing runtime bindings");
-			if (replacement) this.reportRuntimeFailure(error);
+			if (replacement) {this.reportRuntimeFailure(error);}
 			throw error;
 		}
 		this.activeEventBus = binding.eventBus;
@@ -302,7 +302,7 @@ export class ManagedChildSession {
 		} catch (error) {
 			this.unsubscribeSession?.();
 			this.unsubscribeSession = undefined;
-			if (replacement) this.reportRuntimeFailure(error);
+			if (replacement) {this.reportRuntimeFailure(error);}
 			throw error;
 		}
 
@@ -313,7 +313,7 @@ export class ManagedChildSession {
 		try {
 			capabilities = this.buildCapabilities(session);
 		} catch (error) {
-			if (replacement) this.reportRuntimeFailure(error);
+			if (replacement) {this.reportRuntimeFailure(error);}
 			throw error;
 		}
 		this.activeSession = session;
@@ -388,7 +388,7 @@ function reportRuntimeDiagnostics(
 	hooks: ChildSessionHooks,
 ): void {
 	for (const diagnostic of diagnostics ?? []) {
-		if (!diagnostic?.message) continue;
+		if (!diagnostic?.message) {continue;}
 		const type = diagnostic.type === "info" || diagnostic.type === "error" || diagnostic.type === "warning"
 			? diagnostic.type
 			: "warning";
@@ -401,12 +401,12 @@ function reportExtensionDiagnostics(
 	hooks: ChildSessionHooks,
 ): void {
 	for (const diagnostic of diagnostics ?? []) {
-		if (!diagnostic?.error) continue;
+		if (!diagnostic?.error) {continue;}
 		// The SDK computes conflict diagnostics before applying extensionsOverride.
 		// Child runtimes intentionally remove the discovered root subagents
 		// extension and inject one scoped factory, so conflicts that mention that
 		// filtered path are stale loader diagnostics rather than live failures.
-		if (diagnostic.error.includes(ROOT_SUBAGENTS_EXTENSION_PATH)) continue;
+		if (diagnostic.error.includes(ROOT_SUBAGENTS_EXTENSION_PATH)) {continue;}
 		const prefix = diagnostic.path ? `${diagnostic.path}: ` : "";
 		notifyDiagnostic(hooks, `${prefix}${diagnostic.error}`, "error");
 	}
@@ -510,7 +510,7 @@ export async function createManagedChildSession(
 			const modelResult = effectiveModelRef === undefined
 				? undefined
 				: resolveCliModel({ cliModel: effectiveModelRef, modelRuntime: services.modelRuntime });
-			if (modelResult?.error) throw new Error(modelResult.error);
+			if (modelResult?.error) {throw new Error(modelResult.error);}
 			// A forced model is authoritative: when the operator's `/fmodel` value
 			// carries a thinking level, that level outranks every level the
 			// construction resolved (a fork's inherited level, a persona pin's).

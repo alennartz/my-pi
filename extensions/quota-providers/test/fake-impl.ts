@@ -9,12 +9,12 @@ function failSeamsIncludes(context: ImplContext, seam: string): boolean {
 }
 
 function incrementCounter(path: string | undefined): void {
-	if (!path) return;
+	if (!path) {return;}
 	let count = 0;
 	if (existsSync(path)) {
 		try {
 			const parsed = JSON.parse(readFileSync(path, "utf8"));
-			if (typeof parsed?.count === "number") count = parsed.count;
+			if (typeof parsed?.count === "number") {count = parsed.count;}
 		} catch {
 			// Corrupt counters start from zero.
 		}

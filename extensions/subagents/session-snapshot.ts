@@ -56,7 +56,7 @@ function addUsage(
 	target: SessionSnapshot["usage"],
 	usage: RawUsage | undefined,
 ): void {
-	if (!usage) return;
+	if (!usage) {return;}
 	target.input += usage.input ?? 0;
 	target.output += usage.output ?? 0;
 	target.cacheRead += usage.cacheRead ?? 0;
@@ -66,7 +66,7 @@ function addUsage(
 		target.costBreakdown,
 		costBreakdownFromUsage(usage),
 	);
-	if (costBreakdown !== undefined) target.costBreakdown = costBreakdown;
+	if (costBreakdown !== undefined) {target.costBreakdown = costBreakdown;}
 }
 
 /**
@@ -104,7 +104,7 @@ export function parseSessionSnapshot(sessionFile: string): SessionSnapshot {
 
 	for (const rawLine of contents.split("\n")) {
 		const line = rawLine.trim();
-		if (line.length === 0) continue;
+		if (line.length === 0) {continue;}
 		// Cheap substring pre-filter: skip ordinary user/tool-result/image lines.
 		// A tool result is parsed only when it carries usage, while an assistant
 		// line is parsed even without usage so it still counts as a turn.
@@ -113,7 +113,7 @@ export function parseSessionSnapshot(sessionFile: string): SessionSnapshot {
 		const isUsageEntry = line.includes('"type":"usage"') && line.includes('"usage"');
 		const isSummaryWithUsage = (line.includes('"type":"compaction"') || line.includes('"type":"branch_summary"'))
 			&& line.includes('"usage"');
-		if (!isAssistant && !isToolResultWithUsage && !isUsageEntry && !isSummaryWithUsage) continue;
+		if (!isAssistant && !isToolResultWithUsage && !isUsageEntry && !isSummaryWithUsage) {continue;}
 
 		let parsed: unknown;
 		try {
@@ -167,7 +167,7 @@ export function parseSessionSnapshot(sessionFile: string): SessionSnapshot {
 				}
 				// Only overwrite lastOutput if this message had a text part;
 				// otherwise keep the previous value.
-				if (lastText !== undefined) snapshot.lastOutput = lastText;
+				if (lastText !== undefined) {snapshot.lastOutput = lastText;}
 			}
 			continue;
 		}

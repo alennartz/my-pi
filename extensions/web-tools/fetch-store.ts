@@ -133,7 +133,7 @@ export function openFetchStore(dir?: string, opts: FetchStoreOptions = {}): Fetc
 		},
 
 		async put(key: string, result: FetchResult): Promise<void> {
-			if (result.status !== "ok") return; // only successful fetches are stored
+			if (result.status !== "ok") {return;} // only successful fetches are stored
 			await mkdir(storeDir, { recursive: true });
 			const payload: StoredFetch = {
 				result,

@@ -99,7 +99,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 	const key = (agentPath: AgentPath) => JSON.stringify(agentPath);
 	const livePaths = new Set<string>([key([])]);
 	const publish = (event: RegistryEvent) => {
-		for (const listener of listeners) listener(event);
+		for (const listener of listeners) {listener(event);}
 	};
 	const rootSnapshot: AgentNodeSnapshot = {
 		path: [],
@@ -122,7 +122,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 	const seedPath = (agentPath: AgentPath) => {
 		for (let length = 1; length <= agentPath.length; length++) {
 			const pathAtDepth = [...agentPath.slice(0, length)];
-			if (nodes.has(key(pathAtDepth))) continue;
+			if (nodes.has(key(pathAtDepth))) {continue;}
 			const snapshot: AgentNodeSnapshot = {
 				path: pathAtDepth,
 				parentPath: pathAtDepth.slice(0, -1),
@@ -231,7 +231,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 		}),
 		updateOperational: vi.fn((agentPath: AgentPath, operational: any) => {
 			const node = nodes.get(key(agentPath));
-			if (!node) return;
+			if (!node) {return;}
 			const previous = node.snapshot;
 			node.snapshot = { ...previous, operational };
 			publish({ type: "node_updated", previous, node: node.snapshot });
@@ -252,7 +252,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 		}),
 		dispose: vi.fn(async () => {
 			for (const node of nodes.values()) {
-				if (node.snapshot.ownership === "registry") await node.session.dispose();
+				if (node.snapshot.ownership === "registry") {await node.session.dispose();}
 			}
 			nodes.clear();
 			nodes.set(key([]), { snapshot: rootSnapshot });
@@ -283,7 +283,7 @@ function makePort(id: string): MessagePort & { emit(message: RoutedMessage): voi
 			return () => listeners.delete(listener);
 		}),
 		emit(message: RoutedMessage) {
-			for (const listener of listeners) listener(message);
+			for (const listener of listeners) {listener(message);}
 		},
 		listeners,
 	};
@@ -357,7 +357,7 @@ function makeContext(parentSessionFile: string, overrides: Record<string, unknow
 
 async function execute(tools: Map<string, RegisteredTool>, name: string, params: unknown, ctx: unknown) {
 	const tool = tools.get(name);
-	if (!tool) throw new Error(`Tool ${name} was not registered`);
+	if (!tool) {throw new Error(`Tool ${name} was not registered`);}
 	return tool.execute("call-1", params, undefined, undefined, ctx);
 }
 
@@ -375,7 +375,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.restoreAllMocks();
-	if (tmpRoot) fs.rmSync(tmpRoot, { recursive: true, force: true });
+	if (tmpRoot) {fs.rmSync(tmpRoot, { recursive: true, force: true });}
 	tmpRoot = undefined;
 });
 
@@ -729,8 +729,8 @@ describe("child-scoped extension routing", () => {
 				expectResponse: false,
 			});
 		} finally {
-			if (previous === undefined) delete process.env.PI_PARENT_LINK;
-			else process.env.PI_PARENT_LINK = previous;
+			if (previous === undefined) {delete process.env.PI_PARENT_LINK;}
+			else {process.env.PI_PARENT_LINK = previous;}
 		}
 	});
 
@@ -859,8 +859,8 @@ describe("semantic facts on native messages", () => {
 				return () => group.delete(listener);
 			},
 			emit(name: string, data: any) {
-				if (name === "pimote:subagents:response") provider = data.provider;
-				for (const listener of listeners.get(name) ?? []) listener(data);
+				if (name === "pimote:subagents:response") {provider = data.provider;}
+				for (const listener of listeners.get(name) ?? []) {listener(data);}
 			},
 		};
 		const bus = createSemanticFactBus();
@@ -1160,7 +1160,7 @@ describe("semantic facts on native messages", () => {
 		await root.tools.get("subagent")!.execute("spawn-peers", {
 			agents: [{ id: "guard", task: "wait", channels: [] }, { id: "scout", task: "inspect", channels: [] }],
 		}, undefined, undefined, root.ctx);
-		for (const child of managed.created) child.hooks.onEvent({ type: "agent_start" });
+		for (const child of managed.created) {child.hooks.onEvent({ type: "agent_start" });}
 		const args = { agents: ["worker", "guard"] };
 		await root.handlers.get("message_update")?.({
 			type: "message_update", assistantMessageEvent: {
@@ -1177,8 +1177,8 @@ describe("semantic facts on native messages", () => {
 		};
 		settle(managed.created[2], "scout output", "scout failure");
 		settle(root.worker, "worker output");
-		if (interrupted) await managed.created[1].config.scope.uplink.send({ to: "parent", message: "need a decision", expectResponse: false });
-		else settle(managed.created[1], "guard output");
+		if (interrupted) {await managed.created[1].config.scope.uplink.send({ to: "parent", message: "need a decision", expectResponse: false });}
+		else {settle(managed.created[1], "guard output");}
 		const result = await waiting;
 		expect(result.structuredContent.agents).toEqual(expect.arrayContaining([
 			expect.objectContaining({ id: "worker", output: "worker output" }),
@@ -1344,7 +1344,7 @@ describe("semantic facts on native messages", () => {
 
 		let released = false;
 		void waiting.then(() => { released = true; });
-		for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+		for (let tick = 0; tick < 20; tick += 1) {await Promise.resolve();}
 		expect(released).toBe(false);
 
 		await lease.release();
@@ -1376,7 +1376,7 @@ describe("semantic facts on native messages", () => {
 
 	it("retains queued completions when a blocked sender prevents await", async () => {		const root = await rootSession();
 		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
-		for (const child of managed.created) child.hooks.onEvent({ type: "agent_start" });
+		for (const child of managed.created) {child.hooks.onEvent({ type: "agent_start" });}
 		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "read", toolCallId: "hold-notifications" }, root.ctx);
 		const receipt = await root.worker.config.scope.uplink.send({ to: "parent", message: "answer before waiting", expectResponse: true });
 		managed.created[1].hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "queued scout output" }] } });
@@ -1634,7 +1634,7 @@ describe("root orchestration integration", () => {
 		fs.writeFileSync(parentSessionFile, "");
 		let failFirst = true;
 		managed.setOnCreate(async ({ config }) => {
-			if (failFirst && config.path[config.path.length - 1] === "failed") throw new Error("construction failed");
+			if (failFirst && config.path[config.path.length - 1] === "failed") {throw new Error("construction failed");}
 		});
 		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension({ kind: "root" })(pi as any);
@@ -2017,7 +2017,7 @@ describe("root orchestration integration", () => {
 		fs.writeFileSync(parentSessionFile, "");
 		const { pi, tools, handlers } = makePi();
 		managed.setOnCreate(async ({ config, hooks }) => {
-			if (config.target.kind === "fork") hooks.onEvent({ type: "agent_start" });
+			if (config.target.kind === "fork") {hooks.onEvent({ type: "agent_start" });}
 		});
 		await createSubagentsExtension({ kind: "root" })(pi as any);
 		const ctx = makeContext(parentSessionFile);
@@ -2075,7 +2075,7 @@ describe("root orchestration integration", () => {
 		});
 
 		managed.setOnCreate(async ({ config }) => {
-			if (config.target.kind !== "resume") return;
+			if (config.target.kind !== "resume") {return;}
 			const child = makePi();
 			await createSubagentsExtension(config.scope)(child.pi as any);
 			await child.handlers.get("session_start")?.(
@@ -2131,8 +2131,8 @@ describe("root orchestration integration", () => {
 				return () => group.delete(listener);
 			},
 			emit(name: string, data: any) {
-				if (name === "pimote:subagents:response") provider = data.provider;
-				for (const listener of listeners.get(name) ?? []) listener(data);
+				if (name === "pimote:subagents:response") {provider = data.provider;}
+				for (const listener of listeners.get(name) ?? []) {listener(data);}
 			},
 		};
 		await createSubagentsExtension({ kind: "root" })(root.pi as any);

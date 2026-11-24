@@ -21,23 +21,23 @@ const BLOCKED_METADATA_HOSTS = [
 
 /** Parse an IPv4 address into its four octets, or null if not IPv4. */
 function parseIpv4(host: string): number[] | null {
-	if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return null;
+	if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) {return null;}
 	const parts = host.split(".").map(Number);
-	if (parts.some((n) => n < 0 || n > 255)) return null;
+	if (parts.some((n) => n < 0 || n > 255)) {return null;}
 	return parts;
 }
 
 function isPrivateIpv4(octets: number[]): boolean {
 	const [a, b] = octets;
-	if (a === 0) return true; // 0.0.0.0/8 — "this" network
-	if (a === 10) return true; // 10.0.0.0/8
-	if (a === 127) return true; // 127.0.0.0/8 — loopback
-	if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
-	if (a === 192 && b === 168) return true; // 192.168.0.0/16
-	if (a === 169 && b === 254) return true; // 169.254.0.0/16 — link-local
-	if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 — CGNAT
-	if (a === 192 && b === 0) return true; // 192.0.0.0/24 + 192.0.2.0/24
-	if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 — benchmarks
+	if (a === 0) {return true;} // 0.0.0.0/8 — "this" network
+	if (a === 10) {return true;} // 10.0.0.0/8
+	if (a === 127) {return true;} // 127.0.0.0/8 — loopback
+	if (a === 172 && b >= 16 && b <= 31) {return true;} // 172.16.0.0/12
+	if (a === 192 && b === 168) {return true;} // 192.168.0.0/16
+	if (a === 169 && b === 254) {return true;} // 169.254.0.0/16 — link-local
+	if (a === 100 && b >= 64 && b <= 127) {return true;} // 100.64.0.0/10 — CGNAT
+	if (a === 192 && b === 0) {return true;} // 192.0.0.0/24 + 192.0.2.0/24
+	if (a === 198 && (b === 18 || b === 19)) {return true;} // 198.18.0.0/15 — benchmarks
 	return false;
 }
 
@@ -48,7 +48,7 @@ function isPrivateIpv6(host: string): boolean {
 	const mappedDotted = h.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
 	if (mappedDotted) {
 		const octets = parseIpv4(mappedDotted[1]);
-		if (octets !== null && isPrivateIpv4(octets)) return true;
+		if (octets !== null && isPrivateIpv4(octets)) {return true;}
 	}
 
 	// IPv4-mapped, canonical hex form: ::ffff:XXXX:XXXX (two 16-bit groups).
@@ -62,13 +62,13 @@ function isPrivateIpv6(host: string): boolean {
 		}
 	}
 
-	if (h === "::" || h === "::1") return true; // unspecified + loopback
+	if (h === "::" || h === "::1") {return true;} // unspecified + loopback
 	if (h.startsWith("fe8") || h.startsWith("fe9") || h.startsWith("fea") || h.startsWith("feb"))
-		return true; // fe80::/10 — link-local
-	if (h.startsWith("fc") || h.startsWith("fd")) return true; // fc00::/7 — unique local
-	if (h.startsWith("ff")) return true; // ff00::/8 — multicast
-	if (h.startsWith("100::")) return true; // 100::/64 — discard-only
-	if (h.startsWith("64:ff9b:")) return true; // NAT64 well-known prefix (local translation)
+		{return true;} // fe80::/10 — link-local
+	if (h.startsWith("fc") || h.startsWith("fd")) {return true;} // fc00::/7 — unique local
+	if (h.startsWith("ff")) {return true;} // ff00::/8 — multicast
+	if (h.startsWith("100::")) {return true;} // 100::/64 — discard-only
+	if (h.startsWith("64:ff9b:")) {return true;} // NAT64 well-known prefix (local translation)
 	return false;
 }
 
@@ -79,20 +79,20 @@ function isPrivateIpv6(host: string): boolean {
 export function isPrivateHost(host: string): boolean {
 	const lower = host.toLowerCase().replace(/^\[|\]$/g, "");
 
-	if (lower === "localhost" || lower === "localhost.localdomain") return true;
+	if (lower === "localhost" || lower === "localhost.localdomain") {return true;}
 
 	for (const blocked of BLOCKED_METADATA_HOSTS) {
-		if (lower === blocked || lower.endsWith(`.${blocked}`)) return true;
+		if (lower === blocked || lower.endsWith(`.${blocked}`)) {return true;}
 	}
 
 	for (const suffix of BLOCKED_HOST_SUFFIXES) {
-		if (lower.endsWith(suffix)) return true;
+		if (lower.endsWith(suffix)) {return true;}
 	}
 
 	const octets = parseIpv4(lower);
-	if (octets !== null) return isPrivateIpv4(octets);
+	if (octets !== null) {return isPrivateIpv4(octets);}
 
-	if (lower.includes(":")) return isPrivateIpv6(lower);
+	if (lower.includes(":")) {return isPrivateIpv6(lower);}
 
 	return false;
 }
@@ -150,7 +150,7 @@ export function validateUrl(url: string): UrlPolicyResult {
  */
 export function validateRedirect(from: string, to: string): UrlPolicyResult {
 	const destination = validateUrl(to);
-	if (!destination.ok) return destination;
+	if (!destination.ok) {return destination;}
 
 	let fromParsed: URL;
 	let toParsed: URL;

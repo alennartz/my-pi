@@ -35,7 +35,7 @@ const REGISTRY_KEY = Symbol.for("my-pi/subagents/session-tree-stores");
 function getRegistry(): StoreRegistry {
 	const globals = globalThis as Record<symbol, unknown>;
 	const existing = globals[REGISTRY_KEY];
-	if (existing instanceof WeakMap) return existing as StoreRegistry;
+	if (existing instanceof WeakMap) {return existing as StoreRegistry;}
 	const created: StoreRegistry = new WeakMap();
 	globals[REGISTRY_KEY] = created;
 	return created;
@@ -55,7 +55,7 @@ export function getSessionTreeStore(sessionManager: object): SessionTreeStore | 
 export function getOrCreateSessionTreeStore(sessionManager: object): SessionTreeStore {
 	const registry = getRegistry();
 	const existing = registry.get(sessionManager);
-	if (existing) return existing;
+	if (existing) {return existing;}
 	const created = createSessionTreeStore();
 	registry.set(sessionManager, created);
 	return created;
@@ -78,7 +78,7 @@ const ID_REGISTRY_KEY = Symbol.for("my-pi/subagents/session-id-tree-stores");
 function getIdRegistry(): IdRegistry {
 	const globals = globalThis as Record<symbol, unknown>;
 	const existing = globals[ID_REGISTRY_KEY];
-	if (existing instanceof Map) return existing as IdRegistry;
+	if (existing instanceof Map) {return existing as IdRegistry;}
 	const created: IdRegistry = new Map();
 	globals[ID_REGISTRY_KEY] = created;
 	return created;
@@ -97,13 +97,13 @@ export function registerSessionIdTreeStore(sessionId: string, store: SessionTree
 /** Remove one session-id association without destroying the shared store. */
 export function unregisterSessionIdTreeStore(sessionId: string, store?: SessionTreeStore): void {
 	const registry = getIdRegistry();
-	if (store !== undefined && registry.get(sessionId) !== store) return;
+	if (store !== undefined && registry.get(sessionId) !== store) {return;}
 	registry.delete(sessionId);
 }
 
 /** Remove one session-manager association without destroying the shared store. */
 export function unregisterSessionTreeStore(sessionManager: object, store?: SessionTreeStore): void {
 	const registry = getRegistry();
-	if (store !== undefined && registry.get(sessionManager) !== store) return;
+	if (store !== undefined && registry.get(sessionManager) !== store) {return;}
 	registry.delete(sessionManager);
 }

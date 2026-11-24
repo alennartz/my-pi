@@ -74,7 +74,7 @@ function rowFromCells(row: string[]): WorkspaceRow | string {
  */
 export function parseWorkspaceRows(content: string): WorkspaceRow[] | string | null {
 	const heading = /^## Workspace\s*$/m.exec(content);
-	if (!heading || heading.index === undefined) return null;
+	if (!heading || heading.index === undefined) {return null;}
 
 	const remainder = content.slice(heading.index + heading[0].length);
 	const nextHeading = remainder.match(/\n#{1,2}\s/);
@@ -89,7 +89,7 @@ export function parseWorkspaceRows(content: string): WorkspaceRow[] | string | n
 	const rows: WorkspaceRow[] = [];
 	for (const line of body) {
 		const row = rowFromCells(cells(line));
-		if (typeof row === "string") return row;
+		if (typeof row === "string") {return row;}
 		rows.push(row);
 	}
 
@@ -104,7 +104,7 @@ export function parseWorkspaceRows(content: string): WorkspaceRow[] | string | n
 
 function pathProblem(path: string): string | null {
 	try {
-		if (!statSync(path).isDirectory()) return `${path} is not a directory`;
+		if (!statSync(path).isDirectory()) {return `${path} is not a directory`;}
 	} catch {
 		return `${path} does not exist`;
 	}
@@ -116,14 +116,14 @@ function pathProblem(path: string): string | null {
  * workspace section.
  */
 export function checkWorkspaceRows(rows: WorkspaceRow[] | string | null): Result | null {
-	if (rows === null) return null;
+	if (rows === null) {return null;}
 	if (typeof rows === "string") {
 		return { passed: false, detail: `Workspace section is invalid: ${rows}.` };
 	}
 
 	for (const row of rows) {
 		const problem = pathProblem(row.path);
-		if (problem) return { passed: false, detail: `Workspace row "${row.repo}": ${problem}.` };
+		if (problem) {return { passed: false, detail: `Workspace row "${row.repo}": ${problem}.` };}
 	}
 	return { passed: true, detail: `${rows.length} workspace repositor${rows.length === 1 ? "y" : "ies"} declared.` };
 }
@@ -138,7 +138,7 @@ export function checkWorkspaceGit(rows: WorkspaceRow[], probe: GitProbe): Result
 			["test-base", row.testBase],
 			["impl-base", row.implBase],
 		] as const) {
-			if (!base) continue;
+			if (!base) {continue;}
 			if (!probe.isCommit(row.path, base)) {
 				return {
 					passed: false,

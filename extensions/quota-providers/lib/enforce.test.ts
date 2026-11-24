@@ -29,7 +29,7 @@ describe("decideBlock", () => {
       bypassActive: false,
     });
     expect(result.blocked).toBe(true);
-    if (result.blocked) expect(result.kind).toBe("soft");
+    if (result.blocked) {expect(result.kind).toBe("soft");}
   });
 
   it("soft-exceeded, bypass active → not blocked", () => {
@@ -48,7 +48,7 @@ describe("decideBlock", () => {
       bypassActive: false,
     });
     expect(result.blocked).toBe(true);
-    if (result.blocked) expect(result.kind).toBe("hard");
+    if (result.blocked) {expect(result.kind).toBe("hard");}
   });
 
   it("hard-exceeded, enforceHardCap true, bypass active → still blocked", () => {
@@ -58,7 +58,7 @@ describe("decideBlock", () => {
       bypassActive: true,
     });
     expect(result.blocked).toBe(true);
-    if (result.blocked) expect(result.kind).toBe("hard");
+    if (result.blocked) {expect(result.kind).toBe("hard");}
   });
 
   it("hard-exceeded, enforceHardCap false → not blocked", () => {

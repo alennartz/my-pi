@@ -53,7 +53,7 @@ const mockCheckedPhases = new Set([
 
 function interactionMockPaths(content: string, topic: string): string[] | string | null {
 	const heading = /^### Interaction Mocks\s*$/m.exec(content);
-	if (!heading || heading.index === undefined) return null;
+	if (!heading || heading.index === undefined) {return null;}
 
 	const sectionStart = heading.index + heading[0].length;
 	const remainder = content.slice(sectionStart);
@@ -96,10 +96,10 @@ function interactionMockPaths(content: string, topic: string): string[] | string
 }
 
 function checkInteractionMocks(planPath: string, topic: string, cwd: string): Result | null {
-	if (!existsSync(planPath)) return null;
+	if (!existsSync(planPath)) {return null;}
 
 	const parsed = interactionMockPaths(readFileSync(planPath, "utf-8"), topic);
-	if (parsed === null) return null;
+	if (parsed === null) {return null;}
 	if (typeof parsed === "string") {
 		return {
 			passed: false,
@@ -139,16 +139,16 @@ export function checkTransitionArtifact(
 	if (checkedPhases.has(phase) && existsSync(planPath)) {
 		const rows = parseWorkspaceRows(readFileSync(planPath, "utf-8"));
 		const shapeCheck = checkWorkspaceRows(rows);
-		if (shapeCheck && !shapeCheck.passed) return shapeCheck;
+		if (shapeCheck && !shapeCheck.passed) {return shapeCheck;}
 		if (rows !== null && typeof rows !== "string") {
 			const gitCheck = checkWorkspaceGit(rows, probe);
-			if (!gitCheck.passed) return gitCheck;
+			if (!gitCheck.passed) {return gitCheck;}
 		}
 	}
 
 	if (mockCheckedPhases.has(phase)) {
 		const mockCheck = checkInteractionMocks(planPath, topic, cwd);
-		if (mockCheck) return mockCheck;
+		if (mockCheck) {return mockCheck;}
 	}
 
 	switch (phase) {
@@ -255,11 +255,11 @@ export function checkTransitionArtifact(
 
 		case "cleanup": {
 			const remaining: string[] = [];
-			if (existsSync(planPath)) remaining.push(`docs/plans/${topic}.md`);
-			if (existsSync(reviewPath)) remaining.push(`docs/reviews/${topic}.md`);
-			if (existsSync(testReviewPath)) remaining.push(`docs/reviews/${topic}-tests.md`);
-			if (existsSync(manualTestPath)) remaining.push(`docs/manual-tests/${topic}.md`);
-			if (existsSync(join(cwd, "docs/mocks", topic))) remaining.push(`docs/mocks/${topic}/`);
+			if (existsSync(planPath)) {remaining.push(`docs/plans/${topic}.md`);}
+			if (existsSync(reviewPath)) {remaining.push(`docs/reviews/${topic}.md`);}
+			if (existsSync(testReviewPath)) {remaining.push(`docs/reviews/${topic}-tests.md`);}
+			if (existsSync(manualTestPath)) {remaining.push(`docs/manual-tests/${topic}.md`);}
+			if (existsSync(join(cwd, "docs/mocks", topic))) {remaining.push(`docs/mocks/${topic}/`);}
 			if (remaining.length === 0) {
 				return { passed: true, detail: `All working artifacts have been cleaned up.` };
 			}

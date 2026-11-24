@@ -86,7 +86,7 @@ describe("MessageRouter blocking correlations", () => {
 		const parent = router.connect("parent");
 		const worker = router.connect("worker");
 		worker.subscribe((message) => {
-			if (message.correlationId) void worker.respond(message.correlationId, "done");
+			if (message.correlationId) {void worker.respond(message.correlationId, "done");}
 		});
 
 		const receipt = await parent.send({

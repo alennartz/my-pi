@@ -122,7 +122,7 @@ function registryFixture(workerSessionFile?: string): {
   const nodes: AgentRegistryNode[] = [worker, scout];
   const listeners = new Set<(event: RegistryEvent) => void>();
   const emit = (event: RegistryEvent) => {
-    for (const listener of listeners) listener(event);
+    for (const listener of listeners) {listener(event);}
   };
   const registry = {
     get: vi.fn((path: AgentPath) =>
@@ -156,7 +156,7 @@ function registryFixture(workerSessionFile?: string): {
   const ownerControl: SubagentOwnerControlPort = {
     teardown: vi.fn(async (path, incarnation) => {
       const current = nodes.find((item) => samePath(item.snapshot.path, path));
-      if (!current) return { path, removed: false, incarnation, reason: "not_found" as const };
+      if (!current) {return { path, removed: false, incarnation, reason: "not_found" as const };}
       await registry.remove(path);
       return { path, removed: true, incarnation, sessionId: current.snapshot.sessionId, reason: "removed" as const };
     }),
@@ -266,7 +266,7 @@ describe("SubagentProvider snapshot and replay", () => {
       eventId: "async-completion", path: scoutPath, kind: "completion", relatedPiEvents: [],
       data: { delivery: "asynchronous", status: "errored", error: "child unavailable" },
     };
-    for (const listener of listeners) listener(fact);
+    for (const listener of listeners) {listener(fact);}
     expect(provider.replay(boundary)).toMatchObject({ kind: "events", events: [] });
   });
 
@@ -280,11 +280,11 @@ describe("SubagentProvider snapshot and replay", () => {
       eventId: "positioned-completion", path: scoutPath, kind: "completion", relatedPiEvents: [],
       data: { delivery: "asynchronous", status: "idle", output: "answer" },
     };
-    for (const listener of listeners) listener(fact);
+    for (const listener of listeners) {listener(fact);}
     fixture.emit({ type: "node_updated", previous: fixture.worker.snapshot, node: { ...fixture.worker.snapshot, sessionId: "worker-v2" } });
     const replay = provider.replay(boundary);
     expect(replay.kind).toBe("events");
-    if (replay.kind !== "events") return;
+    if (replay.kind !== "events") {return;}
     expect(replay.events).toHaveLength(1);
     expect(replay.events[0]).toMatchObject({ kind: "node_updated", data: { sessionId: "worker-v2" } });
     expect(replay.events.find((event) => (event as any).eventId === fact.eventId)).toBeUndefined();
@@ -359,7 +359,7 @@ describe("SubagentProvider snapshot and replay", () => {
   it("requires a fresh snapshot when the requested history is no longer retained", () => {
     const { provider, fixture } = setup({ historyLimit: 2 });
     const boundary = provider.snapshot().cursor;
-    for (const id of ["worker-v2", "worker-v3", "worker-v4"]) fixture.replace(workerPath, id);
+    for (const id of ["worker-v2", "worker-v3", "worker-v4"]) {fixture.replace(workerPath, id);}
     const replay = provider.replay(boundary);
 
     expect(replay).toEqual({
@@ -433,7 +433,7 @@ describe("SubagentProvider path identity and leases", () => {
     const lease = await provider.acquire(scoutPath);
     let resolveRebound!: (event: SubagentLeaseEvent) => void;
     const rebound = new Promise<SubagentLeaseEvent>((resolve) => { resolveRebound = resolve; });
-    const unsubscribe = lease.subscribe((event) => { if (event.kind === "rebound") resolveRebound(event); });
+    const unsubscribe = lease.subscribe((event) => { if (event.kind === "rebound") {resolveRebound(event);} });
     const replacement = fixture.replace(scoutPath, "session-scout-v2");
 
     expect(await rebound).toEqual({ kind: "rebound", session: replacement.session.session });
@@ -447,7 +447,7 @@ describe("SubagentProvider path identity and leases", () => {
     const lease = await provider.acquire(scoutPath);
     let resolveClosed!: (event: SubagentLeaseEvent) => void;
     const closed = new Promise<SubagentLeaseEvent>((resolve) => { resolveClosed = resolve; });
-    lease.subscribe((event) => { if (event.kind === "closed") resolveClosed(event); });
+    lease.subscribe((event) => { if (event.kind === "closed") {resolveClosed(event);} });
     await provider.teardown(scoutPath, scoutIncarnation);
     const replacement = node(scoutPath, "session-scout-new", workerPath, "New task");
     fixture.add(replacement);
@@ -465,7 +465,7 @@ describe("SubagentProvider path identity and leases", () => {
     const lease = await provider.acquire(scoutPath);
     let resolveClosed!: (event: SubagentLeaseEvent) => void;
     const closed = new Promise<SubagentLeaseEvent>((resolve) => { resolveClosed = resolve; });
-    lease.subscribe((event) => { if (event.kind === "closed") resolveClosed(event); });
+    lease.subscribe((event) => { if (event.kind === "closed") {resolveClosed(event);} });
     fixture.unavailable(scoutPath);
 
     expect(await closed).toEqual({ kind: "closed", reason: "unavailable" });

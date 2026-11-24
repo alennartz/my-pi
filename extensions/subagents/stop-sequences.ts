@@ -24,12 +24,12 @@ export function createStopSequenceManager(pi: ExtensionAPI): StopSequenceManager
 	let oneShot: string[] = [];
 
 	pi.on("before_provider_request", (event, ctx) => {
-		if (persistent.size === 0 && oneShot.length === 0) return;
+		if (persistent.size === 0 && oneShot.length === 0) {return;}
 
 		// Drain one-shots only once we know we can apply them — if there's no
 		// model on this request, they must survive for the next one.
 		const model = ctx.model;
-		if (!model) return;
+		if (!model) {return;}
 
 		const sequences = [...persistent, ...oneShot];
 		oneShot = [];
@@ -39,10 +39,10 @@ export function createStopSequenceManager(pi: ExtensionAPI): StopSequenceManager
 
 	return {
 		add(...sequences) {
-			for (const s of sequences) persistent.add(s);
+			for (const s of sequences) {persistent.add(s);}
 		},
 		remove(...sequences) {
-			for (const s of sequences) persistent.delete(s);
+			for (const s of sequences) {persistent.delete(s);}
 		},
 		addOnce(...sequences) {
 			oneShot.push(...sequences);
@@ -116,8 +116,8 @@ function appendStopInstruction(existing: string | null | undefined, sequences: s
 }
 
 function mergeUnique(existing: string[] | undefined, additions: string[]): string[] {
-	if (!existing || existing.length === 0) return additions;
+	if (!existing || existing.length === 0) {return additions;}
 	const set = new Set(existing);
-	for (const s of additions) set.add(s);
+	for (const s of additions) {set.add(s);}
 	return [...set];
 }

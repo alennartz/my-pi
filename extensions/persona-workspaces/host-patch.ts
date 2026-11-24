@@ -92,7 +92,7 @@ function occurrenceCount(source: string, snippet: string): number {
 	let from = 0;
 	while (true) {
 		const index = source.indexOf(snippet, from);
-		if (index === -1) return count;
+		if (index === -1) {return count;}
 		count += 1;
 		from = index + snippet.length;
 	}
@@ -155,7 +155,7 @@ export function patchPreambleOverrideBundleSource(source: string): SourcePatchOu
 	}
 	const body = source.slice(start, end);
 	const outcome = applyExactTouches(body, BUNDLE_TOUCHES);
-	if (outcome.kind !== "patched") return outcome;
+	if (outcome.kind !== "patched") {return outcome;}
 	return {
 		kind: "patched",
 		source: source.slice(0, start) + outcome.source + source.slice(end),
@@ -191,9 +191,9 @@ function patchTargets(piPackageDir: string): PatchTarget[] {
 	for (const directory of bundleDirs) {
 		try {
 			for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-				if (!entry.isFile() || !entry.name.endsWith(".js")) continue;
+				if (!entry.isFile() || !entry.name.endsWith(".js")) {continue;}
 				const target = path.join(directory, entry.name);
-				if (seen.has(target)) continue;
+				if (seen.has(target)) {continue;}
 				seen.add(target);
 				targets.push({ path: target, patch: patchPreambleOverrideBundleSource, bundle: true });
 			}
@@ -240,7 +240,7 @@ export function ensurePreamblePatch(piPackageDir: string): PreamblePatchStatus {
 		try {
 			source = fs.readFileSync(target.path, "utf8");
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") {continue;}
 			return { kind: "failed", reason: `could not read ${target.path}: ${errorMessage(error)}` };
 		}
 		if (target.bundle && !isBundledPromptSource(source)) {
@@ -267,10 +267,10 @@ export function ensurePreamblePatch(piPackageDir: string): PreamblePatchStatus {
 		(target): target is PreparedPatch & { outcome: { kind: "patched"; source: string } } =>
 			target.outcome.kind === "patched",
 	);
-	if (changed.length === 0) return { kind: "already-patched" };
+	if (changed.length === 0) {return { kind: "already-patched" };}
 	for (const [index, target] of changed.entries()) {
 		const failure = writeAtomically(target.path, target.outcome.source, index);
-		if (failure) return { kind: "failed", reason: failure };
+		if (failure) {return { kind: "failed", reason: failure };}
 	}
 	return { kind: "patched" };
 }

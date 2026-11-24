@@ -113,7 +113,7 @@ async function createQuotaSession(registry: ModelRegistry, id: string, dir: stri
 	await events.get("session_start")?.({}, ctx);
 	let active = true;
 	const shutdown = async () => {
-		if (!active) return;
+		if (!active) {return;}
 		active = false;
 		await events.get("session_shutdown")?.({}, ctx);
 	};
@@ -126,9 +126,9 @@ async function settleRuntime(runtime: ModelRuntime): Promise<void> {
 }
 
 afterEach(async () => {
-	for (const cleanup of cleanups.splice(0)) await cleanup();
+	for (const cleanup of cleanups.splice(0)) {await cleanup();}
 	vi.unstubAllEnvs();
-	for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	for (const dir of tempDirs.splice(0)) {rmSync(dir, { recursive: true, force: true });}
 });
 
 describe("quota provider lifecycle on a shared runtime", () => {

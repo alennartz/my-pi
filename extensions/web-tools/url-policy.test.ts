@@ -26,7 +26,7 @@ describe("validateUrl", () => {
 	it("rejects credentials in the URL", () => {
 		const r = validateUrl("https://user:pass@example.com/");
 		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.code).toBe("blocked-url");
+		if (!r.ok) {expect(r.code).toBe("blocked-url");}
 	});
 
 	it("rejects localhost by name and by IP", () => {
@@ -109,7 +109,7 @@ describe("validateRedirect", () => {
 	it("blocks TLS downgrade redirects", () => {
 		const r = validateRedirect("https://a.example/x", "http://a.example/y");
 		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.message).toContain("downgrade");
+		if (!r.ok) {expect(r.message).toContain("downgrade");}
 	});
 
 	it("allows http to https upgrades", () => {

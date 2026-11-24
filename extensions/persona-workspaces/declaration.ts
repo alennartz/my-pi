@@ -68,9 +68,9 @@ export function parsePersonaDeclaration(
 	sourcePath: string,
 ): PersonaDeclaration | undefined {
 	const { frontmatter, body } = parseScalarFrontmatter(content);
-	if (frontmatter.kind !== "persona") return undefined;
+	if (frontmatter.kind !== "persona") {return undefined;}
 	const name = nonBlankString(frontmatter.name);
-	if (name === undefined) return undefined;
+	if (name === undefined) {return undefined;}
 	const icon = nonBlankString(frontmatter.icon);
 	const description = nonBlankString(frontmatter.description);
 	const model = nonBlankString(frontmatter.model);
@@ -101,9 +101,9 @@ function parseScalarFrontmatter(content: string): {
 	body: string;
 } {
 	const normalized = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-	if (!normalized.startsWith("---")) return { frontmatter: {}, body: normalized };
+	if (!normalized.startsWith("---")) {return { frontmatter: {}, body: normalized };}
 	const endIndex = normalized.indexOf("\n---", 3);
-	if (endIndex === -1) return { frontmatter: {}, body: normalized };
+	if (endIndex === -1) {return { frontmatter: {}, body: normalized };}
 	return {
 		frontmatter: parseFlatScalars(normalized.slice(4, endIndex)),
 		body: normalized.slice(endIndex + 4).trim(),
@@ -115,11 +115,11 @@ function parseFlatScalars(yamlString: string): Record<string, unknown> {
 	const frontmatter: Record<string, unknown> = {};
 	for (const rawLine of yamlString.split("\n")) {
 		const trimmed = rawLine.trim();
-		if (trimmed === "" || trimmed.startsWith("#") || /^\s/.test(rawLine)) continue;
+		if (trimmed === "" || trimmed.startsWith("#") || /^\s/.test(rawLine)) {continue;}
 		const colon = trimmed.indexOf(":");
-		if (colon === -1) continue;
+		if (colon === -1) {continue;}
 		const key = trimmed.slice(0, colon).trim();
-		if (key === "") continue;
+		if (key === "") {continue;}
 		frontmatter[key] = parseScalarValue(trimmed.slice(colon + 1));
 	}
 	return frontmatter;
@@ -132,7 +132,7 @@ function parseFlatScalars(yamlString: string): Record<string, unknown> {
  */
 function parseScalarValue(raw: string): string | undefined {
 	const value = raw.trim();
-	if (value === "") return undefined;
+	if (value === "") {return undefined;}
 	const first = value[0];
 	if ((first === '"' || first === "'") && value.length >= 2 && value.endsWith(first)) {
 		return value.slice(1, -1);
@@ -142,13 +142,13 @@ function parseScalarValue(raw: string): string | undefined {
 
 /** The value of a front-matter field when it is a non-blank string, else absent. */
 function nonBlankString(value: unknown): string | undefined {
-	if (typeof value !== "string" || value.trim() === "") return undefined;
+	if (typeof value !== "string" || value.trim() === "") {return undefined;}
 	return value;
 }
 
 /** Split a front-matter list field (`"read, bash"`) into trimmed, non-empty items. */
 function parseCommaSeparatedList(value: unknown): string[] | undefined {
-	if (typeof value !== "string") return undefined;
+	if (typeof value !== "string") {return undefined;}
 	const items = value
 		.split(",")
 		.map((item) => item.trim())

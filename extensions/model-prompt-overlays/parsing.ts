@@ -51,7 +51,7 @@ export function loadOverlayFiles(dir: string): {
 			continue;
 		}
 		// A file without front matter is not an overlay; ignore it silently.
-		if (Object.keys(frontmatter).length === 0) continue;
+		if (Object.keys(frontmatter).length === 0) {continue;}
 
 		const rawModels = frontmatter.models;
 

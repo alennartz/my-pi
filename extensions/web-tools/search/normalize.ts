@@ -30,7 +30,7 @@ export function dedupeResults(results: SearchResult[]): SearchResult[] {
 	const out: SearchResult[] = [];
 	for (const r of results) {
 		const key = canonicalUrlKey(r.url);
-		if (seen.has(key)) continue;
+		if (seen.has(key)) {continue;}
 		seen.add(key);
 		out.push(r);
 	}
@@ -45,8 +45,8 @@ export function renderSearchCards(response: SearchResponse): string {
 	return response.results
 		.map((r, i) => {
 			const lines = [`${i + 1}. ${r.title}`, `   ${r.url}`];
-			if (r.age) lines.push(`   Age: ${r.age}`);
-			if (r.snippet) lines.push(`   ${r.snippet}`);
+			if (r.age) {lines.push(`   Age: ${r.age}`);}
+			if (r.snippet) {lines.push(`   ${r.snippet}`);}
 			return lines.join("\n");
 		})
 		.join("\n\n");
@@ -68,7 +68,7 @@ export function applyDomainFilters(
 		} catch {
 			return false;
 		}
-		if (exclude?.some((d) => host === d || host.endsWith(`.${d}`))) return false;
+		if (exclude?.some((d) => host === d || host.endsWith(`.${d}`))) {return false;}
 		if (include && include.length > 0) {
 			return include.some((d) => host === d || host.endsWith(`.${d}`));
 		}

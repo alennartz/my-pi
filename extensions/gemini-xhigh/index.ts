@@ -32,8 +32,8 @@ export function applyXhighThinkingLevel(
 	api: string,
 	thinkingLevel: string | undefined,
 ): unknown {
-	if (thinkingLevel !== "xhigh" || !GOOGLE_APIS.has(api)) return payload;
-	if (!payload || typeof payload !== "object") return payload;
+	if (thinkingLevel !== "xhigh" || !GOOGLE_APIS.has(api)) {return payload;}
+	if (!payload || typeof payload !== "object") {return payload;}
 
 	const request = payload as { config?: ThinkingConfigOwner; generationConfig?: ThinkingConfigOwner } & ThinkingConfigOwner;
 	let changed = false;
@@ -50,7 +50,7 @@ export function applyXhighThinkingLevel(
 export default function (pi: ExtensionAPI) {
 	pi.on("before_provider_request", (event, ctx) => {
 		const model = ctx.model;
-		if (!model) return;
+		if (!model) {return;}
 		return applyXhighThinkingLevel(event.payload, model.api, ctx.thinkingLevel);
 	});
 }

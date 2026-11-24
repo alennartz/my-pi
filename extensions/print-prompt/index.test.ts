@@ -67,7 +67,7 @@ function setup() {
 	};
 	printPrompt(pi as any);
 	const command = pi.registerCommand.mock.calls[0]?.[1];
-	if (!command) throw new Error("/sysprompt command was not registered");
+	if (!command) {throw new Error("/sysprompt command was not registered");}
 	return { handlers, pi, command };
 }
 
@@ -86,7 +86,7 @@ describe("/sysprompt", () => {
 		const { command, handlers, pi } = setup();
 		const renderedPrompt = "base prompt\n\n## Available Agent Definitions\n- scout";
 		const agentStart = handlers.get("agent_start")?.[0];
-		if (!agentStart) throw new Error("agent_start snapshot handler was not registered");
+		if (!agentStart) {throw new Error("agent_start snapshot handler was not registered");}
 
 		await agentStart({}, {
 			getSystemPrompt: () => renderedPrompt,

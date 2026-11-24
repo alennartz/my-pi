@@ -59,7 +59,7 @@ describe("parseAutoflowConfig", () => {
 describe("loadAutoflowConfig", () => {
 	function agentDirWith(contents?: string): string {
 		const dir = mkdtempSync(join(tmpdir(), "autoflow-config-"));
-		if (contents !== undefined) writeFileSync(join(dir, CONFIG_FILE_NAME), contents);
+		if (contents !== undefined) {writeFileSync(join(dir, CONFIG_FILE_NAME), contents);}
 		return dir;
 	}
 

@@ -22,7 +22,7 @@ export function discoverContextRoots(cwd: string, agentDir: string, includeAnces
 	const seen = new Set<string>();
 
 	const addRoot = (dir: string) => {
-		if (seen.has(dir)) return;
+		if (seen.has(dir)) {return;}
 		seen.add(dir);
 		roots.push(dir);
 	};
@@ -30,7 +30,7 @@ export function discoverContextRoots(cwd: string, agentDir: string, includeAnces
 	// 1. Global agent dir always comes first (not project-local, always trusted).
 	addRoot(resolve(agentDir));
 
-	if (!includeAncestors) return roots;
+	if (!includeAncestors) {return roots;}
 
 	// 2. Ancestor walk: filesystem root → cwd (farthest first).
 	const ancestors: string[] = [];
@@ -39,9 +39,9 @@ export function discoverContextRoots(cwd: string, agentDir: string, includeAnces
 
 	while (true) {
 		ancestors.unshift(currentDir);
-		if (currentDir === fsRoot) break;
+		if (currentDir === fsRoot) {break;}
 		const parent = resolve(currentDir, "..");
-		if (parent === currentDir) break;
+		if (parent === currentDir) {break;}
 		currentDir = parent;
 	}
 

@@ -24,7 +24,7 @@ export const POLICY_DEFAULTS: QuotaPolicy = {
 /** Resolve the pi agent directory used by quota configuration and caches. */
 export function resolveAgentDir(): string {
 	const env = process.env.PI_CODING_AGENT_DIR;
-	if (env) return env.startsWith("~/") ? join(homedir(), env.slice(2)) : env;
+	if (env) {return env.startsWith("~/") ? join(homedir(), env.slice(2)) : env;}
 	return join(homedir(), ".pi", "agent");
 }
 
