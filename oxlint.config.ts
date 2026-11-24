@@ -33,6 +33,7 @@ export default defineConfig({
     'quality/no-conditional-empty-object-spread': 'off',
     // Double assertions escape the unsafe-assertion rule for doubles.
     'quality/no-chained-type-assertions': 'off',
+    // Explicit return types document each helper's contract.
     'quality/no-known-value-widening': 'off',
     'quality/no-object-parameters': 'off',
     'quality/no-unsafe-dictionary-type': 'off',
