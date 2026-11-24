@@ -168,12 +168,12 @@ class AskUserComponent implements Component, Focusable {
 		const t = this.theme;
 		const lines: string[] = [];
 
-		// Top border
-		lines.push(t.fg("accent", "─".repeat(width)));
-
-		// Title (wrapped)
-		lines.push(...wrapWithIndent(" ", t.fg("accent", t.bold(this.title)), width, 1));
-		lines.push(""); // blank line after title
+		// Top border, wrapped title, then a blank line.
+		lines.push(
+			t.fg("accent", "─".repeat(width)),
+			...wrapWithIndent(" ", t.fg("accent", t.bold(this.title)), width, 1),
+			"",
+		);
 
 		// Options (wrapped)
 		const prefixWidth = 7; // "  > N. " or "    N. " — always 7 visible columns

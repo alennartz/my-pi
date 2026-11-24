@@ -55,8 +55,6 @@ export default defineConfig({
     'typescript/no-unsafe-type-assertion': 'off',
     // Helpers stay beside their single call site.
     'unicorn/consistent-function-scoping': 'off',
-    // One push per prompt line keeps the XML shape readable.
-    'unicorn/prefer-single-call': 'off',
     // Harness scripts export helpers and run main under an entry guard.
     'unicorn/prefer-top-level-await': 'off',
   },

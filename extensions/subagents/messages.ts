@@ -105,8 +105,7 @@ export function serializeAgentResurrected(data: AgentLifecycleNoticeData): strin
 	const lines: string[] = [`<agent_resurrected id="${data.id}"${sessionAttr}>`];
 	if (data.task) {lines.push(`  <task>${data.task}</task>`);}
 	if (data.model) {lines.push(`  <model>${data.model}</model>`);}
-	lines.push(`  <hint>The user restored this agent from its saved session. It is live again and working on its task.</hint>`);
-	lines.push("</agent_resurrected>");
+	lines.push(`  <hint>The user restored this agent from its saved session. It is live again and working on its task.</hint>`, "</agent_resurrected>");
 	return lines.join("\n");
 }
 
@@ -141,8 +140,7 @@ function serializeGroupReport(data: ActiveAgentsCompleteData, opts: { elementNam
 	if (anySessionId) {
 		lines.push(`  <hint>${RESURRECT_HINT_GROUP}</hint>`);
 	}
-	lines.push(`  <usage input="${data.usage.input}" output="${data.usage.output}" cost="${data.usage.cost}" />`);
-	lines.push(`</${opts.elementName}>`);
+	lines.push(`  <usage input="${data.usage.input}" output="${data.usage.output}" cost="${data.usage.cost}" />`, `</${opts.elementName}>`);
 	return lines.join("\n");
 }
 
@@ -162,9 +160,7 @@ export function serializeGroupComplete(data: ActiveAgentsCompleteData): string {
 
 export function serializeSubagentIdentity(data: SubagentIdentityData): string {
 	const lines: string[] = ["<subagent_identity>"];
-	lines.push(`  <id>${data.id}</id>`);
-	lines.push("");
-	lines.push("  <peers>");
+	lines.push(`  <id>${data.id}</id>`, "", "  <peers>");
 	for (const peer of data.peers) {
 		const attrs: string[] = [`id="${peer.id}"`];
 		if (peer.isDefault) {attrs.push(`default="true"`);}
@@ -174,25 +170,27 @@ export function serializeSubagentIdentity(data: SubagentIdentityData): string {
 			lines.push(`    <peer ${attrs.join(" ")} />`);
 		}
 	}
-	lines.push("  </peers>");
-	lines.push("");
-	lines.push("  <protocol>");
-	lines.push("    When you receive a message from another agent, it appears as:");
-	lines.push('    <agent_message from="sender" correlation_id="abc-123" response_expected="true">');
-	lines.push("    message content");
-	lines.push("    </agent_message>");
-	lines.push("");
-	lines.push('    If response_expected="true", you MUST call the respond tool with that correlation_id.');
-	lines.push('    If response_expected="false", the message is informational — no response needed.');
-	lines.push("");
-	lines.push("    Completion: your final output (last message before going idle) is automatically");
-	lines.push("    delivered to parent via <agent_idle>. Do not use send as a completion or");
-	lines.push("    reporting channel, and never send a completed-task summary to parent just to");
-	lines.push("    report results. Put the complete result in your final output and stop; do not");
-	lines.push("    duplicate it in a send message. Use send only for mid-task clarification or");
-	lines.push("    coordination. Peer-to-peer communication still goes through send as needed.");
-	lines.push("  </protocol>");
-	lines.push("</subagent_identity>");
+	lines.push(
+		"  </peers>",
+		"",
+		"  <protocol>",
+		"    When you receive a message from another agent, it appears as:",
+		'    <agent_message from="sender" correlation_id="abc-123" response_expected="true">',
+		"    message content",
+		"    </agent_message>",
+		"",
+		'    If response_expected="true", you MUST call the respond tool with that correlation_id.',
+		'    If response_expected="false", the message is informational — no response needed.',
+		"",
+		"    Completion: your final output (last message before going idle) is automatically",
+		"    delivered to parent via <agent_idle>. Do not use send as a completion or",
+		"    reporting channel, and never send a completed-task summary to parent just to",
+		"    report results. Put the complete result in your final output and stop; do not",
+		"    duplicate it in a send message. Use send only for mid-task clarification or",
+		"    coordination. Peer-to-peer communication still goes through send as needed.",
+		"  </protocol>",
+		"</subagent_identity>",
+	);
 	return lines.join("\n");
 }
 
