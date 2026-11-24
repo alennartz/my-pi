@@ -31,9 +31,10 @@ export default defineConfig({
     'no-empty': ['error', { allowEmptyCatch: true }],
     // Iterator helpers need ES2025 types; filter/map chains stay.
     'quality/no-array-filter-map': 'off',
-    'quality/no-chained-type-assertions': 'off',
     // Conditional spreads mark optional properties under exactOptionalPropertyTypes.
     'quality/no-conditional-empty-object-spread': 'off',
+    // Double assertions escape the unsafe-assertion rule for doubles.
+    'quality/no-chained-type-assertions': 'off',
     'quality/no-known-value-widening': 'off',
     'quality/no-object-parameters': 'off',
     'quality/no-unsafe-dictionary-type': 'off',
