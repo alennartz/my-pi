@@ -5,13 +5,12 @@ import {
 	mkdtempSync,
 	writeFileSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-const directory = dirname(fileURLToPath(import.meta.url));
+const directory = import.meta.dirname;
 const RUNNER_PATH = join(directory, "runner.mjs");
 const SOURCE_PATH = join(directory, "test", "fake-impl.ts");
 

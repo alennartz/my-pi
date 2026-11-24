@@ -1,13 +1,12 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { InMemoryModelsStore } from "@earendil-works/pi-ai";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import quotaExtension from "./index.js";
 
-const quotaSource = join(dirname(fileURLToPath(import.meta.url)), "test/fake-quota-source.ts");
+const quotaSource = join(import.meta.dirname, "test/fake-quota-source.ts");
 const tempDirs: string[] = [];
 const cleanups: (() => Promise<void>)[] = [];
 

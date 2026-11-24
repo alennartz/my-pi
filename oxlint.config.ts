@@ -54,7 +54,6 @@ export default defineConfig({
     'unicorn/catch-error-name': 'off',
     'unicorn/consistent-function-scoping': 'off',
     'unicorn/no-useless-spread': 'off',
-    'unicorn/prefer-import-meta-properties': 'off',
     'unicorn/prefer-single-call': 'off',
     'unicorn/prefer-string-raw': 'off',
     // Harness scripts export helpers and run main under an entry guard.

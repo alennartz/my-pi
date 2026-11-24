@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 
-const myPiRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const myPiRoot = resolve(import.meta.dirname, '..');
 const sdkRoot = resolve(myPiRoot, '../pimote/packages/sdk');
 
 if (!existsSync(resolve(sdkRoot, 'package.json'))) {

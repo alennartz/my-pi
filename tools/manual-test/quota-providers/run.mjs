@@ -12,9 +12,9 @@ import { StringDecoder } from "node:string_decoder";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 const REPO_ROOT = path.resolve(HERE, "..", "..", "..");
 const PI_AI_INDEX = pathToFileURL(
 	path.join(REPO_ROOT, "node_modules", "@earendil-works", "pi-ai", "dist", "index.js"),
