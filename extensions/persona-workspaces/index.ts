@@ -478,7 +478,7 @@ async function bindDeclaredFrontMatter(
 	if (declaration.model) {await bindDeclaredModel(pi, ctx, declaration.model);}
 	if (declaration.tools) {
 		// Exactly the child-side normalization, shared semantics included.
-		pi.setActiveTools(resolveChildToolPolicy({ kind: "persona", tools: declaration.tools }).allowedTools);
+		pi.setActiveTools(resolveChildToolPolicy({ kind: "persona", tools: declaration.tools }).allowedTools ?? []);
 	}
 }
 

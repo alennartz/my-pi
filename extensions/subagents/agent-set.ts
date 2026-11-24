@@ -896,7 +896,7 @@ export class SubagentManager {
 				: { state: "running" as const, lastError: undefined };
 			const next = operationalWith(current, {
 				...lifecycle,
-				lastActivity: `${event.toolName}(${summarizeArgs(event.args)})`.replaceAll(/[\r\n]+/g, " "),
+				lastActivity: `${event.toolName}(${summarizeArgs(asRecord(event.args) ?? {})})`.replaceAll(/[\r\n]+/g, " "),
 				hasSubgroup: event.toolName === "subagent" || event.toolName === "fork"
 					? true
 					: event.toolName === "teardown"

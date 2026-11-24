@@ -52,6 +52,6 @@ export default function (pi: ExtensionAPI) {
 	pi.on("before_provider_request", (event, ctx) => {
 		const model = ctx.model;
 		if (!model) {return;}
-		return applyXhighThinkingLevel(event.payload, model.api, ctx.thinkingLevel);
+		return applyXhighThinkingLevel(event.payload, String(model.api), ctx.thinkingLevel);
 	});
 }

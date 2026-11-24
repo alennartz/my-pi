@@ -80,7 +80,8 @@ export function readEvents(logFile: string): AgentLifecycleEvent[] {
 		const trimmed = line.trim();
 		if (!trimmed) {continue;}
 		try {
-			events.push(JSON.parse(trimmed));
+			const parsed: unknown = JSON.parse(trimmed);
+			events.push(parsed as AgentLifecycleEvent);
 		} catch {
 			continue;
 		}

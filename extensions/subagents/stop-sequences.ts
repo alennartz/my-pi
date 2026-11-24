@@ -36,7 +36,7 @@ export function createStopSequenceManager(pi: ExtensionAPI): StopSequenceManager
 		const sequences = [...persistent, ...oneShot];
 		oneShot = [];
 
-		return applyStopSequences(required(asRecord(event.payload), "request payload"), model.api, sequences);
+		return applyStopSequences(required(asRecord(event.payload), "request payload"), String(model.api), sequences);
 	});
 
 	return {

@@ -2,7 +2,10 @@
   "name": "quota-providers",
   "version": "1.0.0",
   "description": "Generic quota-aware provider extension for pi",
+  "type": "module",
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

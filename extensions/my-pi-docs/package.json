@@ -1,0 +1,11 @@
+{
+  "name": "my-pi-docs",
+  "version": "0.1.0",
+  "description": "Surfaces the package's canonical extension configuration reference",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

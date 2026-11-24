@@ -5,6 +5,7 @@
  */
 
 import { Readability } from "@mozilla/readability";
+import type { TurndownNode } from "turndown";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
@@ -27,7 +28,7 @@ export function htmlToMarkdown(html: string): string {
 	const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
 	turndown.use(gfm);
 	turndown.addRule("removeEmptyLinks", {
-		filter: (node) => node.nodeName === "A" && !node.textContent?.trim(),
+		filter: (node: TurndownNode) => node.nodeName === "A" && !node.textContent?.trim(),
 		replacement: () => "",
 	});
 	return turndown

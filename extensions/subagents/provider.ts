@@ -687,7 +687,10 @@ function restoreAwaitResult(payload: PersistedSubagentContent, semantic: unknown
 	const result = payload.data.result;
 	if (!isRecord(result) || !Array.isArray(result.statuses)) {return payload;}
 	if (result.statuses.some((status) => !isRecord(status) || !validPath(status.path))) {return payload;}
-	const paths = new Set(result.statuses.map((status) => pathKey(status.path)));
+	const paths = new Set<string>();
+	for (const status of result.statuses) {
+		if (isRecord(status) && validPath(status.path)) {paths.add(pathKey(status.path));}
+	}
 	const restored: SubagentAwaitStatus[] = [];
 	const facts = Array.isArray(semantic) ? semantic : [semantic];
 	const authoritative = new Set<string>();

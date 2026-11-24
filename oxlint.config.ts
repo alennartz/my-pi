@@ -33,15 +33,13 @@ export default defineConfig({
     'quality/no-object-parameters': 'off',
     // Parsed payloads travel as dictionaries until a schema narrows them.
     'quality/no-unsafe-dictionary-type': 'off',
-    // Boundary parsers return unknown so callers must narrow.
-    'quality/no-unknown-returns': 'off',
-    'typescript/array-type': ['error', { default: 'array' }],
-    // Any values enter at untyped SDK boundaries.
-    'typescript/no-unsafe-argument': 'off',
     'typescript/no-unsafe-assignment': 'off',
     'typescript/no-unsafe-call': 'off',
     'typescript/no-unsafe-member-access': 'off',
     'typescript/no-unsafe-return': 'off',
     'typescript/no-unsafe-type-assertion': 'off',
+    // Boundary parsers return unknown so callers must narrow.
+    'quality/no-unknown-returns': 'off',
+    'typescript/array-type': ['error', { default: 'array' }],
   },
 });

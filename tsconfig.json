@@ -1,7 +1,7 @@
 {
 	"compilerOptions": {
 		"target": "esnext",
-		"lib": ["esnext"],
+		"lib": ["esnext", "dom"],
 		"module": "nodenext",
 		"moduleResolution": "nodenext",
 		"allowImportingTsExtensions": true,
@@ -10,6 +10,6 @@
 		"skipLibCheck": true,
 		"types": ["node"]
 	},
-	"include": ["extensions/subagents/**/*.ts", "lib/**/*.ts"],
+	"include": ["extensions/**/*.ts", "lib/**/*.ts", "types/**/*.d.ts"],
 	"exclude": ["**/*.test.ts"]
 }

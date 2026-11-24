@@ -199,7 +199,8 @@ export function wrapProviderWithQuota(
 			if (property === QUOTA_WRAPPER) {return wrapper[QUOTA_WRAPPER];}
 			if (property === "streamSimple") {return guardedStreamSimple;}
 
-			const value = (provider as Record<PropertyKey, unknown>)[property];
+			const entries = new Map(Object.entries(provider));
+			const value = entries.get(String(property));
 			return typeof value === "function" ? value.bind(provider) : value;
 		},
 	});

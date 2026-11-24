@@ -12,9 +12,10 @@ import { fileURLToPath } from "node:url";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
+	ModelRegistry,
 	ProviderConfig,
 } from "@earendil-works/pi-coding-agent";
-import type { Model, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Api, Model, ModelsRefreshOptions, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { loadQuotaAttachments } from "./lib/attachments.js";
 import { readBypass, writeBypass, resolveRequestStore } from "./lib/bypass.js";
 import { cachePaths, resolveAgentDir } from "./lib/config.js";
@@ -184,11 +185,10 @@ function spawnUsageRefresh(record: RecordWithRunner): void {
 // makes the detached poll operation explicit and avoids another mutable lookup.
 type RecordWithRunner = ProviderRecord & { runnerPath: string };
 
-type ProviderRegistry = {
-	getProvider(id: string): Provider | undefined;
+/** The registry surface the quota bridge reads. */
+type ProviderRegistry = ModelRegistry & {
 	getRegisteredNativeProvider?: (id: string) => Provider | undefined;
 	getRegisteredProviderConfig?: (id: string) => ProviderConfig | undefined;
-	refresh?: (options?: unknown) => Promise<unknown>;
 };
 
 type AttachedProvider = {
@@ -340,7 +340,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 				detachProvider(registry, providerId, state);
 				attachedProviders.delete(providerId);
 			}
-			attachProviders({ modelRegistry: registry });
+			attachProviders(registry);
 		};
 		const existing = hooks.get(registry);
 		if (existing) {
@@ -350,7 +350,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		const refresh = registry.refresh.bind(registry);
 		const hook = { afterRefresh, generation: 0 };
 		try {
-			registry.refresh = async (options?: unknown) => {
+			registry.refresh = async (options?: ModelsRefreshOptions) => {
 				const generation = ++hook.generation;
 				try {
 					return await refresh(options);
@@ -365,8 +365,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		}
 	}
 
-	function attachProviders(ctx: { modelRegistry: ProviderRegistry }): void {
-		const registry = ctx.modelRegistry;
+	function attachProviders(registry: ProviderRegistry): void {
 		const attachedProviders = stateStore(registry);
 		ensureRefreshHook(registry);
 		for (const record of providerRecords) {
@@ -375,7 +374,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 
 			let previous = attachedProviders.get(record.id);
 			let registeredNative = registry.getRegisteredNativeProvider?.(record.id);
-			const evaluate = (model: Model<unknown>, options?: SimpleStreamOptions) => {
+			const evaluate = (model: Model<Api>, options?: SimpleStreamOptions) => {
 				maybeRefreshUsage(record);
 				return evaluateProviderQuota(
 					record,
@@ -441,8 +440,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 		}
 	}
 
-	function restoreStaleProviders(ctx: { modelRegistry: ProviderRegistry }): void {
-		const registry = ctx.modelRegistry;
+	function restoreStaleProviders(registry: ProviderRegistry): void {
 		const attachedProviders = stateStore(registry);
 		const active = new Set(providerRecords.map((record) => record.id));
 		for (const [providerId, state] of attachedProviders) {
@@ -454,8 +452,8 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 
 	pi.on("session_start", (_event, ctx) => {
 		bindTreeStore(ctx, true);
-		restoreStaleProviders(ctx);
-		attachProviders(ctx);
+		restoreStaleProviders(ctx.modelRegistry);
+		attachProviders(ctx.modelRegistry);
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
 		if (record) {maybeRefreshUsage(record);}
 		refreshStatusline(record, ctx);
@@ -463,11 +461,11 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 
 	pi.on("agent_start", (_event, ctx) => {
 		bindTreeStore(ctx, false);
-		attachProviders(ctx);
+		attachProviders(ctx.modelRegistry);
 	});
 
 	pi.on("before_provider_request", (_event, ctx) => {
-		attachProviders(ctx);
+		attachProviders(ctx.modelRegistry);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
@@ -483,7 +481,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	});
 
 	pi.on("model_select", (event, ctx) => {
-		attachProviders(ctx);
+		attachProviders(ctx.modelRegistry);
 		const record = providerIdToRecord.get(event.model.provider ?? "");
 		if (record) {maybeRefreshUsage(record);}
 		refreshStatusline(record, ctx);
@@ -512,7 +510,7 @@ export default async function quotaProvidersExtension(pi: ExtensionAPI): Promise
 	});
 
 	pi.on("input", (_event, ctx) => {
-		attachProviders(ctx);
+		attachProviders(ctx.modelRegistry);
 		const record = providerIdToRecord.get(ctx.model?.provider ?? "");
 		if (!record) {return;}
 		maybeRefreshUsage(record);
