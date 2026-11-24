@@ -28,7 +28,7 @@ function listGitBranches(cwd: string): string[] {
 }
 
 function shellQuote(value: string): string {
-	return `'${value.replace(/'/g, `'"'"'`)}'`;
+	return `'${value.replaceAll('\'', `'"'"'`)}'`;
 }
 
 function runGit(args: string[], cwd: string): string {

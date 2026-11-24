@@ -28,7 +28,7 @@ function mockPi(initialName?: string) {
 		getSessionName: () => state.name,
 		setSessionName: (raw: string) => {
 			state.appends.push(raw);
-			state.name = raw.replace(/[\r\n]+/g, " ").trim() || undefined;
+			state.name = raw.replaceAll(/[\r\n]+/g, " ").trim() || undefined;
 		},
 	};
 	return { state, api };

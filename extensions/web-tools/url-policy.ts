@@ -42,7 +42,7 @@ function isPrivateIpv4(octets: number[]): boolean {
 }
 
 function isPrivateIpv6(host: string): boolean {
-	let h = host.toLowerCase().replace(/^\[|\]$/g, "");
+	let h = host.toLowerCase().replaceAll(/^\[|\]$/g, "");
 
 	// IPv4-mapped, dotted form: ::ffff:a.b.c.d — before URL parsing canonicalizes it.
 	const mappedDotted = h.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
@@ -77,7 +77,7 @@ function isPrivateIpv6(host: string): boolean {
  * to a private, loopback, link-local, or otherwise non-public target.
  */
 export function isPrivateHost(host: string): boolean {
-	const lower = host.toLowerCase().replace(/^\[|\]$/g, "");
+	const lower = host.toLowerCase().replaceAll(/^\[|\]$/g, "");
 
 	if (lower === "localhost" || lower === "localhost.localdomain") {return true;}
 

@@ -111,7 +111,7 @@ export function findInText(
 
 		const prefix = passage.start > 0 ? "…" : "";
 		const suffix = passage.end < markdown.length ? "…" : "";
-		const body = `${prefix}${markdown.slice(passage.start, passage.end).replace(/\s+/g, " ").trim()}${suffix}`;
+		const body = `${prefix}${markdown.slice(passage.start, passage.end).replaceAll(/\s+/g, " ").trim()}${suffix}`;
 		const label = counts.map((c) => `"${c.query}" ×${c.count}`).join(", ");
 		const rendered = `${shownPassages + 1}. ${label}\n${body}`;
 

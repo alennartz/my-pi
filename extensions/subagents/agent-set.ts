@@ -883,7 +883,7 @@ export class SubagentManager {
 				: { state: "running" as const, lastError: undefined };
 			const next = operationalWith(current, {
 				...lifecycle,
-				lastActivity: `${event.toolName}(${summarizeArgs(event.args)})`.replace(/[\r\n]+/g, " "),
+				lastActivity: `${event.toolName}(${summarizeArgs(event.args)})`.replaceAll(/[\r\n]+/g, " "),
 				hasSubgroup: event.toolName === "subagent" || event.toolName === "fork"
 					? true
 					: event.toolName === "teardown"
@@ -1598,7 +1598,7 @@ function spawnAcknowledgement(agents: AgentSpec[], restoring: boolean, firstStar
 function summarizeArgs(args: Record<string, any>): string {
 	if (!args) {return "";}
 	if (args.command) {
-		const command = String(args.command).replace(/[\r\n\t]+/g, " ").replace(/  +/g, " ").trim();
+		const command = String(args.command).replaceAll(/[\r\n\t]+/g, " ").replaceAll(/  +/g, " ").trim();
 		return command.length > 40 ? `${command.slice(0, 40)}…` : command;
 	}
 	if (args.path) {return String(args.path);}

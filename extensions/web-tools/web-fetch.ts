@@ -103,15 +103,15 @@ const BATCH_LIMIT = 8;
 /** Strip markdown formatting down to readable plain text. */
 function stripMarkdownFormatting(md: string): string {
 	return md
-		.replace(/```[\s\S]*?```/g, (block) => block.replace(/```\w*\n?/g, ""))
-		.replace(/`([^`]+)`/g, "$1")
-		.replace(/!?\[([^\]]*)\]\(([^)]*)\)/g, "$1 ($2)")
-		.replace(/^#{1,6}\s+/gm, "")
-		.replace(/^\s*[-*+]\s+/gm, "- ")
-		.replace(/[*_]{1,2}([^*_]+)[*_]{1,2}/g, "$1")
-		.replace(/\|\s*-{3,}\s*\|/g, "|")
-		.replace(/\|/g, " ")
-		.replace(/\n{3,}/g, "\n\n")
+		.replaceAll(/```[\s\S]*?```/g, (block) => block.replaceAll(/```\w*\n?/g, ""))
+		.replaceAll(/`([^`]+)`/g, "$1")
+		.replaceAll(/!?\[([^\]]*)\]\(([^)]*)\)/g, "$1 ($2)")
+		.replaceAll(/^#{1,6}\s+/gm, "")
+		.replaceAll(/^\s*[-*+]\s+/gm, "- ")
+		.replaceAll(/[*_]{1,2}([^*_]+)[*_]{1,2}/g, "$1")
+		.replaceAll(/\|\s*-{3,}\s*\|/g, "|")
+		.replaceAll('|', " ")
+		.replaceAll(/\n{3,}/g, "\n\n")
 		.trim();
 }
 

@@ -23,6 +23,6 @@ const MAX_ACTIVITY_LENGTH = 200;
  * TUI dashboard, and Pimote panel cards all render one identical string.
  */
 export function activityPreview(text: string): string {
-	const line = text.replace(/[\r\n\t]+/g, " ").replace(/  +/g, " ").trim();
+	const line = text.replaceAll(/[\r\n\t]+/g, " ").replaceAll(/  +/g, " ").trim();
 	return line.length > MAX_ACTIVITY_LENGTH ? `${line.slice(0, MAX_ACTIVITY_LENGTH)}…` : line;
 }

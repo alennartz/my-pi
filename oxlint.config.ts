@@ -68,7 +68,6 @@ export default defineConfig({
     'unicorn/prefer-node-protocol': 'off',
     'unicorn/prefer-single-call': 'off',
     'unicorn/prefer-string-raw': 'off',
-    'unicorn/prefer-string-replace-all': 'off',
     'unicorn/prefer-top-level-await': 'off',
   },
 });

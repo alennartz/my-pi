@@ -5,7 +5,7 @@ const MAX_NAME_LENGTH = 200;
 
 /** Match pi's session_info normalization: line breaks become spaces, trim. */
 function normalizeName(raw: string): string {
-	return raw.replace(/[\r\n]+/g, " ").trim();
+	return raw.replaceAll(/[\r\n]+/g, " ").trim();
 }
 
 export default function (pi: ExtensionAPI) {

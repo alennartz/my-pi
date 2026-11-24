@@ -100,7 +100,7 @@ function parseScalarFrontmatter(content: string): {
 	frontmatter: Record<string, unknown>;
 	body: string;
 } {
-	const normalized = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	const normalized = content.replace(/^\uFEFF/, "").replaceAll('\r\n', "\n").replaceAll('\r', "\n");
 	if (!normalized.startsWith("---")) {return { frontmatter: {}, body: normalized };}
 	const endIndex = normalized.indexOf("\n---", 3);
 	if (endIndex === -1) {return { frontmatter: {}, body: normalized };}

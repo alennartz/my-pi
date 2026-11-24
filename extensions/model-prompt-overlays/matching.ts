@@ -11,13 +11,13 @@ export type MatchedOverlay = OverlayFile & MatchResult;
 
 export function globToRegex(glob: string): RegExp {
 	// Escape regex-special chars, then replace escaped \* with .*
-	const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+	const escaped = glob.replaceAll(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll('*', ".*");
 	return new RegExp(`^${escaped}$`);
 }
 
 function computeSpecificity(glob: string): { literalChars: number; wildcardCount: number } {
 	const wildcardCount = (glob.match(/\*/g) || []).length;
-	const literalChars = glob.replace(/\*/g, "").length;
+	const literalChars = glob.replaceAll('*', "").length;
 	return { literalChars, wildcardCount };
 }
 

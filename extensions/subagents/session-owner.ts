@@ -198,7 +198,7 @@ function stableRootSessionId(ctx: ExtensionContext, sessionFile: string | undefi
 function summarizeArgs(args: Record<string, any>): string {
 	if (!args) {return "";}
 	if (args.command) {
-		const command = String(args.command).replace(/[\r\n\t]+/g, " ").replace(/  +/g, " ").trim();
+		const command = String(args.command).replaceAll(/[\r\n\t]+/g, " ").replaceAll(/  +/g, " ").trim();
 		return command.length > 40 ? `${command.slice(0, 40)}…` : command;
 	}
 	if (args.path) {return String(args.path);}
@@ -2283,7 +2283,7 @@ class SubagentSessionOwner {
 		const current = session.registry.getSnapshot([])!.operational;
 		this.updateRootOperational({
 			lastActivity: toolName
-				? `${toolName}(${summarizeArgs(raw.args ?? raw.input ?? {})})`.replace(/[\r\n]+/g, " ")
+				? `${toolName}(${summarizeArgs(raw.args ?? raw.input ?? {})})`.replaceAll(/[\r\n]+/g, " ")
 				: current.lastActivity,
 			hasSubgroup: toolName === "subagent" || toolName === "fork"
 				? true

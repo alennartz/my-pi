@@ -32,11 +32,11 @@ export function htmlToMarkdown(html: string): string {
 	});
 	return turndown
 		.turndown(html)
-		.replace(/\[\\?\[\s*\\?\]\]\([^)]*\)/g, "")
-		.replace(/ +/g, " ")
-		.replace(/\s+,/g, ",")
-		.replace(/\s+\./g, ".")
-		.replace(/\n{3,}/g, "\n\n")
+		.replaceAll(/\[\\?\[\s*\\?\]\]\([^)]*\)/g, "")
+		.replaceAll(/ +/g, " ")
+		.replaceAll(/\s+,/g, ",")
+		.replaceAll(/\s+\./g, ".")
+		.replaceAll(/\n{3,}/g, "\n\n")
 		.trim();
 }
 
@@ -56,7 +56,7 @@ function scoreQuality(
 	if (wordCount === 0) {
 		signals.push("empty");
 		score -= 100;
-	} else if (title && wordCount <= 6 && markdown.replace(/\s+/g, " ").trim() === title.trim()) {
+	} else if (title && wordCount <= 6 && markdown.replaceAll(/\s+/g, " ").trim() === title.trim()) {
 		signals.push("title-only");
 		score -= 60;
 	}
@@ -77,7 +77,7 @@ function scoreQuality(
 	const scriptText = [...sourceHtml.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
 		.map((m) => m[1])
 		.join("");
-	const plainChars = sourceHtml.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").length;
+	const plainChars = sourceHtml.replaceAll(/<[^>]+>/g, "").replaceAll(/\s+/g, " ").length;
 	if (plainChars > 0 && scriptText.length / plainChars > 0.5) {
 		signals.push("script-heavy");
 		score -= 40;
