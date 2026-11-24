@@ -41,6 +41,11 @@ export function stringArrayField(value: unknown, key: string): string[] | undefi
 	return Array.isArray(field) ? field.filter((item): item is string => typeof item === "string") : undefined;
 }
 
+/** Whether a value is a non-array object. */
+export function isObjectLike(value: unknown): value is object {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 /** A JSON object value. */
 export type JsonObject = Record<string, JsonValue>;
 
@@ -57,4 +62,25 @@ export function isJsonValue(value: unknown): value is JsonValue {
 export function isJsonObject(value: unknown): value is JsonObject {
 	const record = asRecord(value);
 	return record !== undefined && Object.values(record).every((item) => isJsonValue(item));
+}
+
+/**
+ * Structural JSON projection of a data payload.
+ *
+ * Reads own enumerable members and recurses. Values that JSON cannot carry
+ * become null, so the result is always safe to serialize and to type as
+ * `JsonValue`.
+ */
+export function toJsonProjection(value: unknown): JsonValue {
+	if (isJsonValue(value)) {return value;}
+	if (Array.isArray(value)) {return value.map((item) => toJsonProjection(item));}
+	if (!isObjectLike(value)) {return null;}
+	const record: JsonObject = {};
+	for (const key of Object.keys(value)) {
+		const descriptor = Object.getOwnPropertyDescriptor(value, key);
+		const member: unknown = descriptor?.value;
+		if (member === undefined) {continue;}
+		record[key] = toJsonProjection(member);
+	}
+	return record;
 }

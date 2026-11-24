@@ -8,8 +8,10 @@ import type {
 	SubagentUsage,
 } from '@pimote/sdk/subagents';
 import type { AgentPath } from './agent-path.js';
+import { isJsonObject, toJsonProjection } from './narrow.js';
+import type { JsonObject } from './narrow.js';
 
-type RecordData = Record<string, unknown>;
+type RecordData = JsonObject;
 export type PresentationKind = SubagentOperationKind;
 export type PersistedSubagentContent = SdkPersistedSubagentContent;
 
@@ -39,6 +41,25 @@ function isResurrectState(value: unknown): value is ResurrectState {
 }
 
 const privateIdentifierFields: readonly string[] = Object.freeze(['correlationId', 'correlation_id', 'routerId', 'router_id', 'pendingCorrelations', 'pending_correlations']);
+
+/**
+ * JSON projection of persisted presentation content.
+ *
+ * Tool details carry this projection, so the payload keeps one vocabulary and
+ * no SDK intersection type leaks into the JSON-facing detail records.
+ */
+export function persistedContentJson(content: unknown): JsonObject {
+	const projected = toJsonProjection(content);
+	return isJsonObject(projected) ? projected : {};
+}
+
+/**
+ * JSON projection of one final operation payload.
+ */
+export function finalDataJson(data: SubagentFinalData): JsonObject {
+	const projected = toJsonProjection(data);
+	return isJsonObject(projected) ? projected : {};
+}
 
 export function isPresentationRecord(value: unknown): value is RecordData {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -107,10 +128,10 @@ export function publicToolResult(value: unknown, isError = false, parameters?: u
 	const source = isPresentationRecord(value.structuredContent) ? value.structuredContent
 		: isPresentationRecord(value.details) ? value.details : value.role === 'toolResult' ? {} : value;
 	const result = cleanPresentationValue(source) as RecordData;
-	if (result.usage === undefined && value.usage !== undefined) {result.usage = cleanPresentationValue(value.usage);}
-	if (result.error === undefined && value.error !== undefined) {result.error = cleanPresentationValue(value.error);}
-	if (result.aborted === undefined && value.aborted !== undefined) {result.aborted = cleanPresentationValue(value.aborted);}
-	if (result.isError === undefined && value.isError !== undefined) {result.isError = cleanPresentationValue(value.isError);}
+	if (result.usage === undefined && value.usage !== undefined) {result.usage = toJsonProjection(value.usage);}
+	if (result.error === undefined && value.error !== undefined) {result.error = toJsonProjection(value.error);}
+	if (result.aborted === undefined && value.aborted !== undefined) {result.aborted = toJsonProjection(value.aborted);}
+	if (result.isError === undefined && value.isError !== undefined) {result.isError = toJsonProjection(value.isError);}
 	if (Array.isArray(value.content) && source === value) {delete result.content;}
 	if (isError || result.isError === true) {
 		result.isError = true;

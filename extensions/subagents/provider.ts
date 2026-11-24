@@ -28,7 +28,7 @@ import type {
 	SubagentFiniteEvent,
 } from "@pimote/sdk/subagents";
 import type { SemanticAdapterEvent } from "./semantic-adapter.js";
-import { normalizeSavedPresentationData, savedPresentationKind } from './presentation-data.js';
+import { finalDataJson, normalizeSavedPresentationData, persistedContentJson, savedPresentationKind } from './presentation-data.js';
 import type { JsonObject } from './narrow.js';
 import type { PersistedSubagentContent, PresentationKind } from './presentation-data.js';
 import { required } from "../../lib/required.ts";
@@ -1545,12 +1545,13 @@ export function createSubagentProvider(options: SubagentProviderOptions): Subage
 				if (!isPersistedPresentationContent(candidate)) {continue;}
 				if (candidate.kind === "completion" && (candidate.source !== "custom_entry" || !customMessage)) {continue;}
 				const repaired = awaitResult ? restoreAwaitResult(candidate, details.semantic) : candidate;
-				const kind = savedPresentationKind(repaired) as PresentationKind;
+				const repairedJson = persistedContentJson(repaired);
+				const kind = savedPresentationKind(repairedJson) as PresentationKind;
 				const argumentsValue = toolArguments.get(candidate.source === "tool" ? candidate.placement.toolCallId : candidate.operationId);
 				const toolBacked = kind !== "message_received" && (candidate.source === "tool" || ("parameters" in repaired.data && isRecord(repaired.data.parameters)) || argumentsValue !== undefined
 					|| (kind !== "send" && kind !== "respond" && kind !== "completion"));
 				const data = normalizeSavedPresentationData({
-					data: repaired.data,
+					data: finalDataJson(repaired.data),
 					operation: kind === "message_received" ? "send" : kind,
 					path: input.path,
 					toolBacked,

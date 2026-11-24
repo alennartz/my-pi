@@ -9,7 +9,7 @@ import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
 import { answerActivity } from "@pimote/sdk/activity";
 import { registerProvider } from "@pimote/sdk/subagents";
 import type { SubagentPresentationProvider, SubagentPresentationReplay, SubagentProviderEvent } from "@pimote/sdk/subagents";
-import { normalizeFinalData, normalizeSavedPresentationData, savedPresentationKind } from './presentation-data.js';
+import { normalizeFinalData, normalizeSavedPresentationData, persistedContentJson, savedPresentationKind } from './presentation-data.js';
 import type { PersistedSubagentContent } from './presentation-data.js';
 import {
 	getOrCreateSessionTreeStore,
@@ -25,7 +25,7 @@ import type { AgentOperationalSnapshot, RegistryEvent } from './agent-session-re
 import { childAgentPath } from './agent-path.js';
 import { onUnlistedEvent, toolCallUpdateView, toolExecutionEndView, toolExecutionStartView, toolResultView } from './pi-events.js';
 import type { ObservedPiEvent, PiEventHandlers, PiEventMap, PiEventName, PiEventResult } from './pi-events.js';
-import { asRecord, booleanField, stringField } from './narrow.js';
+import { asRecord, booleanField, isJsonObject, stringField } from './narrow.js';
 import type { Component } from '@earendil-works/pi-tui';
 import type { AgentPath } from './agent-path.js';
 import { excludeModelOnlyTools } from "./child-tool-policy.js";
@@ -1619,7 +1619,7 @@ class SubagentSessionOwner {
 			this.completedPresentationCalls.add(event.toolCallId);
 		}
 		if (event.toolName === "await_agents") {
-			const receivedMessages = [...unique.values()].filter((item) => savedPresentationKind(item) === "message_received");
+			const receivedMessages = [...unique.values()].filter((item) => savedPresentationKind(persistedContentJson(item)) === "message_received");
 			this.publishPersistedPresentationContent(receivedMessages, undefined, {
 				toolCallId: event.toolCallId,
 				contentIndex: this.toolCallIndexes.get(event.toolCallId) ?? 0,
@@ -2005,17 +2005,17 @@ class SubagentSessionOwner {
 	): void {
 		if (!Array.isArray(value)) {return;}
 		for (const candidate of value) {
-			if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {continue;}
-			const item = candidate as Record<string, unknown>;
-			if (item.source !== "custom_entry" || typeof item.operationId !== "string") {continue;}
-			const state = snapshotStateOf(item.state);
+			const itemJson = persistedContentJson(candidate);
+			const operationId = stringField(itemJson, "operationId");
+			if (stringField(itemJson, "source") !== "custom_entry" || operationId === undefined) {continue;}
+			const state = snapshotStateOf(itemJson.state);
 			if (state === undefined) {continue;}
-			if (!item.data || typeof item.data !== "object" || Array.isArray(item.data)) {continue;}
-			const kind = savedPresentationKind(item);
+			if (!isJsonObject(itemJson.data)) {continue;}
+			const kind = savedPresentationKind(itemJson);
 			if (kind !== "message_received" && kind !== "send" && kind !== "respond" && kind !== "await" && kind !== "delegation" && kind !== "completion" && kind !== "interrupt" && kind !== "teardown" && kind !== "resurrect") {continue;}
-			const operation = (item.data as Record<string, unknown>).operation;
+			const operation = stringField(itemJson.data, "operation");
 			if (operation !== (kind === "message_received" ? "send" : kind) && operation !== "protocol_error") {continue;}
-			const key = `${JSON.stringify(this.scopePath())}:${item.operationId}`;
+			const key = `${JSON.stringify(this.scopePath())}:${operationId}`;
 			if (this.publishedCustomPresentation.has(key)) {continue;}
 			this.publishedCustomPresentation.add(key);
 			const placement = entryId !== undefined
@@ -2023,8 +2023,10 @@ class SubagentSessionOwner {
 				: toolPlacement !== undefined
 					? Object.freeze({ ...toolPlacement })
 					: undefined;
+			const data = itemJson.data;
+			if (!isJsonObject(data)) {continue;}
 			const base = {
-				operationId: item.operationId,
+				operationId,
 				kind,
 				path: this.scopePath(),
 				...(placement !== undefined ? { placement } : undefined),
@@ -2034,10 +2036,10 @@ class SubagentSessionOwner {
 				...base,
 				state,
 				data: normalizeSavedPresentationData({
-					data: item.data as Record<string, unknown>,
+					data,
 					operation: kind === "message_received" ? "send" : kind,
 					path: this.scopePath(),
-					toolBacked: kind !== "message_received" && ("parameters" in item.data || (kind !== "send" && kind !== "respond" && kind !== "completion")),
+					toolBacked: kind !== "message_received" && ("parameters" in data || (kind !== "send" && kind !== "respond" && kind !== "completion")),
 				}),
 			};
 			this.semanticEvents.publishPresentation?.(event);
