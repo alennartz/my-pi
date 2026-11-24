@@ -43,7 +43,7 @@ function splitLinesForCounting(content: string): string[] {
  * boundaries. Mirror of pi's unexported `truncateMiddle`.
  */
 export function truncateMiddle(content: string, maxBytes = OUTPUT_MAX_BYTES): MiddleTruncationResult {
-	const buf = Buffer.from(content, "utf-8");
+	const buf = Buffer.from(content, "utf8");
 	const totalLines = splitLinesForCounting(content).length;
 	if (buf.length <= maxBytes) {
 		return { content, truncated: false, removedChars: 0, totalBytes: buf.length, totalLines };
@@ -54,9 +54,9 @@ export function truncateMiddle(content: string, maxBytes = OUTPUT_MAX_BYTES): Mi
 	while (headEnd > 0 && !isBoundary(headEnd)) {headEnd--;}
 	let tailStart = buf.length - (maxBytes - Math.floor(maxBytes / 2));
 	while (tailStart < buf.length && !isBoundary(tailStart)) {tailStart++;}
-	const head = buf.subarray(0, headEnd).toString("utf-8");
-	const tail = buf.subarray(tailStart).toString("utf-8");
-	const removedChars = Array.from(buf.subarray(headEnd, tailStart).toString("utf-8")).length;
+	const head = buf.subarray(0, headEnd).toString("utf8");
+	const tail = buf.subarray(tailStart).toString("utf8");
+	const removedChars = Array.from(buf.subarray(headEnd, tailStart).toString("utf8")).length;
 	return {
 		content: `${head}…${removedChars} chars truncated…${tail}`,
 		truncated: true,

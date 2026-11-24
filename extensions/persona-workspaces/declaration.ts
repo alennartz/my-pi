@@ -165,7 +165,7 @@ export function loadWorkspacePersona(cwd: string): PersonaDeclaration | undefine
 	const sourcePath = path.resolve(cwd, "AGENTS.md");
 	let content: string;
 	try {
-		content = fs.readFileSync(sourcePath, "utf-8");
+		content = fs.readFileSync(sourcePath, "utf8");
 	} catch {
 		return undefined;
 	}

@@ -79,7 +79,7 @@ export function loadTierConfig(opts: {
 /** Read one config file; any error yields an empty contribution. */
 function readTierFile(filePath: string): TierConfig {
 	try {
-		return sanitize(JSON.parse(fs.readFileSync(filePath, "utf-8")));
+		return sanitize(JSON.parse(fs.readFileSync(filePath, "utf8")));
 	} catch {
 		return {};
 	}

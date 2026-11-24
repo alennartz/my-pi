@@ -92,7 +92,7 @@ function interactionMockPaths(content: string, topic: string): string[] | string
 function checkInteractionMocks(planPath: string, topic: string, cwd: string): Result | null {
 	if (!existsSync(planPath)) {return null;}
 
-	const parsed = interactionMockPaths(readFileSync(planPath, "utf-8"), topic);
+	const parsed = interactionMockPaths(readFileSync(planPath, "utf8"), topic);
 	if (parsed === null) {return null;}
 	if (typeof parsed === "string") {
 		return {
@@ -131,7 +131,7 @@ export function checkTransitionArtifact(
 	const manualTestPath = join(cwd, "docs/manual-tests", `${topic}.md`);
 
 	if (checkedPhases.has(phase) && existsSync(planPath)) {
-		const rows = parseWorkspaceRows(readFileSync(planPath, "utf-8"));
+		const rows = parseWorkspaceRows(readFileSync(planPath, "utf8"));
 		const shapeCheck = checkWorkspaceRows(rows);
 		if (shapeCheck && !shapeCheck.passed) {return shapeCheck;}
 		if (rows !== null && typeof rows !== "string") {
@@ -150,7 +150,7 @@ export function checkTransitionArtifact(
 			if (!existsSync(planPath)) {
 				return { passed: false, detail: `Plan file does not exist: docs/plans/${topic}.md` };
 			}
-			const content = readFileSync(planPath, "utf-8");
+			const content = readFileSync(planPath, "utf8");
 			if (/^## Tests$/m.test(content)) {
 				return { passed: true, detail: `Plan file contains ## Tests section.` };
 			}
@@ -168,7 +168,7 @@ export function checkTransitionArtifact(
 			if (!existsSync(planPath)) {
 				return { passed: false, detail: `Plan file does not exist: docs/plans/${topic}.md` };
 			}
-			const content = readFileSync(planPath, "utf-8");
+			const content = readFileSync(planPath, "utf8");
 			if (/^## Steps$/m.test(content)) {
 				return { passed: true, detail: `Plan file contains ## Steps section.` };
 			}
@@ -179,7 +179,7 @@ export function checkTransitionArtifact(
 			if (!existsSync(planPath)) {
 				return { passed: false, detail: `Plan file does not exist: docs/plans/${topic}.md` };
 			}
-			const content = readFileSync(planPath, "utf-8");
+			const content = readFileSync(planPath, "utf8");
 			const stepsStart = content.match(/^## Steps$/m);
 			if (!stepsStart || stepsStart.index === undefined) {
 				return { passed: false, detail: `Plan file does not contain a ## Steps section.` };
@@ -228,7 +228,7 @@ export function checkTransitionArtifact(
 					detail: `Manual test artifact not found: docs/manual-tests/${topic}.md`,
 				};
 			}
-			const content = readFileSync(manualTestPath, "utf-8");
+			const content = readFileSync(manualTestPath, "utf8");
 			if (!/^## Smoke Suite$/m.test(content)) {
 				return {
 					passed: false,

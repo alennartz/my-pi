@@ -31,7 +31,7 @@ export default function (pi: ExtensionAPI) {
 			// Read existing content, or empty string for new files
 			let content: string;
 			try {
-				content = await readFile(absolutePath, "utf-8");
+				content = await readFile(absolutePath, "utf8");
 			} catch (err: any) {
 				if (err.code === "ENOENT") {
 					content = "";
@@ -53,7 +53,7 @@ export default function (pi: ExtensionAPI) {
 			// Write the edited content within the file mutation queue
 			await withFileMutationQueue(absolutePath, async () => {
 				await mkdir(dirname(absolutePath), { recursive: true });
-				await writeFile(absolutePath, result, "utf-8");
+				await writeFile(absolutePath, result, "utf8");
 			});
 
 			// No outputSchema: model-only tools never run in codemode, so structuredContent has no audience.

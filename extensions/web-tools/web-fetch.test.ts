@@ -10,7 +10,7 @@ import type { WebFetchParams } from './web-fetch.js';
 
 const articleHtml = readFileSync(
 	join(import.meta.dirname, "fixtures", "article.html"),
-	"utf-8",
+	"utf8",
 );
 
 function htmlResponse(html: string): Response {
@@ -70,7 +70,7 @@ describe("runWebFetch", () => {
 			status: "ok",
 		});
 		expect(outcome.structuredContent.results[0].path).toBeDefined();
-		expect(readFileSync(outcome.structuredContent.results[0].path!, "utf-8")).toContain(
+		expect(readFileSync(outcome.structuredContent.results[0].path!, "utf8")).toContain(
 			"Backpressure",
 		);
 		expect(outcome.structuredContent.results[0]).not.toHaveProperty("contentHash");

@@ -56,7 +56,7 @@ export function openFetchStore(dir?: string, opts: FetchStoreOptions = {}): Fetc
 
 	async function writeAtomic(target: string, content: string): Promise<void> {
 		const tmp = join(storeDir, `.${randomBytes(6).toString("hex")}.tmp`);
-		await writeFile(tmp, content, "utf-8");
+		await writeFile(tmp, content, "utf8");
 		await rename(tmp, target);
 	}
 
@@ -73,7 +73,7 @@ export function openFetchStore(dir?: string, opts: FetchStoreOptions = {}): Fetc
 			const full = join(storeDir, name);
 			const key = name.slice(0, -".json".length);
 			try {
-				const raw = await readFile(full, "utf-8");
+				const raw = await readFile(full, "utf8");
 				const parsed = JSON.parse(raw) as StoredFetch;
 				if (now() > parsed.expiresAt) {
 					await rm(full, { force: true });
@@ -106,7 +106,7 @@ export function openFetchStore(dir?: string, opts: FetchStoreOptions = {}): Fetc
 			const full = fileFor(key);
 			let raw: string;
 			try {
-				raw = await readFile(full, "utf-8");
+				raw = await readFile(full, "utf8");
 			} catch {
 				return null;
 			}

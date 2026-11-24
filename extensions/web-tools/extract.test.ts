@@ -6,7 +6,7 @@ import { extractContent } from "./extract.js";
 const fixtures = join(import.meta.dirname, "fixtures");
 
 function load(name: string): string {
-	return readFileSync(join(fixtures, name), "utf-8");
+	return readFileSync(join(fixtures, name), "utf8");
 }
 
 describe("extractContent", () => {

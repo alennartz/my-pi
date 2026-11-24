@@ -88,7 +88,7 @@ export function parseAutoflowConfig(raw: string): ParsedAutoflowConfig {
 export function loadAutoflowConfig(agentDir: string): ParsedAutoflowConfig {
 	let raw: string;
 	try {
-		raw = readFileSync(join(agentDir, CONFIG_FILE_NAME), "utf-8");
+		raw = readFileSync(join(agentDir, CONFIG_FILE_NAME), "utf8");
 	} catch {
 		return defaults();
 	}

@@ -80,7 +80,7 @@ describe("user_edit — path handling", () => {
 		// Editor title should be the stripped path
 		expect(ctx.ui.editor).toHaveBeenCalledWith("src/file.ts", "content");
 		// readFile should use the resolved absolute path
-		expect(readFile).toHaveBeenCalledWith("/workspace/src/file.ts", "utf-8");
+		expect(readFile).toHaveBeenCalledWith("/workspace/src/file.ts", "utf8");
 	});
 
 	it("resolves path relative to ctx.cwd", async () => {
@@ -90,7 +90,7 @@ describe("user_edit — path handling", () => {
 
 		await tool.execute("1", { path: "lib/util.ts" }, undefined, undefined, ctx);
 
-		expect(readFile).toHaveBeenCalledWith("/project/lib/util.ts", "utf-8");
+		expect(readFile).toHaveBeenCalledWith("/project/lib/util.ts", "utf8");
 	});
 });
 
@@ -158,7 +158,7 @@ describe("user_edit — save", () => {
 
 		expect(text(result)).toBe("User saved file.ts");
 		expect(result.details).toEqual({ path: "/workspace/file.ts", saved: true });
-		expect(writeFile).toHaveBeenCalledWith("/workspace/file.ts", "modified", "utf-8");
+		expect(writeFile).toHaveBeenCalledWith("/workspace/file.ts", "modified", "utf8");
 	});
 
 	it("creates parent directories before writing", async () => {

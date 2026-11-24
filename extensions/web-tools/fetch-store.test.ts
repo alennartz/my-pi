@@ -39,7 +39,7 @@ describe("FetchStore", () => {
 		const hit = await store.get("k1");
 		expect(hit).not.toBeNull();
 		expect(hit!.result.markdown).toBe(long);
-		expect(await readFile(store.pathFor("k1"), "utf-8")).toBe(long);
+		expect(await readFile(store.pathFor("k1"), "utf8")).toBe(long);
 	});
 
 	it("returns null on miss", async () => {
@@ -73,7 +73,7 @@ describe("FetchStore", () => {
 		expect(await store.get("k0")).toBeNull(); // oldest pruned
 		expect(await store.get("k1")).toBeNull();
 		expect((await store.get("k4"))!.result.markdown).toBe("c4");
-		expect(await readFile(store.pathFor("k4"), "utf-8")).toBe("c4");
+		expect(await readFile(store.pathFor("k4"), "utf8")).toBe("c4");
 	});
 
 	it("leaves no temp files after successful puts", async () => {
@@ -87,7 +87,7 @@ describe("FetchStore", () => {
 		const store = openFetchStore(dir, { now: clock });
 		await store.put("k1", okResult("content"));
 		const { writeFile } = await import("node:fs/promises");
-		await writeFile(join(dir, "k1.json"), "{not json", "utf-8");
+		await writeFile(join(dir, "k1.json"), "{not json", "utf8");
 		expect(await store.get("k1")).toBeNull();
 		expect(await store.size()).toBe(0);
 		expect(await readdir(dir)).toEqual([]);

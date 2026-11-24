@@ -178,7 +178,7 @@ describe.skipIf(!gitAvailable)("createGitProbe", () => {
 			"-c", "user.name=T",
 			"commit", "-q", "--allow-empty", "-m", "init",
 		]);
-		return execFileSync("git", ["-C", path, "rev-parse", "HEAD"], { encoding: "utf-8" }).trim();
+		return execFileSync("git", ["-C", path, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 	}
 
 	it("recognises a real commit and rejects a fabricated hash", () => {

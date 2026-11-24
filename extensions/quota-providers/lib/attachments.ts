@@ -103,5 +103,5 @@ export function loadQuotaAttachments(path?: string): ParsedQuotaAttachments {
 	const configPath = path ?? join(resolveAgentDir(), "quota-providers.json");
 	if (!existsSync(configPath)) {return { attachments: [], warnings: [] };}
 
-	return parseQuotaAttachments(readFileSync(configPath, "utf-8"), expandHome);
+	return parseQuotaAttachments(readFileSync(configPath, "utf8"), expandHome);
 }

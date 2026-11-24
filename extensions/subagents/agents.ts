@@ -238,7 +238,7 @@ function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentCon
 		const filePath = path.join(dir, entry.name);
 		let content: string;
 		try {
-			content = fs.readFileSync(filePath, "utf-8");
+			content = fs.readFileSync(filePath, "utf8");
 		} catch {
 			continue;
 		}
@@ -303,7 +303,7 @@ export async function discoverPackageAgents(cwd: string): Promise<{ user: AgentC
 		const pkgJsonPath = path.join(baseDir, "package.json");
 		let pkgJson: any;
 		try {
-			pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+			pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf8"));
 		} catch {
 			continue;
 		}

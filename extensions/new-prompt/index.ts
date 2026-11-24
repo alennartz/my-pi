@@ -63,7 +63,7 @@ export default function newPrompt(pi: ExtensionAPI): void {
 			const title = relative(resolve(ctx.cwd), path);
 			let prefill = PROMPT_TEMPLATE_SEED;
 			try {
-				prefill = await readFile(path, "utf-8");
+				prefill = await readFile(path, "utf8");
 			} catch (error) {
 				if (!isMissingFile(error)) {throw error;}
 			}
@@ -76,7 +76,7 @@ export default function newPrompt(pi: ExtensionAPI): void {
 
 			await withFileMutationQueue(path, async () => {
 				await mkdir(dirname(path), { recursive: true });
-				await writeFile(path, edited, "utf-8");
+				await writeFile(path, edited, "utf8");
 			});
 
 			ctx.ui.notify(`Saved ${title}. Run /reload to use /${name}.`, "info");

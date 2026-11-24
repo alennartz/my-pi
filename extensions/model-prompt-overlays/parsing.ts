@@ -36,7 +36,7 @@ export function loadOverlayFiles(dir: string): {
 		const filePath = join(dir, filename);
 		let content: string;
 		try {
-			content = readFileSync(filePath, "utf-8");
+			content = readFileSync(filePath, "utf8");
 		} catch {
 			diagnostics.push({ path: filePath, message: `Could not read overlay file: ${filePath}` });
 			continue;

@@ -183,7 +183,7 @@ export function createGitProbe(): GitProbe {
 						"refs/heads",
 						"refs/remotes",
 					],
-					{ encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
+					{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
 				);
 				return out.trim().length > 0;
 			} catch {

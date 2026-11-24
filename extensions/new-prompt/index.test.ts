@@ -86,7 +86,7 @@ describe("/nprompt", () => {
 		await command.handler("review", ctx);
 
 		expect(ctx.ui.editor).toHaveBeenCalledWith(".pi/prompts/review.md", expect.any(String));
-		expect(writeFile).toHaveBeenCalledWith("/workspace/.pi/prompts/review.md", "edited prompt", "utf-8");
+		expect(writeFile).toHaveBeenCalledWith("/workspace/.pi/prompts/review.md", "edited prompt", "utf8");
 		expect(ctx.ui.notify).toHaveBeenCalledWith(
 			"Saved .pi/prompts/review.md. Run /reload to use /review.",
 			"info",
@@ -103,7 +103,7 @@ describe("/nprompt", () => {
 		await command.handler("review.md", ctx);
 
 		expect(ctx.ui.editor).toHaveBeenCalledWith(".pi/prompts/review.md", "existing template");
-		expect(writeFile).toHaveBeenCalledWith("/workspace/.pi/prompts/review.md", "updated template", "utf-8");
+		expect(writeFile).toHaveBeenCalledWith("/workspace/.pi/prompts/review.md", "updated template", "utf8");
 	});
 
 	it("does not write when the user cancels the editor", async () => {

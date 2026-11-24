@@ -70,6 +70,5 @@ export default defineConfig({
     'unicorn/prefer-string-raw': 'off',
     'unicorn/prefer-string-replace-all': 'off',
     'unicorn/prefer-top-level-await': 'off',
-    'unicorn/text-encoding-identifier-case': 'off',
   },
 });
