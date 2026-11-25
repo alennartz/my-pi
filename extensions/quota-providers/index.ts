@@ -39,7 +39,8 @@ import {
 	registerSessionIdTreeStore,
 	unregisterSessionIdTreeStore,
 } from "../subagents/scoped-store.js";
-import { isKeyedLookup, readGlobalSlot, writeGlobalSlot } from "../subagents/global-slot.js";
+import { GlobalSlot } from "../subagents/global-slot.js";
+import { isKeyedLookup } from "../subagents/global-slot.js";
 import type { KeyedLookup } from "../subagents/global-slot.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
 
@@ -210,23 +211,24 @@ const sessionIdOf = (manager: SessionIdentitySource): string | undefined => mana
 type ProviderStateStores = KeyedLookup<object, Map<string, AttachedProvider>>;
 type RefreshHooks = KeyedLookup<object, { afterRefresh: () => void; generation: number }>;
 
-const PROVIDER_STATE_KEY = Symbol.for("my-pi.quota-provider-state-stores");
-const REFRESH_HOOK_KEY = Symbol.for("my-pi.quota-provider-refresh-hooks");
+const providerStateStoresSlot = new GlobalSlot<KeyedLookup<object, Map<string, AttachedProvider>>>(
+	"my-pi.quota-provider-state-stores",
+	(value): value is KeyedLookup<object, Map<string, AttachedProvider>> => isKeyedLookup<object, Map<string, AttachedProvider>>(value),
+	() => new WeakMap<object, Map<string, AttachedProvider>>(),
+);
+
+const refreshHooksSlot = new GlobalSlot<KeyedLookup<object, { afterRefresh: () => void; generation: number }>>(
+	"my-pi.quota-provider-refresh-hooks",
+	(value): value is KeyedLookup<object, { afterRefresh: () => void; generation: number }> => isKeyedLookup<object, { afterRefresh: () => void; generation: number }>(value),
+	() => new WeakMap<object, { afterRefresh: () => void; generation: number }>(),
+);
 
 function providerStateStores(): ProviderStateStores {
-	const existing = readGlobalSlot(PROVIDER_STATE_KEY);
-	if (existing !== undefined && isKeyedLookup<object, Map<string, AttachedProvider>>(existing)) {return existing;}
-	const stores: ProviderStateStores = new WeakMap<object, Map<string, AttachedProvider>>();
-	writeGlobalSlot(PROVIDER_STATE_KEY, stores);
-	return stores;
+	return providerStateStoresSlot.value();
 }
 
 function refreshHooks(): RefreshHooks {
-	const existing = readGlobalSlot(REFRESH_HOOK_KEY);
-	if (existing !== undefined && isKeyedLookup<object, { afterRefresh: () => void; generation: number }>(existing)) {return existing;}
-	const hooks: RefreshHooks = new WeakMap<object, { afterRefresh: () => void; generation: number }>();
-	writeGlobalSlot(REFRESH_HOOK_KEY, hooks);
-	return hooks;
+	return refreshHooksSlot.value();
 }
 
 /** Poll when no usable cache exists, when it is old, or after a window reset. */

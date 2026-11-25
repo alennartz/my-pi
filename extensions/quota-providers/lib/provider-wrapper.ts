@@ -1,4 +1,6 @@
 import type { Api, Model, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { GlobalSlot } from "../../subagents/global-slot.js";
+import { isObjectLike } from "../../subagents/narrow.js";
 
 /** A decision returned immediately before a provider stream starts. */
 export type ProviderQuotaDecision =
@@ -14,10 +16,6 @@ export type ProviderQuotaEvaluator = (
 	model: Model<Api>,
 	options?: SimpleStreamOptions,
 ) => ProviderQuotaDecision;
-
-// Symbol.for keeps the marker visible when pi reloads an extension module in
-// the same process. A local Symbol would make old guards look like new ones.
-const QUOTA_WRAPPER = Symbol.for("my-pi.quota-provider-wrapper");
 
 /** Closed-over dispatch state shared by nested provider-composer calls. */
 export type QuotaGuardChain = { depth: number };
@@ -36,15 +34,46 @@ type WrapperState =
 		chain: QuotaGuardChain;
 	};
 
-type MarkedProvider = Provider & { readonly [QUOTA_WRAPPER]?: WrapperState };
+type WrapperStateLookup = WeakMap<Provider, WrapperState>;
 
+/** Whether a slot occupant is a wrapper-state lookup. */
+function isWrapperStateLookup(value: unknown): value is WrapperStateLookup {
+	return isObjectLike(value) && "get" in value && "set" in value && "delete" in value
+		&& typeof value.get === "function" && typeof value.set === "function"
+		&& typeof value.delete === "function";
+}
+
+// Symbol.for keeps the slot visible when pi reloads an extension module in the
+// same process: the reloaded module instance shares this state with the guard
+// the previous instance installed, so wrappers never stack across a reload.
+const wrapperStateSlot = new GlobalSlot<WrapperStateLookup>(
+	"my-pi.quota-provider-wrapper-states",
+	isWrapperStateLookup,
+	() => new WeakMap<Provider, WrapperState>(),
+);
+
+/** Read the wrapper state recorded for one provider object or its wrapper chain. */
 function wrapperState(provider: Provider): WrapperState | undefined {
-	const value = (provider as unknown as Record<PropertyKey, unknown>)[QUOTA_WRAPPER];
-	if (!value || typeof value !== "object") {return undefined;}
-	const state = value as Partial<WrapperState>;
-	return state.kind === "provider" || state.kind === "stream"
-		? value as WrapperState
-		: undefined;
+	let current: Provider | undefined = provider;
+	for (let hop = 0; current !== undefined && hop < 8; hop++) {
+		const recorded = wrapperStateSlot.value().get(current);
+		if (recorded !== undefined) {return recorded;}
+		const prototype: unknown = Object.getPrototypeOf(current);
+		current = typeof prototype === "object" && prototype !== null && "id" in prototype
+			? prototype as Provider
+			: undefined;
+	}
+	return undefined;
+}
+
+/** Record wrapper state for one provider object. */
+function publishWrapperState(provider: Provider, state: WrapperState): void {
+	wrapperStateSlot.value().set(provider, state);
+}
+
+/** Forget wrapper state for one provider object. */
+function dropWrapperState(provider: Provider): void {
+	wrapperStateSlot.value().delete(provider);
 }
 
 /** Return the private dispatch chain for a quota wrapper. */
@@ -88,7 +117,8 @@ export function restoreQuotaStreamGuard(provider: Provider): boolean {
 			writable: true,
 			value: state.originalStreamSimple,
 		});
-		return delete (provider as unknown as Record<PropertyKey, unknown>)[QUOTA_WRAPPER];
+		dropWrapperState(provider);
+		return true;
 	} catch {
 		return false;
 	}
@@ -141,13 +171,8 @@ export function installQuotaStreamGuard(
 	const state: WrapperState = { kind: "stream", originalStreamSimple, evaluate, chain };
 	const guardedStreamSimple = guardedStream(state, originalStreamSimple, provider);
 
+	publishWrapperState(provider, state);
 	try {
-		Object.defineProperty(provider, QUOTA_WRAPPER, {
-			configurable: true,
-			enumerable: false,
-			writable: false,
-			value: state,
-		});
 		Object.defineProperty(provider, "streamSimple", {
 			configurable: true,
 			enumerable: true,
@@ -156,11 +181,8 @@ export function installQuotaStreamGuard(
 		});
 		return true;
 	} catch {
-		try {
-			delete (provider as unknown as Record<PropertyKey, unknown>)[QUOTA_WRAPPER];
-		} catch {
-			// The provider is immutable. The caller can fall back to a Proxy.
-		}
+		// The provider is immutable. The caller can fall back to a Proxy.
+		dropWrapperState(provider);
 		return false;
 	}
 }
@@ -173,7 +195,7 @@ export function wrapProviderWithQuota(
 	provider: Provider,
 	evaluate: ProviderQuotaEvaluator,
 ): Provider {
-	const existing = wrapperState(provider);
+	const existing = wrapperState(provider) ?? wrapperState(Object.getPrototypeOf(provider) as Provider);
 	if (existing) {
 		existing.evaluate = evaluate;
 		return provider;
@@ -186,22 +208,30 @@ export function wrapProviderWithQuota(
 	const state: WrapperState = { kind: "provider", original: provider, evaluate, chain };
 	const guardedStreamSimple = guardedStream(state, streamSimple, provider);
 
-	const target = Object.create(provider) as MarkedProvider;
-	Object.defineProperty(target, QUOTA_WRAPPER, {
-		configurable: false,
-		enumerable: false,
-		value: state,
-		writable: false,
-	});
+	const target = Object.create(provider) as Provider;
+	publishWrapperState(provider, state);
+	publishWrapperState(target, state);
 
 	return new Proxy(target, {
 		get(wrapper, property) {
-			if (property === QUOTA_WRAPPER) {return wrapper[QUOTA_WRAPPER];}
 			if (property === "streamSimple") {return guardedStreamSimple;}
-
-			const entries = new Map(Object.entries(provider));
-			const value = entries.get(String(property));
-			return typeof value === "function" ? value.bind(provider) : value;
+			if (typeof property !== "string" || !(property in provider)) {return undefined;}
+			return forwardProviderMember(provider, property as keyof Provider & string);
 		},
 	});
+}
+
+/**
+ * Forward one provider member to a caller, binding functions to the provider.
+ * Typed against the declared Provider surface, so every forwarded member keeps
+ * its signature and the receiver survives the wrapper.
+ */
+function forwardProviderMember<P extends Provider, K extends keyof P & string>(
+	provider: P,
+	property: K,
+): P[K] {
+	const member = provider[property];
+	if (typeof member !== "function") {return member;}
+	const bound = member.bind(provider) as P[K];
+	return bound;
 }
