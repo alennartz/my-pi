@@ -260,36 +260,6 @@ only when pi marks the project trusted. Overlays apply from broad to narrow,
 with nearer roots taking precedence through ordering. Malformed overlays produce
 one warning per diagnostic and are skipped.
 
-## Gemini xhigh thinking level
-
-pi-ai's Google thinking-level map stops at `high`. A model entry that maps
-`xhigh` to a value makes the resolver throw, so the session cannot use that
-level. Gemini 4 models accept `XHIGH` on the wire. Two pieces work together:
-
-1. `models.json` maps `xhigh` to `high` for each supported model. The resolver
-   accepts the level and sends `HIGH`.
-2. The `gemini-xhigh` extension rewrites `HIGH` to `XHIGH` when the session
-   level is xhigh. Other levels keep their wire value.
-
-The extension changes nothing for other APIs, other levels, or a payload
-without a thinking config.
-
-```json
-{
-  "providers": {
-    "google": {
-      "modelOverrides": {
-        "gemini-4-hydrogen": { "thinkingLevelMap": { "xhigh": "high" } },
-        "gemini-4-neon": { "thinkingLevelMap": { "xhigh": "high" } }
-      }
-    }
-  }
-}
-```
-
-`modelOverrides` merges into the built-in model, so only the named keys change.
-Add an entry when a new Google model supports xhigh.
-
 ## Subagent definitions
 
 A subagent definition is a Markdown file with flat front matter. The required
