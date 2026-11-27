@@ -15,7 +15,7 @@ A hold is a per-child flag that only the user sets, through the provider's `setH
 
 Each manager owns one settlement ledger, keyed by path and incarnation. Every child run start, settlement, hold change, removal, and wait goes through it:
 - A hold blocks offers of that child's results. It cannot withdraw a result already offered to Pi. The await card shows the hold and the wait does not count held results as settled. Explicit messages still flow.
-- A release delivers through the active wait or a notice.
+- A release delivers through the active wait or a notice. A run that only stopped goes to the active wait but does not send a notice.
 - A new run discards undelivered answers and marks the next delivery as a replacement. Stops keep the mark. A `dead` settlement without a new run does not displace an answer; both are delivered.
 - A removal settles the child as `removed` in the active wait, with or without a view, and the removal result carries any held output.
 - A parent Stop cancels the wait. Undelivered settlements go out as notices and park per DR-072.
