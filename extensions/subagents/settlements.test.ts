@@ -71,6 +71,22 @@ describe("SettlementLedger", () => {
 		expect(notices).toEqual([{ path: ["worker"], settlement: idle("third"), replaced: true }]);
 	});
 
+	it("delivers an unheld answer a wait collected when the child starts again before the wait ends", async () => {
+		const { ledger, notices, child, run, settle } = harness();
+		const worker = child("worker");
+		const scout = child("scout");
+		run(worker);
+		run(scout);
+		const wait = ledger.wait([worker, scout]);
+		settle(worker, idle("first"));
+		run(worker);
+		settle(scout, idle("s"));
+		settle(worker, idle("second"));
+		const result = await wait.result;
+		expect(notices).toEqual([{ path: ["worker"], settlement: idle("first"), replaced: false }]);
+		expect(result.statuses.map((status) => [status.output, status.replacedHeldResult])).toEqual([["second", undefined], ["s", undefined]]);
+	});
+
 	it("keeps a held answer when the runtime dies without a new run, and delivers both", () => {
 		const { ledger, notices, child, run, settle } = harness();
 		const worker = child("worker");

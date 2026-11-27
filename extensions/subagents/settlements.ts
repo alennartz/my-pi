@@ -66,7 +66,8 @@ type WaitEntry = Readonly<{ ref: ChildRef; status: SubagentAgentStatus; resolved
  * panel read the same fact.
  *
  * - A held child's settlements reach no one until the user releases it.
- * - A new run discards undelivered answers and marks the next delivery as a
+ * - A new run delivers an unheld child's undelivered answers first. For a
+ *   held child it discards them and marks the next delivery as a
  *   replacement. Stops keep that mark.
  * - Removal settles the child as `removed` in the active wait.
  * - A parent stop cancels the wait and keeps every undelivered settlement.
@@ -95,6 +96,7 @@ export class SettlementLedger {
 
 	runStarted(ref: ChildRef): void {
 		const record = this.record(ref);
+		this.route(record);
 		if (record.pending.some(isAnswer)) {record.replaced = true;}
 		record.pending = [];
 		record.last = undefined;
@@ -205,9 +207,8 @@ export class SettlementLedger {
 		if (record?.held && (record.pending.length > 0 || live.settlement)) {
 			return { ref, resolved: false, status: { path, state: "held" } };
 		}
-		if (record?.running) {return { ref, resolved: false, status: { path, state: live.state === "waiting" ? "waiting" : "running" } };}
+		if (record?.running || !live.settlement) {return { ref, resolved: false, status: { path, state: live.state === "waiting" ? "waiting" : "running" } };}
 		const settlement = record?.last ?? live.settlement;
-		if (!settlement) {return { ref, resolved: false, status: { path, state: live.state } };}
 		return {
 			ref,
 			resolved: true,

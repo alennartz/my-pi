@@ -82,12 +82,12 @@ vi.mock("./broker.js", () => ({
 
 import { createSubagentsExtension } from './scoped-extension.js';
 import type { SubagentScope } from './scoped-extension.js';
-import { SubagentPresentation } from "./session-owner.js";
-import { createSemanticFactBus } from "./semantic-bus.js";
-import type { SemanticAdapterEvent } from "./semantic-adapter.js";
-import { createSubagentProvider } from './provider.js';
-import type { SubagentSemanticFact } from './provider.js';
+import { SUBAGENT_PROVIDER_REQUEST, SUBAGENT_PROVIDER_RESPONSE } from "@pimote/sdk/subagents";
+import type { SubagentRuntimeRef, SubagentTopologyEvent } from "@pimote/sdk/subagents";
 import { serializeAgentMessage } from "./messages.js";
+import { SubagentControlPort } from "./control-port.js";
+import { RunningToolProgress } from "./tool-progress.js";
+import type { SubagentTreeServices } from "./tree-services.js";
 // vi.spyOn replaces a method on the module namespace object.
 // oxlint-disable-next-line import/no-namespace
 import * as agentDiscovery from "./agents.js";
@@ -100,8 +100,18 @@ import type { JsonValue } from "@earendil-works/pi-ai";
 
 const key = (agentPath: AgentPath): string => JSON.stringify(agentPath);
 
+function makeServices(): SubagentTreeServices {
+	return { control: new SubagentControlPort(), toolProgress: new RunningToolProgress(), trackRestore: vi.fn() };
+}
+
+async function tick(): Promise<void> {
+	await new Promise<void>((resolve) => {
+		setImmediate(resolve);
+	});
+}
+
 /** Minimal live-registry fixture for recursive manager integration. */
-function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
+function makeRegistryFake(ownerPath: AgentPath = [], services: SubagentTreeServices = makeServices()): AgentSessionRegistry {
 	const nodes = new Map<string, any>();
 	const listeners = new Set<(event: RegistryEvent) => void>();
 	const livePaths = new Set<string>([key([])]);
@@ -113,6 +123,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 		parentPath: null,
 		localId: null,
 		ownership: "external",
+		incarnation: "root",
 		sessionId: "root-session",
 		cwd: "/repo",
 		channels: [],
@@ -135,6 +146,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 				parentPath: pathAtDepth.slice(0, -1),
 				localId: pathAtDepth.at(-1) ?? null,
 				ownership: "registry",
+				incarnation: `seed-${pathAtDepth.join("-")}`,
 				sessionId: `seed-${pathAtDepth.join("-")}`,
 				cwd: "/repo",
 				channels: ["parent"],
@@ -214,6 +226,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 							channels: request.channels,
 						},
 						uplink: request.session.uplink,
+						services,
 					},
 				};
 				const session = await managed.createManagedChildSession(config, { agentDir: "/agent" }, childHooks);
@@ -223,6 +236,7 @@ function makeRegistryFake(ownerPath: AgentPath = []): AgentSessionRegistry {
 					parentPath: [...parentPath],
 					localId: request.localId,
 					ownership: "registry",
+					incarnation: `incarnation-${request.localId}-${session.sessionId}`,
 					sessionId: session.sessionId,
 					sessionFile: session.sessionFile,
 					cwd: target.kind === "new" || target.kind === "fork" ? target.cwd : "/restored-cwd",
@@ -277,7 +291,7 @@ const registry = makeRegistryFake();
 
 type RegisteredTool = {
 	name: string;
-	execute: (toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: undefined, ctx: any) => Promise<any>;
+	execute: (toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: ((update: any) => void) | undefined, ctx: any) => Promise<any>;
 };
 
 function makePort(id: string): MessagePort & { emit(message: RoutedMessage): void; listeners: Set<(message: RoutedMessage) => void> } {
@@ -286,6 +300,8 @@ function makePort(id: string): MessagePort & { emit(message: RoutedMessage): voi
 		id,
 		send: vi.fn(async (): Promise<SendReceipt> => ({})),
 		respond: vi.fn(async () => {}),
+		responseProgress: vi.fn(),
+		reject: vi.fn(async () => {}),
 		detach: vi.fn(),
 		cancel: vi.fn(),
 		subscribe: vi.fn((listener: (message: RoutedMessage) => void) => {
@@ -340,6 +356,7 @@ function makeContext(parentSessionFile: string, overrides: Record<string, JsonVa
 		},
 		sessionManager: {
 			getSessionFile: () => parentSessionFile,
+			getSessionId: () => "root-session",
 			getSessionName: () => "parent",
 			getLeafId: (): string | null => null,
 		},
@@ -369,6 +386,20 @@ async function execute(tools: Map<string, RegisteredTool>, name: string, params:
 	const tool = tools.get(name);
 	if (!tool) {throw new Error(`Tool ${name} was not registered`);}
 	return tool.execute("call-1", params, undefined, undefined, ctx);
+}
+
+function runTool(
+	tools: Map<string, RegisteredTool>,
+	name: string,
+	params: unknown,
+	ctx: unknown,
+	options: { toolCallId?: string; signal?: AbortSignal } = {},
+) {
+	const tool = tools.get(name);
+	if (!tool) {throw new Error(`Tool ${name} was not registered`);}
+	const updates: any[] = [];
+	const result: Promise<any> = tool.execute(options.toolCallId ?? "call-1", params, options.signal, (update) => updates.push(update), ctx);
+	return { result, updates };
 }
 
 async function startSession(handlers: Map<string, (...args: any[]) => any>, ctx: unknown): Promise<void> {
@@ -440,6 +471,7 @@ describe("child-scoped extension routing", () => {
 				channels: ["parent"],
 			},
 			uplink,
+			services: makeServices(),
 		};
 		const { pi, tools, handlers } = makePi();
 		await createSubagentsExtension(scope)(pi as any);
@@ -447,11 +479,11 @@ describe("child-scoped extension routing", () => {
 		await startSession(handlers, ctx);
 
 		await execute(tools, "send", { to: "parent", message: "hello", expectResponse: false }, ctx);
-		expect(uplink.send).toHaveBeenCalledWith({
+		expect(uplink.send).toHaveBeenCalledWith(expect.objectContaining({
 			to: "parent",
 			message: "hello",
 			expectResponse: false,
-		});
+		}));
 
 		uplink.emit({
 			from: "parent",
@@ -490,6 +522,7 @@ describe("child-scoped extension routing", () => {
 			path: ["child"],
 			identity: { id: "child", task: "work", channels: ["parent"] },
 			uplink,
+			services: makeServices(),
 		})(pi as any);
 		const parentSessionFile = path.join(tmpRoot!, "child.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
@@ -499,7 +532,7 @@ describe("child-scoped extension routing", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "subagent", "respond"]);
 		expect(pi.getActiveTools()).toEqual(["read", "subagent", "respond"]);
-		await expect(handlers.get("tool_call")?.({ toolName: "user_edit" }, ctx)).resolves.toEqual({
+		expect(await handlers.get("tool_call")?.({ toolName: "user_edit" }, ctx)).toEqual({
 			block: true,
 			reason: "Model-only tools are unavailable in sessions without UI.",
 		});
@@ -535,49 +568,26 @@ describe("child-scoped extension routing", () => {
 			path: ["child"],
 			identity: { id: "child", task: "work", channels: ["parent"] },
 			uplink,
+			services: makeServices(),
 		})(pi as any);
 		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
 		await startSession(handlers, ctx);
 
 		uplink.emit({ from: "parent", message: "continue", responseExpected: false });
+		await tick();
 
 		expect(pi.sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				customType: "subagents",
 				content: expect.stringContaining("continue"),
 				display: true,
+				details: { subagent: [expect.objectContaining({
+					kind: "message_received",
+					data: expect.objectContaining({ parameters: { from: [], message: "continue", expectResponse: false } }),
+				})] },
 			}),
 			{ triggerTurn: true },
 		);
-	});
-
-	it("delivers an incoming message with a typed presentation payload", async () => {
-		const uplink = makePort("child");
-		const { pi, handlers } = makePi();
-		await createSubagentsExtension({
-			kind: "child",
-			registry,
-			path: ["child"],
-			identity: { id: "child", task: "work", channels: ["parent"] },
-			uplink,
-		})(pi as any);
-		const parentSessionFile = path.join(tmpRoot!, "parent-with-unrelated-leaf.jsonl");
-		fs.writeFileSync(parentSessionFile, "");
-		const ctx = makeContext(parentSessionFile, {
-			sessionManager: {
-				getSessionFile: () => parentSessionFile,
-				getSessionName: () => "parent",
-				getLeafId: () => "unrelated-leaf",
-			},
-		});
-		await startSession(handlers, ctx);
-
-		uplink.emit({ from: "parent", message: "continue", responseExpected: false });
-
-		const [message] = pi.sendMessage.mock.calls;
-		expect(message[0]).toMatchObject({ customType: "subagents", content: expect.stringContaining("continue") });
-		expect((message[0]).details?.subagentContent).toHaveLength(1);
-		expect((message[0]).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "message_received", data: { operation: "send", result: { from: [], to: ["child"], message: "continue", responseExpected: false } } });
 	});
 
 	it("keeps child notifications local after session shutdown and renders the scoped model catalog", async () => {
@@ -593,6 +603,7 @@ describe("child-scoped extension routing", () => {
 				channels: ["parent"],
 			},
 			uplink,
+			services: makeServices(),
 		})(pi as any);
 		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
 		await startSession(handlers, ctx);
@@ -606,6 +617,7 @@ describe("child-scoped extension routing", () => {
 		await expect(execute(tools, "send", { to: "parent", message: "too late", expectResponse: false }, ctx))
 			.rejects.toThrow(/shutting down/i);
 		uplink.emit({ from: "parent", message: "after shutdown", responseExpected: false });
+		await tick();
 		expect(pi.sendMessage).not.toHaveBeenCalledWith(
 			expect.objectContaining({
 				content: expect.stringContaining("after shutdown"),
@@ -626,6 +638,7 @@ describe("child-scoped extension routing", () => {
 			path: ["researcher", "worker"],
 			identity: { id: "worker", task: "delegate", channels: ["parent"] },
 			uplink: parentUplink,
+			services: makeServices(),
 		})(pi as any);
 		const ctx = makeContext(parentSessionFile);
 		await startSession(handlers, ctx);
@@ -690,6 +703,7 @@ describe("child-scoped extension routing", () => {
 			path: ["researcher", "worker"],
 			identity: { id: "worker", task: "delegate", channels: ["parent"] },
 			uplink: parentUplink,
+			services: makeServices(),
 		})(pi as any);
 		const ctx = makeContext(parentSessionFile);
 		await startSession(handlers, ctx);
@@ -711,10 +725,8 @@ describe("child-scoped extension routing", () => {
 		await execute(tools, "respond", { correlationId: "corr-collision", message: "local answer" }, ctx);
 
 		await expect(pending.response).resolves.toEqual({ type: "response", message: "local answer" });
-		expect(parentUplink.respond).toHaveBeenCalledWith(
-			"corr-collision",
-			expect.stringContaining("already pending on another recursive route"),
-		);
+		expect(parentUplink.reject).toHaveBeenCalledWith("corr-collision", expect.stringContaining("already pending"));
+		expect(parentUplink.respond).not.toHaveBeenCalled();
 	});
 
 	it("uses explicit child scope rather than a conflicting process-wide parent link", async () => {
@@ -729,23 +741,24 @@ describe("child-scoped extension routing", () => {
 				path: ["explicit-child"],
 				identity: { id: "explicit-child", task: "work", channels: ["parent"] },
 				uplink,
+				services: makeServices(),
 			})(pi as any);
 			const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
 			await startSession(handlers, ctx);
 
 			await execute(tools, "send", { to: "parent", message: "scope wins", expectResponse: false }, ctx);
-			expect(uplink.send).toHaveBeenCalledWith({
+			expect(uplink.send).toHaveBeenCalledWith(expect.objectContaining({
 				to: "parent",
 				message: "scope wins",
 				expectResponse: false,
-			});
+			}));
 		} finally {
 			if (previous === undefined) {delete process.env.PI_PARENT_LINK;}
 			else {process.env.PI_PARENT_LINK = previous;}
 		}
 	});
 
-	it("parks notifications on the next turn when the run was aborted, instead of restarting it", async () => {
+	it("parks notifications without a turn when the run was aborted", async () => {
 		const uplink = makePort("child");
 		const scope: SubagentScope = {
 			kind: "child",
@@ -753,6 +766,7 @@ describe("child-scoped extension routing", () => {
 			path: ["child"],
 			identity: { id: "child", task: "work", channels: ["parent"] },
 			uplink,
+			services: makeServices(),
 		};
 		const { pi, handlers } = makePi();
 		await createSubagentsExtension(scope)(pi as any);
@@ -760,14 +774,12 @@ describe("child-scoped extension routing", () => {
 		await startSession(handlers, ctx);
 		const aborting = { ...ctx, signal: { aborted: true } };
 
-		// Busy with a tool in flight, so the arriving message is held, not delivered.
 		await handlers.get("agent_start")?.({ type: "agent_start" }, ctx);
 		await handlers.get("tool_execution_start")?.({ toolCallId: "t1", toolName: "bash" }, ctx);
 		uplink.emit({ from: "parent", message: "stop that", responseExpected: false });
+		await tick();
 		expect(pi.sendMessage).not.toHaveBeenCalled();
-
-		// The run unwinds under an aborted signal.
-		await handlers.get("tool_execution_end")?.({ toolCallId: "t1", toolName: "bash" }, aborting);
+		expect(handlers.get("turn_end")?.({ type: "turn_end", outcome: "aborted" }, aborting)).toBeUndefined();
 		expect(pi.sendMessage).not.toHaveBeenCalled();
 
 		await handlers.get("agent_end")?.({
@@ -780,7 +792,7 @@ describe("child-scoped extension routing", () => {
 		expect(pi.sendMessage).toHaveBeenCalledTimes(1);
 		expect(pi.sendMessage).toHaveBeenCalledWith(
 			expect.objectContaining({ content: expect.stringContaining("stop that") }),
-			{ deliverAs: "nextTurn" },
+			{ triggerTurn: false },
 		);
 	});
 
@@ -792,6 +804,7 @@ describe("child-scoped extension routing", () => {
 			path: ["child"],
 			identity: { id: "child", task: "work", channels: ["parent"] },
 			uplink,
+			services: makeServices(),
 		};
 		const { pi, handlers } = makePi();
 		await createSubagentsExtension(scope)(pi as any);
@@ -821,11 +834,11 @@ describe("child-scoped extension routing", () => {
 		const second = makePi();
 		const firstScope: SubagentScope = {
 			kind: "child", registry, path: ["first"],
-			identity: { id: "first", task: "one", channels: ["parent"] }, uplink: firstUplink,
+			identity: { id: "first", task: "one", channels: ["parent"] }, uplink: firstUplink, services: makeServices(),
 		};
 		const secondScope: SubagentScope = {
 			kind: "child", registry, path: ["second"],
-			identity: { id: "second", task: "two", channels: ["parent"] }, uplink: secondUplink,
+			identity: { id: "second", task: "two", channels: ["parent"] }, uplink: secondUplink, services: makeServices(),
 		};
 		await createSubagentsExtension(firstScope)(first.pi as any);
 		await createSubagentsExtension(secondScope)(second.pi as any);
@@ -836,6 +849,7 @@ describe("child-scoped extension routing", () => {
 		await execute(first.tools, "send", { to: "parent", message: "from first", expectResponse: false }, ctx);
 		await execute(second.tools, "send", { to: "parent", message: "from second", expectResponse: false }, ctx);
 		firstUplink.emit({ from: "parent", message: "only first", responseExpected: false });
+		await tick();
 
 		expect(firstUplink.send).toHaveBeenCalledTimes(1);
 		expect(secondUplink.send).toHaveBeenCalledTimes(1);
@@ -850,19 +864,14 @@ describe("child-scoped extension routing", () => {
 	});
 });
 
-function factsIn(result: { details?: { semantic?: SubagentSemanticFact | readonly SubagentSemanticFact[]; semanticEvents?: readonly SubagentSemanticFact[] } }): readonly SubagentSemanticFact[] {
-	const facts = result.details?.semantic ?? result.details?.semanticEvents ?? [];
-	return Array.isArray(facts) ? facts : [facts as SubagentSemanticFact];
-}
-
-
-async function rootSession() {
-	const sessionFile = path.join(tmpRoot!, "semantic-parent.jsonl");
-	fs.writeFileSync(sessionFile, "");
-	const root = makePi();
+function makeEventBus() {
 	const listeners = new Map<string, Set<(data: any) => void>>();
-	let provider: any;
-	(root.pi as any).events = {
+	const responses: { provider: any }[] = [];
+	const topology: SubagentTopologyEvent[] = [];
+	const watched = new Set<unknown>();
+	return {
+		responses,
+		topology,
 		on(name: string, listener: (data: any) => void) {
 			const group = listeners.get(name) ?? new Set();
 			group.add(listener);
@@ -870,396 +879,425 @@ async function rootSession() {
 			return () => group.delete(listener);
 		},
 		emit(name: string, data: any) {
-			if (name === "pimote:subagents:response") {provider = data.provider;}
+			if (name === SUBAGENT_PROVIDER_RESPONSE) {
+				responses.push(data);
+				if (data.provider && !watched.has(data.provider)) {
+					watched.add(data.provider);
+					data.provider.subscribe((event: SubagentTopologyEvent) => topology.push(event));
+				}
+			}
 			for (const listener of listeners.get(name) ?? []) {listener(data);}
 		},
 	};
-	const bus = createSemanticFactBus();
-	const published: SubagentSemanticFact[] = [];
-	const presentation: SemanticAdapterEvent[] = [];
-	bus.subscribe((fact) => published.push(fact));
-	bus.subscribePresentation?.((event) => presentation.push(event));
-	await createSubagentsExtension({ kind: "root", semanticEvents: bus })(root.pi as any);
-	const ctx = makeContext(sessionFile);
-	ctx.sessionManager.getLeafId = () => "root-leaf";
-	await startSession(root.handlers, ctx);
-	await execute(root.tools, "subagent", { agents: [{ id: "worker", task: "inspect", channels: [] }] }, ctx);
-	return { ...root, ctx, bus, provider, published, presentation, worker: managed.created[0] };
 }
 
-describe("semantic facts on native messages", () => {
-	it("records a control resurrection in the parent presentation and restores it", async () => {
+async function rootSession() {
+	const sessionFile = path.join(tmpRoot!, "root.jsonl");
+	fs.writeFileSync(sessionFile, "");
+	const root = makePi();
+	const bus = makeEventBus();
+	(root.pi as any).events = bus;
+	await createSubagentsExtension({ kind: "root" })(root.pi as any);
+	const ctx = makeContext(sessionFile);
+	await startSession(root.handlers, ctx);
+	await execute(root.tools, "subagent", { agents: [{ id: "worker", task: "inspect", channels: [] }] }, ctx);
+	const provider = bus.responses.at(-1)?.provider;
+	const ref = (localId: string): SubagentRuntimeRef => {
+		const node = provider.snapshot().nodes.find((candidate: any) => key(candidate.path) === key([localId]));
+		return { path: node.path, incarnation: node.incarnation };
+	};
+	return { ...root, ctx, bus, provider, ref, worker: managed.created[0] };
+}
+
+function settleChild(entry: { hooks: any }, output: string, error?: string): void {
+	entry.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: output }] } });
+	entry.hooks.onEvent({
+		type: "agent_end",
+		willRetry: false,
+		messages: error ? [{ role: "assistant", stopReason: "error", errorMessage: error }] : [],
+	});
+	entry.hooks.onEvent({ type: "agent_settled" });
+}
+
+function subagentNotices(pi: ReturnType<typeof makePi>["pi"]): [any, any][] {
+	return pi.sendMessage.mock.calls.filter(([message]) => message.customType === "subagents") as [any, any][];
+}
+
+function noticesContaining(pi: ReturnType<typeof makePi>["pi"], text: string): [any, any][] {
+	return subagentNotices(pi).filter(([message]) => message.content.includes(text));
+}
+
+async function expectPending(promise: Promise<unknown>): Promise<void> {
+	let settled = false;
+	void promise.then(() => { settled = true; }, () => { settled = true; });
+	await tick();
+	expect(settled).toBe(false);
+}
+
+describe("parent notices", () => {
+	it("delivers a child completion to an idle parent as one turn-starting notice with a completion card", async () => {
+		const root = await rootSession();
+		root.pi.sendMessage.mockClear();
+		settleChild(root.worker, "saved answer");
+		await tick();
+
+		const notices = subagentNotices(root.pi);
+		expect(notices).toHaveLength(1);
+		const [message, options] = notices[0];
+		expect(options).toEqual({ triggerTurn: true });
+		expect(message.content).toContain("<agent_idle");
+		expect(message.content).toContain("saved answer");
+		expect(message.details.subagent).toEqual([expect.objectContaining({
+			kind: "completion",
+			state: "complete",
+			data: expect.objectContaining({ result: expect.objectContaining({ path: ["worker"], output: "saved answer" }) }),
+		})]);
+	});
+
+	it("batches notices that arrive together into one message with one card each", async () => {
+		const root = await rootSession();
+		await execute(root.tools, "subagent", { agents: [{ id: "scout", task: "look", channels: [] }] }, root.ctx);
+		root.pi.sendMessage.mockClear();
+		settleChild(root.worker, "worker answer");
+		settleChild(managed.created[1], "scout answer");
+		await tick();
+
+		const notices = subagentNotices(root.pi);
+		expect(notices).toHaveLength(1);
+		expect(notices[0][0].content).toContain("worker answer");
+		expect(notices[0][0].content).toContain("scout answer");
+		expect(notices[0][0].details.subagent.map((card: any) => card.data.result.path)).toEqual([["worker"], ["scout"]]);
+	});
+
+	it("adds notices to a running parent turn at the next boundary without starting a turn", async () => {
+		const root = await rootSession();
+		await root.handlers.get("agent_start")?.({ type: "agent_start" }, root.ctx);
+		root.pi.sendMessage.mockClear();
+		settleChild(root.worker, "mid-run answer");
+		await tick();
+		expect(subagentNotices(root.pi)).toEqual([]);
+
+		expect(root.handlers.get("turn_end")?.({ type: "turn_end", outcome: "continue" }, root.ctx)).toEqual({ continue: true });
+		expect(noticesContaining(root.pi, "mid-run answer")).toEqual([[expect.anything(), { triggerTurn: false }]]);
+		expect(root.handlers.get("agent_before_settle")?.({ type: "agent_before_settle", outcome: "continue" }, root.ctx)).toBeUndefined();
+	});
+
+	it("delivers a completion while a view holds a lease on the child", async () => {
+		const root = await rootSession();
+		const lease = await root.provider.acquire(root.ref("worker"));
+		root.pi.sendMessage.mockClear();
+		settleChild(root.worker, "viewed answer");
+		await tick();
+
+		expect(noticesContaining(root.pi, "viewed answer")).toHaveLength(1);
+		lease.release();
+	});
+
+	it("parks a completion an aborted wait did not deliver until the parent stops", async () => {
+		const root = await rootSession();
+		await execute(root.tools, "subagent", { agents: [{ id: "scout", task: "look", channels: [] }] }, root.ctx);
+		await root.handlers.get("agent_start")?.({ type: "agent_start" }, root.ctx);
+		root.pi.sendMessage.mockClear();
+		const controller = new AbortController();
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker", "scout"] }, root.ctx, { signal: controller.signal });
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+		settleChild(root.worker, "unread answer");
+		controller.abort();
+
+		await expect(waiting.result).rejects.toThrow("Wait cancelled.");
+		await tick();
+		expect(noticesContaining(root.pi, "unread answer")).toEqual([]);
+		await root.handlers.get("agent_end")?.({ type: "agent_end", willRetry: false, messages: [{ role: "assistant", stopReason: "aborted", content: [] }] }, root.ctx);
+		await root.handlers.get("agent_settled")?.({ type: "agent_settled", aborted: true }, root.ctx);
+		expect(noticesContaining(root.pi, "unread answer")).toEqual([[expect.objectContaining({ content: expect.stringContaining("<agent_idle") }), { triggerTurn: false }]]);
+	});
+
+	it("tells the parent about a user teardown as context without a turn", async () => {
+		const root = await rootSession();
+		const worker = root.provider.snapshot().nodes.find((node: any) => key(node.path) === key(["worker"]));
+		root.pi.sendMessage.mockClear();
+		await expect(root.provider.teardown(root.ref("worker"))).resolves.toMatchObject({ removed: true, sessionId: worker.sessionId });
+
+		const notices = subagentNotices(root.pi);
+		expect(notices).toHaveLength(1);
+		const [message, options] = notices[0];
+		expect(options).toEqual({ triggerTurn: false });
+		expect(message.content).toContain("<agent_removed");
+		expect(message.content).toContain("worker");
+		expect(message.details.subagent).toEqual([expect.objectContaining({
+			kind: "teardown",
+			data: expect.objectContaining({
+				parameters: expect.objectContaining({ source: "user" }),
+				result: { affectedAgents: [expect.objectContaining({ path: ["worker"], sessionId: worker.sessionId, task: "inspect" })] },
+			}),
+		})]);
+	});
+
+	it("tells the parent about a user resurrection as context without a turn", async () => {
 		const root = await rootSession();
 		const first = root.worker.child;
 		fs.mkdirSync(path.dirname(first.sessionFile), { recursive: true });
 		fs.writeFileSync(first.sessionFile, "");
 		await execute(root.tools, "teardown", { agent: "worker" }, root.ctx);
-		const observed: any[] = [];
-		root.provider.subscribe((event: any) => observed.push(event));
-		root.ctx.sessionManager.getLeafId = () => "resurrection-entry";
 		root.pi.sendMessage.mockClear();
-		await root.provider.resurrect({ parentPath: [], localId: "restored", sessionId: first.sessionId, task: "continue", channels: [] });
 
-		const notice = root.pi.sendMessage.mock.calls.find(([message, options]) =>
-			message.customType === "subagents" && options?.deliverAs === "nextTurn");
-		expect(notice).toBeDefined();
-		const [message, options] = notice!;
-		expect(options).toEqual({ deliverAs: "nextTurn" });
+		const result = await root.provider.resurrect({ parentPath: [], localId: "restored", sessionId: first.sessionId, task: "continue", channels: [] });
+
+		expect(result).toMatchObject({ path: ["restored"], sessionId: managed.created[1].child.sessionId });
+		const notices = subagentNotices(root.pi);
+		expect(notices).toHaveLength(1);
+		const [message, options] = notices[0];
+		expect(options).toEqual({ triggerTurn: false });
 		expect(message.content).toContain("<agent_resurrected");
-		const restoredNode = root.provider.snapshot().nodes.find((node: any) => JSON.stringify(node.path) === JSON.stringify(["restored"]));
-		expect(message.content).toContain(`session_id="${restoredNode.sessionId}"`);
-		const persisted = message.details.subagentContent.find((candidate: any) => candidate.kind === "resurrect");
-		expect(persisted).toMatchObject({ state: "complete", source: "custom_entry" });
-		const entry = {
-			type: "custom_message",
-			id: "resurrection-entry",
-			customType: "subagents",
-			message: { role: "custom", customType: "subagents", content: [{ type: "text", text: message.content }], details: message.details },
-		};
-		expect(observed).toContainEqual(expect.objectContaining({
-			type: "subagent_snapshot_event",
-			target: expect.objectContaining({ kind: "resurrect", path: [], placement: { entryId: "resurrection-entry" } }),
-			data: expect.objectContaining({ operation: "resurrect", result: expect.objectContaining({ affectedAgents: [expect.objectContaining({ path: ["restored"], sessionId: first.sessionId })] }) }),
-		}));
-
-		const restored = createSubagentProvider({ registry: makeRegistryFake(), ownerControl: {} as any });
-		await restored.rehydrate({ session: { sessionId: "fresh-parent", sessionManager: { getBranch: () => [entry] } } as any, path: [] });
-		const hydrated = restored.replay();
-		expect(hydrated.events).toContainEqual(expect.objectContaining({
-			type: "subagent_snapshot_event",
-			target: expect.objectContaining({ kind: "resurrect", path: [], placement: { entryId: "resurrection-entry" } }),
-			data: expect.objectContaining({ result: expect.objectContaining({ affectedAgents: [expect.objectContaining({ path: ["restored"], sessionId: first.sessionId })] }) }),
-		}));
-		restored.shutdown();
-	});
-
-	it("notifies the parent once, next turn, when a control teardown removes a child", async () => {
-		const root = await rootSession();
-		root.pi.sendMessage.mockClear();
-		const observed: any[] = [];
-		root.provider.subscribe((event: any) => observed.push(event));
-		const snapshot = root.provider.snapshot().nodes.find((node: any) => JSON.stringify(node.path) === JSON.stringify(["worker"]));
-		await root.provider.teardown(["worker"], snapshot.incarnation);
-
-		const notice = root.pi.sendMessage.mock.calls.find(([message, options]) =>
-			message.customType === "subagents" && options?.deliverAs === "nextTurn");
-		expect(notice).toBeDefined();
-		const [message, options] = notice!;
-		expect(options).toEqual({ deliverAs: "nextTurn" });
-		expect(message.content).toContain("<agent_removed");
-		expect(message.content).toContain("worker");
-		const persisted = message.details.subagentContent.find((candidate: any) => candidate.kind === "teardown");
-		expect(persisted).toMatchObject({ state: "complete", source: "custom_entry" });
-		expect(persisted.data.result.affectedAgents).toEqual([
-			expect.objectContaining({
-				path: ["worker"],
-				sessionId: snapshot.sessionId,
-				task: snapshot.task,
-				channels: [...snapshot.channels],
-				...(snapshot.model !== undefined ? { model: snapshot.model } : undefined),
+		expect(message.content).toContain(`session_id="${result.sessionId}"`);
+		expect(message.details.subagent).toEqual([expect.objectContaining({
+			kind: "resurrect",
+			data: expect.objectContaining({
+				parameters: expect.objectContaining({ source: "user" }),
+				result: { affectedAgents: [expect.objectContaining({ path: ["restored"], sessionId: first.sessionId })] },
 			}),
-		]);
-		expect(observed).toContainEqual(expect.objectContaining({
-			type: "subagent_snapshot_event",
-			target: expect.objectContaining({ kind: "teardown", path: [] }),
-			data: expect.objectContaining({ operation: "teardown" }),
-		}));
+		})]);
 	});
 
-	it("delivers native notifications when the same child session resumes", async () => {
+	it("delivers child messages to a resumed child session", async () => {
 		const childRegistry = makeRegistryFake(["worker"]);
 		const ctx = makeContext(path.join(tmpRoot!, "child.jsonl"));
 		for (const reason of ["new", "resume", "reload"]) {
-			ctx.sessionManager.getLeafId = () => reason === "new" ? null : "child-leaf";
 			const child = makePi();
 			const uplink = makePort("worker");
 			await createSubagentsExtension({
 				kind: "child", registry: childRegistry, path: ["worker"],
-				identity: { id: "worker", task: "inspect", channels: ["parent"] }, uplink,
+				identity: { id: "worker", task: "inspect", channels: ["parent"] }, uplink, services: makeServices(),
 			})(child.pi as any);
 			await child.handlers.get("session_start")?.({ reason }, ctx);
 			uplink.emit({ from: "parent", message: reason, responseExpected: false });
+			await tick();
 			const notification = child.pi.sendMessage.mock.calls.at(-1)?.[0];
-			expect(notification).toMatchObject({ customType: "subagents", content: serializeAgentMessage({ from: "parent", content: reason, responseExpected: false }) });
-			expect((notification).details?.subagentContent).toHaveLength(1);
-			expect((notification).details.subagentContent[0]).toMatchObject({ source: "custom_entry", kind: "message_received", data: { operation: "send", result: expect.objectContaining({ message: reason }) } });
+			expect(notification).toMatchObject({
+				customType: "subagents",
+				content: serializeAgentMessage({ from: "parent", content: reason, responseExpected: false }),
+				details: { subagent: [expect.objectContaining({ kind: "message_received", data: expect.objectContaining({ parameters: expect.objectContaining({ from: [], message: reason }) }) })] },
+			});
 			await child.handlers.get("session_shutdown")?.({}, ctx);
 		}
 	});
 
-	it("publishes custom completion payloads at the native message boundary", async () => {
-		const root = await rootSession();
-		const payload = {
-			operationId: "completion-1",
-			kind: "completion",
-			state: "complete",
-			source: "custom_entry",
-			data: { operation: "completion", result: { state: "idle", output: "done" } },
-		};
-		await root.handlers.get("message_end")?.({
-			type: "message_end",
-			message: { role: "custom", customType: "subagents", details: { subagentContent: [payload] } },
-		}, root.ctx);
-		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "snapshot", operationId: "completion-1" }));
-		await root.handlers.get("entry_appended")?.({
-			type: "entry_appended",
-			entry: { id: "completion-entry", message: { role: "custom", customType: "subagents", details: { subagentContent: [payload] } } },
-		}, root.ctx);
-		expect(root.presentation.filter((event) => event.operationId === "completion-1")).toHaveLength(1);
-	});
-
-	it("publishes a received message at its native custom-message boundary", async () => {
-		const root = await rootSession();
-		const events: any[] = [];
-		root.provider.subscribe((event: any) => events.push(event));
-		await root.worker.config.scope.uplink.send({ to: "parent", message: "child update", expectResponse: false });
-		const notification = root.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("child update"))?.[0];
-		await root.handlers.get("entry_appended")?.({
-			type: "entry_appended", entry: { id: "received-entry", type: "custom_message", ...notification },
-		}, root.ctx);
-		expect(events).toContainEqual(expect.objectContaining({
-			type: "subagent_snapshot_event", target: { operationId: expect.any(String), kind: "message_received", path: [], placement: { entryId: "received-entry" } },
-			data: { operation: "send", result: { from: ["worker"], to: [], message: "child update", responseExpected: false } },
-		}));
-	});
-
-	it("publishes a received message before the native entry has an ID", async () => {
-		const root = await rootSession();
-		const events: any[] = [];
-		root.provider.subscribe((event: any) => events.push(event));
-		await root.worker.config.scope.uplink.send({ to: "parent", message: "early update", expectResponse: false });
-		const notification = root.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("early update"))?.[0];
-		await root.handlers.get("message_end")?.({ type: "message_end", message: { role: "custom", ...notification } }, root.ctx);
-		const received = events.find((event) => event.type === "subagent_snapshot_event" && event.target.kind === "message_received");
-		expect(received).toMatchObject({ target: { path: [] }, data: { result: { from: ["worker"], message: "early update" } } });
-		expect(received.target).not.toHaveProperty("placement");
-	});
-
-	it("carries custom payloads from message_end to a later bare append event", async () => {
-		const root = await rootSession();
-		const payload = {
-			operationId: "bare-custom",
-			kind: "send",
-			state: "complete",
-			source: "custom_entry",
-			data: { operation: "send", to: ["worker"], request: "question", response: "" },
-		};
-		await root.handlers.get("message_end")?.({ type: "message_end", message: { role: "custom", customType: "subagents", details: { subagentContent: [payload] } } }, root.ctx);
-		await root.handlers.get("entry_appended")?.({ type: "entry_appended", entry: { id: "bare-entry", message: { role: "custom", customType: "subagents" } } }, root.ctx);
-		expect(root.presentation).toContainEqual(expect.objectContaining({ operationId: "bare-custom", type: "snapshot" }));
-		expect(root.presentation.find((event) => event.operationId === "bare-custom")).not.toHaveProperty("placement");
-	});
-
-	it("persists the accepted send fact on the sender's native tool result", async () => {
-		const root = await rootSession();
-		const result = await root.tools.get("send")!.execute("send-call", { to: "worker", message: "continue", expectResponse: false }, undefined, undefined, root.ctx);
-		const sent = factsIn(result).find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent");
-		expect(sent).toMatchObject({
-			kind: "message_thread", path: [], data: { from: [], to: ["worker"], text: "continue" },
-		});
-		expect(sent?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: "semantic-parent", toolCallId: "send-call", kind: "tool_call" })]));
-		expect(root.published.some((fact) => fact.eventId === sent?.eventId)).toBe(true);
-	});
-
-	it("attributes child sends to their native session, not the parent router", async () => {
-		const root = await rootSession();
-		const child = makePi();
-		await createSubagentsExtension(root.worker.config.scope)(child.pi as any);
-		const ctx = makeContext(root.worker.child.sessionFile);
-		ctx.sessionManager.getLeafId = () => "child-leaf";
-		await startSession(child.handlers, ctx);
-		const result = await child.tools.get("send")!.execute("child-send-call", { to: "parent", message: "progress", expectResponse: false }, undefined, undefined, ctx);
-		const sent = factsIn(result).find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent");
-		expect(sent).toMatchObject({
-			path: ["worker"], data: { from: ["worker"], to: [], text: "progress" },
-		});
-		expect(sent).not.toHaveProperty("transcriptPosition");
-		expect(sent?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: root.worker.child.sessionId, toolCallId: "child-send-call", kind: "tool_call" })]));
-		expect(root.published.filter((fact) => fact.kind === "message_thread" && fact.data.phase === "sent" && fact.data.text === "progress").map((fact) => fact.eventId)).toEqual([sent?.eventId]);
-	});
-
-	it("keeps root and child received facts plain while preserving their native XML", async () => {
+	it("keeps message bodies verbatim in both directions", async () => {
 		const root = await rootSession();
 		const child = makePi();
 		await createSubagentsExtension(root.worker.config.scope)(child.pi as any);
 		const ctx = makeContext(root.worker.child.sessionFile);
 		await startSession(child.handlers, ctx);
 		const body = "<raw> & **body**\nnext";
-		await child.tools.get("send")!.execute("child-body", { to: "parent", message: body, expectResponse: false }, undefined, undefined, ctx);
-		await root.tools.get("send")!.execute("parent-body", { to: "worker", message: body, expectResponse: false }, undefined, undefined, root.ctx);
-		for (const [notification, from] of [[root.pi.sendMessage.mock.calls.at(-1)?.[0], "worker"], [child.pi.sendMessage.mock.calls.at(-1)?.[0], "parent"]] as const) {
+		await execute(child.tools, "send", { to: "parent", message: body, expectResponse: false }, ctx);
+		await execute(root.tools, "send", { to: "worker", message: body, expectResponse: false }, root.ctx);
+		await tick();
+
+		for (const [pi, from, fromPath] of [[root.pi, "worker", ["worker"]], [child.pi, "parent", []]] as const) {
+			const notification = pi.sendMessage.mock.calls.at(-1)?.[0];
 			expect(notification.content).toBe(serializeAgentMessage({ from, content: body, responseExpected: false }));
-			expect(factsIn(notification)).toEqual([]);
-		}
-	});
-
-	it("persists one canonical response phase in both sender and responder results", async () => {
-		const root = await rootSession();
-		const child = makePi();
-		await createSubagentsExtension(root.worker.config.scope)(child.pi as any);
-		const ctx = makeContext(root.worker.child.sessionFile);
-		ctx.sessionManager.getLeafId = () => "child-reply-leaf";
-		await startSession(child.handlers, ctx);
-		const waiting = root.tools.get("send")!.execute("request-call", { to: "worker", message: "question", expectResponse: true }, undefined, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "message_thread" && fact.data.phase === "sent" && fact.data.correlationId)).toBe(true));
-		const request = root.published.find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")!;
-		const correlationId = request.kind === "message_thread" ? request.data.correlationId : undefined;
-		const responder = await child.tools.get("respond")!.execute("response-call", { correlationId, message: "answer" }, undefined, undefined, ctx);
-		const result = await waiting;
-		const terminal = factsIn(result).find((fact) => fact.kind === "message_thread" && fact.data.phase === "response");
-		expect(terminal).toMatchObject({
-			data: { from: ["worker"], to: [], text: "answer", correlationId },
-		});
-		expect(terminal).not.toHaveProperty("transcriptPosition");
-		expect(terminal?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: root.worker.child.sessionId, toolCallId: "response-call", kind: "tool_call" })]));
-		expect(factsIn(responder).map((fact) => fact.eventId)).toContain(terminal?.eventId);
-		expect(root.published.filter((fact) => fact.kind === "message_thread" && fact.data.phase === "response" && fact.data.correlationId === correlationId).map((fact) => fact.eventId)).toEqual([terminal?.eventId]);
-	});
-
-	it("waits for a running child when its view becomes unavailable", async () => {
-		const root = await rootSession();
-		const lease = await root.provider.acquire(["worker"]);
-		const waiting = root.tools.get("await_agents")!.execute("wait-unavailable", { agents: ["worker"] }, undefined, undefined, root.ctx);
-		let resolved = false;
-		void waiting.then(() => { resolved = true; });
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		root.worker.child.session = undefined;
-		root.worker.hooks.onRuntimeReplaced({ oldSessionId: root.worker.child.sessionId, newSessionId: "replacement" });
-		await new Promise<void>((resolve) => {
-			setImmediate(resolve);
-		});
-		expect(resolved).toBe(false);
-		root.worker.hooks.onEvent({ type: "agent_settled" });
-		const result = await waiting;
-		expect(result.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "worker", status: "idle" }));
-		await lease.release();
-	});
-
-	it("routes a nested view lease to the owner waiting for that child", async () => {
-		const root = await rootSession();
-		const owner = makePi();
-		await createSubagentsExtension(root.worker.config.scope)(owner.pi as any);
-		const ctx = makeContext(root.worker.child.sessionFile);
-		await startSession(owner.handlers, ctx);
-		await execute(owner.tools, "subagent", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, ctx);
-		const scout = managed.created[1];
-		const lease = await root.provider.acquire(["worker", "scout"]);
-		const waiting = owner.tools.get("await_agents")!.execute("nested-await", { agents: ["scout"] }, undefined, undefined, ctx);
-		let resolved = false;
-		void waiting.then(() => { resolved = true; });
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started" && fact.path.join("/") === "worker")).toBe(true));
-		scout.hooks.onEvent({ type: "agent_settled" });
-		await new Promise<void>((resolve) => {
-			setImmediate(resolve);
-		});
-		expect(resolved).toBe(false);
-		await lease.release();
-		expect((await waiting).structuredContent.agents).toContainEqual(expect.objectContaining({ id: "scout", status: "idle" }));
-	});
-
-	it("retains awaited settlements and release facts in the await tool result", async () => {
-		const root = await rootSession();
-		const waiting = root.tools.get("await_agents")!.execute("await-call", { agents: ["worker"] }, undefined, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "saved answer" }] } });
-		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
-		root.worker.hooks.onEvent({ type: "agent_settled" });
-		const facts = factsIn(await waiting);
-		for (const kind of ["await_started", "child_settled", "completion", "await_released"]) {
-			expect(facts.some((fact) => fact.kind === kind)).toBe(true);
-		}
-		expect(facts.find((fact) => fact.kind === "completion")).toMatchObject({ data: { output: "saved answer", delivery: "awaited", invocationId: "await-call" } });
-	});
-
-	it.each([false, true])("keeps requested and unrequested completions inside await, interrupted=%s", async (interrupted) => {
-		const root = await rootSession();
-		await root.tools.get("subagent")!.execute("spawn-peers", {
-			agents: [{ id: "guard", task: "wait", channels: [] }, { id: "scout", task: "inspect", channels: [] }],
-		}, undefined, undefined, root.ctx);
-		for (const child of managed.created) {child.hooks.onEvent({ type: "agent_start" });}
-		const args = { agents: ["worker", "guard"] };
-		await root.handlers.get("message_update")?.({
-			type: "message_update", assistantMessageEvent: {
-				type: "toolcall_start", contentIndex: 0,
-				toolCall: { id: "await-presentation", name: "await_agents", arguments: args },
-			},
-		}, root.ctx);
-		const waiting = root.tools.get("await_agents")!.execute("await-presentation", args, undefined, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		const settle = (child: typeof root.worker, output: string, error?: string) => {
-			child.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: output }] } });
-			child.hooks.onEvent({ type: "agent_end", willRetry: false, messages: error ? [{ role: "assistant", stopReason: "error", errorMessage: error }] : [] });
-			child.hooks.onEvent({ type: "agent_settled" });
-		};
-		settle(managed.created[2], "scout output", "scout failure");
-		settle(root.worker, "worker output");
-		if (interrupted) {await managed.created[1].config.scope.uplink.send({ to: "parent", message: "need a decision", expectResponse: false });}
-		else {settle(managed.created[1], "guard output");}
-		const result = await waiting;
-		expect(result.structuredContent.agents).toEqual(expect.arrayContaining([
-			expect.objectContaining({ id: "worker", output: "worker output" }),
-			expect.objectContaining({ id: "scout", output: "scout output", error: "scout failure" }),
-		]));
-		expect(result.content[0].text).toContain("worker output");
-		expect(factsIn(result)).toEqual(expect.arrayContaining([
-			expect.objectContaining({ kind: "completion", data: expect.objectContaining({ output: "scout output" }) }),
-		]));
-		expect((result.details.subagentContent ?? []).filter((item: any) => item.kind === "completion")).toEqual([]);
-		const amendment = await root.handlers.get("tool_result")?.({
-			type: "tool_result", toolName: "await_agents", toolCallId: "await-presentation", ...result,
-		}, root.ctx);
-		const details = amendment?.details ?? result.details;
-		if (interrupted) {
-			expect(root.presentation).toContainEqual(expect.objectContaining({
-				type: "snapshot",
+			expect(notification.details.subagent).toEqual([expect.objectContaining({
 				kind: "message_received",
-				placement: expect.objectContaining({ toolCallId: "await-presentation", contentIndex: 0 }),
-				data: expect.objectContaining({ operation: "send", result: expect.objectContaining({ message: "need a decision" }) }),
-			}));
+				data: expect.objectContaining({ parameters: expect.objectContaining({ from: fromPath, message: body }) }),
+			})]);
 		}
-		await root.handlers.get("entry_appended")?.({
-			type: "entry_appended",
-			entry: { id: "await-result-entry", message: { role: "toolResult", toolCallId: "await-presentation", details } },
-		}, root.ctx);
-		const finals = root.presentation.filter((event) => event.type === "end" || event.type === "snapshot");
-		expect(finals.filter((event) => event.kind === "completion")).toEqual([]);
-		const awaits = finals.filter((event) => event.kind === "await");
-		expect(awaits).toHaveLength(1);
-		expect(awaits[0]).toMatchObject({ data: { operation: "await", result: { statuses: expect.arrayContaining([
-			expect.objectContaining({ path: ["worker"], output: "worker output" }),
-			expect.objectContaining({ path: ["scout"], output: "scout output", error: "scout failure" }),
-		]) } } });
-		if (interrupted) {
-			expect(result.structuredContent.interrupted).toBe(true);
-			expect(result.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "guard", status: "running" }));
-			expect(awaits[0]).toMatchObject({ data: { result: { interrupted: true, statuses: expect.arrayContaining([expect.objectContaining({ path: ["guard"], state: "running" })]) } } });
-			expect(result.content[0].text).toContain("need a decision");
-			expect(details.subagentContent).toContainEqual(expect.objectContaining({
-				kind: "message_received", source: "custom_entry", data: { operation: "send", result: { to: [], from: ["guard"], message: "need a decision", responseExpected: false } },
-			}));
-			expect(finals).toContainEqual(expect.objectContaining({ kind: "message_received", data: expect.objectContaining({ result: expect.objectContaining({ from: ["guard"], message: "need a decision" }) }) }));
-			expect(root.presentation.filter((event) => event.kind === "message_received")).toHaveLength(1);
-		} else {
-			expect(result.structuredContent.interrupted).not.toBe(true);
-			expect(awaits[0]).not.toMatchObject({ data: { result: { interrupted: true } } });
-		}
+	});
+});
+
+describe("explicit hold", () => {
+	it("keeps a held child's answer from the parent until the user releases it", async () => {
+		const root = await rootSession();
+		await root.provider.setHold({ ...root.ref("worker"), held: true });
+		root.pi.sendMessage.mockClear();
+		settleChild(root.worker, "held answer");
+		await tick();
+
+		expect(subagentNotices(root.pi)).toEqual([]);
+		expect(root.provider.snapshot().nodes.find((node: any) => key(node.path) === key(["worker"])))
+			.toMatchObject({ held: true, heldSettlement: "idle" });
+
+		await root.provider.setHold({ ...root.ref("worker"), held: false });
+		await tick();
+		expect(noticesContaining(root.pi, "held answer")).toEqual([[expect.objectContaining({ content: expect.stringContaining("<agent_idle") }), { triggerTurn: true }]]);
+		expect(root.provider.snapshot().nodes.find((node: any) => key(node.path) === key(["worker"])))
+			.toMatchObject({ held: false });
+	});
+
+	it("reports a held child to an active wait and delivers its answer through the wait on release", async () => {
+		const root = await rootSession();
+		await root.provider.setHold({ ...root.ref("worker"), held: true });
+		settleChild(root.worker, "held answer");
+		root.pi.sendMessage.mockClear();
+
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker"] }, root.ctx);
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+		expect(waiting.updates.at(-1).details.subagent).toMatchObject({
+			kind: "await",
+			state: "active",
+			data: { result: { statuses: [{ path: ["worker"], state: "held" }] } },
+		});
+		await expectPending(waiting.result);
+
+		await root.provider.setHold({ ...root.ref("worker"), held: false });
+		const result = await waiting.result;
+		expect(result.content[0].text).toContain("held answer");
+		expect(result.structuredContent.agents).toEqual([expect.objectContaining({ id: "worker", status: "idle", output: "held answer" })]);
+		await tick();
+		expect(noticesContaining(root.pi, "held answer")).toEqual([]);
+	});
+
+	it("marks the released answer as a replacement when a new run started during the hold", async () => {
+		const root = await rootSession();
+		await root.provider.setHold({ ...root.ref("worker"), held: true });
+		root.pi.sendMessage.mockClear();
+		settleChild(root.worker, "first answer");
+		root.worker.hooks.onEvent({ type: "agent_start" });
+		settleChild(root.worker, "second answer");
+
+		await root.provider.setHold({ ...root.ref("worker"), held: false });
+		await tick();
+		expect(noticesContaining(root.pi, "first answer")).toEqual([]);
+		const [[message]] = noticesContaining(root.pi, "second answer");
+		expect(message.content).toContain("may not be the one you are waiting for");
+		expect(message.details.subagent).toEqual([expect.objectContaining({
+			kind: "completion",
+			data: expect.objectContaining({ result: expect.objectContaining({ output: "second answer", replacedHeldResult: true }) }),
+		})]);
+	});
+});
+
+describe("await_agents", () => {
+	it("returns an awaited answer in the result instead of a separate notice", async () => {
+		const root = await rootSession();
+		root.pi.sendMessage.mockClear();
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker"] }, root.ctx);
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+		settleChild(root.worker, "saved answer");
+
+		const result = await waiting.result;
+		expect(result.content[0].text).toContain("saved answer");
+		expect(result.structuredContent.agents).toEqual([expect.objectContaining({ id: "worker", status: "idle", output: "saved answer" })]);
+		expect(result.details.subagent).toMatchObject({
+			kind: "await",
+			state: "complete",
+			data: { result: { statuses: [expect.objectContaining({ path: ["worker"], state: "idle", output: "saved answer" })] } },
+		});
+		await tick();
+		expect(noticesContaining(root.pi, "saved answer")).toEqual([]);
+	});
+
+	it("streams per-child statuses through onUpdate and serves them to late views", async () => {
+		const root = await rootSession();
+		await execute(root.tools, "subagent", { agents: [{ id: "scout", task: "look", channels: [] }] }, root.ctx);
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker", "scout"] }, root.ctx, { toolCallId: "await-call" });
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+		settleChild(root.worker, "worker answer");
+
+		const latest = waiting.updates.at(-1);
+		expect(latest.details.subagent).toMatchObject({
+			kind: "await",
+			state: "active",
+			data: { parameters: { agents: ["worker", "scout"] }, result: { statuses: [
+				expect.objectContaining({ path: ["worker"], state: "idle", output: "worker answer" }),
+				expect.objectContaining({ path: ["scout"], state: "running" }),
+			] } },
+		});
+		expect(root.provider.presenters.runningToolProgress({ sessionId: "root-session", toolCallId: "await-call" })).toEqual(latest.details);
+
+		settleChild(managed.created[1], "scout answer");
+		await waiting.result;
+		expect(root.provider.presenters.runningToolProgress({ sessionId: "root-session", toolCallId: "await-call" })).toBeUndefined();
+	});
+
+	it("ends a wait as removed when the user tears down the awaited child", async () => {
+		const root = await rootSession();
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker"] }, root.ctx);
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+
+		await root.provider.teardown(root.ref("worker"));
+		const result = await waiting.result;
+		expect(result.structuredContent.agents).toEqual([expect.objectContaining({ id: "worker", status: "removed" })]);
+		expect(result.content[0].text).toContain("<agent_removed");
+	});
+
+	it("reports a user stop during a wait as stopped", async () => {
+		const root = await rootSession();
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker"] }, root.ctx);
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+
+		await root.provider.stop({ ...root.ref("worker"), expectedSessionId: root.worker.child.sessionId });
+		root.worker.hooks.onEvent({ type: "agent_settled", aborted: true });
+		const result = await waiting.result;
+		expect(result.structuredContent.agents).toEqual([expect.objectContaining({ id: "worker", status: "stopped" })]);
+		expect(result.content[0].text).toContain("<agent_stopped");
+	});
+
+	it("ends at once when a child message reached the parent before the wait", async () => {
+		const root = await rootSession();
+		await root.handlers.get("agent_start")?.({ type: "agent_start" }, root.ctx);
+		root.pi.sendMessage.mockClear();
+		await root.worker.config.scope.uplink.send({ to: "parent", message: "need a decision", expectResponse: false });
+
+		const result = await runTool(root.tools, "await_agents", { agents: ["worker"] }, root.ctx).result;
+		expect(result.structuredContent).toMatchObject({ interrupted: true, agents: [expect.objectContaining({ id: "worker", status: "running" })] });
+		expect(result.content[0].text).toMatch(/before this wait began/);
+
+		expect(root.handlers.get("turn_end")?.({ type: "turn_end", outcome: "continue" }, root.ctx)).toEqual({ continue: true });
+		expect(noticesContaining(root.pi, "need a decision")).toEqual([[expect.anything(), { triggerTurn: false }]]);
+	});
+
+	it("ends when a message arrives and reports the current child states", async () => {
+		const root = await rootSession();
+		await execute(root.tools, "subagent", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, root.ctx);
+		await root.handlers.get("agent_start")?.({ type: "agent_start" }, root.ctx);
+		root.pi.sendMessage.mockClear();
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker", "scout"] }, root.ctx);
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+		root.worker.hooks.onEvent({ type: "agent_settled" });
+		await execute(root.tools, "send", { to: "worker", message: "continue", expectResponse: false }, root.ctx);
+		await managed.created[1].config.scope.uplink.send({ to: "parent", message: "update", expectResponse: false });
+
+		const result = await waiting.result;
+		expect(result.structuredContent).toMatchObject({ interrupted: true, agents: [
+			expect.objectContaining({ id: "worker", status: "running" }),
+			expect.objectContaining({ id: "scout", status: "running" }),
+		] });
+		expect(result.content[0].text).toContain("Wait interrupted");
+		expect(result.details.subagent).toMatchObject({ kind: "await", data: { result: { interrupted: true } } });
+
+		await root.handlers.get("turn_end")?.({ type: "turn_end", outcome: "continue" }, root.ctx);
+		expect(noticesContaining(root.pi, "update")).toEqual([[expect.objectContaining({ content: expect.stringContaining("<agent_message") }), { triggerTurn: false }]]);
+	});
+
+	it("leaves a completion outside the wait as a notice for after the wait", async () => {
+		const root = await rootSession();
+		await execute(root.tools, "subagent", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, root.ctx);
+		await root.handlers.get("agent_start")?.({ type: "agent_start" }, root.ctx);
+		root.pi.sendMessage.mockClear();
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker"] }, root.ctx);
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+		settleChild(managed.created[1], "scout answer");
+		expect(root.handlers.get("turn_end")?.({ type: "turn_end", outcome: "continue" }, root.ctx)).toBeUndefined();
+		settleChild(root.worker, "worker answer");
+
+		const result = await waiting.result;
+		expect(result.content[0].text).not.toContain("scout answer");
+		await root.handlers.get("turn_end")?.({ type: "turn_end", outcome: "continue" }, root.ctx);
+		expect(noticesContaining(root.pi, "scout answer")).toHaveLength(1);
+		expect(noticesContaining(root.pi, "worker answer")).toEqual([]);
 	});
 
 	it("waits for a new run when a child becomes active before its agent_start event", async () => {
 		const root = await rootSession();
 		root.worker.hooks.onEvent({ type: "agent_settled" });
 		root.worker.hooks.onEvent({ type: "tool_execution_start", toolName: "read", args: {} });
-		const waiting = root.tools.get("await_agents")!.execute("await-new-run", { agents: ["worker"] }, undefined, undefined, root.ctx);
-		let resolved = false;
-		void waiting.then(() => { resolved = true; });
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		await new Promise<void>((resolve) => {
-			setImmediate(resolve);
-		});
-		expect(resolved).toBe(false);
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker"] }, root.ctx);
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+		await expectPending(waiting.result);
+
 		root.worker.hooks.onEvent({ type: "agent_start" });
 		root.worker.hooks.onEvent({ type: "agent_settled" });
-		expect((await waiting).structuredContent.agents).toContainEqual(expect.objectContaining({ id: "worker", status: "idle" }));
+		expect((await waiting.result).structuredContent.agents).toEqual([expect.objectContaining({ id: "worker", status: "idle" })]);
 	});
 
 	it("waits for work sent to an idle child before its next agent_start", async () => {
@@ -1267,349 +1305,192 @@ describe("semantic facts on native messages", () => {
 		const child = makePi();
 		await createSubagentsExtension(root.worker.config.scope)(child.pi as any);
 		await startSession(child.handlers, makeContext(root.worker.child.sessionFile));
-		const args = { agents: ["worker"] };
-		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "first-wait", args }, root.ctx);
-		const first = root.tools.get("await_agents")!.execute("first-wait", args, undefined, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started" && fact.data.invocationId === "first-wait")).toBe(true));
+		const first = runTool(root.tools, "await_agents", { agents: ["worker"] }, root.ctx);
+		await vi.waitFor(() => expect(first.updates.length).toBeGreaterThan(0));
 		root.worker.hooks.onEvent({ type: "agent_settled" });
-		await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "first-wait", ...await first }, root.ctx);
-		await root.tools.get("send")!.execute("restart-worker", { to: "worker", message: "continue", expectResponse: false }, undefined, undefined, root.ctx);
+		await first.result;
+
+		await execute(root.tools, "send", { to: "worker", message: "continue", expectResponse: false }, root.ctx);
+		await tick();
 		expect(child.pi.sendMessage.mock.calls.some(([message]) => message.content.includes("continue"))).toBe(true);
-		const status = await root.tools.get("check_status")!.execute("check-worker", { agent: "worker" }, undefined, undefined, root.ctx);
+		const status = await execute(root.tools, "check_status", { agent: "worker" }, root.ctx);
 		expect(status.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "worker", state: "running" }));
-		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "await-restarted", args }, root.ctx);
-		const waiting = root.tools.get("await_agents")!.execute("await-restarted", args, undefined, undefined, root.ctx);
-		let resolved = false;
-		void waiting.then(() => { resolved = true; });
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started" && fact.data.invocationId === "await-restarted")).toBe(true));
-		await new Promise<void>((resolve) => {
-			setImmediate(resolve);
-		});
-		expect(resolved).toBe(false);
+
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker"] }, root.ctx);
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+		await expectPending(waiting.result);
 		root.worker.hooks.onEvent({ type: "agent_start" });
 		root.worker.hooks.onEvent({ type: "agent_settled" });
-		const result = await waiting;
-		expect(result.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "worker", status: "idle" }));
-		await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "await-restarted", ...result }, root.ctx);
-		for (const operationId of ["first-wait", "await-restarted"]) {
-			expect(root.presentation).toContainEqual(expect.objectContaining({ type: "start", kind: "await", operationId }));
-			expect(root.presentation).toContainEqual(expect.objectContaining({ type: "end", kind: "await", operationId, state: "complete" }));
-		}
+		expect((await waiting.result).structuredContent.agents).toEqual([expect.objectContaining({ id: "worker", status: "idle" })]);
 	});
 
-	it("reports the current child state when a message interrupts a later wait", async () => {
+	it("returns every requested status when one child settled before the wait", async () => {
 		const root = await rootSession();
-		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
-		const args = { agents: ["worker", "scout"] };
-		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "later-wait", args }, root.ctx);
-		const waiting = root.tools.get("await_agents")!.execute("later-wait", args, undefined, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		root.worker.hooks.onEvent({ type: "agent_settled" });
-		await root.tools.get("send")!.execute("continue-worker", { to: "worker", message: "continue", expectResponse: false }, undefined, undefined, root.ctx);
-		await managed.created[1].config.scope.uplink.send({ to: "parent", message: "update", expectResponse: false });
-		const result = await waiting;
-		expect(result.structuredContent).toMatchObject({ interrupted: true, agents: expect.arrayContaining([
-			expect.objectContaining({ id: "worker", status: "running" }),
-			expect.objectContaining({ id: "scout", status: "running" }),
-		]) });
-		expect(factsIn(result).find((fact) => fact.kind === "await_interrupted")).toMatchObject({ data: { statuses: expect.arrayContaining([
-			expect.objectContaining({ path: ["worker"], state: "running" }),
-			expect.objectContaining({ path: ["scout"], state: "running" }),
-		]) } });
-		await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "later-wait", ...result }, root.ctx);
-		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "end", operationId: "later-wait", state: "aborted", data: expect.objectContaining({ result: expect.objectContaining({ interrupted: true, statuses: expect.arrayContaining([
-			expect.objectContaining({ path: ["worker"], state: "running" }),
-			expect.objectContaining({ path: ["scout"], state: "running" }),
-		]) }) }) }));
+		await execute(root.tools, "subagent", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, root.ctx);
+		settleChild(root.worker, "worker done");
+		const waiting = runTool(root.tools, "await_agents", { agents: ["worker", "scout"] }, root.ctx);
+		await vi.waitFor(() => expect(waiting.updates.length).toBeGreaterThan(0));
+		settleChild(managed.created[1], "scout done");
+
+		const result = await waiting.result;
+		expect(result.structuredContent.agents.map((agent: any) => agent.id)).toEqual(["worker", "scout"]);
+	});
+});
+
+describe("tool cards", () => {
+	it("streams the delegation card through onUpdate and returns the settled card", async () => {
+		const root = await rootSession();
+		const spawning = runTool(root.tools, "subagent", { agents: [{ id: "scout", task: "look", channels: [] }] }, root.ctx);
+		const result = await spawning.result;
+
+		expect(spawning.updates[0].details.subagent).toMatchObject({
+			kind: "delegation",
+			state: "active",
+			data: { parameters: { agents: [{ id: "scout", task: "look" }], fork: false }, result: { children: [expect.objectContaining({ path: ["scout"], task: "look" })] } },
+		});
+		expect(result.details.subagent).toMatchObject({
+			kind: "delegation",
+			state: "complete",
+			data: { result: { children: [expect.objectContaining({ path: ["scout"], status: "running" })] } },
+		});
 	});
 
-	it("returns every requested status when one child settled before await", async () => {
+	it("streams a blocking send from waiting to the responder's partial reply, then the full reply", async () => {
 		const root = await rootSession();
-		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
-		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "worker done" }] } });
-		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
-		root.worker.hooks.onEvent({ type: "agent_settled" });
-		const waiting = root.tools.get("await_agents")!.execute("await-both", { agents: ["worker", "scout"] }, undefined, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		managed.created[1].hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "scout done" }] } });
-		managed.created[1].hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
-		managed.created[1].hooks.onEvent({ type: "agent_settled" });
-		const result = await waiting;
-		expect((result.structuredContent).agents.map((agent: any) => agent.id)).toEqual(["worker", "scout"]);
+		const child = makePi();
+		await createSubagentsExtension(root.worker.config.scope)(child.pi as any);
+		const childCtx = makeContext(root.worker.child.sessionFile);
+		await startSession(child.handlers, childCtx);
+
+		const sending = runTool(root.tools, "send", { to: "worker", message: "question", expectResponse: true }, root.ctx);
+		await vi.waitFor(() => expect(child.pi.sendMessage.mock.calls.some(([message]) => message.content.includes("question"))).toBe(true));
+		const request = child.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("question"))![0];
+		const correlationId = /correlation_id="([^"]+)"/.exec(request.content)![1];
+		expect(sending.updates.at(-1).details.subagent).toMatchObject({ kind: "send", state: "active", data: { result: { phase: "waiting" } } });
+
+		await child.handlers.get("message_update")?.({
+			type: "message_update",
+			assistantMessageEvent: {
+				type: "toolcall_delta",
+				contentIndex: 0,
+				toolCall: { id: "reply-call", name: "respond", arguments: { correlationId, message: "partial" } },
+			},
+		}, childCtx);
+		expect(sending.updates.at(-1).details.subagent).toMatchObject({
+			kind: "send",
+			state: "active",
+			data: { parameters: { to: "worker", message: "question", expectResponse: true }, result: { phase: "responding", response: "partial" } },
+		});
+
+		const reply = await execute(child.tools, "respond", { correlationId, message: "full answer" }, childCtx);
+		const result = await sending.result;
+		expect(result.content[0].text).toBe("full answer");
+		expect(result.details.subagent).toMatchObject({ kind: "send", state: "complete", data: { result: { phase: "complete", response: "full answer" } } });
+		expect(reply.details.subagent).toMatchObject({ kind: "respond", data: { parameters: { to: [], message: "full answer" } } });
+	});
+
+	it("rejects a blocking send the target declines", async () => {
+		const root = await rootSession();
+		const received: RoutedMessage[] = [];
+		root.worker.config.scope.uplink.subscribe((message: RoutedMessage) => received.push(message));
+		const sending = runTool(root.tools, "send", { to: "worker", message: "question", expectResponse: true }, root.ctx);
+		await vi.waitFor(() => expect(received).toHaveLength(1));
+
+		await root.worker.config.scope.uplink.reject(received[0].correlationId, "declined");
+		await expect(sending.result).rejects.toThrow("declined");
+	});
+
+	it("delivers a deferred reply as a later message notice", async () => {
+		const root = await rootSession();
+		const controller = new AbortController();
+		const received: RoutedMessage[] = [];
+		root.worker.config.scope.uplink.subscribe((message: RoutedMessage) => received.push(message));
+		const sending = runTool(root.tools, "send", { to: "worker", message: "question", expectResponse: true }, root.ctx, { signal: controller.signal });
+		await vi.waitFor(() => expect(received).toHaveLength(1));
+		controller.abort();
+
+		const result = await sending.result;
+		expect(result.structuredContent).toMatchObject({ deferred: true, correlationId: received[0].correlationId });
+		expect(result.details.subagent).toMatchObject({ kind: "send", state: "aborted" });
+		await root.worker.config.scope.uplink.respond(received[0].correlationId, "late answer");
+		await vi.waitFor(() => expect(noticesContaining(root.pi, "late answer")).toHaveLength(1));
+		const [[notification]] = noticesContaining(root.pi, "late answer");
+		expect(notification.details.subagent).toEqual([expect.objectContaining({
+			kind: "message_received",
+			data: expect.objectContaining({ parameters: { from: ["worker"], message: "late answer", expectResponse: false } }),
+		})]);
+	});
+
+	it("reports a deferred send failure as a failed send card", async () => {
+		const root = await rootSession();
+		const controller = new AbortController();
+		const received: RoutedMessage[] = [];
+		root.worker.config.scope.uplink.subscribe((message: RoutedMessage) => received.push(message));
+		const sending = runTool(root.tools, "send", { to: "worker", message: "question", expectResponse: true }, root.ctx, { signal: controller.signal });
+		await vi.waitFor(() => expect(received).toHaveLength(1));
+		controller.abort();
+		await sending.result;
+
+		await root.worker.config.scope.uplink.reject(received[0].correlationId, "declined");
+		await vi.waitFor(() => expect(noticesContaining(root.pi, "declined")).toHaveLength(1));
+		const [[notification]] = noticesContaining(root.pi, "declined");
+		expect(notification.details.subagent).toEqual([expect.objectContaining({
+			kind: "send",
+			state: "error",
+			data: expect.objectContaining({ parameters: expect.objectContaining({ message: "question" }), result: expect.objectContaining({ error: "declined" }) }),
+		})]);
+	});
+});
+
+describe("presentation provider", () => {
+	it("registers one provider for the session lifetime and withdraws it at shutdown", async () => {
+		const root = await rootSession();
+		await execute(root.tools, "teardown", { agent: "worker" }, root.ctx);
+		await execute(root.tools, "subagent", { agents: [{ id: "worker", task: "again", channels: [] }] }, root.ctx);
+		root.bus.emit(SUBAGENT_PROVIDER_REQUEST, {});
+
+		expect(new Set(root.bus.responses.map((response) => response.provider))).toEqual(new Set([root.provider]));
+		expect(root.provider.snapshot().ready).toBe(true);
+		await root.handlers.get("session_shutdown")?.({}, root.ctx);
+		expect(root.bus.responses.at(-1)).toEqual({ provider: undefined });
+	});
+
+	it("publishes ready after restoring persisted children", async () => {
+		const rootSessionFile = path.join(tmpRoot!, "root.jsonl");
+		const workerSessionFile = path.join(tmpRoot!, "root.subagents", "sessions", "worker.jsonl");
+		fs.mkdirSync(path.dirname(workerSessionFile), { recursive: true });
+		fs.writeFileSync(rootSessionFile, "");
+		fs.writeFileSync(workerSessionFile, "");
+		appendAgentAdded(ensurePersistence(rootSessionFile), {
+			id: "worker", kind: "agent", task: "restore worker", channels: [], sessionFile: workerSessionFile, sessionId: "worker-session",
+		});
+		const root = makePi();
+		const bus = makeEventBus();
+		(root.pi as any).events = bus;
+		await createSubagentsExtension({ kind: "root" })(root.pi as any);
+		await root.handlers.get("session_start")?.({ reason: "resume" }, makeContext(rootSessionFile));
+		await vi.waitFor(() => expect(bus.topology.map((event) => event.kind)).toContain("ready"));
+
+		const kinds = bus.topology.map((event) => event.kind);
+		expect(kinds.filter((kind) => kind === "ready")).toHaveLength(1);
+		expect(kinds.indexOf("node_added")).toBeLessThan(kinds.indexOf("ready"));
+		const provider = bus.responses.at(-1)?.provider;
+		expect(provider.snapshot()).toMatchObject({ ready: true, nodes: [expect.objectContaining({ path: ["worker"] })] });
 	});
 
 	it("merges the child's last action into one activity field that survives settle", async () => {
 		const root = await rootSession();
 		root.worker.hooks.onEvent({ type: "tool_execution_start", toolName: "bash", args: { command: "rg lastActivity src" } });
-		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "final answer\nwith a newline" }] } });
-		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
-		root.worker.hooks.onEvent({ type: "agent_settled" });
+		settleChild(root.worker, "final answer\nwith a newline");
 
-		const node = root.provider.snapshot().nodes.find((candidate: any) => JSON.stringify(candidate.path) === JSON.stringify(["worker"]));
+		const node = root.provider.snapshot().nodes.find((candidate: any) => key(candidate.path) === key(["worker"]));
 		expect(node.state).toBe("idle");
 		expect(node.activity).toBe("final answer with a newline");
 		expect(node.lastOutput).toBeUndefined();
 	});
-
-	it("keeps a wait pending while a viewed child is stopped", async () => {
-		const root = await rootSession();
-		const args = { agents: ["worker"] };
-		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "viewed-stop", args }, root.ctx);
-		const waiting = root.tools.get("await_agents")!.execute("viewed-stop", args, undefined, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		const node = root.provider.snapshot().nodes.find((candidate: any) => JSON.stringify(candidate.path) === JSON.stringify(["worker"]));
-		const lease = await root.provider.acquire(["worker"]);
-		await root.provider.stop({ path: ["worker"], incarnation: node.incarnation, expectedSessionId: node.sessionId });
-		root.worker.hooks.onEvent({ type: "agent_settled", aborted: true });
-
-		let released = false;
-		void waiting.then(() => { released = true; });
-		for (let tick = 0; tick < 20; tick += 1) {await Promise.resolve();}
-		expect(released).toBe(false);
-
-		await lease.release();
-		const result = await waiting;
-		expect((result.structuredContent).agents).toContainEqual(expect.objectContaining({ id: "worker" }));
-	});
-
-	it("tells the parent when a viewed child's held answer was replaced", async () => {
-		const root = await rootSession();
-		const settle = (output: string) => {
-			root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: output }] } });
-			root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
-			root.worker.hooks.onEvent({ type: "agent_settled" });
-		};
-		const lease = await root.provider.acquire(["worker"]);
-		root.pi.sendMessage.mockClear();
-		settle("first answer");
-		// The user talks to the viewed child, so its next run clears the held answer.
-		root.worker.hooks.onEvent({ type: "agent_start" });
-		settle("second answer");
-		expect(root.pi.sendMessage.mock.calls.filter(([message]) => message.content.includes("first answer"))).toEqual([]);
-
-		await lease.release();
-		const notification = root.pi.sendMessage.mock.calls.at(-1)?.[0];
-		expect(notification?.content).toContain("<agent_idle");
-		expect(notification?.content).toContain("second answer");
-		expect(notification?.content).toContain("may not be the one you are waiting for");
-	});
-
-	it("retains queued completions when a blocked sender prevents await", async () => {		const root = await rootSession();
-		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
-		for (const child of managed.created) {child.hooks.onEvent({ type: "agent_start" });}
-		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "read", toolCallId: "hold-notifications" }, root.ctx);
-		const receipt = await root.worker.config.scope.uplink.send({ to: "parent", message: "answer before waiting", expectResponse: true });
-		managed.created[1].hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "queued scout output" }] } });
-		managed.created[1].hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
-		managed.created[1].hooks.onEvent({ type: "agent_settled" });
-		const args = { agents: ["worker"] };
-		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "refused-await", args }, root.ctx);
-		const result = await root.tools.get("await_agents")!.execute("refused-await", args, undefined, undefined, root.ctx);
-		expect(result.content[0].text).toContain("Cannot wait");
-		expect(result.content[0].text).toContain("queued scout output");
-		expect(result.structuredContent.interrupted).toBe(true);
-		expect(result.structuredContent.error).toContain("Cannot wait");
-		expect(result.structuredContent.error).not.toContain(receipt.correlationId);
-		expect(result.structuredContent.agents).toContainEqual(expect.objectContaining({ id: "scout", output: "queued scout output", sessionId: managed.created[1].child.sessionId }));
-		expect((result.details.subagentContent ?? []).filter((item: any) => item.kind === "completion")).toEqual([]);
-		expect(factsIn(result).find((fact) => fact.kind === "await_released")).toMatchObject({ data: { invocationId: "refused-await", reason: "message", statuses: [expect.objectContaining({ path: ["worker"], state: "waiting" })] } });
-		await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "refused-await", ...result }, root.ctx);
-		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "start", operationId: "refused-await" }));
-		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "end", operationId: "refused-await", state: "aborted", data: expect.objectContaining({ result: expect.objectContaining({ interrupted: true, statuses: expect.arrayContaining([expect.objectContaining({ path: ["worker"], state: "waiting" })]) }) }) }));
-		await root.tools.get("respond")!.execute("unblock-worker", { correlationId: receipt.correlationId, message: "continue" }, undefined, undefined, root.ctx);
-		await receipt.response;
-	});
-
-	it("retains the incoming message and interruption facts when an await releases", async () => {
-		const root = await rootSession();
-		const waiting = root.tools.get("await_agents")!.execute("await-message-call", { agents: ["worker"] }, undefined, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		await root.worker.config.scope.uplink.send({ to: "parent", message: "need a decision", expectResponse: false });
-		const result = await waiting;
-		const facts = factsIn(result);
-		expect(result.content[0].text).toContain("need a decision");
-		expect(facts.some((fact) => fact.kind === "message_thread" && fact.data.phase === "received")).toBe(true);
-		expect(facts.find((fact) => fact.kind === "await_interrupted")).toMatchObject({ data: { message: { text: "need a decision", phase: "received" } } });
-	});
-
-	it.each([true, false])("reports live children when an await is cancelled, native result=%s", async (nativeResult) => {
-		const root = await rootSession();
-		await root.tools.get("subagent")!.execute("spawn-scout", { agents: [{ id: "scout", task: "inspect", channels: [] }] }, undefined, undefined, root.ctx);
-		const args = { agents: ["worker", "scout"] };
-		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "stopped-wait", args }, root.ctx);
-		const controller = new AbortController();
-		const waiting = root.tools.get("await_agents")!.execute("stopped-wait", args, controller.signal, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		root.worker.hooks.onEvent({ type: "agent_settled" });
-		controller.abort();
-		await expect(waiting).rejects.toThrow("Wait cancelled.");
-		if (nativeResult) {
-			await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "stopped-wait", isError: true, content: [{ type: "text", text: "Wait cancelled." }] }, root.ctx);
-		} else {
-			await root.handlers.get("agent_settled")?.({ type: "agent_settled", aborted: true }, root.ctx);
-		}
-		expect(root.published.find((fact) => fact.kind === "await_interrupted")).toMatchObject({ data: { statuses: expect.arrayContaining([
-			{ path: ["worker"], state: "idle", sessionId: root.worker.child.sessionId },
-			{ path: ["scout"], state: "running", sessionId: managed.created[1].child.sessionId },
-		]) } });
-		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "end", operationId: "stopped-wait", state: "aborted", data: expect.objectContaining({ result: expect.objectContaining({ interrupted: true, statuses: expect.arrayContaining([
-			expect.objectContaining({ path: ["worker"], state: "idle" }),
-			expect.objectContaining({ path: ["scout"], state: "running" }),
-		]) }) }) }));
-	});
-
-	it("persists cancellation facts on the native await error result", async () => {
-		const root = await rootSession();
-		const controller = new AbortController();
-		const waiting = root.tools.get("await_agents")!.execute("cancelled-await", { agents: ["worker"] }, controller.signal, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "await_started")).toBe(true));
-		controller.abort();
-		await expect(waiting).rejects.toThrow("Wait cancelled.");
-		const result = await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "await_agents", toolCallId: "cancelled-await", isError: true }, root.ctx);
-		const facts = factsIn(result);
-		expect(facts.some((fact) => fact.kind === "await_started")).toBe(true);
-		expect(facts.some((fact) => fact.kind === "await_interrupted" && fact.data.reason === "stop")).toBe(true);
-		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
-		root.worker.hooks.onEvent({ type: "agent_settled" });
-		const notification = root.pi.sendMessage.mock.calls.at(-1)?.[0];
-		expect(factsIn(notification)).toEqual([]);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "completion" && fact.data.delivery === "asynchronous")).toBe(true));
-	});
-
-	it.each([{}, { agents: ["worker"] }])("starts await from authoritative execution arguments, all-or-named=%j", async (parameters) => {
-		const root = await rootSession();
-		await root.handlers.get("message_update")?.({ type: "message_update", assistantMessageEvent: {
-			type: "toolcall_start", contentIndex: 0, toolCall: { id: "await-deferred", name: "await_agents", arguments: '{"agents":[' },
-		} }, root.ctx);
-		expect(root.presentation.filter((event) => event.kind === "await")).toEqual([]);
-		await root.handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName: "await_agents", toolCallId: "await-deferred", args: parameters }, root.ctx);
-		expect(root.presentation).toContainEqual(expect.objectContaining({ type: "start", kind: "await", data: {
-			operation: "await", parameters: "agents" in parameters ? { agents: [["worker"]] } : {}, result: { statuses: [] },
-		} }));
-		await root.handlers.get("agent_settled")?.({ type: "agent_settled", aborted: true }, root.ctx);
-		const persisted = root.pi.sendMessage.mock.calls.map(([message]) => message).find((message) => message.details?.subagentContent?.some((item: any) => item.operationId === "await-deferred"));
-		expect(persisted.details.subagentContent[0]).toMatchObject({ kind: "await", state: "aborted", data: { parameters: "agents" in parameters ? { agents: [["worker"]] } : {}, result: { statuses: [expect.objectContaining({ path: ["worker"], state: "running" })], interrupted: true } } });
-	});
-
-	it("persists an aborted presentation payload when no tool result arrives", async () => {
-		const root = await rootSession();
-		await root.handlers.get("message_update")?.({
-			type: "message_update",
-			assistantMessageEvent: {
-				type: "toolcall_start", contentIndex: 0,
-				toolCall: { id: "aborted-send", name: "send", arguments: '{"to":"worker","message":"cancel me"}' },
-			},
-		}, root.ctx);
-		await root.handlers.get("agent_settled")?.({ type: "agent_settled", aborted: true }, root.ctx);
-		const persisted = root.pi.sendMessage.mock.calls
-			.map(([message]) => message)
-			.find((message) => message.details?.subagentContent?.some((item: any) => item.operationId === "aborted-send"));
-		expect(persisted).toMatchObject({ customType: "subagents", details: { subagentContent: [expect.objectContaining({ state: "aborted", source: "custom_entry", kind: "send" })] } });
-	});
-
-	it("persists a rejected response on the native send error result", async () => {
-		const root = await rootSession();
-		const waiting = root.tools.get("send")!.execute("failed-send", { to: "worker", message: "question", expectResponse: true }, undefined, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")).toBe(true));
-		const sent = root.published.find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")!;
-		const correlationId = sent.kind === "message_thread" ? sent.data.correlationId : undefined;
-		await root.worker.config.scope.uplink.reject(correlationId, "declined");
-		await expect(waiting).rejects.toThrow("declined");
-		const result = await root.handlers.get("tool_result")?.({ type: "tool_result", toolName: "send", toolCallId: "failed-send", isError: true }, root.ctx);
-		const failure = factsIn(result).find((fact) => fact.kind === "message_thread" && fact.data.phase === "failure" && fact.data.error === "declined");
-		expect(failure?.relatedPiEvents).toEqual(expect.arrayContaining([expect.objectContaining({ sessionId: "semantic-parent", toolCallId: "failed-send", kind: "tool_call" })]));
-	});
-
-	it("persists a deferred reply with its eventual native custom message", async () => {
-		const root = await rootSession();
-		const controller = new AbortController();
-		const waiting = root.tools.get("send")!.execute("deferred-send", { to: "worker", message: "question", expectResponse: true }, controller.signal, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")).toBe(true));
-		const sent = root.published.find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")!;
-		const correlationId = sent.kind === "message_thread" ? sent.data.correlationId : undefined;
-		controller.abort();
-		expect((await waiting).details).toMatchObject({ deferred: true });
-		await root.worker.config.scope.uplink.respond(correlationId, "late answer");
-		await vi.waitFor(() => expect(root.pi.sendMessage.mock.calls.some(([message]) => message.content.includes("late answer"))).toBe(true));
-		const notification = root.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("late answer"))?.[0];
-		expect(factsIn(notification)).toEqual([]);
-		expect(notification.content).toContain("late answer");
-		expect(notification.details?.subagentContent).toContainEqual(expect.objectContaining({
-			kind: "message_received",
-			source: "custom_entry",
-			state: "complete",
-			data: { operation: "send", result: { from: ["worker"], to: [], message: "late answer", responseExpected: false } },
-		}));
-		await root.handlers.get("entry_appended")?.({ type: "entry_appended", entry: { id: "reply-entry", type: "custom_message", ...notification } }, root.ctx);
-		expect(root.presentation).toContainEqual(expect.objectContaining({
-			kind: "message_received", placement: { entryId: "reply-entry" },
-			data: { operation: "send", result: { from: ["worker"], to: [], message: "late answer", responseExpected: false } },
-		}));
-	});
-
-	it("reports a deferred send failure without inventing an incoming message", async () => {
-		const root = await rootSession();
-		const controller = new AbortController();
-		const waiting = root.tools.get("send")!.execute("deferred-failure", { to: "worker", message: "question", expectResponse: true }, controller.signal, undefined, root.ctx);
-		await vi.waitFor(() => expect(root.published.some((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")).toBe(true));
-		const sent = root.published.find((fact) => fact.kind === "message_thread" && fact.data.phase === "sent")!;
-		const correlationId = sent.kind === "message_thread" ? sent.data.correlationId : undefined;
-		controller.abort();
-		await waiting;
-		await root.worker.config.scope.uplink.reject(correlationId, "declined");
-		await vi.waitFor(() => expect(root.pi.sendMessage.mock.calls.some(([message]) => message.content.includes("declined"))).toBe(true));
-		const notification = root.pi.sendMessage.mock.calls.find(([message]) => message.content.includes("declined"))?.[0];
-		expect(notification.details?.subagentContent).toContainEqual(expect.objectContaining({
-			kind: "send", state: "error", data: { operation: "send", result: expect.objectContaining({ message: "question", error: "declined" }) },
-		}));
-	});
-
-	it("persists asynchronous settlement cards with the idle custom message", async () => {
-		const root = await rootSession();
-		root.worker.hooks.onEvent({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "saved answer" }] } });
-		root.worker.hooks.onEvent({ type: "agent_end", willRetry: false, messages: [] });
-		root.worker.hooks.onEvent({ type: "agent_settled" });
-		const notification = root.pi.sendMessage.mock.calls.at(-1)?.[0];
-		expect(notification?.content).toContain("<agent_idle");
-		expect(factsIn(notification)).toEqual([]);
-		expect(notification.details.subagentContent).toContainEqual(expect.objectContaining({
-			kind: "completion", source: "custom_entry", data: { operation: "completion", result: expect.objectContaining({ output: "saved answer" }) },
-		}));
-		await root.handlers.get("entry_appended")?.({
-			type: "entry_appended", entry: { id: "async-completion-entry", type: "custom_message", ...notification },
-		}, root.ctx);
-		expect(root.presentation.filter((event) => event.kind === "completion")).toEqual([
-			expect.objectContaining({ type: "snapshot", placement: { entryId: "async-completion-entry" }, data: { operation: "completion", result: expect.objectContaining({ output: "saved answer" }) } }),
-		]);
-	});
 });
 
 describe("root orchestration integration", () => {
-	it("does not mount a late TUI widget after presentation shutdown", async () => {
-		let resolveWidget!: (module: { SubagentDashboard: new (theme: unknown) => any }) => void;
-		const widgetImport = new Promise<{ SubagentDashboard: new (theme: unknown) => any }>((resolve) => {
-			resolveWidget = resolve;
-		});
-		const loadWidget = vi.fn(() => widgetImport);
-		const { pi } = makePi();
-		const presentation = new SubagentPresentation(pi as any, { kind: "root" }, loadWidget);
-		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
-
-		const mounting = presentation.ensureWidget(ctx as any);
-		expect(loadWidget).toHaveBeenCalledTimes(1);
-		presentation.preventLateMounts();
-		presentation.shutdown(ctx as any);
-		resolveWidget({
-			SubagentDashboard: class {
-				update(_statuses: any[]): void {}
-				setSessionName(_name: string | undefined): void {}
-			},
-		});
-		await mounting;
-
-		expect(ctx.ui.setWidget).toHaveBeenCalledExactlyOnceWith("subagents", undefined);
-	});
-
 	it("keeps the session manager and router alive across empty teardown and respawn", async () => {
 		const parentSessionFile = path.join(tmpRoot!, "parent.jsonl");
 		fs.writeFileSync(parentSessionFile, "");
@@ -2192,14 +2073,14 @@ describe("root orchestration integration", () => {
 		);
 
 		const settled = await Promise.race([
-			execute(tools, "await_agents", {}, ctx).then((result: any) => result.content[0].text),
+			execute(tools, "await_agents", {}, ctx),
 			new Promise<string>((resolve) => {
 				setTimeout(() => resolve("WAIT DID NOT RETURN"), 100);
 			}),
 		]);
-		expect(settled).toContain("worker");
-		expect(settled).toContain("corr-blocked");
-		expect(settled).toMatch(/respond/i);
+		expect(settled.content[0].text).toContain("worker");
+		expect(settled.content[0].text).toMatch(/respond/i);
+		expect(settled.structuredContent).toMatchObject({ interrupted: true, error: expect.stringContaining("Cannot wait") });
 	});
 
 	it("creates a separate registry for each root session", async () => {

@@ -138,6 +138,13 @@ export class TurnCoordinator {
 			const ref = manager.getAgentRef(id);
 			return ref ? [ref] : [];
 		});
+		// A queued completion of a requested child becomes part of this wait's
+		// result. It goes back to the queue unless the result delivers it.
+		const taken = this.queue.take((notice) => {
+			const source = notice.ref;
+			return notice.kind === "completion" && source !== undefined && refs.some((ref) => sameRef(ref, source));
+		});
+		let delivered: readonly ChildRef[] = [];
 		const wait = this.ledger.wait(refs);
 		this.queue.setWaiting(true);
 		const stopProgress = wait.onChange(() => onProgress(wait.statuses()));
@@ -147,10 +154,7 @@ export class TurnCoordinator {
 		this.interruptWait = () => wait.interrupt();
 		try {
 			const result = await wait.result;
-			this.queue.take((notice) => {
-				const source = notice.ref;
-				return notice.kind === "completion" && source !== undefined && result.delivered.some((ref) => sameRef(ref, source));
-			});
+			delivered = result.delivered;
 			const lines = result.statuses.map((status) => serializeAwaitStatus({
 				id: status.path.at(-1) ?? "",
 				state: status.state,
@@ -166,6 +170,10 @@ export class TurnCoordinator {
 				interrupted: result.interrupted,
 			};
 		} finally {
+			for (const notice of taken) {
+				const source = notice.ref;
+				if (!source || !delivered.some((ref) => sameRef(ref, source))) {this.queue.queue(notice);}
+			}
 			this.interruptWait = undefined;
 			signal?.removeEventListener("abort", onAbort);
 			stopProgress();
