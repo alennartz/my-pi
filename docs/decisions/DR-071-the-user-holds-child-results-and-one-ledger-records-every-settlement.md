@@ -23,6 +23,10 @@ Each manager owns one settlement ledger, keyed by path and incarnation. Every ch
 
 Waits key on incarnations, which are UUIDs, so a later child at the same path cannot satisfy a wait for a removed one.
 
+The ledger saves each pending settlement with a stable receipt ID before it offers the answer. An await result or notice names only IDs represented in its model-facing text. The ledger removes an offer when the owning parent's selected transcript branch contains those IDs. On restore, the same check detects an answer committed before ledger cleanup. IDs survive retries, and each child's pending answers and replacement notes keep their order.
+
+Rejected: acknowledge a result when the extension calls `sendMessage` or returns from a tool. Pi can defer the append, so a process exit in between loses the answer. Rejected: acknowledge only in the lifecycle log. A process exit after the transcript append but before the log write would then duplicate the answer. An ancestor's teardown report previews nested answers without acknowledging them to their original parents.
+
 Rejected: remove the hold entirely and let `await_agents` resolve when children settle. A person who wants to steer a child first would have to stop the parent or race it.
 
 Rejected: keep the lease-based hold and patch it with a time limit, a dead exemption, and "held by view" text. The behavior would still depend on socket and profile state that neither the user nor the model can see.
@@ -31,5 +35,7 @@ Rejected: keep the lease-based hold and patch it with a time limit, a dead exemp
 A held child blocks a default `await_agents` until the user releases it. The panel and the await card show the hold, so the cause is visible, but a forgotten hold still stalls the parent.
 
 The replacement note still states a possibility, not a certainty: a child can finish twice, and the parent decides whether to ask again.
+
+The lifecycle log holds the pending answers until the parent commits them. Restore preserves the order within each child, not a total order across children. The selected branch decides which pending receipts count. Switching branches does not resurrect settlements after cleanup. The protocol covers process exit between writes, not loss of data on power failure.
 
 Persisted holds add an `agent_hold` record to the lifecycle log. A log written before this change has no holds, and restores as unheld.
