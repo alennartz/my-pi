@@ -334,7 +334,7 @@ function makePi(options: { activeTools?: string[]; registeredTools?: any[] } = {
 		getAllTools: vi.fn(() => registeredTools),
 		setActiveTools: vi.fn((names: string[]) => { activeTools = names; }),
 		getThinkingLevel: vi.fn(() => "medium"),
-		sendMessage: vi.fn((message: { customType: string; details?: unknown }) => committedEntries.push({ type: "custom_message", ...message })),
+		sendMessage: vi.fn((message: { customType: string; content: string; details?: unknown }) => committedEntries.push({ type: "custom_message", ...message })),
 		appendEntry: vi.fn(),
 	};
 	return { pi, tools, handlers, commands };
@@ -342,8 +342,8 @@ function makePi(options: { activeTools?: string[]; registeredTools?: any[] } = {
 
 /** The parent session's committed branch. */
 const committedEntries: (
-	| { type: "custom_message"; customType: string; details?: unknown }
-	| { type: "message"; message: { role: "toolResult"; toolName: string; isError: boolean; details?: unknown } }
+	| { type: "custom_message"; customType: string; content: string; details?: unknown }
+	| { type: "message"; message: { role: "toolResult"; toolName: string; isError: boolean; content: unknown; details?: unknown } }
 )[] = [];
 
 function makeContext(parentSessionFile: string, overrides: Record<string, JsonValue> = {}) {
@@ -1309,7 +1309,7 @@ describe("await_agents", () => {
 
 		const result = await waiting.result;
 		expect(result.content[0].text).not.toContain("scout answer");
-		committedEntries.push({ type: "message", message: { role: "toolResult", toolName: "await_agents", isError: false, details: result.details } });
+		committedEntries.push({ type: "message", message: { role: "toolResult", toolName: "await_agents", isError: false, content: result.content, details: result.details } });
 		await root.handlers.get("turn_end")?.({ type: "turn_end", outcome: "continue" }, root.ctx);
 		expect(noticesContaining(root.pi, "scout answer")).toHaveLength(1);
 		expect(noticesContaining(root.pi, "worker answer")).toEqual([]);

@@ -14,7 +14,7 @@ import type { ChildRef, HoldRecord, LiveChild, Settlement } from "./settlements.
 import { createStopSequenceManager } from "./stop-sequences.js";
 import type { StopSequenceManager } from "./stop-sequences.js";
 import { randomUUID } from "node:crypto";
-import { settlementReceipts } from "./settlement-receipts.js";
+import { settlementReceiptDetails, settlementReceipts } from "./settlement-receipts.js";
 import { truncateForModel, truncateMiddle } from "../../lib/truncate.ts";
 
 /** What `await_agents` reports. */
@@ -118,6 +118,12 @@ export class TurnCoordinator {
 
 	// Parent run boundaries.
 
+	prepareRun(triggerId: string | undefined): void {
+		this.reconcile();
+		// A previous trigger that failed preparation never emitted agent_settled.
+		this.retryNotices((id, mode) => mode === "trigger" && id !== triggerId);
+	}
+
 	runStarted(): void {
 		this.reconcile();
 		this.queue.runStarted();
@@ -130,23 +136,35 @@ export class TurnCoordinator {
 	}
 
 	runSettled(aborted: boolean): void {
-		// Pi commits every context notice of a run before it settles. One that
-		// did not commit was dropped; it goes back to the front of the queue.
 		this.finishBatch();
-		const lost = [...this.inFlight].filter(([, delivery]) => delivery.mode !== "trigger");
-		for (const [id] of lost) {this.inFlight.delete(id);}
-		this.queue.requeue(lost.flatMap(([, delivery]) => delivery.notices));
+		this.retryNotices(() => true);
 		this.queue.runSettled(aborted);
+	}
+
+	private retryNotices(include: (id: string, delivery: NoticeDelivery) => boolean): void {
+		const retry: Notice[] = [];
+		for (const [id, { mode, notices }] of this.inFlight) {
+			if (!include(id, mode)) {continue;}
+			this.inFlight.delete(id);
+			retry.push(...notices);
+		}
+		this.queue.requeue(retry);
 	}
 
 	/** Confirm receipts after pi commits the entries. `message_end` can precede the append. */
 	private reconcile(): void {
 		if (this.inFlight.size === 0 && !this.awaitingReceipt) {return;}
 		const receipts = settlementReceipts(this.parent.entries());
-		for (const id of this.inFlight.keys()) {
-			if (receipts.notices.has(id)) {this.inFlight.delete(id);}
+		const retry: Notice[] = [];
+		for (const [id, { notices }] of this.inFlight) {
+			if (!receipts.notices.has(id)) {continue;}
+			this.inFlight.delete(id);
+			for (const notice of notices) {
+				if (notice.settles?.ids.some((receipt) => !receipts.settlements.has(receipt))) {retry.push(notice);}
+			}
 		}
 		this.ledger.delivered(receipts.settlements);
+		this.queue.requeue(retry);
 	}
 
 	private finishBatch(): void {
@@ -315,20 +333,22 @@ export class TurnCoordinator {
 	private deliver(notices: readonly Notice[], requested: NoticeDelivery): void {
 		// A turn can start only while pi is idle. Otherwise the notice joins the
 		// run pi is starting or running, never its steering queue.
-		const mode = requested === "trigger" && !this.parent.idle() ? "context" : requested;
+		const triggerPending = requested === "trigger" && this.inFlight.values().some(({ mode }) => mode === "trigger");
+		const mode = requested === "trigger" && (triggerPending || !this.parent.idle()) ? "context" : requested;
 		const deliveryId = randomUUID();
 		this.inFlight.set(deliveryId, { notices, mode });
 		const cards = notices.flatMap((notice) => notice.card ? [notice.card] : []);
 		const ids = notices.flatMap((notice) => notice.settles?.ids ?? []);
-		const content = notices.map((notice) => notice.content).join("\n");
+		const text = notices.map((notice) => notice.content).join("\n");
+		const content = ids.length > 0 ? text : truncateMiddle(text).content;
 		const message = {
 			customType: "subagents",
-			content: ids.length > 0 ? content : truncateMiddle(content).content,
+			content,
 			display: true,
-			details: { ...messageCardDetails(cards), subagentNoticeId: deliveryId, settlementReceipts: ids },
+			details: { ...messageCardDetails(cards), subagentNoticeId: deliveryId, ...settlementReceiptDetails(content, ids) },
 		};
 		this.pi.sendMessage(message, mode === "trigger" ? { triggerTurn: true } : { triggerTurn: false });
-		if (mode === "park") {this.reconcile();}
+		if (mode !== "trigger" && requested !== "context") {this.reconcile();}
 	}
 
 	clear(): void {

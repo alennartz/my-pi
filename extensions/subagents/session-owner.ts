@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import type { AgentEndEvent, AgentToolResult, AgentToolUpdateCallback, ExtensionAPI, ExtensionContext, ExtensionFactory, Theme } from '@earendil-works/pi-coding-agent';
+import type { AgentEndEvent, BeforeAgentStartEvent, AgentToolResult, AgentToolUpdateCallback, ExtensionAPI, ExtensionContext, ExtensionFactory, Theme } from '@earendil-works/pi-coding-agent';
 import { Type } from "typebox";
 import type { Static } from "typebox";
 import { dropEmptyOptionals, registerLooseTool } from "../../lib/tool-args.ts";
@@ -56,6 +56,7 @@ import type { SubagentCard } from "./presenters.js";
 import { RunningToolProgress } from "./tool-progress.js";
 import type { SubagentTreeServices } from "./tree-services.js";
 import { TurnCoordinator } from "./turn-coordinator.js";
+import { settlementReceiptDetails } from "./settlement-receipts.js";
 import type { Settlement } from "./settlements.js";
 
 const FORCED_MODEL_KEY = "forced-model";
@@ -924,10 +925,13 @@ class SubagentSessionOwner {
 	}
 
 	private async handleBeforeAgentStart(
-		event: { systemPromptOptions: { sections: Record<string, string> } },
+		event: BeforeAgentStartEvent,
 		ctx: ExtensionContext,
 	): Promise<undefined> {
 		const session = await this.waitForActiveSession();
+		const triggerId = event.messageType === "custom" && event.message.customType === "subagents"
+			? stringField(asRecord(event.message.details), "subagentNoticeId") : undefined;
+		this.turns.prepareRun(triggerId);
 		if (!ctx.hasUI) {
 			const activeTools = this.pi.getActiveTools();
 			const childTools = excludeModelOnlyTools(activeTools, this.pi.getAllTools());
@@ -1705,7 +1709,7 @@ class SubagentSessionOwner {
 			...(report.error !== undefined ? { error: report.error } : undefined),
 		}), data);
 		return report.receipts?.length
-			? { ...result, details: { ...result.details, settlementReceipts: report.receipts } }
+			? { ...result, details: { ...result.details, ...settlementReceiptDetails(report.text, report.receipts) } }
 			: result;
 	}
 

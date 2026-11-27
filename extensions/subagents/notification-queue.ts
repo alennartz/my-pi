@@ -78,7 +78,6 @@ export class NotificationQueue {
 			this.flush("park");
 			return;
 		}
-		this.runActive = true;
 		this.flush("trigger");
 	}
 
@@ -97,7 +96,6 @@ export class NotificationQueue {
 		queueMicrotask(() => {
 			this.scheduled = false;
 			if (this.runActive || this.waiting || this.entries.length === 0) {return;}
-			this.runActive = true;
 			this.flush("trigger");
 		});
 	}

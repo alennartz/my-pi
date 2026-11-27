@@ -311,7 +311,7 @@ class RootHarness {
 					eventBus,
 					extensionFactories: [
 						{ name: "subagents", factory: createSubagentsExtension({ kind: "root" }) },
-						{ name: "run-preparation-gate", factory: holdRunPreparation },
+						{ name: "boundary-fixture", factory: boundaryFixture },
 					],
 				},
 			});
@@ -512,13 +512,34 @@ let harness: RootHarness | undefined;
 /** While set, the parent's run preparation pauses in `before_agent_start` until it resolves. */
 let preparationGate: Gate | undefined;
 let preparationReached: Gate | undefined;
+let compaction: { entered: Gate; release: Gate } | undefined;
+let rejectCompletionTrigger = false;
+let rewriteCompletionTrigger = false;
+let rewriteAwait = false;
 
-function holdRunPreparation(pi: ExtensionAPI): void {
-	pi.on("before_agent_start", async () => {
+function boundaryFixture(pi: ExtensionAPI): void {
+	pi.on("before_agent_start", async (event) => {
+		if (rejectCompletionTrigger && event.messageType === "custom" && event.message.customType === "subagents") {
+			rejectCompletionTrigger = false;
+			// Pi rejects the run during prompt preparation, before agent_start.
+			Reflect.set(event.systemPromptOptions, "selectedTools", null);
+		}
+		if (rewriteCompletionTrigger && event.messageType === "custom" && event.message.customType === "subagents") {
+			event.message.content = "replacement notice";
+		}
 		if (!preparationGate) {return;}
 		preparationReached?.resolve();
 		await preparationGate.promise;
 	});
+	pi.on("session_before_compact", async ({ preparation }) => {
+		if (!compaction) {return;}
+		compaction.entered.resolve();
+		await compaction.release.promise;
+		return { compaction: { summary: "Summary", firstKeptEntryId: preparation.firstKeptEntryId, tokensBefore: preparation.tokensBefore } };
+	});
+	pi.on("tool_result", (event) => rewriteAwait && event.toolName === "await_agents"
+		? { content: [{ type: "text", text: "replacement content" }] }
+		: undefined);
 }
 
 function newWorkspace(): Workspace {
@@ -528,7 +549,9 @@ function newWorkspace(): Workspace {
 	const sessionDir = path.join(root, "sessions");
 	fs.mkdirSync(path.join(agentDir, "extensions"), { recursive: true });
 	fs.mkdirSync(cwd, { recursive: true });
-	fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({ defaultProvider: "faux", defaultModel: "faux-1" }));
+	fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
+		defaultProvider: "faux", defaultModel: "faux-1", compaction: { enabled: false, keepRecentTokens: 1 },
+	}));
 	fs.writeFileSync(path.join(agentDir, "extensions", "faux.ts"), `export default function (pi) { globalThis.${FAUX_HOOK}(pi); }\n`);
 	return { root, agentDir, cwd, sessionDir };
 }
@@ -555,6 +578,11 @@ async function start(): Promise<RootHarness> {
 }
 
 afterEach(async () => {
+	compaction?.release.resolve();
+	compaction = undefined;
+	rejectCompletionTrigger = false;
+	rewriteCompletionTrigger = false;
+	rewriteAwait = false;
 	await harness?.dispose();
 	harness = undefined;
 	if (workspace) {fs.rmSync(workspace.root, { recursive: true, force: true });}
@@ -1034,6 +1062,120 @@ describe("settlement receipt recovery", () => {
 		const answers = committedAnswers(fresh.session.sessionManager.getBranch());
 		expect(answers).toHaveLength(1);
 		expect(answers[0]).toContain("recoverable answer");
+	});
+});
+
+describe("settlement delivery at Pi boundaries", () => {
+	it("delivers later completions after a notice appends during manual compaction", async () => {
+		const root = await start();
+		const firstGate = deferred();
+		const secondGate = deferred();
+		model.gates.set("first", firstGate.promise);
+		model.gates.set("second", secondGate.promise);
+		model.steps.set("spawn", () => calls(["subagent", { agents: [{ id: "first", task: "first task" }, { id: "second", task: "second task" }] }]));
+		await root.step("prime");
+		await root.step("spawn");
+		const { entered, release } = compaction = { entered: deferred(), release: deferred() };
+		const compact = root.session.compact();
+		try {
+			await Promise.race([entered.promise, compact.then(() => {throw new Error("Compaction did not reach the gate");})]);
+			firstGate.resolve();
+			await waitFor(() => committedAnswers(root.session.sessionManager.getBranch()).some((text) => text.includes("first completed")));
+		} finally {
+			release.resolve();
+			compaction = undefined;
+			await compact;
+		}
+		secondGate.resolve();
+		await root.quiesce();
+		const answers = committedAnswers(root.session.sessionManager.getBranch());
+		expect(answers.filter((text) => text.includes("first completed"))).toHaveLength(1);
+		expect(answers.filter((text) => text.includes("second completed"))).toHaveLength(1);
+	});
+
+	it("retries a rejected completion trigger in the next healthy run", async () => {
+		const root = await start();
+		const childGate = deferred();
+		model.gates.set("worker", childGate.promise);
+		model.steps.set("spawn", SPAWN_WORKER);
+		await root.step("spawn");
+		const worker = root.provider.snapshot().nodes[0];
+		await root.provider.setHold({ ...worker, held: true });
+		childGate.resolve();
+		await waitFor(() => root.provider.snapshot().nodes[0]?.heldSettlement === "idle");
+		let failed = false;
+		const unsubscribe = root.session.extensionRunner.onError((error) => {
+			if (error.event === "send_message") {failed = true;}
+		});
+		try {
+			rejectCompletionTrigger = true;
+			await root.provider.setHold({ ...worker, held: false });
+			await waitFor(() => failed);
+		} finally {
+			unsubscribe();
+		}
+		expect(committedAnswers(root.session.sessionManager.getBranch())).toEqual([]);
+		await root.step("recovery");
+		await root.quiesce();
+		const answers = committedAnswers(root.session.sessionManager.getBranch());
+		expect(answers).toHaveLength(1);
+		expect(answers[0]).toContain("worker completed the task");
+		expect(loadPersistedAgents(root.session.sessionFile!)?.agents[0]?.hold?.pending).toEqual([]);
+	});
+
+	it("retries a rewritten completion as context in the same run", async () => {
+		const root = await start();
+		const childGate = deferred();
+		model.gates.set("worker", childGate.promise);
+		model.steps.set("spawn", SPAWN_WORKER);
+		await root.step("spawn");
+		const worker = root.provider.snapshot().nodes[0];
+		await root.provider.setHold({ ...worker, held: true });
+		childGate.resolve();
+		await waitFor(() => root.provider.snapshot().nodes[0]?.heldSettlement === "idle");
+		rewriteCompletionTrigger = true;
+		await root.provider.setHold({ ...worker, held: false });
+		await root.quiesce();
+		const answers = committedAnswers(root.session.sessionManager.getBranch());
+		expect(answers).toHaveLength(2);
+		expect(answers[0]).toBe("replacement notice");
+		expect(answers[1]).toContain("worker completed the task");
+		expect(loadPersistedAgents(root.session.sessionFile!)?.agents[0]?.hold?.pending).toEqual([]);
+	});
+
+	it.each(["unchanged", "rewritten"] as const)("settles an %s await only after the parent sees the answer", async (mode) => {
+		const root = await start();
+		const childGate = deferred();
+		model.gates.set("worker", childGate.promise);
+		model.steps.set("spawn", SPAWN_WORKER);
+		await root.step("spawn");
+		const worker = root.provider.snapshot().nodes[0];
+		await root.provider.setHold({ ...worker, held: true });
+		childGate.resolve();
+		await waitFor(() => root.provider.snapshot().nodes[0]?.heldSettlement === "idle");
+		model.steps.set("await-answer", () => calls(["await_agents", { agents: ["worker"] }]));
+		rewriteAwait = mode === "rewritten";
+		const run = root.step("await-answer");
+		await waitFor(() => [...root.recorder.history.values()].some((history) => history.some((card) =>
+			card?.kind === "await" && card.data.operation === "await" && card.data.result.statuses.some((status) => status.state === "held"))));
+		await root.provider.setHold({ ...worker, held: false });
+		await run;
+		await root.quiesce();
+		const branch = root.session.sessionManager.getBranch();
+		const awaitTexts = branch.flatMap((entry) => entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "await_agents"
+			? [textOf(entry.message.content)] : []);
+		const notices = branch.flatMap((entry) => entry.type === "custom_message" && entry.customType === "subagents" && hasReceipt(entry.details)
+			? [textOf(entry.content)] : []);
+		expect(awaitTexts).toHaveLength(1);
+		if (mode === "rewritten") {
+			expect(awaitTexts).toEqual(["replacement content"]);
+			expect(notices).toHaveLength(1);
+			expect(notices[0]).toContain("worker completed the task");
+		} else {
+			expect(awaitTexts[0]).toContain("worker completed the task");
+			expect(notices).toEqual([]);
+		}
+		expect(loadPersistedAgents(root.session.sessionFile!)?.agents[0]?.hold?.pending).toEqual([]);
 	});
 });
 
