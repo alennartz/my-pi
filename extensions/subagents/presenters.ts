@@ -66,7 +66,8 @@ export function createSubagentPresenters(options: SubagentPresentersOptions): Su
 		runningToolProgress(input: Readonly<{ sessionId: string; toolCallId: string }>): SubagentJsonValue | undefined {
 			try {
 				return options.runningToolProgress(input);
-			} catch {
+			} catch (error) {
+				console.error("[subagents] Running tool progress failed:", error);
 				return undefined;
 			}
 		},
@@ -97,7 +98,8 @@ function presentToolCall(input: SubagentToolCallInput): SubagentPresentation | u
 		if (!owner || !execution) {return undefined;}
 		const card = toolCard(input, TOOL_KINDS[call.toolName]);
 		return card ? present(card, owner, correlationIds(input)) : undefined;
-	} catch {
+	} catch (error) {
+		console.error("[subagents] Presenting a tool call failed:", error);
 		return undefined;
 	}
 }
@@ -116,7 +118,8 @@ function presentMessage(input: SubagentMessageInput): readonly SubagentPresentat
 			return card ? [present(card, owner, ids)] : [];
 		});
 		return cards.length > 0 ? cards : undefined;
-	} catch {
+	} catch (error) {
+		console.error("[subagents] Presenting a message failed:", error);
 		return undefined;
 	}
 }

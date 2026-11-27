@@ -323,13 +323,13 @@ export class ManagedChildSession {
 			mode: "print" as const,
 			commandContextActions,
 			abortHandler: () => {
-				void session.abort().catch(() => {});
+				void session.abort().catch((error: unknown) => console.error("[subagents] Child abort failed:", error));
 			},
 			shutdownHandler: () => {
 				// A shutdown request is cooperative: stop any in-flight turn before
 				// the manager marks the node unavailable. Registry removal remains the
 				// owner of the eventual runtime disposal.
-				void session.abort().catch(() => {});
+				void session.abort().catch((error: unknown) => console.error("[subagents] Child abort failed:", error));
 				this.hooks.onShutdownRequested();
 			},
 			// ExtensionRunner catches handler exceptions and continues the SDK
@@ -540,8 +540,8 @@ export async function createManagedChildSession(
 		if (runtime) {
 			try {
 				await runtime.dispose();
-			} catch {
-				// Preserve the initial failure.
+			} catch (disposeError) {
+				console.error("[subagents] Disposing a failed child runtime failed:", disposeError);
 			}
 		}
 		throw error;
