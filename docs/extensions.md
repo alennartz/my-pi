@@ -33,6 +33,7 @@ extension says so.
 | Model prompt overlays | `AGENTS.<model>.md` files | `models` front matter and Markdown body |
 | Subagent definitions | `~/.pi/agent/agents`, `.pi/agents`, package `pi.agents` | `name`, `description`, `icon`, `invocation`, `tools`, `model`, `skills`, body |
 | Web tools | Environment and cache location | `BRAVE_API_KEY`, `PI_CODING_AGENT_DIR` |
+| SSH tools | OpenSSH configuration | Host alias, verified host key, non-interactive credentials |
 | Prompt template creator | `/nprompt <name>` | Project-local `.pi/prompts/<name>.md` |
 
 The remaining extensions have no configuration file. They expose behavior or
@@ -314,6 +315,30 @@ Fetched pages are cached under `<agentDir>/web-tools/cache/`, where
 `<agentDir>` is `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The cache uses a
 24-hour TTL and keeps at most 1,000 entries. Search results use an in-memory
 five-minute, 100-entry cache.
+
+## SSH tools
+
+Call `ssh_open` with a `target` and optional `cwd`, for example
+`{"target":"ops@server","cwd":"/etc"}`. The target can also be an OpenSSH
+config alias. The base directory defaults to the remote login directory.
+The extension requires a Unix OpenSSH client, verified host keys,
+non-interactive credentials, and Bash 4.4 or later on the remote host.
+It does not install or run Pi there.
+
+Use `tool_search` to load `ssh_bash`, `ssh_read`, `ssh_edit`, `ssh_write`,
+and `ssh_close`, or call them from codemode. Await each call before making
+the next. Pi's built-in tools and user Bash commands still run locally.
+
+`ssh_bash` preserves `cd` and exported variables between calls. It does not
+accept interactive input. The file tools use the original base directory
+for relative paths and the remote home for `~`. They work on regular files
+and `/dev/null`.
+
+Close the connection before opening another target. The connection does
+not survive a session switch or reload. A Bash timeout, abort, or output
+above 64 MiB closes it. The Bash timeout defaults to 120 seconds and
+accepts up to 3600 seconds. Image reads and edits buffer up to 64 MiB.
+Closing the connection does not guarantee that detached remote jobs stop.
 
 ## Extensions with no external configuration
 

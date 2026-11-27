@@ -21,6 +21,7 @@ graph LR
   MyPiDocumentation["My-pi Documentation"]
   UserEdit
   PromptTemplateCreator
+  SshTools["SSH Tools"]
 ```
 
 ### Key Flows
@@ -107,6 +108,18 @@ Typed `web_search` and `web_fetch` tools replacing the former brave-search shell
 **Files:**
 - `extensions/web-tools/**` — `index.ts` (tool registration), `web-search.ts`/`search/brave.ts`/`search/normalize.ts` (discovery), `web-fetch.ts`/`http.ts`/`extract.ts` (retrieval/extraction), `url-policy.ts` (SSRF/redirect policy), `fetch-store.ts` (disk page cache), `cache.ts` (search memory cache), `find-text.ts` (passage search), `types.ts` (canonical types), with colocated tests and HTML fixtures
 - `docs/research/web-search-landscape.md`
+
+### SSH Tools
+
+Remote Bash and file tools that leave Pi's built-in tools local.
+
+**Responsibilities:** direct open and deferred SSH helpers, session-scoped binding and shutdown, one OpenSSH connection with a persistent Bash shell and separate file channels, fixed remote file paths, core tool adapters
+
+**Dependencies:** Pi's tool definitions and pluggable operations, Unix OpenSSH, remote Bash
+
+**Files:**
+- `extensions/ssh-tools/**`: tool adapter, session owner, transport, and contract tests
+- `tools/manual-test/ssh-tools/**`: isolated OpenSSH test runner
 
 ### Subagents
 
