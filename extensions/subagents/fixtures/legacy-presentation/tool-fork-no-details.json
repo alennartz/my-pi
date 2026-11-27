@@ -1,0 +1,37 @@
+{
+	"shape": "fork result without details: derived from arguments {id,task,await}",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "fork",
+		"toolCallId": "call-e8",
+		"args": {
+			"id": "side",
+			"task": "try the other approach",
+			"await": true
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"text": "Forked side."
+		}
+	},
+	"expected": {
+		"kind": "delegation",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"fork": true,
+				"agents": [
+					{
+						"id": "side",
+						"task": "try the other approach"
+					}
+				]
+			},
+			"result": {
+				"children": []
+			}
+		}
+	}
+}

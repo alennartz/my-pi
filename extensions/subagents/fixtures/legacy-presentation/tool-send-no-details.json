@@ -1,0 +1,32 @@
+{
+	"shape": "send result without details: derived from arguments",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "send",
+		"toolCallId": "call-b4",
+		"args": {
+			"to": "alpha",
+			"message": "hello"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"text": "Message sent to alpha."
+		}
+	},
+	"expected": {
+		"kind": "send",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"to": "alpha",
+				"message": "hello",
+				"expectResponse": false
+			},
+			"result": {
+				"phase": "complete"
+			}
+		}
+	}
+}

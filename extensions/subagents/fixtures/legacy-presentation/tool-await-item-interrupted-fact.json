@@ -1,0 +1,119 @@
+{
+	"shape": "await stopped by the user: item state aborted without interrupted, plus an await_interrupted(reason stop) fact without statuses",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "await_agents",
+		"toolCallId": "call-d7",
+		"args": {
+			"agents": [
+				"alpha"
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"details": {
+				"semantic": [
+					{
+						"eventId": "sess-root:evt-16",
+						"path": [],
+						"kind": "await_started",
+						"data": {
+							"invocationId": "call-d7",
+							"requested": [
+								[
+									"alpha"
+								]
+							]
+						},
+						"relatedPiEvents": [
+							{
+								"sessionId": "sess-root",
+								"toolCallId": "call-d7",
+								"kind": "tool_call"
+							}
+						]
+					},
+					{
+						"eventId": "sess-root:evt-17",
+						"path": [],
+						"kind": "await_interrupted",
+						"data": {
+							"invocationId": "call-d7",
+							"reason": "stop",
+							"requested": [
+								[
+									"alpha"
+								]
+							]
+						},
+						"relatedPiEvents": [
+							{
+								"sessionId": "sess-root",
+								"toolCallId": "call-d7",
+								"kind": "tool_call"
+							}
+						]
+					}
+				],
+				"subagentContent": [
+					{
+						"operationId": "call-d7",
+						"kind": "await",
+						"state": "aborted",
+						"data": {
+							"operation": "await",
+							"parameters": {
+								"agents": [
+									[
+										"alpha"
+									]
+								]
+							},
+							"result": {
+								"statuses": [
+									{
+										"path": [
+											"alpha"
+										],
+										"state": "running",
+										"sessionId": "sess-a"
+									}
+								]
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-d7",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Operation aborted"
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "aborted",
+		"path": [],
+		"data": {
+			"parameters": {
+				"agents": [
+					"alpha"
+				]
+			},
+			"result": {
+				"interrupted": true,
+				"statuses": [
+					{
+						"path": [
+							"alpha"
+						],
+						"state": "running"
+					}
+				]
+			}
+		}
+	}
+}

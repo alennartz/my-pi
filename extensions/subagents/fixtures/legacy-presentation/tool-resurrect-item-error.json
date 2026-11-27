@@ -1,0 +1,85 @@
+{
+	"shape": "failed resurrect: item state error with result {affectedAgents:[],error}",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "resurrect",
+		"toolCallId": "call-h3",
+		"args": {
+			"agents": [
+				{
+					"id": "alpha",
+					"sessionId": "sess-a",
+					"task": "pick up where you stopped",
+					"channels": [
+						"beta"
+					],
+					"model": "smart"
+				}
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"details": {
+				"subagentContent": [
+					{
+						"operationId": "call-h3",
+						"kind": "resurrect",
+						"state": "error",
+						"data": {
+							"operation": "resurrect",
+							"parameters": {
+								"agents": [
+									{
+										"id": "alpha",
+										"sessionId": "sess-a",
+										"task": "pick up where you stopped",
+										"channels": [
+											"beta"
+										],
+										"model": "smart"
+									}
+								]
+							},
+							"result": {
+								"affectedAgents": [],
+								"error": "Session file not found"
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-h3",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Session file not found"
+		}
+	},
+	"expected": {
+		"kind": "resurrect",
+		"state": "error",
+		"path": [],
+		"data": {
+			"parameters": {
+				"source": "model",
+				"agents": [
+					{
+						"id": "alpha",
+						"sessionId": "sess-a",
+						"task": "pick up where you stopped",
+						"channels": [
+							"beta"
+						],
+						"model": "smart"
+					}
+				]
+			},
+			"result": {
+				"affectedAgents": [],
+				"error": "Session file not found"
+			}
+		}
+	}
+}

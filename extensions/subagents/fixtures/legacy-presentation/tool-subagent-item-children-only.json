@@ -1,0 +1,88 @@
+{
+	"shape": "oldest delegation item: flat data {operation,children} without parameters; arguments use the legacy agent key",
+	"toolCall": {
+		"ownerPath": [
+			"lead"
+		],
+		"toolName": "subagent",
+		"toolCallId": "call-e2|fc-e2",
+		"args": {
+			"agents": [
+				{
+					"id": "alpha",
+					"task": "scan",
+					"agent": "scout"
+				}
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"status": "running"
+					}
+				],
+				"subagentContent": [
+					{
+						"operationId": "call-e2|fc-e2",
+						"kind": "delegation",
+						"state": "complete",
+						"data": {
+							"children": [
+								{
+									"path": [
+										"lead",
+										"alpha"
+									],
+									"persona": "scout",
+									"task": "scan"
+								}
+							],
+							"operation": "delegation"
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-e2|fc-e2",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Spawned 1 agent."
+		}
+	},
+	"expected": {
+		"kind": "delegation",
+		"state": "complete",
+		"path": [
+			"lead"
+		],
+		"data": {
+			"parameters": {
+				"fork": false,
+				"agents": [
+					{
+						"id": "alpha",
+						"task": "scan",
+						"persona": "scout"
+					}
+				]
+			},
+			"result": {
+				"children": [
+					{
+						"path": [
+							"lead",
+							"alpha"
+						],
+						"task": "scan",
+						"persona": "scout"
+					}
+				]
+			}
+		}
+	}
+}

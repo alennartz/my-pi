@@ -1,0 +1,41 @@
+{
+	"shape": "aborted delegation saved as a custom entry with empty parameters and no children",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "call-z1|fc-z1",
+					"kind": "delegation",
+					"state": "aborted",
+					"source": "custom_entry",
+					"data": {
+						"operation": "delegation",
+						"parameters": {},
+						"result": {
+							"children": []
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "delegation",
+			"state": "aborted",
+			"path": [],
+			"data": {
+				"parameters": {
+					"agents": [],
+					"fork": false
+				},
+				"result": {
+					"children": []
+				}
+			}
+		}
+	]
+}

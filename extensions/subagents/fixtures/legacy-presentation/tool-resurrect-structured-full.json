@@ -1,0 +1,110 @@
+{
+	"shape": "resurrect without subagentContent: structured {agents:[{id,path,sessionId,incarnation,state,usage}]} and a resurrect fact",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "resurrect",
+		"toolCallId": "call-h6",
+		"args": {
+			"agents": [
+				{
+					"id": "alpha",
+					"sessionId": "sess-a",
+					"task": "pick up where you stopped",
+					"channels": [
+						"beta"
+					],
+					"model": "smart"
+				}
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"path": [
+							"alpha"
+						],
+						"sessionId": "sess-a",
+						"incarnation": "incarnation-2",
+						"state": "running",
+						"usage": {
+							"input": 120,
+							"output": 40,
+							"cacheRead": 300,
+							"cacheWrite": 0,
+							"cost": 0.0123,
+							"costBreakdown": {
+								"input": 0.01,
+								"output": 0.002,
+								"cacheRead": 0.0003,
+								"cacheWrite": 0
+							},
+							"turns": 3
+						}
+					}
+				],
+				"semantic": [
+					{
+						"eventId": "sess-root:evt-25",
+						"path": [
+							"alpha"
+						],
+						"kind": "resurrect",
+						"data": {
+							"operation": "resurrect",
+							"outcome": "succeeded",
+							"path": [
+								"alpha"
+							],
+							"sessionId": "sess-a"
+						},
+						"relatedPiEvents": [
+							{
+								"kind": "lifecycle",
+								"sessionId": "sess-root",
+								"toolCallId": "call-h6"
+							}
+						]
+					}
+				]
+			},
+			"text": "Resurrected alpha."
+		}
+	},
+	"expected": {
+		"kind": "resurrect",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"source": "model",
+				"agents": [
+					{
+						"id": "alpha",
+						"sessionId": "sess-a",
+						"task": "pick up where you stopped",
+						"channels": [
+							"beta"
+						],
+						"model": "smart"
+					}
+				]
+			},
+			"result": {
+				"affectedAgents": [
+					{
+						"path": [
+							"alpha"
+						],
+						"sessionId": "sess-a",
+						"incarnation": "incarnation-2",
+						"state": "running"
+					}
+				]
+			}
+		}
+	}
+}

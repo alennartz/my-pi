@@ -1,0 +1,54 @@
+{
+	"shape": "incoming message saved with kind send (before message_received existed) and a two-segment from path",
+	"message": {
+		"ownerPath": [
+			"alpha"
+		],
+		"customType": "subagents",
+		"content": "<agent_message from=\"worker\" response_expected=\"false\">\nconfirmed\n</agent_message>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "incoming:sess-a:3",
+					"kind": "send",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "send",
+						"result": {
+							"to": [
+								"alpha"
+							],
+							"from": [
+								"alpha",
+								"worker"
+							],
+							"message": "confirmed",
+							"responseExpected": false
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "message_received",
+			"state": "complete",
+			"path": [
+				"alpha"
+			],
+			"data": {
+				"parameters": {
+					"from": [
+						"alpha",
+						"worker"
+					],
+					"message": "confirmed",
+					"expectResponse": false
+				},
+				"result": {}
+			}
+		}
+	]
+}

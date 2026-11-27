@@ -1,0 +1,62 @@
+{
+	"shape": "interrupt without subagentContent: structured {interrupted:[id],pending:[],failed:[]} with plain ids",
+	"toolCall": {
+		"ownerPath": [
+			"lead"
+		],
+		"toolName": "interrupt",
+		"toolCallId": "call-f2",
+		"args": {
+			"agents": [
+				"alpha",
+				"beta"
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"failed": [],
+				"interrupted": [
+					"alpha",
+					"beta"
+				],
+				"pending": []
+			},
+			"text": "Interrupted alpha, beta."
+		}
+	},
+	"expected": {
+		"kind": "interrupt",
+		"state": "complete",
+		"path": [
+			"lead"
+		],
+		"data": {
+			"parameters": {
+				"agents": [
+					"alpha",
+					"beta"
+				]
+			},
+			"result": {
+				"interrupted": [
+					{
+						"path": [
+							"lead",
+							"alpha"
+						]
+					},
+					{
+						"path": [
+							"lead",
+							"beta"
+						]
+					}
+				],
+				"pending": [],
+				"failed": []
+			}
+		}
+	}
+}

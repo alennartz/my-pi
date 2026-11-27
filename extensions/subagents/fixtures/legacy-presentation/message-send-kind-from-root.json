@@ -1,0 +1,48 @@
+{
+	"shape": "incoming message saved with kind send and an empty from path (the root)",
+	"message": {
+		"ownerPath": [
+			"alpha"
+		],
+		"customType": "subagents",
+		"content": "<agent_message from=\"parent\" response_expected=\"false\">\nnew requirement\n</agent_message>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "incoming:sess-a:4",
+					"kind": "send",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "send",
+						"result": {
+							"to": [
+								"alpha"
+							],
+							"from": [],
+							"message": "new requirement",
+							"responseExpected": false
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "message_received",
+			"state": "complete",
+			"path": [
+				"alpha"
+			],
+			"data": {
+				"parameters": {
+					"from": [],
+					"message": "new requirement",
+					"expectResponse": false
+				},
+				"result": {}
+			}
+		}
+	]
+}

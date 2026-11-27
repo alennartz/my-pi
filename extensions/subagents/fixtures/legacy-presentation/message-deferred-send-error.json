@@ -1,0 +1,50 @@
+{
+	"shape": "late reply to an interrupted blocking send: custom_entry send item state error with result {to,message,response:\"\",error}",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_message from=\"alpha\" response_expected=\"false\">\n(no response — Agent \"alpha\" went idle without responding)\n</agent_message>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "deferred-send:sess-root:1",
+					"kind": "send",
+					"state": "error",
+					"source": "custom_entry",
+					"data": {
+						"operation": "send",
+						"result": {
+							"to": [
+								"alpha"
+							],
+							"message": "what next?",
+							"response": "",
+							"error": "Agent \"alpha\" went idle without responding"
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "send",
+			"state": "error",
+			"path": [],
+			"data": {
+				"parameters": {
+					"to": "alpha",
+					"message": "what next?",
+					"expectResponse": true
+				},
+				"result": {
+					"phase": "complete",
+					"error": "Agent \"alpha\" went idle without responding"
+				}
+			}
+		}
+	],
+	"absent": [
+		"0.data.result.response"
+	]
+}

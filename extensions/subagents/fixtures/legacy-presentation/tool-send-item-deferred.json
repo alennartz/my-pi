@@ -1,0 +1,67 @@
+{
+	"shape": "blocking send whose wait was interrupted: item result {deferred:true,response:null}; result text names the correlation id",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "send",
+		"toolCallId": "call-a3",
+		"args": {
+			"to": "alpha",
+			"message": "ready?",
+			"expectResponse": true
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"correlationId": "corr-77aa01-2",
+				"deferred": true,
+				"response": null,
+				"subagentContent": [
+					{
+						"operationId": "call-a3",
+						"kind": "send",
+						"state": "complete",
+						"data": {
+							"operation": "send",
+							"parameters": {
+								"expectResponse": true,
+								"message": "ready?",
+								"to": [
+									"alpha"
+								]
+							},
+							"result": {
+								"deferred": true,
+								"response": null
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-a3",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Your blocking wait on \"alpha\" was interrupted, not cancelled. Its reply will arrive later (correlation_id=\"corr-77aa01-2\")."
+		}
+	},
+	"expected": {
+		"kind": "send",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"to": "alpha",
+				"message": "ready?",
+				"expectResponse": true
+			},
+			"result": {
+				"phase": "complete"
+			}
+		}
+	},
+	"absent": [
+		"data.result.response"
+	]
+}

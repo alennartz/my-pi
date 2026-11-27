@@ -1,0 +1,48 @@
+{
+	"shape": "incoming message from the root to a child expecting a response; the content carries a correlation id",
+	"message": {
+		"ownerPath": [
+			"alpha"
+		],
+		"customType": "subagents",
+		"content": "<agent_message from=\"parent\" correlation_id=\"corr-4e5f6a-1\" response_expected=\"true\">\nplease report\n</agent_message>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "incoming:sess-a:1",
+					"kind": "message_received",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "send",
+						"result": {
+							"to": [
+								"alpha"
+							],
+							"from": [],
+							"message": "please report",
+							"responseExpected": true
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "message_received",
+			"state": "complete",
+			"path": [
+				"alpha"
+			],
+			"data": {
+				"parameters": {
+					"from": [],
+					"message": "please report",
+					"expectResponse": true
+				},
+				"result": {}
+			}
+		}
+	]
+}

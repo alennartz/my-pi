@@ -1,0 +1,80 @@
+{
+	"shape": "teardown without subagentContent: structured {agents:[{id,status,sessionId,usage,usageBaseline}]}",
+	"toolCall": {
+		"ownerPath": [
+			"lead"
+		],
+		"toolName": "teardown",
+		"toolCallId": "call-g4",
+		"args": {
+			"agent": "alpha"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"status": "idle",
+						"sessionId": "sess-a",
+						"usage": {
+							"input": 120,
+							"output": 40,
+							"cacheRead": 300,
+							"cacheWrite": 0,
+							"cost": 0.0123,
+							"costBreakdown": {
+								"input": 0.01,
+								"output": 0.002,
+								"cacheRead": 0.0003,
+								"cacheWrite": 0
+							},
+							"turns": 3
+						},
+						"usageBaseline": {
+							"input": 120,
+							"output": 40,
+							"cacheRead": 300,
+							"cacheWrite": 0,
+							"cost": 0.0123,
+							"costBreakdown": {
+								"input": 0.01,
+								"output": 0.002,
+								"cacheRead": 0.0003,
+								"cacheWrite": 0
+							},
+							"turns": 3
+						}
+					}
+				]
+			},
+			"text": "Torn down alpha."
+		}
+	},
+	"expected": {
+		"kind": "teardown",
+		"state": "complete",
+		"path": [
+			"lead"
+		],
+		"data": {
+			"parameters": {
+				"agent": "alpha",
+				"source": "model"
+			},
+			"result": {
+				"affectedAgents": [
+					{
+						"path": [
+							"lead",
+							"alpha"
+						],
+						"sessionId": "sess-a",
+						"state": "idle"
+					}
+				]
+			}
+		}
+	}
+}

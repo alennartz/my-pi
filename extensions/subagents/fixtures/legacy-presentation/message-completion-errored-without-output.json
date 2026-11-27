@@ -1,0 +1,62 @@
+{
+	"shape": "completion item state error with result {state:errored,error,usage} and no output, under a nested owner",
+	"message": {
+		"ownerPath": [
+			"lead"
+		],
+		"customType": "subagents",
+		"content": "<agent_idle id=\"alpha\" status=\"errored\" session_id=\"sess-a\">\n<error>429 rate limited</error>\n</agent_idle>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "completion:[\"lead\",\"alpha\"]:sess-a:2",
+					"kind": "completion",
+					"state": "error",
+					"source": "custom_entry",
+					"data": {
+						"operation": "completion",
+						"result": {
+							"state": "errored",
+							"error": "429 rate limited",
+							"usage": {
+								"input": 120,
+								"output": 40,
+								"cacheRead": 300,
+								"cacheWrite": 0,
+								"cost": 0.0123,
+								"costBreakdown": {
+									"input": 0.01,
+									"output": 0.002,
+									"cacheRead": 0.0003,
+									"cacheWrite": 0
+								},
+								"turns": 3
+							}
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "completion",
+			"state": "error",
+			"path": [
+				"lead"
+			],
+			"data": {
+				"parameters": {},
+				"result": {
+					"path": [
+						"lead",
+						"alpha"
+					],
+					"state": "errored",
+					"error": "429 rate limited",
+					"sessionId": "sess-a"
+				}
+			}
+		}
+	]
+}

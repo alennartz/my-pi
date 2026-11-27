@@ -1,0 +1,71 @@
+{
+	"shape": "oldest respond item: flat data {operation,body}",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "respond",
+		"toolCallId": "call-c2|fc-c2",
+		"args": {
+			"correlationId": "corr-a1b2c3-5",
+			"message": "approved"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"semantic": {
+					"eventId": "sess-root:evt-6",
+					"path": [],
+					"kind": "message_thread",
+					"data": {
+						"correlationId": "corr-a1b2c3-5",
+						"from": [],
+						"to": [
+							"alpha"
+						],
+						"text": "approved",
+						"responseExpected": false,
+						"phase": "response"
+					},
+					"relatedPiEvents": [
+						{
+							"sessionId": "sess-root",
+							"toolCallId": "call-c2|fc-c2",
+							"kind": "tool_call"
+						}
+					]
+				},
+				"subagentContent": [
+					{
+						"operationId": "call-c2|fc-c2",
+						"kind": "respond",
+						"state": "complete",
+						"data": {
+							"operation": "respond",
+							"body": "approved"
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-c2|fc-c2",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Response sent."
+		}
+	},
+	"expected": {
+		"kind": "respond",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"to": [
+					"alpha"
+				],
+				"message": "approved"
+			},
+			"result": {}
+		}
+	}
+}

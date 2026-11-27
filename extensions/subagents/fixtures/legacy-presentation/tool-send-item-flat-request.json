@@ -1,0 +1,61 @@
+{
+	"shape": "oldest send item: flat data {operation,to:path,request,response:\"\"} without parameters or result",
+	"toolCall": {
+		"ownerPath": [
+			"beta"
+		],
+		"toolName": "send",
+		"toolCallId": "call-a4|fc-a4",
+		"args": {
+			"to": "parent",
+			"message": "findings attached"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"deferred": false,
+				"response": null,
+				"subagentContent": [
+					{
+						"operationId": "call-a4|fc-a4",
+						"kind": "send",
+						"state": "complete",
+						"data": {
+							"operation": "send",
+							"to": [],
+							"request": "findings attached",
+							"response": ""
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-a4|fc-a4",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Message sent to parent."
+		}
+	},
+	"expected": {
+		"kind": "send",
+		"state": "complete",
+		"path": [
+			"beta"
+		],
+		"data": {
+			"parameters": {
+				"to": "parent",
+				"message": "findings attached",
+				"expectResponse": false
+			},
+			"result": {
+				"phase": "complete"
+			}
+		}
+	},
+	"absent": [
+		"data.result.response"
+	]
+}

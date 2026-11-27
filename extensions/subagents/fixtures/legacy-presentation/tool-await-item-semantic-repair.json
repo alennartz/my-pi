@@ -1,0 +1,266 @@
+{
+	"shape": "await item repaired from facts: a child_settled outside the requested set adds a status, await_released(reason message) marks the wait interrupted; drained custom_entry items in the same details stay out of the tool card",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "await_agents",
+		"toolCallId": "call-d6",
+		"args": {
+			"agents": [
+				"alpha"
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"semantic": [
+					{
+						"eventId": "sess-root:evt-11",
+						"path": [],
+						"kind": "await_started",
+						"data": {
+							"invocationId": "call-d6",
+							"requested": [
+								[
+									"alpha"
+								]
+							]
+						},
+						"relatedPiEvents": [
+							{
+								"sessionId": "sess-root",
+								"toolCallId": "call-d6",
+								"kind": "tool_call"
+							}
+						]
+					},
+					{
+						"eventId": "sess-root:evt-12",
+						"path": [
+							"beta"
+						],
+						"kind": "child_settled",
+						"data": {
+							"path": [
+								"beta"
+							],
+							"statuses": [
+								{
+									"path": [
+										"beta"
+									],
+									"state": "idle",
+									"output": "beta finished",
+									"sessionId": "sess-b"
+								}
+							]
+						},
+						"relatedPiEvents": [
+							{
+								"kind": "lifecycle",
+								"sessionId": "sess-root"
+							}
+						]
+					},
+					{
+						"eventId": "sess-root:evt-13",
+						"path": [
+							"beta"
+						],
+						"kind": "completion",
+						"data": {
+							"status": "idle",
+							"output": "beta finished",
+							"usage": {
+								"input": 120,
+								"output": 40,
+								"cacheRead": 300,
+								"cacheWrite": 0,
+								"cost": 0.0123,
+								"costBreakdown": {
+									"input": 0.01,
+									"output": 0.002,
+									"cacheRead": 0.0003,
+									"cacheWrite": 0
+								},
+								"turns": 3
+							},
+							"delivery": "synchronous",
+							"invocationId": "call-d6"
+						},
+						"relatedPiEvents": [
+							{
+								"sessionId": "sess-root",
+								"toolCallId": "call-d6",
+								"kind": "tool_call"
+							}
+						]
+					},
+					{
+						"eventId": "sess-root:evt-14",
+						"path": [
+							"alpha"
+						],
+						"kind": "message_thread",
+						"data": {
+							"correlationId": "corr-c0ffee-7",
+							"from": [
+								"alpha"
+							],
+							"to": [],
+							"text": "quick question",
+							"responseExpected": true,
+							"phase": "received"
+						},
+						"relatedPiEvents": [
+							{
+								"kind": "custom_message",
+								"sessionId": "sess-root"
+							}
+						]
+					},
+					{
+						"eventId": "sess-root:evt-15",
+						"path": [],
+						"kind": "await_released",
+						"data": {
+							"invocationId": "call-d6",
+							"reason": "message",
+							"requested": [
+								[
+									"alpha"
+								]
+							],
+							"statuses": [
+								{
+									"path": [
+										"alpha"
+									],
+									"state": "running",
+									"sessionId": "sess-a"
+								}
+							]
+						},
+						"relatedPiEvents": [
+							{
+								"sessionId": "sess-root",
+								"toolCallId": "call-d6",
+								"kind": "tool_call"
+							}
+						]
+					}
+				],
+				"subagentContent": [
+					{
+						"operationId": "call-d6",
+						"kind": "await",
+						"state": "complete",
+						"data": {
+							"operation": "await",
+							"parameters": {
+								"agents": [
+									[
+										"alpha"
+									]
+								]
+							},
+							"result": {
+								"statuses": [
+									{
+										"path": [
+											"alpha"
+										],
+										"state": "running",
+										"sessionId": "sess-a"
+									}
+								]
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-d6",
+							"contentIndex": 1
+						}
+					},
+					{
+						"operationId": "completion:[\"beta\"]:sess-b:1",
+						"kind": "completion",
+						"state": "complete",
+						"source": "custom_entry",
+						"data": {
+							"operation": "completion",
+							"result": {
+								"state": "idle",
+								"output": "beta finished",
+								"usage": {
+									"input": 120,
+									"output": 40,
+									"cacheRead": 300,
+									"cacheWrite": 0,
+									"cost": 0.0123,
+									"costBreakdown": {
+										"input": 0.01,
+										"output": 0.002,
+										"cacheRead": 0.0003,
+										"cacheWrite": 0
+									},
+									"turns": 3
+								}
+							}
+						}
+					},
+					{
+						"operationId": "incoming:sess-root:1",
+						"kind": "message_received",
+						"state": "complete",
+						"source": "custom_entry",
+						"data": {
+							"operation": "send",
+							"result": {
+								"to": [],
+								"from": [
+									"alpha"
+								],
+								"message": "quick question",
+								"responseExpected": true
+							}
+						}
+					}
+				]
+			},
+			"text": "Wait interrupted."
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"agents": [
+					"alpha"
+				]
+			},
+			"result": {
+				"interrupted": true,
+				"error": "Cannot wait: requested agents must receive your response before settling.",
+				"statuses": [
+					{
+						"path": [
+							"alpha"
+						],
+						"state": "running"
+					},
+					{
+						"path": [
+							"beta"
+						],
+						"state": "idle",
+						"output": "beta finished",
+						"sessionId": "sess-b"
+					}
+				]
+			}
+		}
+	}
+}

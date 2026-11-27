@@ -1,0 +1,178 @@
+{
+	"shape": "await interrupted by a message: item state aborted with {interrupted,error,statuses running/waiting}; facts carry correlation ids",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "await_agents",
+		"toolCallId": "call-d3|fc-d3",
+		"args": {
+			"agents": [
+				"alpha",
+				"beta"
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"status": "running",
+						"output": "working",
+						"sessionId": "sess-a"
+					},
+					{
+						"id": "beta",
+						"status": "waiting",
+						"sessionId": "sess-b"
+					}
+				],
+				"interrupted": true,
+				"error": "Cannot wait: requested agents must receive your response before settling.",
+				"semantic": [
+					{
+						"eventId": "sess-root:evt-9",
+						"path": [
+							"beta"
+						],
+						"kind": "message_thread",
+						"data": {
+							"correlationId": "corr-beef01-1",
+							"from": [
+								"beta"
+							],
+							"to": [],
+							"text": "need input",
+							"responseExpected": true,
+							"phase": "received"
+						},
+						"relatedPiEvents": [
+							{
+								"kind": "custom_message",
+								"sessionId": "sess-root"
+							}
+						]
+					},
+					{
+						"eventId": "sess-root:evt-10",
+						"path": [],
+						"kind": "await_released",
+						"data": {
+							"invocationId": "call-d3|fc-d3",
+							"reason": "message",
+							"requested": [
+								[
+									"alpha"
+								],
+								[
+									"beta"
+								]
+							],
+							"statuses": [
+								{
+									"path": [
+										"alpha"
+									],
+									"state": "running",
+									"sessionId": "sess-a"
+								},
+								{
+									"path": [
+										"beta"
+									],
+									"state": "waiting",
+									"sessionId": "sess-b"
+								}
+							]
+						},
+						"relatedPiEvents": [
+							{
+								"sessionId": "sess-root",
+								"toolCallId": "call-d3|fc-d3",
+								"kind": "tool_call"
+							}
+						]
+					}
+				],
+				"subagentContent": [
+					{
+						"operationId": "call-d3|fc-d3",
+						"kind": "await",
+						"state": "aborted",
+						"data": {
+							"operation": "await",
+							"parameters": {
+								"agents": [
+									[
+										"alpha"
+									],
+									[
+										"beta"
+									]
+								]
+							},
+							"result": {
+								"error": "Cannot wait: requested agents must receive your response before settling.",
+								"interrupted": true,
+								"statuses": [
+									{
+										"path": [
+											"alpha"
+										],
+										"state": "running",
+										"output": "working",
+										"sessionId": "sess-a"
+									},
+									{
+										"path": [
+											"beta"
+										],
+										"state": "waiting",
+										"sessionId": "sess-b"
+									}
+								]
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-d3|fc-d3",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Wait interrupted by a message from beta (correlation_id=\"corr-beef01-1\")."
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "aborted",
+		"path": [],
+		"data": {
+			"parameters": {
+				"agents": [
+					"alpha",
+					"beta"
+				]
+			},
+			"result": {
+				"interrupted": true,
+				"error": "Cannot wait: requested agents must receive your response before settling.",
+				"statuses": [
+					{
+						"path": [
+							"alpha"
+						],
+						"state": "running"
+					},
+					{
+						"path": [
+							"beta"
+						],
+						"state": "waiting"
+					}
+				]
+			}
+		}
+	}
+}

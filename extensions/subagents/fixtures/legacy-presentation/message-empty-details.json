@@ -1,0 +1,10 @@
+{
+	"shape": "custom message with empty details: native rendering",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_idle id=\"alpha\" status=\"idle\" session_id=\"sess-a\">\ndone\n</agent_idle>",
+		"details": {}
+	},
+	"expected": null
+}

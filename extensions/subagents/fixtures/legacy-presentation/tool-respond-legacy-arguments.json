@@ -1,0 +1,30 @@
+{
+	"shape": "respond called with unknown argument keys (content instead of message) and no details",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "respond",
+		"toolCallId": "call-c6",
+		"args": {
+			"correlationId": "corr-12ab34-1",
+			"content": "wrong key"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"text": "Validation failed for tool \"respond\": message is required"
+		}
+	},
+	"expected": {
+		"kind": "respond",
+		"state": "error",
+		"path": [],
+		"data": {
+			"parameters": {
+				"message": ""
+			},
+			"result": {
+				"error": "Validation failed for tool \"respond\": message is required"
+			}
+		}
+	}
+}

@@ -1,0 +1,106 @@
+{
+	"shape": "interrupt: item with parameters agents as paths and result {interrupted:[{path}],pending,failed}; structured copy and an interrupt fact",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "interrupt",
+		"toolCallId": "call-f1|fc-f1",
+		"args": {
+			"agents": [
+				"alpha"
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"failed": [],
+				"interrupted": [
+					{
+						"path": [
+							"alpha"
+						]
+					}
+				],
+				"pending": [],
+				"semantic": {
+					"eventId": "sess-root:evt-22",
+					"path": [
+						"alpha"
+					],
+					"kind": "interrupt",
+					"data": {
+						"operation": "interrupt",
+						"outcome": "interrupted",
+						"path": [
+							"alpha"
+						]
+					},
+					"relatedPiEvents": [
+						{
+							"kind": "lifecycle",
+							"sessionId": "sess-root",
+							"toolCallId": "call-f1|fc-f1"
+						}
+					]
+				},
+				"subagentContent": [
+					{
+						"operationId": "call-f1|fc-f1",
+						"kind": "interrupt",
+						"state": "complete",
+						"data": {
+							"operation": "interrupt",
+							"parameters": {
+								"agents": [
+									[
+										"alpha"
+									]
+								]
+							},
+							"result": {
+								"failed": [],
+								"interrupted": [
+									{
+										"path": [
+											"alpha"
+										]
+									}
+								],
+								"pending": []
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-f1|fc-f1",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Interrupted alpha."
+		}
+	},
+	"expected": {
+		"kind": "interrupt",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"agents": [
+					"alpha"
+				]
+			},
+			"result": {
+				"interrupted": [
+					{
+						"path": [
+							"alpha"
+						]
+					}
+				],
+				"pending": [],
+				"failed": []
+			}
+		}
+	}
+}

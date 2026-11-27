@@ -1,0 +1,95 @@
+{
+	"shape": "user resurrection from Pimote: control-resurrect item with parameters agents and result affectedAgents",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_resurrected id=\"alpha\" session_id=\"sess-a\">\n  <task>pick up where you stopped</task>\n</agent_resurrected>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "control-resurrect:00000000-0000-4000-8000-000000000003:1",
+					"kind": "resurrect",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "resurrect",
+						"parameters": {
+							"agents": [
+								{
+									"id": "alpha",
+									"sessionId": "sess-a",
+									"task": "pick up where you stopped",
+									"channels": [
+										"beta"
+									],
+									"model": "smart"
+								}
+							]
+						},
+						"result": {
+							"affectedAgents": [
+								{
+									"path": [
+										"alpha"
+									],
+									"sessionId": "sess-a",
+									"incarnation": "incarnation-2",
+									"state": "running",
+									"usage": {
+										"input": 120,
+										"output": 40,
+										"cacheRead": 300,
+										"cacheWrite": 0,
+										"cost": 0.0123,
+										"costBreakdown": {
+											"input": 0.01,
+											"output": 0.002,
+											"cacheRead": 0.0003,
+											"cacheWrite": 0
+										},
+										"turns": 3
+									}
+								}
+							]
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "resurrect",
+			"state": "complete",
+			"path": [],
+			"data": {
+				"parameters": {
+					"source": "user",
+					"agents": [
+						{
+							"id": "alpha",
+							"sessionId": "sess-a",
+							"task": "pick up where you stopped",
+							"channels": [
+								"beta"
+							],
+							"model": "smart"
+						}
+					]
+				},
+				"result": {
+					"affectedAgents": [
+						{
+							"path": [
+								"alpha"
+							],
+							"sessionId": "sess-a",
+							"incarnation": "incarnation-2",
+							"state": "running"
+						}
+					]
+				}
+			}
+		}
+	]
+}

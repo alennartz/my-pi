@@ -1,0 +1,63 @@
+{
+	"shape": "respond without subagentContent: details hold only a response message_thread fact",
+	"toolCall": {
+		"ownerPath": [
+			"alpha"
+		],
+		"toolName": "respond",
+		"toolCallId": "call-c4",
+		"args": {
+			"correlationId": "corr-0f0f0f-1",
+			"message": "ok"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"semantic": {
+					"eventId": "sess-root:evt-7",
+					"path": [
+						"alpha"
+					],
+					"kind": "message_thread",
+					"data": {
+						"correlationId": "corr-0f0f0f-1",
+						"from": [
+							"alpha"
+						],
+						"to": [
+							"beta"
+						],
+						"text": "ok",
+						"responseExpected": false,
+						"phase": "response"
+					},
+					"relatedPiEvents": [
+						{
+							"sessionId": "sess-root",
+							"toolCallId": "call-c4",
+							"kind": "tool_call"
+						}
+					]
+				}
+			},
+			"text": "Response sent."
+		}
+	},
+	"expected": {
+		"kind": "respond",
+		"state": "complete",
+		"path": [
+			"alpha"
+		],
+		"data": {
+			"parameters": {
+				"to": [
+					"beta"
+				],
+				"message": "ok"
+			},
+			"result": {}
+		}
+	}
+}

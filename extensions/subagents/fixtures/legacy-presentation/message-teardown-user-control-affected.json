@@ -1,0 +1,89 @@
+{
+	"shape": "user teardown from Pimote with an affected agent carrying task, channels and model",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_removed id=\"alpha\" session_id=\"sess-a\">\n</agent_removed>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "control-teardown:00000000-0000-4000-8000-000000000002:1",
+					"kind": "teardown",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "teardown",
+						"parameters": {
+							"agent": [
+								"alpha"
+							],
+							"incarnation": "incarnation-1"
+						},
+						"result": {
+							"status": "removed",
+							"affectedAgents": [
+								{
+									"path": [
+										"alpha"
+									],
+									"sessionId": "sess-a",
+									"incarnation": "incarnation-1",
+									"state": "idle",
+									"usage": {
+										"input": 120,
+										"output": 40,
+										"cacheRead": 300,
+										"cacheWrite": 0,
+										"cost": 0.0123,
+										"costBreakdown": {
+											"input": 0.01,
+											"output": 0.002,
+											"cacheRead": 0.0003,
+											"cacheWrite": 0
+										},
+										"turns": 3
+									},
+									"task": "map the module",
+									"channels": [
+										"parent"
+									],
+									"model": "provider/model-small"
+								}
+							]
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "teardown",
+			"state": "complete",
+			"path": [],
+			"data": {
+				"parameters": {
+					"agent": "alpha",
+					"source": "user"
+				},
+				"result": {
+					"affectedAgents": [
+						{
+							"path": [
+								"alpha"
+							],
+							"sessionId": "sess-a",
+							"incarnation": "incarnation-1",
+							"state": "idle",
+							"task": "map the module",
+							"channels": [
+								"parent"
+							],
+							"model": "provider/model-small"
+						}
+					]
+				}
+			}
+		}
+	]
+}

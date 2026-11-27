@@ -1,0 +1,52 @@
+{
+	"shape": "incoming message from a sibling peer: from and to both name children",
+	"message": {
+		"ownerPath": [
+			"alpha"
+		],
+		"customType": "subagents",
+		"content": "<agent_message from=\"beta\" correlation_id=\"corr-7a7a7a-3\" response_expected=\"true\">\nreview this\n</agent_message>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "incoming:sess-a:2",
+					"kind": "message_received",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "send",
+						"result": {
+							"to": [
+								"alpha"
+							],
+							"from": [
+								"beta"
+							],
+							"message": "review this",
+							"responseExpected": true
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "message_received",
+			"state": "complete",
+			"path": [
+				"alpha"
+			],
+			"data": {
+				"parameters": {
+					"from": [
+						"beta"
+					],
+					"message": "review this",
+					"expectResponse": true
+				},
+				"result": {}
+			}
+		}
+	]
+}

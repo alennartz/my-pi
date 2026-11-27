@@ -1,0 +1,9 @@
+{
+	"shape": "custom message without details: native rendering",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_message from=\"alpha\" response_expected=\"false\">\nhi\n</agent_message>"
+	},
+	"expected": null
+}

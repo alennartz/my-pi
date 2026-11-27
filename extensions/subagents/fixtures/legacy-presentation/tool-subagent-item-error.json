@@ -1,0 +1,76 @@
+{
+	"shape": "failed delegation: item state error with result {children:[],error}",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "subagent",
+		"toolCallId": "call-e3",
+		"args": {
+			"agents": [
+				{
+					"id": "alpha",
+					"task": "scan",
+					"cwd": "missing",
+					"model": "cheap"
+				}
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"details": {
+				"subagentContent": [
+					{
+						"operationId": "call-e3",
+						"kind": "delegation",
+						"state": "error",
+						"data": {
+							"operation": "delegation",
+							"parameters": {
+								"agents": [
+									{
+										"id": "alpha",
+										"task": "scan",
+										"cwd": "missing",
+										"model": "cheap"
+									}
+								]
+							},
+							"result": {
+								"children": [],
+								"error": "cwd \"missing\" does not exist"
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-e3",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "cwd \"missing\" does not exist"
+		}
+	},
+	"expected": {
+		"kind": "delegation",
+		"state": "error",
+		"path": [],
+		"data": {
+			"parameters": {
+				"fork": false,
+				"agents": [
+					{
+						"id": "alpha",
+						"task": "scan",
+						"cwd": "missing",
+						"model": "cheap"
+					}
+				]
+			},
+			"result": {
+				"children": [],
+				"error": "cwd \"missing\" does not exist"
+			}
+		}
+	}
+}

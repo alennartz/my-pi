@@ -1,0 +1,35 @@
+{
+	"shape": "interrupt result without details: derived from arguments",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "interrupt",
+		"toolCallId": "call-f3",
+		"args": {
+			"agents": [
+				"alpha"
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"text": "Interrupted alpha."
+		}
+	},
+	"expected": {
+		"kind": "interrupt",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"agents": [
+					"alpha"
+				]
+			},
+			"result": {
+				"interrupted": [],
+				"pending": [],
+				"failed": []
+			}
+		}
+	}
+}

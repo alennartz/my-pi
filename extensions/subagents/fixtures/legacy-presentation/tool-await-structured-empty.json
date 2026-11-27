@@ -1,0 +1,30 @@
+{
+	"shape": "await without subagentContent: structured {agents:[]}",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "await_agents",
+		"toolCallId": "call-d11",
+		"args": {
+			"agents": []
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": []
+			},
+			"text": "No agents to wait on."
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {},
+			"result": {
+				"statuses": []
+			}
+		}
+	}
+}

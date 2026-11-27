@@ -1,0 +1,74 @@
+{
+	"shape": "await without subagentContent: structured {agents:[{id,status,output?,error?,sessionId}]} under a nested owner",
+	"toolCall": {
+		"ownerPath": [
+			"lead"
+		],
+		"toolName": "await_agents",
+		"toolCallId": "call-d8",
+		"args": {
+			"agents": [
+				"alpha",
+				"beta"
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"status": "idle",
+						"output": "alpha out",
+						"sessionId": "sess-a"
+					},
+					{
+						"id": "beta",
+						"status": "errored",
+						"error": "crashed",
+						"sessionId": "sess-b"
+					}
+				]
+			},
+			"text": "alpha: idle\nbeta: errored"
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "complete",
+		"path": [
+			"lead"
+		],
+		"data": {
+			"parameters": {
+				"agents": [
+					"alpha",
+					"beta"
+				]
+			},
+			"result": {
+				"statuses": [
+					{
+						"path": [
+							"lead",
+							"alpha"
+						],
+						"state": "idle",
+						"output": "alpha out",
+						"sessionId": "sess-a"
+					},
+					{
+						"path": [
+							"lead",
+							"beta"
+						],
+						"state": "errored",
+						"error": "crashed",
+						"sessionId": "sess-b"
+					}
+				]
+			}
+		}
+	}
+}

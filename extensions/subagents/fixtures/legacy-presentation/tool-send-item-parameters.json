@@ -1,0 +1,87 @@
+{
+	"shape": "send tool result: subagentContent item with parameters {message,to:path} and result {deferred,response:null}, plus a sent message_thread fact",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "send",
+		"toolCallId": "call-a1|fc-a1",
+		"args": {
+			"to": "alpha",
+			"message": "start the scan"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"deferred": false,
+				"response": null,
+				"semantic": {
+					"eventId": "sess-root:evt-1",
+					"path": [],
+					"kind": "message_thread",
+					"data": {
+						"from": [],
+						"to": [
+							"alpha"
+						],
+						"text": "start the scan",
+						"responseExpected": false,
+						"phase": "sent"
+					},
+					"relatedPiEvents": [
+						{
+							"sessionId": "sess-root",
+							"toolCallId": "call-a1|fc-a1",
+							"kind": "tool_call"
+						}
+					]
+				},
+				"subagentContent": [
+					{
+						"operationId": "call-a1|fc-a1",
+						"kind": "send",
+						"state": "complete",
+						"data": {
+							"operation": "send",
+							"parameters": {
+								"message": "start the scan",
+								"to": [
+									"alpha"
+								]
+							},
+							"result": {
+								"deferred": false,
+								"response": null
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-a1|fc-a1",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Message sent to alpha."
+		}
+	},
+	"expected": {
+		"kind": "send",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"operation": "send",
+			"parameters": {
+				"to": "alpha",
+				"message": "start the scan",
+				"expectResponse": false
+			},
+			"result": {
+				"phase": "complete"
+			}
+		}
+	},
+	"absent": [
+		"data.result.response",
+		"data.result.error"
+	]
+}

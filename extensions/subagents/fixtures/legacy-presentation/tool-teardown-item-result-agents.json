@@ -1,0 +1,166 @@
+{
+	"shape": "teardown of all agents: item parameters {} and a result that also holds agents and usage beside affectedAgents",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "teardown",
+		"toolCallId": "call-g2",
+		"args": {},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"status": "errored",
+						"sessionId": "sess-a",
+						"usage": {
+							"input": 120,
+							"output": 40,
+							"cacheRead": 300,
+							"cacheWrite": 0,
+							"cost": 0.0123,
+							"costBreakdown": {
+								"input": 0.01,
+								"output": 0.002,
+								"cacheRead": 0.0003,
+								"cacheWrite": 0
+							},
+							"turns": 3
+						}
+					}
+				],
+				"affectedAgents": [
+					{
+						"path": [
+							"alpha"
+						],
+						"sessionId": "sess-a",
+						"incarnation": "incarnation-1",
+						"state": "errored",
+						"usage": {
+							"input": 120,
+							"output": 40,
+							"cacheRead": 300,
+							"cacheWrite": 0,
+							"cost": 0.0123,
+							"costBreakdown": {
+								"input": 0.01,
+								"output": 0.002,
+								"cacheRead": 0.0003,
+								"cacheWrite": 0
+							},
+							"turns": 3
+						},
+						"error": "model refused"
+					}
+				],
+				"subagentContent": [
+					{
+						"operationId": "call-g2",
+						"kind": "teardown",
+						"state": "complete",
+						"data": {
+							"operation": "teardown",
+							"parameters": {},
+							"result": {
+								"affectedAgents": [
+									{
+										"path": [
+											"alpha"
+										],
+										"sessionId": "sess-a",
+										"incarnation": "incarnation-1",
+										"state": "errored",
+										"usage": {
+											"input": 120,
+											"output": 40,
+											"cacheRead": 300,
+											"cacheWrite": 0,
+											"cost": 0.0123,
+											"costBreakdown": {
+												"input": 0.01,
+												"output": 0.002,
+												"cacheRead": 0.0003,
+												"cacheWrite": 0
+											},
+											"turns": 3
+										},
+										"error": "model refused"
+									}
+								],
+								"agents": [
+									{
+										"id": "alpha",
+										"status": "errored",
+										"sessionId": "sess-a",
+										"usage": {
+											"input": 120,
+											"output": 40,
+											"cacheRead": 300,
+											"cacheWrite": 0,
+											"cost": 0.0123,
+											"costBreakdown": {
+												"input": 0.01,
+												"output": 0.002,
+												"cacheRead": 0.0003,
+												"cacheWrite": 0
+											},
+											"turns": 3
+										}
+									}
+								],
+								"status": "removed",
+								"usage": {
+									"input": 120,
+									"output": 40,
+									"cacheRead": 300,
+									"cacheWrite": 0,
+									"cost": 0.0123,
+									"costBreakdown": {
+										"input": 0.01,
+										"output": 0.002,
+										"cacheRead": 0.0003,
+										"cacheWrite": 0
+									},
+									"turns": 3
+								}
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-g2",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Torn down 1 agent."
+		}
+	},
+	"expected": {
+		"kind": "teardown",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"source": "model"
+			},
+			"result": {
+				"affectedAgents": [
+					{
+						"path": [
+							"alpha"
+						],
+						"sessionId": "sess-a",
+						"state": "errored",
+						"error": "model refused"
+					}
+				]
+			}
+		}
+	},
+	"absent": [
+		"data.parameters.agent"
+	]
+}

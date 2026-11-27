@@ -1,0 +1,46 @@
+{
+	"shape": "failed await item: data {operation,result:{statuses:[]}} without error text in the item",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "await_agents",
+		"toolCallId": "call-d5",
+		"args": {},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"details": {
+				"subagentContent": [
+					{
+						"operationId": "call-d5",
+						"kind": "await",
+						"state": "error",
+						"data": {
+							"operation": "await",
+							"result": {
+								"statuses": []
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-d5",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Await failed: agent set closed"
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "error",
+		"path": [],
+		"data": {
+			"parameters": {},
+			"result": {
+				"statuses": [],
+				"error": "Await failed: agent set closed"
+			}
+		}
+	}
+}

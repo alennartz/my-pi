@@ -1,0 +1,47 @@
+{
+	"shape": "user teardown from Pimote: control-teardown item with parameters {agent:path,incarnation} and result {status,affectedAgents:[]}",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_removed id=\"alpha\" session_id=\"sess-a\">\n<hint>The user removed this agent.</hint>\n</agent_removed>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "control-teardown:00000000-0000-4000-8000-000000000001:1",
+					"kind": "teardown",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "teardown",
+						"parameters": {
+							"agent": [
+								"alpha"
+							],
+							"incarnation": "incarnation-1"
+						},
+						"result": {
+							"status": "removed",
+							"affectedAgents": []
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "teardown",
+			"state": "complete",
+			"path": [],
+			"data": {
+				"parameters": {
+					"agent": "alpha",
+					"source": "user"
+				},
+				"result": {
+					"affectedAgents": []
+				}
+			}
+		}
+	]
+}

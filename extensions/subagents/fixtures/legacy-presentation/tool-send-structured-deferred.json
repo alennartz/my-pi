@@ -1,0 +1,41 @@
+{
+	"shape": "send without subagentContent: structured {correlationId,deferred:true,response:null}",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "send",
+		"toolCallId": "call-b2",
+		"args": {
+			"to": "alpha",
+			"message": "ping",
+			"expectResponse": true
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"correlationId": "corr-5e6f70-10",
+				"deferred": true,
+				"response": null
+			},
+			"text": "Wait interrupted (correlation_id=\"corr-5e6f70-10\")."
+		}
+	},
+	"expected": {
+		"kind": "send",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"to": "alpha",
+				"message": "ping",
+				"expectResponse": true
+			},
+			"result": {
+				"phase": "complete"
+			}
+		}
+	},
+	"absent": [
+		"data.result.response"
+	]
+}

@@ -1,0 +1,154 @@
+{
+	"shape": "await: item with parameters agents as paths and settled statuses (idle with output, errored with error, stopped); single await_started fact",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "await_agents",
+		"toolCallId": "call-d1|fc-d1",
+		"args": {
+			"agents": [
+				"alpha",
+				"beta",
+				"gamma"
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"status": "idle",
+						"output": "alpha report",
+						"sessionId": "sess-a"
+					}
+				],
+				"semantic": {
+					"eventId": "sess-root:evt-8",
+					"path": [],
+					"kind": "await_started",
+					"data": {
+						"invocationId": "call-d1|fc-d1",
+						"requested": [
+							[
+								"alpha"
+							],
+							[
+								"beta"
+							],
+							[
+								"gamma"
+							]
+						]
+					},
+					"relatedPiEvents": [
+						{
+							"sessionId": "sess-root",
+							"toolCallId": "call-d1|fc-d1",
+							"kind": "tool_call"
+						}
+					]
+				},
+				"subagentContent": [
+					{
+						"operationId": "call-d1|fc-d1",
+						"kind": "await",
+						"state": "complete",
+						"data": {
+							"operation": "await",
+							"parameters": {
+								"agents": [
+									[
+										"alpha"
+									],
+									[
+										"beta"
+									],
+									[
+										"gamma"
+									]
+								]
+							},
+							"result": {
+								"statuses": [
+									{
+										"path": [
+											"alpha"
+										],
+										"state": "idle",
+										"output": "alpha report",
+										"sessionId": "sess-a"
+									},
+									{
+										"path": [
+											"beta"
+										],
+										"state": "errored",
+										"output": "partial",
+										"error": "provider overloaded",
+										"sessionId": "sess-b"
+									},
+									{
+										"path": [
+											"gamma"
+										],
+										"state": "stopped",
+										"output": "stopped early",
+										"sessionId": "sess-c"
+									}
+								]
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-d1|fc-d1",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "alpha: idle"
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"agents": [
+					"alpha",
+					"beta",
+					"gamma"
+				]
+			},
+			"result": {
+				"statuses": [
+					{
+						"path": [
+							"alpha"
+						],
+						"state": "idle",
+						"output": "alpha report",
+						"sessionId": "sess-a"
+					},
+					{
+						"path": [
+							"beta"
+						],
+						"state": "errored",
+						"error": "provider overloaded",
+						"sessionId": "sess-b"
+					},
+					{
+						"path": [
+							"gamma"
+						],
+						"state": "stopped",
+						"output": "stopped early"
+					}
+				]
+			}
+		}
+	}
+}

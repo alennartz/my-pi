@@ -1,0 +1,117 @@
+{
+	"shape": "completion custom message with semanticEvents (child_settled, completion) beside subagentContent",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_idle id=\"alpha\" status=\"idle\" session_id=\"sess-a\">\nwatch done\n</agent_idle>",
+		"details": {
+			"semanticEvents": [
+				{
+					"eventId": "sess-root:evt-26",
+					"path": [
+						"alpha"
+					],
+					"kind": "child_settled",
+					"data": {
+						"path": [
+							"alpha"
+						],
+						"statuses": [
+							{
+								"path": [
+									"alpha"
+								],
+								"state": "idle",
+								"output": "watch done",
+								"sessionId": "sess-a"
+							}
+						]
+					},
+					"relatedPiEvents": [
+						{
+							"kind": "lifecycle",
+							"sessionId": "sess-root"
+						}
+					]
+				},
+				{
+					"eventId": "sess-root:evt-27",
+					"path": [
+						"alpha"
+					],
+					"kind": "completion",
+					"data": {
+						"status": "idle",
+						"output": "watch done",
+						"usage": {
+							"input": 120,
+							"output": 40,
+							"cacheRead": 300,
+							"cacheWrite": 0,
+							"cost": 0.0123,
+							"costBreakdown": {
+								"input": 0.01,
+								"output": 0.002,
+								"cacheRead": 0.0003,
+								"cacheWrite": 0
+							},
+							"turns": 3
+						},
+						"delivery": "asynchronous"
+					},
+					"relatedPiEvents": [
+						{
+							"kind": "lifecycle",
+							"sessionId": "sess-root"
+						}
+					]
+				}
+			],
+			"subagentContent": [
+				{
+					"operationId": "completion:[\"alpha\"]:sess-a:2",
+					"kind": "completion",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "completion",
+						"result": {
+							"state": "idle",
+							"output": "watch done",
+							"usage": {
+								"input": 120,
+								"output": 40,
+								"cacheRead": 300,
+								"cacheWrite": 0,
+								"cost": 0.0123,
+								"costBreakdown": {
+									"input": 0.01,
+									"output": 0.002,
+									"cacheRead": 0.0003,
+									"cacheWrite": 0
+								},
+								"turns": 3
+							}
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "completion",
+			"state": "complete",
+			"path": [],
+			"data": {
+				"result": {
+					"path": [
+						"alpha"
+					],
+					"state": "idle",
+					"output": "watch done"
+				}
+			}
+		}
+	]
+}

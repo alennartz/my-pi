@@ -1,0 +1,90 @@
+{
+	"shape": "failed blocking send: item state error with result {isError,error,response:\"\"}; facts carry a correlation id",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "send",
+		"toolCallId": "call-a6",
+		"args": {
+			"to": "alpha",
+			"message": "continue the review",
+			"expectResponse": true
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"details": {
+				"subagentContent": [
+					{
+						"operationId": "call-a6",
+						"kind": "send",
+						"state": "error",
+						"data": {
+							"operation": "send",
+							"parameters": {
+								"expectResponse": true,
+								"message": "continue the review",
+								"to": [
+									"alpha"
+								]
+							},
+							"result": {
+								"isError": true,
+								"error": "Agent \"alpha\" went idle without responding to your send.",
+								"response": ""
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-a6",
+							"contentIndex": 1
+						}
+					}
+				],
+				"semantic": [
+					{
+						"eventId": "sess-root:evt-4",
+						"path": [],
+						"kind": "message_thread",
+						"data": {
+							"correlationId": "corr-0c0d0e-1",
+							"from": [],
+							"to": [
+								"alpha"
+							],
+							"text": "continue the review",
+							"responseExpected": true,
+							"phase": "sent"
+						},
+						"relatedPiEvents": [
+							{
+								"sessionId": "sess-root",
+								"toolCallId": "call-a6",
+								"kind": "tool_call"
+							}
+						]
+					}
+				]
+			},
+			"text": "Agent \"alpha\" went idle without responding to your send."
+		}
+	},
+	"expected": {
+		"kind": "send",
+		"state": "error",
+		"path": [],
+		"data": {
+			"parameters": {
+				"to": "alpha",
+				"message": "continue the review",
+				"expectResponse": true
+			},
+			"result": {
+				"phase": "complete",
+				"error": "Agent \"alpha\" went idle without responding to your send."
+			}
+		}
+	},
+	"absent": [
+		"data.result.response"
+	]
+}

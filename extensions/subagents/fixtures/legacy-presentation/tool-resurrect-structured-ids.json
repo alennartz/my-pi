@@ -1,0 +1,60 @@
+{
+	"shape": "resurrect without subagentContent: structured {agents:[{id,sessionId}]}",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "resurrect",
+		"toolCallId": "call-h5",
+		"args": {
+			"agents": [
+				{
+					"id": "alpha",
+					"sessionId": "sess-a",
+					"task": "resume",
+					"channels": []
+				}
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"sessionId": "sess-a"
+					}
+				]
+			},
+			"text": "Resurrected alpha."
+		}
+	},
+	"expected": {
+		"kind": "resurrect",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"source": "model",
+				"agents": [
+					{
+						"id": "alpha",
+						"sessionId": "sess-a",
+						"task": "resume",
+						"channels": []
+					}
+				]
+			},
+			"result": {
+				"affectedAgents": [
+					{
+						"path": [
+							"alpha"
+						],
+						"sessionId": "sess-a",
+						"state": "running"
+					}
+				]
+			}
+		}
+	}
+}

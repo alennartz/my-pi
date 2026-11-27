@@ -1,0 +1,67 @@
+{
+	"shape": "protocol_error items have no card; other items in the same message still show",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_idle id=\"alpha\" status=\"idle\" session_id=\"sess-a\">\ndone\n</agent_idle>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "protocol:sess-root:1",
+					"kind": "protocol_error",
+					"state": "error",
+					"source": "custom_entry",
+					"data": {
+						"operation": "protocol_error",
+						"result": {
+							"error": "unexpected operation end"
+						}
+					}
+				},
+				{
+					"operationId": "completion:[\"alpha\"]:sess-a:3",
+					"kind": "completion",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "completion",
+						"result": {
+							"state": "idle",
+							"output": "done",
+							"usage": {
+								"input": 120,
+								"output": 40,
+								"cacheRead": 300,
+								"cacheWrite": 0,
+								"cost": 0.0123,
+								"costBreakdown": {
+									"input": 0.01,
+									"output": 0.002,
+									"cacheRead": 0.0003,
+									"cacheWrite": 0
+								},
+								"turns": 3
+							}
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "completion",
+			"state": "complete",
+			"path": [],
+			"data": {
+				"result": {
+					"path": [
+						"alpha"
+					],
+					"state": "idle",
+					"output": "done"
+				}
+			}
+		}
+	]
+}

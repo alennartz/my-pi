@@ -1,0 +1,55 @@
+{
+	"shape": "flat send item when the call arguments are unreadable: recipient and message come from the item",
+	"toolCall": {
+		"ownerPath": [
+			"beta"
+		],
+		"toolName": "send",
+		"toolCallId": "call-a5",
+		"args": {},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"subagentContent": [
+					{
+						"operationId": "call-a5",
+						"kind": "send",
+						"state": "complete",
+						"data": {
+							"operation": "send",
+							"to": [
+								"gamma"
+							],
+							"request": "peer note",
+							"response": ""
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-a5",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Message sent."
+		}
+	},
+	"expected": {
+		"kind": "send",
+		"state": "complete",
+		"path": [
+			"beta"
+		],
+		"data": {
+			"parameters": {
+				"to": "gamma",
+				"message": "peer note",
+				"expectResponse": false
+			},
+			"result": {
+				"phase": "complete"
+			}
+		}
+	}
+}

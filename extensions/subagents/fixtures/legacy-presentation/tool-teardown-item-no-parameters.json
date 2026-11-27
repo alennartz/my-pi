@@ -1,0 +1,87 @@
+{
+	"shape": "teardown item without parameters; an affected agent with incarnation \"unknown\" and output",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "teardown",
+		"toolCallId": "call-g3|fc-g3",
+		"args": {
+			"agent": "alpha"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"subagentContent": [
+					{
+						"operationId": "call-g3|fc-g3",
+						"kind": "teardown",
+						"state": "complete",
+						"data": {
+							"operation": "teardown",
+							"result": {
+								"status": "removed",
+								"affectedAgents": [
+									{
+										"path": [
+											"alpha"
+										],
+										"sessionId": "sess-a",
+										"incarnation": "unknown",
+										"state": "idle",
+										"usage": {
+											"input": 120,
+											"output": 40,
+											"cacheRead": 300,
+											"cacheWrite": 0,
+											"cost": 0.0123,
+											"costBreakdown": {
+												"input": 0.01,
+												"output": 0.002,
+												"cacheRead": 0.0003,
+												"cacheWrite": 0
+											},
+											"turns": 3
+										},
+										"output": "final words"
+									}
+								]
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-g3|fc-g3",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Torn down alpha."
+		}
+	},
+	"expected": {
+		"kind": "teardown",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"agent": "alpha",
+				"source": "model"
+			},
+			"result": {
+				"affectedAgents": [
+					{
+						"path": [
+							"alpha"
+						],
+						"sessionId": "sess-a",
+						"state": "idle",
+						"output": "final words"
+					}
+				]
+			}
+		}
+	},
+	"absent": [
+		"data.result.affectedAgents.0.incarnation"
+	]
+}

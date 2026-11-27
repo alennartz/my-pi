@@ -1,0 +1,62 @@
+{
+	"shape": "await without subagentContent: structured {agents} with a single await_started fact object",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "await_agents",
+		"toolCallId": "call-d10",
+		"args": {},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"status": "idle",
+						"sessionId": "sess-a"
+					}
+				],
+				"semantic": {
+					"eventId": "sess-root:evt-19",
+					"path": [],
+					"kind": "await_started",
+					"data": {
+						"invocationId": "call-d10",
+						"requested": [
+							[
+								"alpha"
+							]
+						]
+					},
+					"relatedPiEvents": [
+						{
+							"sessionId": "sess-root",
+							"toolCallId": "call-d10",
+							"kind": "tool_call"
+						}
+					]
+				}
+			},
+			"text": "alpha: idle"
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {},
+			"result": {
+				"statuses": [
+					{
+						"path": [
+							"alpha"
+						],
+						"state": "idle",
+						"sessionId": "sess-a"
+					}
+				]
+			}
+		}
+	}
+}

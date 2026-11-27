@@ -1,0 +1,36 @@
+{
+	"shape": "incoming message whose details hold only semanticEvents (message_thread received with a correlation id): native rendering",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_message from=\"alpha\" correlation_id=\"corr-3c3c3c-1\" response_expected=\"true\">\nhelp\n</agent_message>",
+		"details": {
+			"semanticEvents": [
+				{
+					"eventId": "sess-root:evt-28",
+					"path": [
+						"alpha"
+					],
+					"kind": "message_thread",
+					"data": {
+						"correlationId": "corr-3c3c3c-1",
+						"from": [
+							"alpha"
+						],
+						"to": [],
+						"text": "help",
+						"responseExpected": true,
+						"phase": "received"
+					},
+					"relatedPiEvents": [
+						{
+							"kind": "custom_message",
+							"sessionId": "sess-root"
+						}
+					]
+				}
+			]
+		}
+	},
+	"expected": null
+}

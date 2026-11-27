@@ -1,0 +1,43 @@
+{
+	"shape": "send without subagentContent: structured {deferred:false,response:null}",
+	"toolCall": {
+		"ownerPath": [
+			"lead"
+		],
+		"toolName": "send",
+		"toolCallId": "call-b3",
+		"args": {
+			"to": "beta",
+			"message": "fyi"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"deferred": false,
+				"response": null
+			},
+			"text": "Message sent to beta."
+		}
+	},
+	"expected": {
+		"kind": "send",
+		"state": "complete",
+		"path": [
+			"lead"
+		],
+		"data": {
+			"parameters": {
+				"to": "beta",
+				"message": "fyi",
+				"expectResponse": false
+			},
+			"result": {
+				"phase": "complete"
+			}
+		}
+	},
+	"absent": [
+		"data.result.response"
+	]
+}

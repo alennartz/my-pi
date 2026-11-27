@@ -1,0 +1,54 @@
+{
+	"shape": "failed respond: item result {isError,error} with a redacted id; the result text names the raw id",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "respond",
+		"toolCallId": "call-c3",
+		"args": {
+			"correlationId": "corr-5d4c3b-6",
+			"message": "late answer"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"details": {
+				"subagentContent": [
+					{
+						"operationId": "call-c3",
+						"kind": "respond",
+						"state": "error",
+						"data": {
+							"operation": "respond",
+							"parameters": {
+								"message": "late answer"
+							},
+							"result": {
+								"isError": true,
+								"error": "No recorded response origin for correlation ID \"[redacted]\"."
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-c3",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "No recorded response origin for correlation ID \"corr-5d4c3b-6\"."
+		}
+	},
+	"expected": {
+		"kind": "respond",
+		"state": "error",
+		"path": [],
+		"data": {
+			"parameters": {
+				"message": "late answer"
+			},
+			"result": {
+				"error": "No recorded response origin for correlation ID \"[redacted]\"."
+			}
+		}
+	}
+}

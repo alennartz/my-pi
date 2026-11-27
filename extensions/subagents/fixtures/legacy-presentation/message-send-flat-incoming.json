@@ -1,0 +1,41 @@
+{
+	"shape": "oldest incoming message: flat data {operation:send,to,request,response:\"\"}; the sender comes from the content tag",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_message from=\"alpha\" response_expected=\"false\">\nfindings ready\n</agent_message>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "incoming:sess-root:2",
+					"kind": "send",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "send",
+						"to": [],
+						"request": "findings ready",
+						"response": ""
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "message_received",
+			"state": "complete",
+			"path": [],
+			"data": {
+				"parameters": {
+					"from": [
+						"alpha"
+					],
+					"message": "findings ready",
+					"expectResponse": false
+				},
+				"result": {}
+			}
+		}
+	]
+}

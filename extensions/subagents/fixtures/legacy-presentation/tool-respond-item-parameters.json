@@ -1,0 +1,78 @@
+{
+	"shape": "respond: subagentContent item {parameters:{message},result:{}} plus a response message_thread fact with a correlation id",
+	"toolCall": {
+		"ownerPath": [
+			"alpha"
+		],
+		"toolName": "respond",
+		"toolCallId": "call-c1",
+		"args": {
+			"correlationId": "corr-9f8e7d-2",
+			"message": "here is the summary"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"semantic": {
+					"eventId": "sess-root:evt-5",
+					"path": [
+						"alpha"
+					],
+					"kind": "message_thread",
+					"data": {
+						"correlationId": "corr-9f8e7d-2",
+						"from": [
+							"alpha"
+						],
+						"to": [],
+						"text": "here is the summary",
+						"responseExpected": false,
+						"phase": "response"
+					},
+					"relatedPiEvents": [
+						{
+							"sessionId": "sess-root",
+							"toolCallId": "call-c1",
+							"kind": "tool_call"
+						}
+					]
+				},
+				"subagentContent": [
+					{
+						"operationId": "call-c1",
+						"kind": "respond",
+						"state": "complete",
+						"data": {
+							"operation": "respond",
+							"parameters": {
+								"message": "here is the summary"
+							},
+							"result": {}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-c1",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "Response sent."
+		}
+	},
+	"expected": {
+		"kind": "respond",
+		"state": "complete",
+		"path": [
+			"alpha"
+		],
+		"data": {
+			"parameters": {
+				"to": [],
+				"message": "here is the summary"
+			},
+			"result": {}
+		}
+	}
+}

@@ -1,0 +1,78 @@
+{
+	"shape": "subagent without subagentContent: structured {agents:[{id,status:running}]}; arguments use the legacy agent key",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "subagent",
+		"toolCallId": "call-e5",
+		"args": {
+			"agents": [
+				{
+					"id": "alpha",
+					"task": "scan",
+					"agent": "scout"
+				},
+				{
+					"id": "beta",
+					"task": "fix"
+				}
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"status": "running"
+					},
+					{
+						"id": "beta",
+						"status": "running"
+					}
+				]
+			},
+			"text": "Spawned 2 agents."
+		}
+	},
+	"expected": {
+		"kind": "delegation",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"fork": false,
+				"agents": [
+					{
+						"id": "alpha",
+						"task": "scan",
+						"persona": "scout"
+					},
+					{
+						"id": "beta",
+						"task": "fix"
+					}
+				]
+			},
+			"result": {
+				"children": [
+					{
+						"path": [
+							"alpha"
+						],
+						"task": "scan",
+						"persona": "scout",
+						"status": "running"
+					},
+					{
+						"path": [
+							"beta"
+						],
+						"task": "fix",
+						"status": "running"
+					}
+				]
+			}
+		}
+	}
+}

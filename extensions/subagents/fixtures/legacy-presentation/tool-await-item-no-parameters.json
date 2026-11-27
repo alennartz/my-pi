@@ -1,0 +1,69 @@
+{
+	"shape": "await item without parameters: data {operation,result:{statuses}}",
+	"toolCall": {
+		"ownerPath": [
+			"lead"
+		],
+		"toolName": "await_agents",
+		"toolCallId": "call-d2",
+		"args": {},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"subagentContent": [
+					{
+						"operationId": "call-d2",
+						"kind": "await",
+						"state": "complete",
+						"data": {
+							"operation": "await",
+							"result": {
+								"statuses": [
+									{
+										"path": [
+											"lead",
+											"alpha"
+										],
+										"state": "idle",
+										"sessionId": "sess-a"
+									}
+								]
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-d2",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "alpha: idle"
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "complete",
+		"path": [
+			"lead"
+		],
+		"data": {
+			"parameters": {},
+			"result": {
+				"statuses": [
+					{
+						"path": [
+							"lead",
+							"alpha"
+						],
+						"state": "idle"
+					}
+				]
+			}
+		}
+	},
+	"absent": [
+		"data.parameters.agents"
+	]
+}

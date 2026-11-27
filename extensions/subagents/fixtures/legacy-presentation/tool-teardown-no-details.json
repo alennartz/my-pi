@@ -1,0 +1,27 @@
+{
+	"shape": "teardown result without details: derived from arguments",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "teardown",
+		"toolCallId": "call-g5",
+		"args": {},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"text": "Torn down all agents."
+		}
+	},
+	"expected": {
+		"kind": "teardown",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"source": "model"
+			},
+			"result": {
+				"affectedAgents": []
+			}
+		}
+	}
+}

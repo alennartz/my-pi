@@ -1,0 +1,115 @@
+{
+	"shape": "blocking send to parent: structured {correlationId,deferred,response} beside a subagentContent item with expectResponse and response, plus received/sent facts carrying correlation ids",
+	"toolCall": {
+		"ownerPath": [
+			"lead"
+		],
+		"toolName": "send",
+		"toolCallId": "call-a2",
+		"args": {
+			"to": "parent",
+			"message": "which branch?",
+			"expectResponse": true
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"correlationId": "corr-1a2b3c-4",
+				"deferred": false,
+				"response": "use the main branch",
+				"semantic": [
+					{
+						"eventId": "sess-root:evt-2",
+						"path": [
+							"lead"
+						],
+						"kind": "message_thread",
+						"data": {
+							"correlationId": "corr-1a2b3c-4",
+							"from": [
+								"lead"
+							],
+							"to": [],
+							"text": "which branch?",
+							"responseExpected": true,
+							"phase": "sent"
+						},
+						"relatedPiEvents": [
+							{
+								"sessionId": "sess-root",
+								"toolCallId": "call-a2",
+								"kind": "tool_call"
+							}
+						]
+					},
+					{
+						"eventId": "sess-root:evt-3",
+						"path": [],
+						"kind": "message_thread",
+						"data": {
+							"correlationId": "corr-1a2b3c-4",
+							"from": [],
+							"to": [
+								"lead"
+							],
+							"text": "use the main branch",
+							"responseExpected": false,
+							"phase": "response"
+						},
+						"relatedPiEvents": [
+							{
+								"sessionId": "sess-root",
+								"toolCallId": "call-a2",
+								"kind": "tool_call"
+							}
+						]
+					}
+				],
+				"subagentContent": [
+					{
+						"operationId": "call-a2",
+						"kind": "send",
+						"state": "complete",
+						"data": {
+							"operation": "send",
+							"parameters": {
+								"expectResponse": true,
+								"message": "which branch?",
+								"to": []
+							},
+							"result": {
+								"deferred": false,
+								"response": "use the main branch"
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-a2",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "use the main branch"
+		}
+	},
+	"expected": {
+		"kind": "send",
+		"state": "complete",
+		"path": [
+			"lead"
+		],
+		"data": {
+			"parameters": {
+				"to": "parent",
+				"message": "which branch?",
+				"expectResponse": true
+			},
+			"result": {
+				"phase": "complete",
+				"response": "use the main branch"
+			}
+		}
+	}
+}

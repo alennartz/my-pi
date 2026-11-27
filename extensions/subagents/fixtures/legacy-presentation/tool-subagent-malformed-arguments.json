@@ -1,0 +1,45 @@
+{
+	"shape": "subagent arguments with a non-object item and an empty error details object",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "subagent",
+		"toolCallId": "call-e7",
+		"args": {
+			"agents": [
+				"stray",
+				{
+					"id": "alpha",
+					"model": "cheap",
+					"task": "scan"
+				}
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"details": {},
+			"text": "Validation failed for tool \"subagent\""
+		}
+	},
+	"expected": {
+		"kind": "delegation",
+		"state": "error",
+		"path": [],
+		"data": {
+			"parameters": {
+				"fork": false,
+				"agents": [
+					{
+						"id": "alpha",
+						"task": "scan",
+						"model": "cheap"
+					}
+				]
+			},
+			"result": {
+				"children": [],
+				"error": "Validation failed for tool \"subagent\""
+			}
+		}
+	}
+}

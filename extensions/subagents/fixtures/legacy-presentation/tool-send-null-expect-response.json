@@ -1,0 +1,35 @@
+{
+	"shape": "send arguments with expectResponse:null and an empty error details object",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "send",
+		"toolCallId": "call-b5",
+		"args": {
+			"to": "ghost",
+			"message": "anyone?",
+			"expectResponse": null
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"details": {},
+			"text": "Unknown agent \"ghost\""
+		}
+	},
+	"expected": {
+		"kind": "send",
+		"state": "error",
+		"path": [],
+		"data": {
+			"parameters": {
+				"to": "ghost",
+				"message": "anyone?",
+				"expectResponse": false
+			},
+			"result": {
+				"phase": "complete",
+				"error": "Unknown agent \"ghost\""
+			}
+		}
+	}
+}

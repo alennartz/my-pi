@@ -1,0 +1,64 @@
+{
+	"shape": "failed await from a child: item parameters agents [[]] (the parent path) and result {statuses:[],error}",
+	"toolCall": {
+		"ownerPath": [
+			"alpha"
+		],
+		"toolName": "await_agents",
+		"toolCallId": "call-d4",
+		"args": {
+			"agents": [
+				"parent"
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"details": {
+				"subagentContent": [
+					{
+						"operationId": "call-d4",
+						"kind": "await",
+						"state": "error",
+						"data": {
+							"operation": "await",
+							"parameters": {
+								"agents": [
+									[]
+								]
+							},
+							"result": {
+								"statuses": [],
+								"error": "No agents running. Spawn agents first."
+							}
+						},
+						"source": "tool",
+						"placement": {
+							"toolCallId": "call-d4",
+							"contentIndex": 1
+						}
+					}
+				]
+			},
+			"text": "No agents running. Spawn agents first."
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "error",
+		"path": [
+			"alpha"
+		],
+		"data": {
+			"parameters": {
+				"agents": [
+					"parent"
+				]
+			},
+			"result": {
+				"statuses": [],
+				"error": "No agents running. Spawn agents first."
+			}
+		}
+	}
+}

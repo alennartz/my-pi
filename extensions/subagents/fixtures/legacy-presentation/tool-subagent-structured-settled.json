@@ -1,0 +1,82 @@
+{
+	"shape": "blocking subagent without subagentContent: structured {agents:[{id,status:idle,output,sessionId}]} with a delegation fact",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "subagent",
+		"toolCallId": "call-e6",
+		"args": {
+			"agents": [
+				{
+					"id": "alpha",
+					"task": "scan"
+				}
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"status": "idle",
+						"output": "scan done",
+						"sessionId": "sess-a"
+					}
+				],
+				"semantic": {
+					"eventId": "sess-root:evt-21",
+					"path": [],
+					"kind": "delegation",
+					"data": {
+						"invocationId": "call-e6",
+						"awaitsResult": true,
+						"children": [
+							{
+								"path": [
+									"alpha"
+								],
+								"task": "scan"
+							}
+						]
+					},
+					"relatedPiEvents": [
+						{
+							"sessionId": "sess-root",
+							"toolCallId": "call-e6",
+							"kind": "tool_call"
+						}
+					]
+				}
+			},
+			"text": "alpha: idle"
+		}
+	},
+	"expected": {
+		"kind": "delegation",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"fork": false,
+				"agents": [
+					{
+						"id": "alpha",
+						"task": "scan"
+					}
+				]
+			},
+			"result": {
+				"children": [
+					{
+						"path": [
+							"alpha"
+						],
+						"task": "scan",
+						"status": "idle"
+					}
+				]
+			}
+		}
+	}
+}

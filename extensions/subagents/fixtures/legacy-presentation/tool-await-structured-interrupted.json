@@ -1,0 +1,95 @@
+{
+	"shape": "await without subagentContent: structured {agents,interrupted,error} with an await_interrupted(reason message) fact whose message carries a correlation id",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "await_agents",
+		"toolCallId": "call-d9",
+		"args": {
+			"agents": [
+				"alpha"
+			]
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "complete",
+			"details": {
+				"agents": [
+					{
+						"id": "alpha",
+						"status": "waiting",
+						"sessionId": "sess-a"
+					}
+				],
+				"interrupted": true,
+				"error": "Cannot wait: requested agents must receive your response before settling.",
+				"semantic": [
+					{
+						"eventId": "sess-root:evt-18",
+						"path": [],
+						"kind": "await_interrupted",
+						"data": {
+							"invocationId": "call-d9",
+							"reason": "message",
+							"message": {
+								"correlationId": "corr-d00d00-2",
+								"from": [
+									"alpha"
+								],
+								"to": [],
+								"text": "blocked on you",
+								"responseExpected": true,
+								"phase": "received"
+							},
+							"requested": [
+								[
+									"alpha"
+								]
+							],
+							"statuses": [
+								{
+									"path": [
+										"alpha"
+									],
+									"state": "waiting",
+									"sessionId": "sess-a"
+								}
+							]
+						},
+						"relatedPiEvents": [
+							{
+								"sessionId": "sess-root",
+								"toolCallId": "call-d9",
+								"kind": "tool_call"
+							}
+						]
+					}
+				]
+			},
+			"text": "Interrupted."
+		}
+	},
+	"expected": {
+		"kind": "await",
+		"state": "complete",
+		"path": [],
+		"data": {
+			"parameters": {
+				"agents": [
+					"alpha"
+				]
+			},
+			"result": {
+				"interrupted": true,
+				"error": "Cannot wait: requested agents must receive your response before settling.",
+				"statuses": [
+					{
+						"path": [
+							"alpha"
+						],
+						"state": "waiting"
+					}
+				]
+			}
+		}
+	}
+}

@@ -1,0 +1,31 @@
+{
+	"shape": "failed respond with empty details: derived, and the raw correlation id in the text is redacted",
+	"toolCall": {
+		"ownerPath": [],
+		"toolName": "respond",
+		"toolCallId": "call-c5",
+		"args": {
+			"correlationId": "corr-0badc0de-3",
+			"message": "answer"
+		},
+		"argsComplete": true,
+		"execution": {
+			"state": "error",
+			"details": {},
+			"text": "Unknown correlation ID \"corr-0badc0de-3\""
+		}
+	},
+	"expected": {
+		"kind": "respond",
+		"state": "error",
+		"path": [],
+		"data": {
+			"parameters": {
+				"message": "answer"
+			},
+			"result": {
+				"error": "Unknown correlation ID \"[redacted]\""
+			}
+		}
+	}
+}

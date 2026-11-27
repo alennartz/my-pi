@@ -1,0 +1,57 @@
+{
+	"shape": "completion custom message: one custom_entry completion item; the operation id encodes the child path and session id",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_idle id=\"alpha\" status=\"idle\" session_id=\"sess-a\">\nall done\n</agent_idle>\n\nAll 1 agent have settled.",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "completion:[\"alpha\"]:sess-a:1",
+					"kind": "completion",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "completion",
+						"result": {
+							"state": "idle",
+							"output": "all done",
+							"usage": {
+								"input": 120,
+								"output": 40,
+								"cacheRead": 300,
+								"cacheWrite": 0,
+								"cost": 0.0123,
+								"costBreakdown": {
+									"input": 0.01,
+									"output": 0.002,
+									"cacheRead": 0.0003,
+									"cacheWrite": 0
+								},
+								"turns": 3
+							}
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "completion",
+			"state": "complete",
+			"path": [],
+			"data": {
+				"parameters": {},
+				"result": {
+					"path": [
+						"alpha"
+					],
+					"state": "idle",
+					"output": "all done",
+					"sessionId": "sess-a"
+				}
+			}
+		}
+	]
+}

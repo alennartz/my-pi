@@ -1,0 +1,46 @@
+{
+	"shape": "incoming message: item kind message_received, data {operation:send,result:{from:[child],to:[],message,responseExpected:false}}",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_message from=\"alpha\" response_expected=\"false\">\ntick 1\n</agent_message>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "incoming:sess-root:1",
+					"kind": "message_received",
+					"state": "complete",
+					"source": "custom_entry",
+					"data": {
+						"operation": "send",
+						"result": {
+							"to": [],
+							"from": [
+								"alpha"
+							],
+							"message": "tick 1",
+							"responseExpected": false
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "message_received",
+			"state": "complete",
+			"path": [],
+			"data": {
+				"parameters": {
+					"from": [
+						"alpha"
+					],
+					"message": "tick 1",
+					"expectResponse": false
+				},
+				"result": {}
+			}
+		}
+	]
+}

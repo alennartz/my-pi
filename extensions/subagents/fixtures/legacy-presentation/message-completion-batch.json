@@ -1,0 +1,100 @@
+{
+	"shape": "completion custom message batching two errored children with output and error",
+	"message": {
+		"ownerPath": [],
+		"customType": "subagents",
+		"content": "<agent_idle id=\"alpha\" status=\"errored\" session_id=\"sess-a\">\n<error>quota</error>\n</agent_idle>\n<agent_idle id=\"beta\" status=\"errored\" session_id=\"sess-b\">\n<error>quota</error>\n</agent_idle>",
+		"details": {
+			"subagentContent": [
+				{
+					"operationId": "completion:[\"alpha\"]:sess-a:1",
+					"kind": "completion",
+					"state": "error",
+					"source": "custom_entry",
+					"data": {
+						"operation": "completion",
+						"result": {
+							"state": "errored",
+							"output": "half way",
+							"error": "quota",
+							"usage": {
+								"input": 120,
+								"output": 40,
+								"cacheRead": 300,
+								"cacheWrite": 0,
+								"cost": 0.0123,
+								"costBreakdown": {
+									"input": 0.01,
+									"output": 0.002,
+									"cacheRead": 0.0003,
+									"cacheWrite": 0
+								},
+								"turns": 3
+							}
+						}
+					}
+				},
+				{
+					"operationId": "completion:[\"beta\"]:sess-b:2",
+					"kind": "completion",
+					"state": "error",
+					"source": "custom_entry",
+					"data": {
+						"operation": "completion",
+						"result": {
+							"state": "errored",
+							"output": "barely started",
+							"error": "quota",
+							"usage": {
+								"input": 120,
+								"output": 40,
+								"cacheRead": 300,
+								"cacheWrite": 0,
+								"cost": 0.0123,
+								"costBreakdown": {
+									"input": 0.01,
+									"output": 0.002,
+									"cacheRead": 0.0003,
+									"cacheWrite": 0
+								},
+								"turns": 3
+							}
+						}
+					}
+				}
+			]
+		}
+	},
+	"expected": [
+		{
+			"kind": "completion",
+			"state": "error",
+			"path": [],
+			"data": {
+				"result": {
+					"path": [
+						"alpha"
+					],
+					"state": "errored",
+					"output": "half way",
+					"error": "quota"
+				}
+			}
+		},
+		{
+			"kind": "completion",
+			"state": "error",
+			"path": [],
+			"data": {
+				"result": {
+					"path": [
+						"beta"
+					],
+					"state": "errored",
+					"output": "barely started",
+					"error": "quota"
+				}
+			}
+		}
+	]
+}
