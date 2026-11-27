@@ -9,7 +9,7 @@
  *   for the next model request in the same run.
  * - Parent waiting in `await_agents`: the wait decides what it consumes.
  * - Parent run aborted: messages are appended without starting a turn
- *   (DR-047), so a stop stays a stop and nothing is lost.
+ *   (DR-072), so a stop stays a stop and nothing is lost.
  */
 
 import type { SubagentCard } from "./presenters.js";
