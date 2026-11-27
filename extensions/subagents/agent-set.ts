@@ -40,6 +40,8 @@ import { activityPreview, formatTokenCount } from "./format.js";
 import { stripThinkingSuffix } from "./model-tiers.js";
 import { serializeAgentMessage, serializeAgentTorndown, serializeGroupTorndown, serializeSubagentIdentity } from './messages.js';
 import type { ActiveAgentsCompleteData, AgentCompleteData } from './messages.js';
+import { isZeroUsage } from "./tool-results.js";
+import type { TeardownAgentData } from "./tool-results.js";
 import { required } from "../../lib/required.ts";
 import { isThinkingLevel } from "./model-tiers.js";
 import { asRecord, booleanField, isJsonObject, numberField, stringField } from "./narrow.js";
@@ -238,6 +240,8 @@ export interface SubagentManagerOptions {
 		allDone: boolean,
 		outcome?: AgentCompletionOutcome,
 	) => void;
+	/** Preview descendant answers without acknowledging them to their original parent. */
+	previewDescendantAnswers?: (ref: ChildRef) => readonly Settlement[];
 	/** A child leaves this manager. Returns the answers it held back. */
 	onAgentRemoved?: (ref: ChildRef) => readonly Settlement[];
 	/** A child restored from persistence carries this saved hold. */
@@ -247,14 +251,13 @@ export interface SubagentManagerOptions {
 	onParentMessage: (port: MessagePort, xml: string, message: RoutedMessage) => void;
 }
 
-/** Answers a removed child held back, by local id. */
-export type RemovedHeld = ReadonlyMap<string, readonly Settlement[]>;
-
 type AggregateUsage = { input: number; output: number; cost: number };
 
 type RemovedCorrelationTarget = { local: string[]; paths: AgentPath[] };
 
-type TeardownResult = { report: string; empty: boolean; held: RemovedHeld };
+type TeardownNode = { snapshot: AgentNodeSnapshot; answers: readonly Settlement[] };
+type TeardownReport = { text: string; nodes: readonly TeardownNode[]; agents: TeardownAgentData[]; empty: boolean };
+type GuardedTeardown = { result: SubagentTeardownResult; report?: TeardownReport };
 
 export class SubagentManager {
 	private entries: AgentEntry[] = [];
@@ -263,8 +266,6 @@ export class SubagentManager {
 	private readonly parentPort: MessagePort;
 	private readonly opts: SubagentManagerOptions;
 	private readonly correlationToTarget = new Map<string, { localId: string; path: AgentPath }>();
-	/** Child paths stopped through the owner-control port. */
-	private readonly stopRequested = new Set<string>();
 	private sessionDir: string | null = null;
 	private persistence: PersistencePaths | null = null;
 	private restoring = false;
@@ -325,12 +326,12 @@ export class SubagentManager {
 	createControl(handlers: {
 		resurrect: (request: SubagentResurrectRequest) => Promise<SubagentResurrectResult>;
 		teardown: (ref: SubagentRuntimeRef) => Promise<SubagentTeardownResult>;
+		pendingAnswers: (ref: ChildRef) => readonly Settlement[];
 	}): SubagentManagerControl {
 		return {
-			teardown: handlers.teardown,
+			...handlers,
 			stop: (request) => this.stopGuarded(request),
 			setHold: (request) => this.setHoldGuarded(request),
-			resurrect: handlers.resurrect,
 		};
 	}
 
@@ -417,13 +418,7 @@ export class SubagentManager {
 			if (snapshot.sessionId !== request.expectedSessionId) {throw new Error("Stale child session");}
 			const localId = required(snapshot.localId, "child local id");
 			if (isSettledState(snapshot.operational.state)) {return;}
-			this.stopRequested.add(localId);
-			try {
-				await this.interruptUnlocked(localId);
-			} catch (error) {
-				this.stopRequested.delete(localId);
-				throw error;
-			}
+			await this.interruptUnlocked(localId);
 		});
 	}
 
@@ -439,22 +434,19 @@ export class SubagentManager {
 	 * Guarded teardown. The full path must name a child of this manager and the
 	 * incarnation must match, so a stale or foreign request removes nothing.
 	 */
-	async teardownGuarded(ref: SubagentRuntimeRef): Promise<{ result: SubagentTeardownResult; snapshot?: AgentNodeSnapshot; held: readonly Settlement[] }> {
+	async teardownGuarded(ref: SubagentRuntimeRef): Promise<GuardedTeardown> {
 		return this.serializeMutation(async () => {
 			const path = [...ref.path];
 			const localId = ref.path.at(-1);
-			if (localId === undefined || !samePath(ref.path, childAgentPath(this.opts.ownerPath, localId))) {
-				return { result: { path, removed: false, reason: "not_found" as const }, held: [] };
-			}
+			const entry = localId === undefined ? undefined : this.findEntry(localId);
 			const snapshot = this.opts.registry.getSnapshot(path);
-			if (!snapshot || snapshot.ownership !== "registry" || snapshot.incarnation !== ref.incarnation) {
-				return { result: { path, removed: false, reason: "not_found" as const }, held: [] };
+			if (!entry || !samePath(path, entry.path) || snapshot?.incarnation !== ref.incarnation) {
+				return { result: { path, removed: false, reason: "not_found" as const } };
 			}
-			const { held } = await this.teardownSingle(localId);
+			const report = await this.removeEntries([entry], false);
 			return {
 				result: { path, removed: true, sessionId: snapshot.sessionId, incarnation: snapshot.incarnation, reason: "removed" as const },
-				snapshot,
-				held: held.get(localId) ?? [],
+				report,
 			};
 		});
 	}
@@ -618,8 +610,14 @@ export class SubagentManager {
 		}
 	}
 
-	async teardown(agentId?: string): Promise<TeardownResult> {
-		return this.serializeMutation(() => agentId === undefined ? this.teardownAll() : this.teardownSingle(agentId));
+	async teardown(agentId?: string): Promise<TeardownReport> {
+		return this.serializeMutation(() => {
+			if (this.entries.length === 0) {throw new Error("No agents to teardown.");}
+			if (agentId === undefined) {return this.removeEntries(this.entries, true);}
+			const entry = this.findEntry(agentId);
+			if (!entry) {throw new Error(`Unknown agent: "${agentId}"`);}
+			return this.removeEntries([entry], false);
+		});
 	}
 
 	/**
@@ -635,7 +633,6 @@ export class SubagentManager {
 		this.entries = [];
 
 		for (const entry of entries) {
-			this.stopRequested.delete(entry.id);
 			this.router.removeAgent(entry.id);
 		}
 		await Promise.all(entries.map((entry) => this.opts.registry.remove(entry.path)));
@@ -1081,10 +1078,9 @@ export class SubagentManager {
 	}
 
 	private settleAtBoundary(entry: AgentEntry, aborted = false): void {
-		const stopRequested = this.stopRequested.delete(entry.id);
 		const current = this.operationalFor(entry);
 		if (isSettledState(current.state)) {return;}
-		const stopped = aborted || stopRequested;
+		const stopped = aborted;
 		if (entry.pendingTerminalError && !stopped) {
 			this.settleErrored(entry, entry.pendingTerminalError);
 			return;
@@ -1312,51 +1308,33 @@ export class SubagentManager {
 		return { input, output, cost };
 	}
 
-	private async teardownAll(): Promise<TeardownResult> {
-		const report = serializeGroupTorndown(this.getCompletionReport());
-		const entries = this.entries;
-		this.entries = [];
-		const held = new Map<string, readonly Settlement[]>();
-
-		for (const entry of entries) {
-			held.set(entry.id, this.releaseRemoved(entry));
+	private async removeEntries(entries: readonly AgentEntry[], all: boolean): Promise<TeardownReport> {
+		const registry = this.opts.registry;
+		const roots = entries.map((entry) => ({ entry, snapshot: required(registry.getSnapshot(entry.path), "live child snapshot") }));
+		const agents = roots.map(({ entry, snapshot }) => {
+			const usage = this.getUsageDelta(entry.id);
+			return {
+				id: entry.id,
+				status: completionStatus(snapshot.operational.state),
+				sessionId: snapshot.sessionId,
+				usage: usage?.delta ?? snapshot.operational.usage,
+				usageBaseline: usage && !isZeroUsage(usage.baseline) ? usage.baseline : undefined,
+			};
+		});
+		const text = all ? serializeGroupTorndown(this.getCompletionReport()) : serializeAgentTorndown(required(agents[0], "removed child"));
+		this.entries = this.entries.filter((entry) => !entries.includes(entry));
+		const nodes = roots.flatMap(({ entry, snapshot }) => {
+			const answers = this.opts.onAgentRemoved?.(snapshot) ?? [];
 			this.appendRemovalRecord(entry);
 			this.router.removeAgent(entry.id);
-		}
-		await Promise.all(entries.map((entry) => this.opts.registry.remove(entry.path)));
-		return { report, empty: true, held };
-	}
-
-	/** Tell the settlement owner a child is leaving. Returns the answers it held back. */
-	private releaseRemoved(entry: AgentEntry): readonly Settlement[] {
-		const snapshot = this.opts.registry.getSnapshot(entry.path);
-		if (!snapshot) {return [];}
-		return this.opts.onAgentRemoved?.({ path: [...entry.path], incarnation: snapshot.incarnation }) ?? [];
-	}
-
-	private async teardownSingle(agentId: string): Promise<TeardownResult> {
-		const index = this.entries.findIndex((entry) => entry.id === agentId);
-		if (index === -1) {throw new Error(`Unknown agent: "${agentId}"`);}
-		const entry = this.entries[index];
-		const snapshot = this.opts.registry.getSnapshot(entry.path);
-		if (!snapshot) {throw new Error(`Unknown agent: "${agentId}"`);}
-
-		const data: AgentCompleteData = {
-			id: entry.id,
-			status: completionStatus(snapshot.operational.state),
-			sessionId: snapshot.sessionId,
-		};
-		const report = serializeAgentTorndown(data);
-
-		this.entries.splice(index, 1);
-		this.stopRequested.delete(entry.id);
-		const held = this.releaseRemoved(entry);
-		this.appendRemovalRecord(entry);
-		this.router.removeAgent(entry.id);
-		this.dropTargetCorrelations(entry.id);
-		await this.opts.registry.remove(entry.path);
-
-		return { report, empty: !this.hasAgents(), held: new Map([[entry.id, held]]) };
+			this.dropTargetCorrelations(entry.id);
+			return [{ snapshot, answers }, ...registry.listDescendants(entry.path).map((descendant) => ({
+				snapshot: descendant,
+				answers: this.opts.previewDescendantAnswers?.(descendant) ?? [],
+			}))];
+		});
+		await Promise.all(entries.map((entry) => registry.remove(entry.path)));
+		return { text, nodes, agents, empty: this.entries.length === 0 };
 	}
 
 	private appendRemovalRecord(entry: AgentEntry): void {

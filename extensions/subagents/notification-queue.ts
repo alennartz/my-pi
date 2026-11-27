@@ -21,8 +21,8 @@ export type Notice = Readonly<{
 	kind: NoticeKind;
 	content: string;
 	card?: SubagentCard;
-	/** The child whose settlement a completion notice carries. */
-	ref?: ChildRef;
+	/** Exact settlements carried by this notice's text. */
+	settles?: Readonly<{ ref: ChildRef; ids: readonly string[] }>;
 }>;
 
 /** `trigger` starts a turn, `context` joins the running turn, `park` appends without a turn. */
@@ -51,6 +51,13 @@ export class NotificationQueue {
 		const taken = this.entries.filter(predicate);
 		this.entries = this.entries.filter((entry) => !predicate(entry));
 		return taken;
+	}
+
+	/** Put notices that never reached the parent back at the front, in order. */
+	requeue(notices: readonly Notice[]): void {
+		if (notices.length === 0) {return;}
+		this.entries = [...notices, ...this.entries];
+		this.schedule();
 	}
 
 	runStarted(): void {

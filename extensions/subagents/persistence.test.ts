@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { appendAgentAdded, ensurePersistence, findAgentRecordBySessionId, loadPersistedAgents, pruneInvalidPersistedAgents } from './persistence.js';
+import { appendAgentAdded, appendAgentHold, appendAgentRemoved, ensurePersistence, findAgentRecordBySessionId, loadPersistedAgents, pruneInvalidPersistedAgents } from './persistence.js';
 import type { PersistedAgentRecord, PersistencePaths } from './persistence.js';
 
 let tmpRoot: string;
@@ -201,5 +201,23 @@ describe("PersistedAgentRecord fork tools/skillPaths round-trip", () => {
 		const loaded = loadPersistedAgents(parentSessionFile);
 		expect(loaded!.agents[0].tools).toBeUndefined();
 		expect(loaded!.agents[0].skillPaths).toBeUndefined();
+	});
+});
+
+describe("saved holds", () => {
+	it("restores the latest hold of a live agent and keeps it across a runtime replacement", () => {
+		appendAgentAdded(paths, baseRecord());
+		appendAgentHold(paths, { id: "a", sessionId: baseRecord().sessionId!, held: true, pending: [{ state: "idle", output: "kept" }], replaced: false });
+		appendAgentHold(paths, { id: "a", sessionId: baseRecord().sessionId!, held: false, pending: [], replaced: false });
+		appendAgentAdded(paths, baseRecord({ sessionId: "22222222-2222-4222-8222-222222222222" }));
+		expect(loadPersistedAgents(parentSessionFile)?.agents[0].hold).toEqual({ held: false, pending: [], replaced: false });
+	});
+
+	it("drops the hold of a removed agent", () => {
+		appendAgentAdded(paths, baseRecord());
+		appendAgentHold(paths, { id: "a", sessionId: baseRecord().sessionId!, held: true, pending: [], replaced: false });
+		appendAgentRemoved(paths, { id: "a", sessionId: baseRecord().sessionId });
+		appendAgentAdded(paths, baseRecord({ sessionId: "33333333-3333-4333-8333-333333333333" }));
+		expect(loadPersistedAgents(parentSessionFile)?.agents[0].hold).toBeUndefined();
 	});
 });

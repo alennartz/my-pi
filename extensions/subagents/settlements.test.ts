@@ -4,13 +4,21 @@ import { SettlementLedger } from "./settlements.js";
 import type { ChildRef, HoldRecord, LiveChild, Settlement } from "./settlements.js";
 
 type Notice = { path: readonly string[]; settlement: Settlement; replaced: boolean };
+type Offer = Notice & { ref: ChildRef; ids: readonly string[] };
 
 function harness() {
 	const notices: Notice[] = [];
+	const outbox: Offer[] = [];
 	const persisted = new Map<string, HoldRecord>();
 	const live = new Map<string, LiveChild>();
-	const ledger = new SettlementLedger({
-		notify: (ref, settlement, replaced) => notices.push({ path: ref.path, settlement, replaced }),
+	const ledger: SettlementLedger = new SettlementLedger({
+		offer: (ref, settlement, replaced, ids) => outbox.push({ ref, ids, path: ref.path, settlement, replaced }),
+		withdraw: (ref) => {
+			const index = outbox.findIndex((offer) => offer.ref.incarnation === ref.incarnation);
+			if (index === -1) {return false;}
+			outbox.splice(index, 1);
+			return true;
+		},
 		persistHold: (ref, hold) => persisted.set(ref.incarnation, hold),
 		publishHold: () => undefined,
 		live: (ref) => live.get(ref.incarnation),
@@ -32,33 +40,41 @@ function harness() {
 		live.delete(ref.incarnation);
 		return ledger.removed(ref);
 	};
-	return { ledger, notices, persisted, child, run, settle, remove };
+	/** The parent's session commits every queued notice. */
+	const commit = (): Notice[] => {
+		for (let offer = outbox.shift(); offer; offer = outbox.shift()) {
+			notices.push({ path: offer.path, settlement: offer.settlement, replaced: offer.replaced });
+			ledger.delivered(new Set(offer.ids));
+		}
+		return notices;
+	};
+	return { ledger, notices, commit, outbox, persisted, child, run, settle, remove };
 }
 
 const idle = (output: string): Settlement => ({ state: "idle", output });
 
 describe("SettlementLedger", () => {
 	it("delivers an unheld settlement to the parent once", () => {
-		const { notices, child, run, settle } = harness();
+		const { commit, child, run, settle } = harness();
 		const worker = child("worker");
 		run(worker);
 		settle(worker, idle("done"));
-		expect(notices).toEqual([{ path: ["worker"], settlement: idle("done"), replaced: false }]);
+		expect(commit()).toEqual([{ path: ["worker"], settlement: idle("done"), replaced: false }]);
 	});
 
 	it("holds settlements until the user releases the child", () => {
-		const { ledger, notices, child, run, settle } = harness();
+		const { ledger, commit, child, run, settle } = harness();
 		const worker = child("worker");
 		ledger.setHold(worker, true);
 		run(worker);
 		settle(worker, idle("answer"));
-		expect(notices).toEqual([]);
+		expect(commit()).toEqual([]);
 		ledger.setHold(worker, false);
-		expect(notices.map((notice) => notice.settlement.output)).toEqual(["answer"]);
+		expect(commit().map((notice) => notice.settlement.output)).toEqual(["answer"]);
 	});
 
 	it("marks the next answer as a replacement when a new run discards a held one, across stops", () => {
-		const { ledger, notices, child, run, settle } = harness();
+		const { ledger, commit, child, run, settle } = harness();
 		const worker = child("worker");
 		ledger.setHold(worker, true);
 		run(worker);
@@ -68,11 +84,11 @@ describe("SettlementLedger", () => {
 		run(worker);
 		settle(worker, idle("third"));
 		ledger.setHold(worker, false);
-		expect(notices).toEqual([{ path: ["worker"], settlement: idle("third"), replaced: true }]);
+		expect(commit()).toEqual([{ path: ["worker"], settlement: idle("third"), replaced: true }]);
 	});
 
 	it("delivers an unheld answer a wait collected when the child starts again before the wait ends", async () => {
-		const { ledger, notices, child, run, settle } = harness();
+		const { ledger, commit, child, run, settle } = harness();
 		const worker = child("worker");
 		const scout = child("scout");
 		run(worker);
@@ -83,19 +99,70 @@ describe("SettlementLedger", () => {
 		settle(scout, idle("s"));
 		settle(worker, idle("second"));
 		const result = await wait.result;
-		expect(notices).toEqual([{ path: ["worker"], settlement: idle("first"), replaced: false }]);
+		expect(commit()).toEqual([{ path: ["worker"], settlement: idle("first"), replaced: false }]);
 		expect(result.statuses.map((status) => [status.output, status.replacedHeldResult])).toEqual([["second", undefined], ["s", undefined]]);
 	});
 
-	it("keeps a held answer when the runtime dies without a new run, and delivers both", () => {
-		const { ledger, notices, child, run, settle } = harness();
+	it("reports a held answer together with a later runtime death in one delivery, through a notice or a wait", async () => {
+		const notice = harness();
+		const worker = notice.child("worker");
+		notice.ledger.setHold(worker, true);
+		notice.run(worker);
+		notice.settle(worker, idle("answer"));
+		notice.settle(worker, { state: "dead", error: "gone" });
+		notice.ledger.setHold(worker, false);
+		expect(notice.commit()).toEqual([{ path: ["worker"], settlement: { state: "dead", error: "gone", output: "answer" }, replaced: false }]);
+
+		const waited = harness();
+		const scout = waited.child("scout");
+		waited.ledger.setHold(scout, true);
+		waited.run(scout);
+		waited.settle(scout, idle("answer"));
+		waited.settle(scout, { state: "dead", error: "gone" });
+		const wait = waited.ledger.wait([scout]);
+		waited.ledger.setHold(scout, false);
+		const result = await wait.result;
+		expect(result.statuses).toEqual([{ path: ["scout"], state: "dead", error: "gone", output: "answer" }]);
+		waited.ledger.delivered(new Set(result.receipts));
+		expect(waited.commit()).toEqual([]);
+		expect(waited.ledger.hold(scout).pending).toEqual([]);
+	});
+
+	it("keeps a released answer pending until the parent commits it, so a restore never delivers it again", () => {
+		const first = harness();
+		const worker = first.child("worker");
+		first.ledger.setHold(worker, true);
+		first.run(worker);
+		first.settle(worker, idle("kept"));
+		first.ledger.setHold(worker, false);
+		expect(first.persisted.get(worker.incarnation)).toMatchObject({ held: false, pending: [{ settlement: idle("kept") }], replaced: false });
+		first.commit();
+		const saved = first.persisted.get(worker.incarnation);
+		expect(saved).toEqual({ held: false, pending: [], replaced: false });
+
+		const restored = harness();
+		restored.ledger.restore(restored.child("worker", "worker-2"), saved!);
+		expect(first.commit().map((notice) => notice.settlement.output)).toEqual(["kept"]);
+		expect(restored.commit()).toEqual([]);
+	});
+
+	it("saves the delivered state when a released answer reaches the parent through a wait", async () => {
+		const { ledger, persisted, child, run, settle } = harness();
 		const worker = child("worker");
 		ledger.setHold(worker, true);
 		run(worker);
-		settle(worker, idle("answer"));
-		settle(worker, { state: "dead", error: "gone" });
+		settle(worker, idle("kept"));
+		const wait = ledger.wait([worker]);
 		ledger.setHold(worker, false);
-		expect(notices.map((notice) => [notice.settlement.state, notice.replaced])).toEqual([["idle", false], ["dead", false]]);
+		const result = await wait.result;
+		ledger.delivered(new Set(result.receipts));
+		expect(persisted.get(worker.incarnation)).toEqual({ held: false, pending: [], replaced: false });
+	});
+
+	it("delivers a saved unheld answer whose delivery never completed", () => {
+		const restored = harness();
+		restored.ledger.restore(restored.child("worker"), { held: false, pending: [{ id: "uncommitted", run: 1, settlement: idle("in flight") }], replaced: false });
+		expect(restored.commit().map((notice) => notice.settlement.output)).toEqual(["in flight"]);
 	});
 
 	it("persists the hold and the undelivered answers, and a restored hold releases without redelivering what the parent has", () => {
@@ -105,25 +172,49 @@ describe("SettlementLedger", () => {
 		first.run(worker);
 		first.settle(worker, idle("kept"));
 		const saved = first.persisted.get(worker.incarnation);
-		expect(saved).toEqual({ held: true, pending: [idle("kept")], replaced: false });
+		expect(saved).toMatchObject({ held: true, pending: [{ settlement: idle("kept") }], replaced: false });
 
 		const restored = harness();
 		const again = restored.child("worker", "worker-2");
 		restored.ledger.restore(again, saved!);
-		expect(restored.notices).toEqual([]);
+		expect(restored.commit()).toEqual([]);
 		restored.ledger.setHold(again, false);
-		expect(restored.notices.map((notice) => notice.settlement.output)).toEqual(["kept"]);
+		expect(restored.commit().map((notice) => notice.settlement.output)).toEqual(["kept"]);
 
 		const delivered = harness();
 		const later = delivered.child("worker", "worker-3");
 		delivered.ledger.restore(later, { held: true, pending: [], replaced: false });
 		delivered.ledger.setHold(later, false);
-		expect(delivered.notices).toEqual([]);
+		expect(delivered.commit()).toEqual([]);
+	});
+
+	it("takes back a queued answer when the user holds the child before the parent receives it", () => {
+		const { ledger, commit, outbox, child, run, settle } = harness();
+		const worker = child("worker");
+		run(worker);
+		settle(worker, idle("answer"));
+		expect(outbox).toHaveLength(1);
+		ledger.setHold(worker, true);
+		expect(commit()).toEqual([]);
+		ledger.setHold(worker, false);
+		expect(commit().map((notice) => notice.settlement.output)).toEqual(["answer"]);
+	});
+
+	it("keeps an answer that already left for the parent when a hold arrives too late", () => {
+		const { ledger, commit, outbox, child, run, settle } = harness();
+		const worker = child("worker");
+		run(worker);
+		settle(worker, idle("answer"));
+		const sent = outbox.splice(0);
+		ledger.setHold(worker, true);
+		ledger.delivered(new Set(sent[0].ids));
+		expect(ledger.hold(worker)).toEqual({ held: true, pending: [], replaced: false });
+		expect(commit()).toEqual([]);
 	});
 
 	describe("waits", () => {
 		it("resolves with every requested child's outcome and delivers them through the wait", async () => {
-			const { ledger, notices, child, run, settle } = harness();
+			const { ledger, commit, child, run, settle } = harness();
 			const worker = child("worker");
 			const scout = child("scout");
 			run(worker);
@@ -134,7 +225,7 @@ describe("SettlementLedger", () => {
 			const result = await wait.result;
 			expect(result.interrupted).toBe(false);
 			expect(result.statuses.map((status) => [status.path, status.state])).toEqual([[["worker"], "idle"], [["scout"], "stopped"]]);
-			expect(notices).toEqual([]);
+			expect(commit()).toEqual([]);
 		});
 
 		it("settles a removed child as removed, with its held output", async () => {
@@ -165,7 +256,7 @@ describe("SettlementLedger", () => {
 		});
 
 		it("keeps undelivered settlements when the parent stops the wait", async () => {
-			const { ledger, notices, child, run, settle } = harness();
+			const { ledger, commit, child, run, settle } = harness();
 			const worker = child("worker");
 			const scout = child("scout");
 			run(worker);
@@ -174,11 +265,11 @@ describe("SettlementLedger", () => {
 			settle(worker, idle("w"));
 			wait.cancel();
 			await expect(wait.result).rejects.toThrow("Wait cancelled.");
-			expect(notices.map((notice) => notice.settlement.output)).toEqual(["w"]);
+			expect(commit().map((notice) => notice.settlement.output)).toEqual(["w"]);
 		});
 
 		it("ends on interrupt with the outcomes settled so far, leaving the rest to notices", async () => {
-			const { ledger, notices, child, run, settle } = harness();
+			const { ledger, commit, child, run, settle } = harness();
 			const worker = child("worker");
 			const scout = child("scout");
 			run(worker);
@@ -190,7 +281,34 @@ describe("SettlementLedger", () => {
 			expect(result.interrupted).toBe(true);
 			expect(result.statuses.map((status) => status.state)).toEqual(["idle", "running"]);
 			settle(scout, idle("s"));
-			expect(notices.map((notice) => notice.settlement.output)).toEqual(["s"]);
+			expect(commit().map((notice) => notice.settlement.output)).toEqual(["s"]);
+		});
+
+		it("reports a queued replacement through the wait with its note", async () => {
+			const { ledger, commit, outbox, child, run, settle } = harness();
+			const worker = child("worker");
+			ledger.setHold(worker, true);
+			run(worker);
+			settle(worker, idle("first"));
+			run(worker);
+			settle(worker, idle("second"));
+			ledger.setHold(worker, false);
+			expect(outbox).toHaveLength(1);
+			const result = await ledger.wait([worker]).result;
+			expect(result.statuses).toEqual([{ path: ["worker"], state: "idle", output: "second", replacedHeldResult: true }]);
+			expect(commit()).toEqual([]);
+		});
+
+		it("claims nothing when another wait is active", () => {
+			const { ledger, commit, child, run, settle } = harness();
+			const worker = child("worker");
+			const scout = child("scout");
+			run(worker);
+			run(scout);
+			ledger.wait([worker]);
+			settle(scout, idle("s"));
+			expect(() => ledger.wait([scout])).toThrow(/already active/);
+			expect(commit().map((notice) => notice.settlement.output)).toEqual(["s"]);
 		});
 
 		it("never lets a later incarnation at the same path satisfy a wait", async () => {

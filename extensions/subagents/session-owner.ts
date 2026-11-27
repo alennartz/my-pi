@@ -27,7 +27,7 @@ import { SubagentManager, loadActivePersona, selectActivePersona } from './agent
 import type { AgentStatus, PersonaCapabilities } from './agent-set.js';
 import { addCostBreakdown, costBreakdownFromUsage, AgentSessionRegistry } from './agent-session-registry.js';
 import type { AgentNodeSnapshot, AgentOperationalSnapshot } from './agent-session-registry.js';
-import { childAgentPath } from './agent-path.js';
+import { childAgentPath, qualifiedAgentId } from './agent-path.js';
 import type { AgentPath } from './agent-path.js';
 import { toolCallUpdateView, toolExecutionStartView } from './pi-events.js';
 import { asRecord, booleanField, stringField } from './narrow.js';
@@ -41,8 +41,8 @@ import { activityPreview } from "./format.js";
 import { formatOverrideNote } from "./tool-result.js";
 import { truncateForModel } from "../../lib/truncate.ts";
 import { required } from "../../lib/required.ts";
-import { formatUsageLine, isZeroUsage, lifecycleStatus, statusData, sumAgentUsage, toPiUsage, AwaitResultSchema, InterruptResultSchema, ModelsResultSchema, ResurrectResultSchema, SendResultSchema, SpawnResultSchema, StatusResultSchema, TeardownResultSchema } from './tool-results.js';
-import type { AwaitResultData, InterruptResultData, ModelsResultData, ResurrectResultData, SendResultData, SpawnResultData, StatusResultData, TeardownAgentData, TeardownResultData } from './tool-results.js';
+import { formatUsageLine, statusData, sumAgentUsage, toPiUsage, AwaitResultSchema, InterruptResultSchema, ModelsResultSchema, ResurrectResultSchema, SendResultSchema, SpawnResultSchema, StatusResultSchema, TeardownResultSchema } from './tool-results.js';
+import type { AwaitResultData, InterruptResultData, ModelsResultData, ResurrectResultData, SendResultData, SpawnResultData, StatusResultData, TeardownResultData } from './tool-results.js';
 import { loadWorkspacePersona } from "../persona-workspaces/declaration.ts";
 import { TIERS_UNCONFIGURED_MESSAGE, loadTierConfig, resolveDeclaredModelRef, renderTierTable, stripThinkingSuffix } from './model-tiers.js';
 import type { TierConfig } from './model-tiers.js';
@@ -460,7 +460,7 @@ function cardResult<T>(text: string, card: SubagentCard, structured: T) {
 	return { content: [{ type: "text" as const, text }], details: toolCardDetails(card), structuredContent: structured };
 }
 
-function affectedAgent(snapshot: AgentNodeSnapshot, held?: Settlement): SubagentAffectedAgent {
+function affectedAgent(snapshot: AgentNodeSnapshot, held?: Settlement) {
 	return {
 		path: [...snapshot.path],
 		sessionId: snapshot.sessionId,
@@ -471,7 +471,8 @@ function affectedAgent(snapshot: AgentNodeSnapshot, held?: Settlement): Subagent
 		channels: [...snapshot.channels],
 		...(snapshot.operational.model !== undefined ? { model: snapshot.operational.model } : undefined),
 		...(held?.output !== undefined ? { output: held.output } : undefined),
-	};
+		...(held?.error !== undefined ? { error: held.error } : undefined),
+	} satisfies SubagentAffectedAgent;
 }
 
 function heldReport(id: string, held: readonly Settlement[]): string {
@@ -494,10 +495,14 @@ class SubagentSessionOwner {
 	private rejectStartReady!: (error: unknown) => void;
 	private startReadySettled = false;
 	private nativeSessionManager: ExtensionContext["sessionManager"] | undefined;
+	private nativeContext: ExtensionContext | undefined;
 	private rootRunError: string | undefined;
 
 	constructor(private readonly scope: SubagentScope, private readonly pi: ExtensionAPI) {
-		this.turns = new TurnCoordinator(pi);
+		this.turns = new TurnCoordinator(pi, {
+			idle: () => this.nativeContext?.isIdle() ?? true,
+			entries: () => this.nativeSessionManager?.getBranch() ?? [],
+		});
 		this.incoming = new IncomingMessages(this.turns, (id, source) => this.pathForEndpoint(id, source));
 		this.startReady = new Promise<void>((resolve, reject) => {
 			this.resolveStartReady = resolve;
@@ -596,6 +601,7 @@ class SubagentSessionOwner {
 		}
 		this.phase = { kind: "starting" };
 		this.nativeSessionManager = ctx.sessionManager;
+		this.nativeContext = ctx;
 		if (this.scope.kind === "child") {this.incoming.subscribeUplink(this.scope.uplink);}
 		let provider: OwnedSubagentProvider | undefined;
 		let unregisterProvider: (() => void) | undefined;
@@ -630,6 +636,7 @@ class SubagentSessionOwner {
 				onUpdate: (current) => dashboard.refresh(current),
 				onAgentStart: (_current, agentId) => turns.childStarted(agentId),
 				onAgentComplete: (_current, agentId, _allDone, outcome) => turns.childSettled(agentId, outcome),
+				previewDescendantAnswers: (ref) => services.control.pendingAnswers(ref),
 				onAgentRemoved: (ref) => turns.childRemoved(ref),
 				onAgentRestored: (ref, hold) => turns.childRestored(ref, hold),
 				onSetHold: (ref, held) => turns.setHold(ref, held),
@@ -639,6 +646,7 @@ class SubagentSessionOwner {
 			const managerControl = manager.createControl({
 				resurrect: (request) => this.resurrectThroughControl(request, ctx),
 				teardown: (ref) => this.teardownThroughControl(ref),
+				pendingAnswers: (ref) => turns.pendingAnswers(ref),
 			});
 			services.control.register(ownerPath, managerControl);
 			if (this.scope.kind === "root" && this.hasProviderEventBus()) {
@@ -1373,9 +1381,6 @@ class SubagentSessionOwner {
 	private async sendMessage(params: SendToolParams, signal: AbortSignal | undefined, progress: CardProgress): Promise<ToolReply> {
 		const session = this.requireActiveSession();
 		if (signal?.aborted) {throw new Error("Cancelled");}
-		const parameters = { to: params.to, message: params.message, expectResponse: params.expectResponse === true };
-		const card = (state: SubagentCard["state"], result: Extract<SubagentCard["data"], { operation: "send" }>["result"]): SubagentCard =>
-			({ kind: "send", state, data: { operation: "send", parameters, result } });
 		const isLocalAgent = session.manager.getAgentStatus(params.to) !== undefined;
 		const port = isLocalAgent
 			? session.manager.getParentPort()
@@ -1387,6 +1392,9 @@ class SubagentSessionOwner {
 		}
 		const source = isLocalAgent ? "local" : "uplink";
 		const target = this.pathForEndpoint(params.to, source);
+		const parameters = { to: params.to, target, message: params.message, expectResponse: params.expectResponse === true };
+		const card = (state: SubagentCard["state"], result: Extract<SubagentCard["data"], { operation: "send" }>["result"]): SubagentCard =>
+			({ kind: "send", state, data: { operation: "send", parameters, result } });
 		progress(card("active", { phase: "sending" }));
 		let waiting = false;
 		const receipt = await port.send({
@@ -1491,40 +1499,17 @@ class SubagentSessionOwner {
 
 	private async teardownAgents(params: TeardownToolParams, ctx: ExtensionContext): Promise<ToolReply> {
 		const session = this.requireActiveSession();
-		if (!session.manager.hasAgents()) {throw new Error("No agents to teardown.");}
-		const targetIds: string[] = params.agent ? [params.agent] : session.manager.getAgentStatuses().map((status) => status.id);
-		const reports = targetIds.flatMap((id) => {
-			const data = this.teardownAgentData(session.manager, id);
-			return data ? [data] : [];
-		});
-		const snapshots = targetIds.flatMap((id) => {
-			const rootPath = session.manager.getAgentPath(id);
-			if (!rootPath) {return [];}
-			return [session.registry.getSnapshot(rootPath), ...session.registry.listDescendants(rootPath)]
-				.filter((snapshot): snapshot is AgentNodeSnapshot => snapshot !== undefined);
-		});
-		const { report, empty, held } = await session.manager.teardown(params.agent || undefined);
+		const { text, nodes, agents, empty } = await session.manager.teardown(params.agent || undefined);
 		if (empty) {session.dashboard.clear(ctx);}
 		else {session.dashboard.refresh(session.manager);}
-		const affectedAgents = snapshots.map((snapshot) => affectedAgent(snapshot, held.get(snapshot.localId ?? "")?.at(-1)));
-		const heldText = [...held].flatMap(([id, settlements]) => settlements.length > 0 ? [heldReport(id, settlements)] : []);
+		const affectedAgents = nodes.map(({ snapshot, answers }) => affectedAgent(snapshot, answers.at(-1)));
+		const heldText = nodes.filter(({ answers }) => answers.length > 0)
+			.map(({ snapshot, answers }) => heldReport(qualifiedAgentId(this.scopePath(), snapshot.path), answers));
 		const label = params.agent ? `Agent "${params.agent}" removed.` : "All agents terminated.";
-		const single = reports.length === 1 ? reports[0] : undefined;
+		const single = agents.length === 1 ? agents[0] : undefined;
 		const usageLine = single ? `\n\n${formatUsageLine(single.usage, single.usageBaseline)}` : "";
-		const bounded = await truncateForModel([`${label}\n\n${report}${usageLine}`, ...heldText].join("\n\n"));
-		const data: TeardownResultData = {
-			agents: reports,
-			affectedAgents: snapshots.map((snapshot) => ({
-				path: [...snapshot.path],
-				sessionId: snapshot.sessionId,
-				incarnation: snapshot.incarnation,
-				state: snapshot.operational.state,
-				usage: snapshot.operational.usage,
-				...(snapshot.task !== undefined ? { task: snapshot.task } : undefined),
-				channels: [...snapshot.channels],
-				...(snapshot.operational.model !== undefined ? { model: snapshot.operational.model } : undefined),
-			})),
-		};
+		const bounded = await truncateForModel([`${label}\n\n${text}${usageLine}`, ...heldText].join("\n\n"));
+		const data: TeardownResultData = { agents, affectedAgents };
 		const card: SubagentCard = {
 			kind: "teardown",
 			state: "complete",
@@ -1532,21 +1517,8 @@ class SubagentSessionOwner {
 		};
 		// `usage` is pi's ToolResultMessage accounting seam. `details` does not
 		// contribute to the root session total.
-		const usage = toPiUsage(sumAgentUsage(reports.map((agent) => agent.usage)));
+		const usage = toPiUsage(sumAgentUsage(agents.map((agent) => agent.usage)));
 		return { ...cardResult(bounded.text, card, data), usage };
-	}
-
-	private teardownAgentData(manager: SubagentManager, id: string): TeardownAgentData | undefined {
-		const status = manager.getAgentStatus(id);
-		const delta = manager.getUsageDelta(id);
-		if (!status && !delta) {return undefined;}
-		return {
-			id,
-			status: lifecycleStatus(status?.state ?? "idle"),
-			sessionId: manager.getSessionId(id),
-			usage: delta?.delta ?? status?.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
-			usageBaseline: delta && !isZeroUsage(delta.baseline) ? delta.baseline : undefined,
-		};
 	}
 
 	/** User resurrection: the parent learns of it as context, without a turn. */
@@ -1579,18 +1551,21 @@ class SubagentSessionOwner {
 	/** User teardown: the parent learns of it as context, without a turn. */
 	private async teardownThroughControl(ref: SubagentRuntimeRef): Promise<SubagentTeardownResult> {
 		const session = this.requireActiveSession();
-		const { result, snapshot, held } = await session.manager.teardownGuarded(ref);
-		if (!result.removed || !snapshot) {return result;}
-		const localId = required(snapshot.localId, "child local id");
+		const { result, report } = await session.manager.teardownGuarded(ref);
+		if (!report) {return result;}
+		const localId = required(ref.path.at(-1), "child local id");
+		const affectedAgents = report.nodes.map(({ snapshot, answers }) => affectedAgent(snapshot, answers.at(-1)));
+		const heldText = report.nodes.filter(({ answers }) => answers.length > 0)
+			.map(({ snapshot, answers }) => heldReport(qualifiedAgentId(this.scopePath(), snapshot.path), answers));
 		const card: SubagentCard = {
 			kind: "teardown",
 			state: "complete",
-			data: { operation: "teardown", parameters: { agent: localId, source: "user" }, result: { affectedAgents: [affectedAgent(snapshot, held.at(-1))] } },
+			data: { operation: "teardown", parameters: { agent: localId, source: "user" }, result: { affectedAgents } },
 		};
 		this.pi.sendMessage(
 			{
 				customType: "subagents",
-				content: serializeAgentRemoved({ id: localId, sessionId: result.sessionId, ...(held.at(-1)?.output !== undefined ? { heldOutput: held.at(-1)?.output } : undefined) }),
+				content: [serializeAgentRemoved({ id: localId, sessionId: result.sessionId }), ...heldText].join("\n\n"),
 				display: true,
 				details: messageCardDetails([card]),
 			},
@@ -1724,11 +1699,14 @@ class SubagentSessionOwner {
 			...(report.interrupted ? { interrupted: true } : undefined),
 			...(report.error !== undefined ? { error: report.error } : undefined),
 		};
-		return cardResult(report.text, card("complete", {
+		const result = cardResult(report.text, card("complete", {
 			statuses: report.statuses,
 			...(report.interrupted ? { interrupted: true } : undefined),
 			...(report.error !== undefined ? { error: report.error } : undefined),
 		}), data);
+		return report.receipts?.length
+			? { ...result, details: { ...result.details, settlementReceipts: report.receipts } }
+			: result;
 	}
 
 	private async interruptAgents(params: InterruptToolParams, signal: AbortSignal | undefined): Promise<ToolReply> {

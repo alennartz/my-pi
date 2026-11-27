@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { AssistantMessage, FauxProviderHandle, Message, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai/utils/transcript";
@@ -26,6 +26,8 @@ import type {
 	SubagentToolExecution,
 } from "@pimote/sdk/subagents";
 import { createSubagentsExtension } from "./scoped-extension.js";
+import { getPersistencePaths, loadPersistedAgents } from "./persistence.js";
+import { settlementReceipts } from "./settlement-receipts.js";
 
 // ---------------------------------------------------------------------------
 // Wire and recording
@@ -228,7 +230,7 @@ function untilAborted(signal: AbortSignal | undefined): Promise<void> {
  * answers its task with text and an expected-response message with `respond`.
  */
 class ScriptedModel {
-	readonly steps = new Map<string, () => AssistantMessage>();
+	readonly steps = new Map<string, () => Reply>();
 	readonly childScripts = new Map<string, ChildScript>();
 	readonly gates = new Map<string, Promise<void>>();
 	attached: (id: string) => Promise<void> = async () => {};
@@ -252,7 +254,7 @@ class ScriptedModel {
 		return scripted ? await scripted : defaultChildReply(id, last);
 	}
 
-	private rootReply(last: Message): AssistantMessage {
+	private rootReply(last: Message): Reply {
 		const step = last.role === "user" ? /^step:(\S+)/.exec(lastTextOf(last))?.[1] : undefined;
 		const action = step === undefined ? undefined : this.steps.get(step);
 		return action ? action() : fauxAssistantMessage("ack");
@@ -305,7 +307,13 @@ class RootHarness {
 				cwd: options.cwd,
 				agentDir: options.agentDir,
 				settingsManager: SettingsManager.create(options.cwd, options.agentDir),
-				resourceLoaderOptions: { eventBus, extensionFactories: [{ name: "subagents", factory: createSubagentsExtension({ kind: "root" }) }] },
+				resourceLoaderOptions: {
+					eventBus,
+					extensionFactories: [
+						{ name: "subagents", factory: createSubagentsExtension({ kind: "root" }) },
+						{ name: "run-preparation-gate", factory: holdRunPreparation },
+					],
+				},
 			});
 			const result = await createAgentSessionFromServices({ services, sessionManager: options.sessionManager, sessionStartEvent: options.sessionStartEvent });
 			return { ...result, services, diagnostics: services.diagnostics };
@@ -501,6 +509,17 @@ let faux: FauxProviderHandle;
 let workspace: Workspace;
 let previousAgentDir: string | undefined;
 let harness: RootHarness | undefined;
+/** While set, the parent's run preparation pauses in `before_agent_start` until it resolves. */
+let preparationGate: Gate | undefined;
+let preparationReached: Gate | undefined;
+
+function holdRunPreparation(pi: ExtensionAPI): void {
+	pi.on("before_agent_start", async () => {
+		if (!preparationGate) {return;}
+		preparationReached?.resolve();
+		await preparationGate.promise;
+	});
+}
 
 function newWorkspace(): Workspace {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-roundtrip-"));
@@ -761,4 +780,382 @@ describe("subagent presenters round trip", () => {
 		expectNoCorrelationIds(before, root.recorder.cards, root.recorder.history, reloaded);
 		expectChildParity(root);
 	});
+});
+
+describe("settlement delivery across the pi seam", () => {
+	it("delivers a released answer once, also after the parent session restores", async () => {
+		const root = await start();
+		const childGate = deferred();
+		model.gates.set("worker", childGate.promise);
+		model.steps.set("spawn", SPAWN_WORKER);
+		await root.step("spawn");
+		const worker = root.provider.snapshot().nodes[0];
+		await root.provider.setHold({ path: worker.path, incarnation: worker.incarnation, held: true });
+		childGate.resolve();
+		await waitFor(() => root.provider.snapshot().nodes[0]?.heldSettlement === "idle");
+		await root.provider.setHold({ path: worker.path, incarnation: worker.incarnation, held: false });
+		await root.quiesce();
+		expect(cardsOf(root.recorder.cards, "completion")).toHaveLength(1);
+		const sessionFile = root.session.sessionFile!;
+		await root.dispose();
+		harness = undefined;
+		const restored = await RootHarness.open(workspace, model, SessionManager.open(sessionFile, workspace.sessionDir), "resume");
+		harness = restored;
+		await waitFor(() => restored.provider.snapshot().ready);
+		await restored.quiesce();
+		expect(cardsOf(reloadCards(restored.presenters, [], restored.session.sessionManager.getEntries()), "completion")).toHaveLength(1);
+	});
+
+	it("never puts a completion where clearing pi's queue during run preparation can drop it", async () => {
+		const root = await start();
+		const childGate = deferred();
+		model.gates.set("worker", childGate.promise);
+		model.steps.set("spawn", SPAWN_WORKER);
+		await root.step("spawn");
+		preparationGate = deferred();
+		preparationReached = deferred();
+		const user = root.session.prompt("new user prompt");
+		try {
+			await preparationReached.promise;
+			childGate.resolve();
+			await waitFor(() => root.provider.snapshot().nodes[0]?.state === "idle");
+			await sleep(20);
+			expect(root.session.agent.peekQueuedMessages()).toEqual([]);
+			root.session.clearQueue();
+		} finally {
+			preparationGate.resolve();
+			preparationGate = undefined;
+			await user;
+		}
+		await root.quiesce();
+		expect(cardsOf(root.recorder.cards, "completion")).toHaveLength(1);
+	});
+
+	it("removes an ancestor and its descendant torn down in the same tick", async () => {
+		const root = await start();
+		model.childScripts.set("worker", ({ last }) => last.role === "user" ? calls(["subagent", { agents: [{ id: "grand", task: "do it" }] }]) : undefined);
+		model.steps.set("spawn", SPAWN_WORKER);
+		await root.step("spawn");
+		await root.quiesce();
+		const worker = root.provider.snapshot().nodes.find((node) => node.path.join("/") === "worker")!;
+		const grand = root.provider.snapshot().nodes.find((node) => node.path.join("/") === "worker/grand")!;
+		expect(grand).toBeDefined();
+		const status = await Promise.race([
+			Promise.all([root.provider.teardown(worker), root.provider.teardown(grand)]).then(() => "removed"),
+			sleep(2000).then(() => "stuck"),
+		]);
+		expect(status).toBe("removed");
+		expect(root.provider.snapshot().nodes).toEqual([]);
+	});
+
+	it.each(["model", "user"] as const)("reports full paths for a %s teardown without consuming nested held answers", async (source) => {
+		const root = await start();
+		const directGate = deferred();
+		const nestedGate = deferred();
+		model.childScripts.set("worker", async ({ last }) => {
+			if (lastTextOf(last) === "Task: check the build") {
+				await directGate.promise;
+				return calls(["subagent", { agents: [{ id: "worker", task: "inner check" }] }]);
+			}
+			if (lastTextOf(last) === "Task: inner check") {
+				await nestedGate.promise;
+				return fauxAssistantMessage("nested answer");
+			}
+			return fauxAssistantMessage("direct answer");
+		});
+		model.steps.set("spawn", SPAWN_WORKER);
+		await root.step("spawn");
+		const worker = root.provider.snapshot().nodes[0];
+		await root.provider.setHold({ ...worker, held: true });
+		directGate.resolve();
+		await waitFor(() => root.provider.snapshot().nodes.length === 2);
+		const nested = root.provider.snapshot().nodes.find((node) => node.path.length === 2)!;
+		await root.provider.setHold({ ...nested, held: true });
+		nestedGate.resolve();
+		await waitFor(() => root.provider.snapshot().nodes.every((node) => node.heldSettlement === "idle"));
+		if (source === "model") {
+			model.steps.set("remove", () => calls(["teardown", { agent: "worker" }]));
+			await root.step("remove");
+		} else {
+			await root.provider.teardown(worker);
+		}
+		const card = cardsOf(root.recorder.cards, "teardown").at(-1);
+		expect(card).toMatchObject({ data: { parameters: { source }, result: { affectedAgents: [
+			{ path: ["worker"], output: "direct answer" },
+			{ path: ["worker", "worker"], output: "nested answer" },
+		] } } });
+		expect(root.provider.snapshot().nodes).toEqual([]);
+
+		await root.provider.resurrect({ parentPath: [], localId: "worker", sessionId: worker.sessionId, task: "reopen", channels: [] });
+		await waitFor(() => root.provider.snapshot().nodes.find((node) => node.path.length === 2)?.heldSettlement === "idle");
+		const restored = root.provider.snapshot().nodes.find((node) => node.path.length === 2)!;
+		expect(restored).toMatchObject({ path: ["worker", "worker"], held: true, heldSettlement: "idle" });
+		await root.provider.setHold({ ...restored, held: false });
+		await root.quiesce();
+		const parentFile = root.children.get("worker")!.session.sessionFile!;
+		const entries = SessionManager.open(parentFile).getBranch();
+		const completions = cardsOf(reloadCards(root.presenters, ["worker"], entries), "completion");
+		expect(completions).toHaveLength(1);
+		expect(completions[0]).toMatchObject({ data: { result: { path: ["worker", "worker"], output: "nested answer" } } });
+	});
+});
+
+type CrashPoint = "before offer" | "before native append" | "after native append" | "after cleanup";
+
+/** The files a process restart would see at a settlement delivery checkpoint. */
+type CrashImage = { transcript: Buffer; outbox: Buffer; branchBeforeReceipt?: string };
+
+function hasReceipt(details: unknown): boolean {
+	const ids = record(details)?.settlementReceipts;
+	return Array.isArray(ids) && ids.length > 0;
+}
+
+async function captureDelivery(channel: "notice" | "await") {
+	const root = await start();
+	const childGate = deferred();
+	model.gates.set("worker", childGate.promise);
+	model.childScripts.set("worker", () => fauxAssistantMessage("recoverable answer"));
+	model.steps.set("spawn", SPAWN_WORKER);
+	await root.step("spawn");
+	const worker = root.provider.snapshot().nodes[0];
+	await root.provider.setHold({ ...worker, held: true });
+	childGate.resolve();
+	await waitFor(() => root.provider.snapshot().nodes[0]?.heldSettlement === "idle");
+
+	const parentFile = root.session.sessionFile!;
+	const outboxFile = getPersistencePaths(parentFile).logFile;
+	const images = new Map<CrashPoint, CrashImage>();
+	const sessionManager = root.session.sessionManager;
+	let branchBeforeReceipt: string | undefined;
+	const capture = (point: CrashPoint): void => {
+		images.set(point, { transcript: fs.readFileSync(parentFile), outbox: fs.readFileSync(outboxFile), branchBeforeReceipt });
+	};
+	const unsubscribe = root.provider.subscribe((event) => {
+		if (event.kind === "node_updated" && event.node.incarnation === worker.incarnation && !event.node.held && !images.has("before offer")) {
+			capture("before offer");
+		}
+	});
+	const native = root.session.subscribe((event) => {
+		if (event.type !== "message_end") {return;}
+		const message = record(event.message);
+		if (!hasReceipt(message?.details)) {return;}
+		branchBeforeReceipt = sessionManager.getBranch().at(-1)?.id;
+		capture("before native append");
+	});
+	const appendCustom = sessionManager.appendCustomMessageEntry.bind(sessionManager);
+	const customSpy = vi.spyOn(sessionManager, "appendCustomMessageEntry").mockImplementation((...args) => {
+		const id = appendCustom(...args);
+		if (hasReceipt(args[3])) {capture("after native append");}
+		return id;
+	});
+	const appendMessage = sessionManager.appendMessage.bind(sessionManager);
+	const messageSpy = vi.spyOn(sessionManager, "appendMessage").mockImplementation((message) => {
+		const id = appendMessage(message);
+		if (message.role === "toolResult" && hasReceipt(message.details)) {capture("after native append");}
+		return id;
+	});
+	try {
+		if (channel === "await") {
+			model.steps.set("await-answer", () => calls(["await_agents", { agents: ["worker"] }]));
+			const run = root.step("await-answer");
+			await waitFor(() => [...root.recorder.history.values()].some((history) =>
+				history.some((card) => card?.kind === "await" && card.data.operation === "await" && card.data.result.statuses.some((status) => status.state === "held"))));
+			await root.provider.setHold({ ...worker, held: false });
+			await run;
+		} else {
+			await root.provider.setHold({ ...worker, held: false });
+		}
+		await root.quiesce();
+		capture("after cleanup");
+	} finally {
+		unsubscribe();
+		native();
+		customSpy.mockRestore();
+		messageSpy.mockRestore();
+		await root.dispose();
+		harness = undefined;
+	}
+	return { parentFile, outboxFile, images };
+}
+
+function committedAnswers(entries: readonly SessionEntry[]): string[] {
+	return entries.flatMap((entry) => {
+		if (entry.type === "custom_message" && entry.customType === "subagents" && hasReceipt(entry.details)) {return [textOf(entry.content)];}
+		if (entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "await_agents" && !entry.message.isError && hasReceipt(entry.message.details)) {
+			return [textOf(entry.message.content)];
+		}
+		return [];
+	});
+}
+
+describe("settlement receipt recovery", () => {
+	it.each(["notice", "await"] as const)("recovers a %s across every durable delivery checkpoint", async (channel) => {
+		const { parentFile, outboxFile, images } = await captureDelivery(channel);
+		const points = ["before offer", "before native append", "after native append", "after cleanup"] as const;
+		for (const point of points) {
+			const image = images.get(point);
+			expect(image, point).toBeDefined();
+			if (!image) {continue;}
+			fs.writeFileSync(parentFile, image.transcript);
+			fs.writeFileSync(outboxFile, image.outbox);
+			const manager = SessionManager.open(parentFile, workspace.sessionDir);
+			const saved = loadPersistedAgents(parentFile)?.agents[0]?.hold;
+			const ids = saved?.pending.map((entry) => entry.id) ?? [];
+			const committed = point === "after native append" || point === "after cleanup";
+			expect(committedAnswers(manager.getBranch()), point).toHaveLength(committed ? 1 : 0);
+			expect(ids, point).toHaveLength(point === "after cleanup" ? 0 : 1);
+			if (point === "after native append") {
+				expect(settlementReceipts(manager.getBranch()).settlements).toEqual(new Set(ids));
+			}
+			const fresh = await RootHarness.open(workspace, model, manager, "resume");
+			harness = fresh;
+			await fresh.quiesce();
+			const answers = committedAnswers(fresh.session.sessionManager.getBranch());
+			expect(answers, point).toHaveLength(1);
+			expect(answers[0], point).toContain("recoverable answer");
+			expect(loadPersistedAgents(parentFile)?.agents[0]?.hold?.pending, point).toEqual([]);
+			await fresh.dispose();
+			harness = undefined;
+		}
+	});
+
+	it("does not acknowledge a receipt on a different branch", async () => {
+		const { parentFile, outboxFile, images } = await captureDelivery("notice");
+		const image = images.get("after native append")!;
+		fs.writeFileSync(parentFile, image.transcript);
+		fs.writeFileSync(outboxFile, image.outbox);
+		const manager = SessionManager.open(parentFile, workspace.sessionDir);
+		manager.branch(image.branchBeforeReceipt!);
+		expect(committedAnswers(manager.getEntries())).toHaveLength(1);
+		expect(committedAnswers(manager.getBranch())).toEqual([]);
+		const fresh = await RootHarness.open(workspace, model, manager, "resume");
+		harness = fresh;
+		await fresh.quiesce();
+		const answers = committedAnswers(fresh.session.sessionManager.getBranch());
+		expect(answers).toHaveLength(1);
+		expect(answers[0]).toContain("recoverable answer");
+	});
+});
+
+describe("settlement claims across the pi seam", () => {
+it("reports a released replacement through a wait that claims its queued notice, with the note", async () => {
+	const root = await start();
+	const childGate = deferred();
+	model.gates.set("worker", childGate.promise);
+	model.steps.set("spawn", SPAWN_WORKER);
+	await root.step("spawn");
+	const worker = root.provider.snapshot().nodes[0];
+	await root.provider.setHold({ path: worker.path, incarnation: worker.incarnation, held: true });
+	childGate.resolve();
+	await waitFor(() => root.provider.snapshot().nodes[0]?.heldSettlement === "idle");
+	model.childScripts.set("worker", () => fauxAssistantMessage("replacement answer"));
+	model.steps.set("restart", () => calls(["send", { to: "worker", message: "try again" }]));
+	await root.step("restart");
+	await waitFor(() => root.provider.snapshot().nodes[0]?.heldSettlement === "idle");
+	const awaitGate = deferred();
+	const awaitEntered = deferred();
+	model.steps.set("await", async () => {
+		awaitEntered.resolve();
+		await awaitGate.promise;
+		return calls(["await_agents", { agents: ["worker"] }]);
+	});
+	const run = root.step("await");
+	await awaitEntered.promise;
+	try {
+		await root.provider.setHold({ path: worker.path, incarnation: worker.incarnation, held: false });
+	} finally {
+		awaitGate.resolve();
+		await run;
+	}
+	const card = toolCard(root, "await_agents");
+	expect(card).toMatchObject({ data: { result: { statuses: [{ output: "replacement answer", replacedHeldResult: true }] } } });
+	expect(cardsOf(root.recorder.cards, "completion")).toHaveLength(0);
+});
+
+it("holds a settled answer that is still queued for a running parent", async () => {
+	const root = await start();
+	const childGate = deferred();
+	model.gates.set("worker", childGate.promise);
+	model.steps.set("spawn", SPAWN_WORKER);
+	await root.step("spawn");
+	const worker = root.provider.snapshot().nodes[0];
+	const rootGate = deferred();
+	const rootEntered = deferred();
+	model.steps.set("busy", async () => {
+		rootEntered.resolve();
+		await rootGate.promise;
+		return fauxAssistantMessage("root done");
+	});
+	const run = root.step("busy");
+	await rootEntered.promise;
+	try {
+		childGate.resolve();
+		await waitFor(() => root.provider.snapshot().nodes[0]?.state === "idle");
+		await root.provider.setHold({ path: worker.path, incarnation: worker.incarnation, held: true });
+	} finally {
+		rootGate.resolve();
+		await run;
+	}
+	await root.quiesce();
+	expect(cardsOf(root.recorder.cards, "completion")).toHaveLength(0);
+	expect(root.provider.snapshot().nodes[0]).toMatchObject({ held: true, heldSettlement: "idle" });
+});
+
+it("keeps a queued completion when a parallel await is rejected", async () => {
+	const root = await start();
+	const firstGate = deferred();
+	const secondGate = deferred();
+	model.gates.set("first", firstGate.promise);
+	model.gates.set("second", secondGate.promise);
+	model.steps.set("spawn-two", () => calls(["subagent", { agents: [{ id: "first", task: "first" }, { id: "second", task: "second" }] }]));
+	await root.step("spawn-two");
+	const rootGate = deferred();
+	const rootEntered = deferred();
+	model.steps.set("wait-two", async () => {
+		rootEntered.resolve();
+		await rootGate.promise;
+		return calls(["await_agents", { agents: ["first"] }], ["await_agents", { agents: ["second"] }]);
+	});
+	const run = root.step("wait-two");
+	await rootEntered.promise;
+	try {
+		secondGate.resolve();
+		await waitFor(() => root.provider.snapshot().nodes.find((node) => node.path[0] === "second")?.state === "idle");
+		rootGate.resolve();
+		await waitFor(() => root.recorder.cards.size >= 3);
+		await sleep(30);
+	} finally {
+		rootGate.resolve();
+		firstGate.resolve();
+		await run;
+	}
+	await root.quiesce();
+	const waitCards = cardsOf(root.recorder.cards, "await");
+	expect(waitCards.find((card) => card.state === "error")).toMatchObject({ data: { result: { error: "Another await_agents call is already active." } } });
+	expect(cardsOf(root.recorder.cards, "completion").map((card) => card.data.operation === "completion" ? card.data.result.path : [])).toContainEqual(["second"]);
+});
+
+it("does not report a stop for a run the stop never cancelled", async () => {
+	const root = await startWithWorker();
+	let stop: Promise<void> | undefined;
+	const unsub = root.provider.subscribe((event) => {
+		if (event.kind === "node_updated" && event.node.path[0] === "worker" && event.node.state === "running" && !stop) {
+			stop = root.provider.stop({ path: event.node.path, incarnation: event.node.incarnation, expectedSessionId: event.node.sessionId });
+		}
+	});
+	model.childScripts.set("worker", () => fauxAssistantMessage("real un-aborted response"));
+	model.steps.set("restart", () => calls(["send", { to: "worker", message: "try again" }]));
+	try {
+		await root.step("restart");
+		await stop;
+		await root.quiesce();
+	} finally {
+		unsub();
+	}
+	expect(stop).toBeDefined();
+	expect(cardsOf(root.recorder.cards, "completion")).toHaveLength(2);
+	model.steps.set("await", () => calls(["await_agents", { agents: ["worker"] }]));
+	await root.step("await");
+	expect(toolCard(root, "await_agents")).toMatchObject({ data: { result: { statuses: [{ state: "idle", output: "real un-aborted response" }] } } });
+});
 });

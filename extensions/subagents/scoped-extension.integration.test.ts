@@ -334,11 +334,17 @@ function makePi(options: { activeTools?: string[]; registeredTools?: any[] } = {
 		getAllTools: vi.fn(() => registeredTools),
 		setActiveTools: vi.fn((names: string[]) => { activeTools = names; }),
 		getThinkingLevel: vi.fn(() => "medium"),
-		sendMessage: vi.fn(),
+		sendMessage: vi.fn((message: { customType: string; details?: unknown }) => committedEntries.push({ type: "custom_message", ...message })),
 		appendEntry: vi.fn(),
 	};
 	return { pi, tools, handlers, commands };
 }
+
+/** The parent session's committed branch. */
+const committedEntries: (
+	| { type: "custom_message"; customType: string; details?: unknown }
+	| { type: "message"; message: { role: "toolResult"; toolName: string; isError: boolean; details?: unknown } }
+)[] = [];
 
 function makeContext(parentSessionFile: string, overrides: Record<string, JsonValue> = {}) {
 	return {
@@ -359,6 +365,7 @@ function makeContext(parentSessionFile: string, overrides: Record<string, JsonVa
 			getSessionId: () => "root-session",
 			getSessionName: () => "parent",
 			getLeafId: (): string | null => null,
+			getBranch: () => committedEntries,
 		},
 		modelRegistry: {
 			getAvailable: vi.fn(() => [{
@@ -410,6 +417,7 @@ async function startSession(handlers: Map<string, (...args: any[]) => any>, ctx:
 let tmpRoot: string | undefined;
 
 beforeEach(() => {
+	committedEntries.length = 0;
 	randomness.nextId = 0;
 	managed.reset();
 	tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "scoped-subagents-test-"));
@@ -504,6 +512,25 @@ describe("child-scoped extension routing", () => {
 		);
 	});
 
+	it("records the sibling a child's uplink send reached as the card's target", async () => {
+		const uplink = makePort("worker");
+		const scope: SubagentScope = {
+			kind: "child",
+			registry,
+			path: ["worker"],
+			identity: { id: "worker", task: "work", channels: ["scout", "parent"] },
+			uplink,
+			services: makeServices(),
+		};
+		const { pi, tools, handlers } = makePi();
+		await createSubagentsExtension(scope)(pi as any);
+		const ctx = makeContext(path.join(tmpRoot!, "parent.jsonl"));
+		await startSession(handlers, ctx);
+
+		const result = await execute(tools, "send", { to: "scout", message: "hello", expectResponse: false }, ctx);
+		expect(result.details.subagent.data.parameters).toEqual({ to: "scout", target: ["scout"], message: "hello", expectResponse: false });
+	});
+
 	it("removes model-only tools from a child before its model request", async () => {
 		const uplink = makePort("child");
 		const { pi, handlers } = makePi({
@@ -581,10 +608,10 @@ describe("child-scoped extension routing", () => {
 				customType: "subagents",
 				content: expect.stringContaining("continue"),
 				display: true,
-				details: { subagent: [expect.objectContaining({
+				details: expect.objectContaining({ subagent: [expect.objectContaining({
 					kind: "message_received",
 					data: expect.objectContaining({ parameters: { from: [], message: "continue", expectResponse: false } }),
-				})] },
+				})] }),
 			}),
 			{ triggerTurn: true },
 		);
@@ -1282,6 +1309,7 @@ describe("await_agents", () => {
 
 		const result = await waiting.result;
 		expect(result.content[0].text).not.toContain("scout answer");
+		committedEntries.push({ type: "message", message: { role: "toolResult", toolName: "await_agents", isError: false, details: result.details } });
 		await root.handlers.get("turn_end")?.({ type: "turn_end", outcome: "continue" }, root.ctx);
 		expect(noticesContaining(root.pi, "scout answer")).toHaveLength(1);
 		expect(noticesContaining(root.pi, "worker answer")).toEqual([]);

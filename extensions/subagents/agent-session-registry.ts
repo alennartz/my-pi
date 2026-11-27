@@ -210,6 +210,7 @@ export class AgentSessionRegistry {
 	private readonly removing = new Set<string>();
 	private readonly listeners = new Set<(event: RegistryEvent) => void>();
 	private readonly removals = new Map<string, Promise<void>>();
+	private readonly subtreeWaiters = new Set<{ path: AgentPath; resolve: () => void }>();
 	/** Session files a pending batch resumes. Two runtimes never share one file. */
 	private readonly resumingFiles = new Set<string>();
 	private readonly services: SubagentTreeServices;
@@ -498,16 +499,11 @@ export class AgentSessionRegistry {
 		const exact = this.removals.get(pathKey);
 		if (exact) {return exact;}
 		if (!this.nodes.has(pathKey) && !this.reservations.has(pathKey)) {return Promise.resolve();}
-		for (const [removingKey, operation] of this.removals) {
-			const removingPath = JSON.parse(removingKey) as AgentPath;
-			if (!isPrefix(removingPath, path)) {continue;}
-			// A managed child runtime invokes its own session_shutdown hook while
-			// the ancestor registry removal is disposing that node. Its manager may
-			// ask to remove an already-covered descendant; waiting on the ancestor
-			// operation here would deadlock runtime.dispose(). The ancestor operation
-			// already owns that descendant's disposal, so this nested request is done.
-			if (this.nodes.get(removingKey)?.disposing) {return Promise.resolve();}
-			return operation;
+		for (const removingKey of this.removals.keys()) {
+			// An ancestor removal already owns this descendant's disposal. Wait for
+			// this subtree only, not the whole ancestor: disposing the ancestor
+			// shuts down the manager whose mutation queue may hold this request.
+			if (isPrefix(JSON.parse(removingKey) as AgentPath, path)) {return this.subtreeGone(path);}
 		}
 
 		const operation = this.removeSubtree(path, pathKey);
@@ -609,6 +605,7 @@ export class AgentSessionRegistry {
 		if (!reservation) {return;}
 		this.reservations.delete(pathKey);
 		reservation.resolve();
+		this.releaseSubtreeWaiters();
 		const waiters = this.liveWaiters.get(pathKey);
 		if (!waiters) {return;}
 		this.liveWaiters.delete(pathKey);
@@ -648,10 +645,38 @@ export class AgentSessionRegistry {
 				this.usageBaselines.delete(nodeKey);
 				this.stagedSnapshots.delete(nodeKey);
 				this.emit({ type: "node_removed", node: node.snapshot });
+				this.releaseSubtreeWaiters();
 			}
 		} finally {
 			for (const nodeKey of marked) {this.removing.delete(nodeKey);}
 			this.removals.delete(pathKey);
+			this.releaseSubtreeWaiters();
+		}
+	}
+
+	/** Resolves once no live or reserved path remains at or below `path`. */
+	private subtreeGone(path: AgentPath): Promise<void> {
+		if (!this.hasSubtree(path)) {return Promise.resolve();}
+		return new Promise((resolve) => {
+			this.subtreeWaiters.add({ path: [...path], resolve });
+		});
+	}
+
+	private hasSubtree(path: AgentPath): boolean {
+		for (const node of this.nodes.values()) {
+			if (isPrefix(path, node.snapshot.path)) {return true;}
+		}
+		for (const reservation of this.reservations.values()) {
+			if (isPrefix(path, reservation.path)) {return true;}
+		}
+		return false;
+	}
+
+	private releaseSubtreeWaiters(): void {
+		for (const waiter of this.subtreeWaiters) {
+			if (this.hasSubtree(waiter.path)) {continue;}
+			this.subtreeWaiters.delete(waiter);
+			waiter.resolve();
 		}
 	}
 

@@ -7,6 +7,7 @@ import type {
 	SubagentTeardownResult,
 } from "@pimote/sdk/subagents";
 import type { AgentPath } from "./agent-path.js";
+import type { ChildRef, Settlement } from "./settlements.js";
 
 /** Guarded lifecycle operations one manager performs on its immediate children. */
 export interface SubagentManagerControl {
@@ -14,6 +15,7 @@ export interface SubagentManagerControl {
 	stop(request: SubagentStopRequest): Promise<void>;
 	setHold(request: SubagentHoldRequest): Promise<void>;
 	resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult>;
+	pendingAnswers(ref: ChildRef): readonly Settlement[];
 }
 
 /**
@@ -49,6 +51,11 @@ export class SubagentControlPort {
 		const owner = this.managers.get(pathKey(request.parentPath));
 		if (!owner) {return Promise.reject(new Error(`No live owner at ${JSON.stringify(request.parentPath)}`));}
 		return owner.resurrect(request);
+	}
+
+	/** Read a teardown preview from the child's immediate owner, without taking a claim. */
+	pendingAnswers(ref: ChildRef): readonly Settlement[] {
+		return this.managers.get(pathKey(ref.path.slice(0, -1)))?.pendingAnswers(ref) ?? [];
 	}
 
 	clear(): void {

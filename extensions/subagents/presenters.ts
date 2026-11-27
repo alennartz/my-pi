@@ -485,7 +485,7 @@ function cardData(kind: SubagentOperationKind, data: Readonly<Record<string, unk
 		case "send":
 			return {
 				operation: "send",
-				parameters: { to: text(parameters.to), message: text(parameters.message), expectResponse: flag(parameters.expectResponse) },
+				parameters: compact({ to: text(parameters.to), target: optional(parameters.target, agentPath), message: text(parameters.message), expectResponse: flag(parameters.expectResponse) }),
 				result: compact({ phase: oneOf(SEND_PHASES)(result.phase), response: optional(result.response, text), error }),
 			};
 		case "message_received":

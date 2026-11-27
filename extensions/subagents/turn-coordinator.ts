@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { SubagentAgentStatus } from "@pimote/sdk/subagents";
 import type { AgentPath } from "./agent-path.js";
 import type { AgentSessionRegistry } from "./agent-session-registry.js";
@@ -13,6 +13,8 @@ import { SettlementLedger } from "./settlements.js";
 import type { ChildRef, HoldRecord, LiveChild, Settlement } from "./settlements.js";
 import { createStopSequenceManager } from "./stop-sequences.js";
 import type { StopSequenceManager } from "./stop-sequences.js";
+import { randomUUID } from "node:crypto";
+import { settlementReceipts } from "./settlement-receipts.js";
 import { truncateForModel, truncateMiddle } from "../../lib/truncate.ts";
 
 /** What `await_agents` reports. */
@@ -21,6 +23,7 @@ export type AwaitReport = Readonly<{
 	statuses: readonly SubagentAgentStatus[];
 	interrupted: boolean;
 	error?: string;
+	receipts?: readonly string[];
 }>;
 
 /**
@@ -34,14 +37,27 @@ export class TurnCoordinator {
 	private readonly ledger: SettlementLedger;
 	private interruptWait: (() => void) | undefined;
 	private bound: { manager: SubagentManager; registry: AgentSessionRegistry } | undefined;
+	/** Notices sent to pi whose message the parent's session has not committed yet, by delivery id. */
+	private readonly inFlight = new Map<string, { notices: readonly Notice[]; mode: NoticeDelivery }>();
+	private awaitingReceipt = false;
+	private restoredReceipts?: ReadonlySet<string>;
 
-	constructor(private readonly pi: ExtensionAPI) {
+	/**
+	 * `parent.idle` reports whether pi can start a turn now, without queueing
+	 * behind a run it is preparing. `parent.entries` reads the parent's
+	 * session entries, where committed notices appear.
+	 */
+	constructor(
+		private readonly pi: ExtensionAPI,
+		private readonly parent: Readonly<{ idle(): boolean; entries(): readonly SessionEntry[] }>,
+	) {
 		this.queue = new NotificationQueue((notices, mode) => this.deliver(notices, mode));
 		this.stopSequences = typeof pi.on === "function"
 			? createStopSequenceManager(pi)
 			: { add() {}, remove() {}, addOnce() {}, clear() {} };
 		this.ledger = new SettlementLedger({
-			notify: (ref, settlement, replaced) => this.notifyCompletion(ref, settlement, replaced),
+			offer: (ref, settlement, replaced, ids) => this.offerCompletion(ref, settlement, replaced, ids),
+			withdraw: (ref) => this.queue.take((notice) => notice.settles !== undefined && sameRef(notice.settles.ref, ref)).length > 0,
 			persistHold: (ref, hold) => this.manager().persistHold(ref, hold),
 			publishHold: (ref, hold) => this.publishHold(ref, hold),
 			live: (ref) => this.live(ref),
@@ -67,19 +83,26 @@ export class TurnCoordinator {
 		const state = outcome.aborted ? "stopped" : status.state === "errored" ? "errored" : status.state === "dead" ? "dead" : "idle";
 		this.ledger.settled(ref, {
 			state,
-			...(state !== "stopped" && status.lastOutput !== undefined ? { output: status.lastOutput } : undefined),
+			...(state === "idle" && status.lastOutput !== undefined ? { output: status.lastOutput } : undefined),
 			...(state === "errored" || state === "dead" ? { error: status.lastError || "Agent run ended with an error" } : undefined),
 			...(manager.getSessionId(agentId) !== undefined ? { sessionId: manager.getSessionId(agentId) } : undefined),
 			usage: status.usage,
 		});
 	}
 
+	pendingAnswers(ref: ChildRef): readonly Settlement[] {
+		this.reconcile();
+		return this.ledger.pendingAnswers(ref);
+	}
+
 	childRemoved(ref: ChildRef): readonly Settlement[] {
+		this.reconcile();
 		return this.ledger.removed(ref);
 	}
 
 	childRestored(ref: ChildRef, hold: HoldRecord): void {
-		this.ledger.restore(ref, hold);
+		this.restoredReceipts ??= settlementReceipts(this.parent.entries()).settlements;
+		this.ledger.restore(ref, hold, this.restoredReceipts);
 	}
 
 	setHold(ref: ChildRef, held: boolean): void {
@@ -96,16 +119,40 @@ export class TurnCoordinator {
 	// Parent run boundaries.
 
 	runStarted(): void {
+		this.reconcile();
 		this.queue.runStarted();
 	}
 
 	/** A turn boundary inside a parent run. True when notices joined the run. */
 	boundary(): boolean {
+		this.finishBatch();
 		return this.queue.boundary();
 	}
 
 	runSettled(aborted: boolean): void {
+		// Pi commits every context notice of a run before it settles. One that
+		// did not commit was dropped; it goes back to the front of the queue.
+		this.finishBatch();
+		const lost = [...this.inFlight].filter(([, delivery]) => delivery.mode !== "trigger");
+		for (const [id] of lost) {this.inFlight.delete(id);}
+		this.queue.requeue(lost.flatMap(([, delivery]) => delivery.notices));
 		this.queue.runSettled(aborted);
+	}
+
+	/** Confirm receipts after pi commits the entries. `message_end` can precede the append. */
+	private reconcile(): void {
+		if (this.inFlight.size === 0 && !this.awaitingReceipt) {return;}
+		const receipts = settlementReceipts(this.parent.entries());
+		for (const id of this.inFlight.keys()) {
+			if (receipts.notices.has(id)) {this.inFlight.delete(id);}
+		}
+		this.ledger.delivered(receipts.settlements);
+	}
+
+	private finishBatch(): void {
+		this.reconcile();
+		this.ledger.releaseWaitClaims();
+		this.awaitingReceipt = false;
 	}
 
 	// Waits.
@@ -138,13 +185,6 @@ export class TurnCoordinator {
 			const ref = manager.getAgentRef(id);
 			return ref ? [ref] : [];
 		});
-		// A queued completion of a requested child becomes part of this wait's
-		// result. It goes back to the queue unless the result delivers it.
-		const taken = this.queue.take((notice) => {
-			const source = notice.ref;
-			return notice.kind === "completion" && source !== undefined && refs.some((ref) => sameRef(ref, source));
-		});
-		let delivered: readonly ChildRef[] = [];
 		const wait = this.ledger.wait(refs);
 		this.queue.setWaiting(true);
 		const stopProgress = wait.onChange(() => onProgress(wait.statuses()));
@@ -154,7 +194,6 @@ export class TurnCoordinator {
 		this.interruptWait = () => wait.interrupt();
 		try {
 			const result = await wait.result;
-			delivered = result.delivered;
 			const lines = result.statuses.map((status) => serializeAwaitStatus({
 				id: status.path.at(-1) ?? "",
 				state: status.state,
@@ -164,16 +203,17 @@ export class TurnCoordinator {
 				...(status.replacedHeldResult ? { replaced: true } : undefined),
 			}));
 			if (result.interrupted) {lines.unshift("Wait interrupted: a message reached you. It follows this result.");}
+			this.awaitingReceipt ||= result.receipts.length > 0;
+			const text = lines.join("\n");
+			const bounded = await truncateForModel(text);
+			if (signal?.aborted) {throw new Error("Wait cancelled.");}
 			return {
-				text: (await truncateForModel(lines.join("\n"))).text,
+				text: bounded.truncated && !bounded.fullOutputPath ? text : bounded.text,
 				statuses: result.statuses,
 				interrupted: result.interrupted,
+				receipts: result.receipts,
 			};
 		} finally {
-			for (const notice of taken) {
-				const source = notice.ref;
-				if (!source || !delivered.some((ref) => sameRef(ref, source))) {this.queue.queue(notice);}
-			}
 			this.interruptWait = undefined;
 			signal?.removeEventListener("abort", onAbort);
 			stopProgress();
@@ -214,12 +254,6 @@ export class TurnCoordinator {
 		ctx.ui.notify(message, "warning");
 	}
 
-	clear(): void {
-		this.ledger.clear();
-		this.queue.clear();
-		this.stopSequences.clear();
-	}
-
 	private manager(): SubagentManager {
 		if (!this.bound) {throw new Error("Turn coordinator is not bound to a manager");}
 		return this.bound.manager;
@@ -235,7 +269,7 @@ export class TurnCoordinator {
 			state: operational.state,
 			settlement: {
 				state: operational.state === "errored" ? "errored" : operational.state === "dead" ? "dead" : "idle",
-				...(operational.lastOutput !== undefined ? { output: operational.lastOutput } : undefined),
+				...(!failed && operational.lastOutput !== undefined ? { output: operational.lastOutput } : undefined),
 				...(failed ? { error: operational.lastError || "Agent run ended with an error" } : undefined),
 				sessionId: snapshot.sessionId,
 				usage: operational.usage,
@@ -247,7 +281,7 @@ export class TurnCoordinator {
 		const registry = this.bound?.registry;
 		const snapshot = registry?.getSnapshot(ref.path);
 		if (!registry || !snapshot || snapshot.incarnation !== ref.incarnation) {return;}
-		const heldSettlement = hold.held ? hold.pending.at(-1)?.state : undefined;
+		const heldSettlement = hold.held ? hold.pending.at(-1)?.settlement.state : undefined;
 		const { held: _held, heldSettlement: _settlement, ...operational } = snapshot.operational;
 		registry.updateOperational(ref.path, {
 			...operational,
@@ -256,7 +290,7 @@ export class TurnCoordinator {
 		});
 	}
 
-	private notifyCompletion(ref: ChildRef, settlement: Settlement, replaced: boolean): void {
+	private offerCompletion(ref: ChildRef, settlement: Settlement, replaced: boolean, ids: readonly string[]): void {
 		const manager = this.manager();
 		const id = ref.path.at(-1) ?? "";
 		const state = settlement.state === "stopped" ? "idle" : settlement.state;
@@ -268,22 +302,45 @@ export class TurnCoordinator {
 			sessionId: settlement.sessionId,
 			...(replaced ? { replaced: true } : undefined),
 		});
-		if (manager.allDone()) {
+		if (manager.allDone() && !manager.getAgentStatuses().some((status) => {
+			const child = manager.getAgentRef(status.id);
+			return child !== undefined && this.ledger.hold(child).held;
+		})) {
 			const total = manager.getAgentStatuses().length;
 			content += `\n\nAll ${total} agent${total === 1 ? "" : "s"} have settled. Use send to ask questions or continue their work. When you're done with them, call teardown to clean up.`;
 		}
-		this.queue.queue({ kind: "completion", ref, content, card: completionCard(ref.path, settlement, replaced) });
+		this.queue.queue({ kind: "completion", settles: { ref, ids }, content, card: completionCard(ref.path, settlement, replaced) });
 	}
 
-	private deliver(notices: readonly Notice[], mode: NoticeDelivery): void {
+	private deliver(notices: readonly Notice[], requested: NoticeDelivery): void {
+		// A turn can start only while pi is idle. Otherwise the notice joins the
+		// run pi is starting or running, never its steering queue.
+		const mode = requested === "trigger" && !this.parent.idle() ? "context" : requested;
+		const deliveryId = randomUUID();
+		this.inFlight.set(deliveryId, { notices, mode });
 		const cards = notices.flatMap((notice) => notice.card ? [notice.card] : []);
+		const ids = notices.flatMap((notice) => notice.settles?.ids ?? []);
+		const content = notices.map((notice) => notice.content).join("\n");
 		const message = {
 			customType: "subagents",
-			content: truncateMiddle(notices.map((notice) => notice.content).join("\n")).content,
+			content: ids.length > 0 ? content : truncateMiddle(content).content,
 			display: true,
-			details: messageCardDetails(cards),
+			details: { ...messageCardDetails(cards), subagentNoticeId: deliveryId, settlementReceipts: ids },
 		};
 		this.pi.sendMessage(message, mode === "trigger" ? { triggerTurn: true } : { triggerTurn: false });
+		if (mode === "park") {this.reconcile();}
+	}
+
+	clear(): void {
+		try {
+			this.reconcile();
+		} catch (error) {
+			console.error("[subagents] Reading final settlement receipts failed:", error);
+		}
+		this.ledger.clear();
+		this.queue.clear();
+		this.inFlight.clear();
+		this.stopSequences.clear();
 	}
 }
 

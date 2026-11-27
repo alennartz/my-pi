@@ -67,13 +67,14 @@ export function serializeAgentComplete(agent: AgentCompleteData): string {
 	const sessionAttr = agent.sessionId ? ` session_id="${agent.sessionId}"` : "";
 	const hint = agent.sessionId ? `<hint>${RESURRECT_HINT_SINGLE}</hint>\n` : "";
 	const replaced = agent.replaced ? `<note>${REPLACED_HINT}</note>\n` : "";
+	const answer = agent.output !== undefined ? `\n${agent.output}\n` : "";
 	if (agent.status === "errored") {
 		const errorContent = agent.error ? `\n<error>${agent.error}</error>\n` : "";
-		return `<agent_idle id="${agent.id}" status="errored"${sessionAttr}>${errorContent}${replaced}<hint>${RETRY_HINT}</hint>\n</agent_idle>`;
+		return `<agent_idle id="${agent.id}" status="errored"${sessionAttr}>${answer}${errorContent}${replaced}<hint>${RETRY_HINT}</hint>\n</agent_idle>`;
 	}
 	if (agent.status === "dead") {
 		const errorContent = agent.error ? `\n<error>${agent.error}</error>\n` : "";
-		return `<agent_idle id="${agent.id}" status="dead"${sessionAttr}>${errorContent}${replaced}${hint}</agent_idle>`;
+		return `<agent_idle id="${agent.id}" status="dead"${sessionAttr}>${answer}${errorContent}${replaced}${hint}</agent_idle>`;
 	}
 	const output = agent.output ?? "(no output)";
 	return `<agent_idle id="${agent.id}" status="idle"${sessionAttr}>\n${output}\n${replaced}${hint}</agent_idle>`;

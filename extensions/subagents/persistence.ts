@@ -1,7 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { AgentSpec } from "./agents.js";
-import type { HoldRecord } from "./settlements.js";
+import { asRecord } from "./narrow.js";
+import type { HoldRecord, PendingSettlement, Settlement } from "./settlements.js";
 
 export interface PersistencePaths {
 	rootDir: string;
@@ -254,7 +256,7 @@ export function loadPersistedAgents(parentSessionFile: string): {
 		} else if (event.type === "agent_hold") {
 			const current = liveAgents.get(event.id);
 			if (!current) {continue;}
-			liveAgents.set(event.id, { ...current, hold: { held: event.held === true, pending: Array.isArray(event.pending) ? event.pending : [], replaced: event.replaced === true } });
+			liveAgents.set(event.id, { ...current, hold: { held: event.held === true, pending: readPending(event.pending, event.replaced === true), replaced: event.replaced === true } });
 		} else if (event.type === "agent_removed") {
 			const current = liveAgents.get(event.id);
 			if (!current) {continue;}
@@ -268,4 +270,25 @@ export function loadPersistedAgents(parentSessionFile: string): {
 		paths,
 		agents: Array.from(liveAgents.values()),
 	};
+}
+
+/** Earlier hold records contain bare settlements. Assign them ids on first restore. */
+function readPending(value: unknown, replaced: boolean): PendingSettlement[] {
+	if (!Array.isArray(value)) {return [];}
+	let unmarked = replaced;
+	return value.flatMap((item: unknown) => {
+		const entry = asRecord(item);
+		const settlement = asRecord(entry?.settlement) ?? entry;
+		const state = settlement?.state;
+		if (state !== "idle" && state !== "stopped" && state !== "errored" && state !== "dead") {return [];}
+		const identified = typeof entry?.id === "string";
+		const replaces = entry?.replaces === true || (!identified && unmarked && state !== "stopped");
+		if (replaces) {unmarked = false;}
+		return [{
+			id: identified ? entry.id as string : randomUUID(),
+			run: typeof entry?.run === "number" ? entry.run : 0,
+			settlement: settlement as Settlement,
+			...(replaces ? { replaces: true as const } : undefined),
+		}];
+	});
 }
