@@ -23,9 +23,11 @@ Each manager owns one settlement ledger, keyed by path and incarnation. Every ch
 
 Waits key on incarnations, which are UUIDs, so a later child at the same path cannot satisfy a wait for a removed one.
 
-The ledger saves each pending settlement with a stable receipt ID before it offers the answer. An await result or notice names only IDs represented in its model-facing text. The ledger removes an offer when the owning parent's selected transcript branch contains those IDs. On restore, the same check detects an answer committed before ledger cleanup. IDs survive retries, and each child's pending answers and replacement notes keep their order.
+The ledger saves each pending settlement with a stable receipt ID before it offers the answer. An await result, teardown result, or notice names only IDs represented in its model-facing text. It also records a SHA-256 digest of that text. The ledger acknowledges those IDs only if the owning parent's selected transcript branch contains a receipt with matching text. The check rejects a result whose text another extension replaces without changing its details. The same check on restore detects a result that committed before ledger cleanup. IDs survive retries, and each child's pending answers and replacement notes keep their order.
 
-Rejected: acknowledge a result when the extension calls `sendMessage` or returns from a tool. Pi can defer the append, so a process exit in between loses the answer. Rejected: acknowledge only in the lifecycle log. A process exit after the transcript append but before the log write would then duplicate the answer. An ancestor's teardown report previews nested answers without acknowledging them to their original parents.
+The removal record retains the direct child's outstanding settlements. If a teardown notice or result fails to commit, the ledger retries the answer as a notice. An ancestor's teardown report previews nested answers without acknowledging them to their original parents.
+
+Rejected: acknowledge a result when the extension calls `sendMessage` or returns from a tool. Pi can defer the append, so a process exit in between loses the answer. Rejected: acknowledge only in the lifecycle log. A process exit after the transcript append but before the log write would then duplicate the answer.
 
 Rejected: remove the hold entirely and let `await_agents` resolve when children settle. A person who wants to steer a child first would have to stop the parent or race it.
 
