@@ -349,18 +349,23 @@ than files:
   and related tools. Agent definitions and model tiers are documented above.
   Child sessions bind extensions in print mode without a UI context, so
   `ctx.hasUI` is false and Pi supplies no-op UI methods. Subagents do not expose
-  tools with `model-only` exposure; attempted calls are blocked. In Pimote, the
-  root session registers one provider on its EventBus. Pimote presents the
-  hierarchy, semantic events, and borrowed child views through that provider.
-  Nested managers publish through the root provider and do not register their
-  own providers. Received messages use the `message_received` presentation
-  kind. On replay, a legacy `send` custom entry is treated as received only
-  when its `send` result has a `from` path and its data has no `parameters`.
-  A path is an array of non-empty strings. The empty array identifies the root.
-  Older entries without a sender remain sends because their direction is
-  ambiguous. Saved session files are not changed. The TUI dashboard and
-  idle-reap activity response remain available, while subagent panel cards are
-  not used.
+  tools with `model-only` exposure. In Pimote, one provider per root supplies
+  the hierarchy, controls, and views that borrow existing child sessions.
+  Opening, closing, or reconnecting a view does not affect `await_agents`.
+  Use the child's Hold control to keep its result from the parent. The hold
+  survives a restart. Release it to deliver the result. Messages from the child
+  still reach the parent while the result is held.
+
+  Pending results also survive a restart. Delivery commits when a notice or
+  successful `await_agents` result reaches the parent's transcript branch.
+  Restore keeps each child's result order, not an order across children. A
+  teardown report can preview nested results without delivering them to their
+  original parents.
+
+  Pimote displays cards from native Pi tool calls, results, and custom messages.
+  Live and saved transcripts use the same presenters. The presenters read
+  older saved cards without rewriting session files. The TUI dashboard and
+  idle-reap activity response remain available.
 - `worktree`: use `/worktree` with `create`, `resume`, or `cleanup` arguments.
 - `session-name`: use `set_session_name` with `oldName` set to the current name,
   or `""` when unnamed; names are trimmed, line breaks become spaces, and names
