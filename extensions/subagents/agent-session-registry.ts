@@ -5,10 +5,11 @@ import type { ChildSessionConfig, ChildSessionHooks, ChildSessionRuntimeReplaced
 import type { MessagePort } from "./message-router.js";
 import { createSessionTreeStore } from "./scoped-store.js";
 import type { SessionTreeStore } from "../../lib/session-tree-store.js";
+import { randomUUID } from "node:crypto";
+import type { SubagentSettlementState } from "@pimote/sdk/subagents";
 import { asRecord, stringField } from "./narrow.js";
 import { required } from "../../lib/required.ts";
-import type { SubagentOwnerControlPort } from "./provider.js";
-import type { SemanticFactBus } from "./semantic-bus.js";
+import type { SubagentTreeServices } from "./tree-services.js";
 
 export type NodeOwnership = "external" | "registry";
 export type AgentCostBreakdown = Readonly<{
@@ -89,6 +90,10 @@ export type AgentOperationalSnapshot = Readonly<{
 	waitingFor: readonly string[];
 	/** Root-relative targets captured when each pending correlation began. */
 	waitingForPaths?: readonly AgentPath[];
+	/** The user holds this child's settled results back from its parent. */
+	held?: boolean;
+	/** Set while the hold keeps a settled result from the parent. */
+	heldSettlement?: SubagentSettlementState;
 }>;
 export type AgentNodeSnapshot = Readonly<{
 	path: AgentPath;
@@ -150,10 +155,8 @@ export type CreateAgentNodeRequest = {
 export type AgentSessionRegistryOptions = {
 	root: AgentNodeSnapshot & { path: []; ownership: "external" };
 	dependencies: ManagedChildSessionDependencies;
-	/** Root-scoped owner registry propagated into every child scope. */
-	ownerControl?: SubagentOwnerControlPort;
-	/** Root-scoped semantic fact bus propagated into every child scope. */
-	semanticEvents?: SemanticFactBus;
+	/** Root-scoped services propagated into every child scope. */
+	services: SubagentTreeServices;
 	store?: SessionTreeStore;
 	createSession?: typeof createManagedChildSession;
 };
@@ -207,9 +210,9 @@ export class AgentSessionRegistry {
 	private readonly removing = new Set<string>();
 	private readonly listeners = new Set<(event: RegistryEvent) => void>();
 	private readonly removals = new Map<string, Promise<void>>();
-	private readonly incarnationByPath = new Map<string, number>();
-	private readonly ownerControl?: SubagentOwnerControlPort;
-	private readonly semanticEvents?: SemanticFactBus;
+	/** Session files a pending batch resumes. Two runtimes never share one file. */
+	private readonly resumingFiles = new Set<string>();
+	private readonly services: SubagentTreeServices;
 	private disposed = false;
 	private disposal?: Promise<void>;
 
@@ -227,8 +230,7 @@ export class AgentSessionRegistry {
 		this.dependencies = options.dependencies;
 		this.createSession = options.createSession ?? createManagedChildSession;
 		this.scopedStore = options.store ?? createSessionTreeStore();
-		this.ownerControl = options.ownerControl;
-		this.semanticEvents = options.semanticEvents;
+		this.services = options.services;
 	}
 
 	getScopedStore(): SessionTreeStore {
@@ -325,10 +327,20 @@ export class AgentSessionRegistry {
 			}
 			paths.push(path);
 		}
+		const resumeFiles = requests.flatMap((request) => request.session.target.kind === "resume" ? [request.session.target.sessionFile] : []);
+		for (const sessionFile of resumeFiles) {
+			const holder = this.holderOf(sessionFile);
+			if (holder) {throw new Error(`Session file is held by live agent ${holder.join("/")}; tear that agent down first.`);}
+			if (this.resumingFiles.has(sessionFile) || resumeFiles.indexOf(sessionFile) !== resumeFiles.lastIndexOf(sessionFile)) {
+				throw new Error("Session file is already being resumed.");
+			}
+		}
 
-		// Reserve every path synchronously before the first await. A removal that
-		// starts after this point waits for these reservations and the commit check
-		// below rejects a batch that races with subtree teardown.
+		// Reserve every path and resumed file synchronously before the first
+		// await. A removal that starts after this point waits for these
+		// reservations, and the commit check below rejects a batch that races
+		// with subtree teardown.
+		for (const sessionFile of resumeFiles) {this.resumingFiles.add(sessionFile);}
 		for (const path of paths) {this.reserve(path);}
 		const staged = new Map<string, InternalNode>();
 		const created: InternalNode[] = [];
@@ -342,7 +354,7 @@ export class AgentSessionRegistry {
 					parentPath: [...parent],
 					localId: request.localId,
 					ownership: "registry" as const,
-					incarnation: this.allocateIncarnation(path),
+					incarnation: randomUUID(),
 					sessionId: "",
 					cwd: request.session.target.kind === "resume" ? "" : request.session.target.cwd,
 					task: request.task,
@@ -394,8 +406,7 @@ export class AgentSessionRegistry {
 						path,
 						identity: { id: request.localId, task: request.task, channels: [...request.channels] },
 						uplink: request.session.uplink,
-						ownerControl: this.ownerControl,
-						semanticEvents: this.semanticEvents,
+						services: this.services,
 					},
 				};
 				const managed = await this.createSession(config, this.dependencies, decoratedHooks);
@@ -443,14 +454,14 @@ export class AgentSessionRegistry {
 			}
 			return created.map((node) => this.publicNode(node));
 		} catch (error) {
-			for (const node of created) {
-				try { await this.disposeNode(node); } catch { /* preserve original construction failure */ }
-			}
+			for (const node of created) {await this.disposeNode(node);}
 			for (const path of paths) {
 				this.stagedSnapshots.delete(key(path));
 				this.releaseReservation(key(path));
 			}
 			throw error;
+		} finally {
+			for (const sessionFile of resumeFiles) {this.resumingFiles.delete(sessionFile);}
 		}
 	}
 
@@ -523,11 +534,12 @@ export class AgentSessionRegistry {
 		return this.disposal;
 	}
 
-	private allocateIncarnation(path: AgentPath): string {
-		const pathKey = key(path);
-		const next = (this.incarnationByPath.get(pathKey) ?? 0) + 1;
-		this.incarnationByPath.set(pathKey, next);
-		return `incarnation-${next}`;
+	/** The live child whose session file this is, if any. */
+	holderOf(sessionFile: string): AgentPath | undefined {
+		for (const node of this.nodes.values()) {
+			if (node.snapshot.sessionFile === sessionFile) {return node.snapshot.path;}
+		}
+		return undefined;
 	}
 
 	private applyRuntimeReplacement(pathKey: string, request: CreateAgentNodeRequest, replacement: ChildSessionRuntimeReplaced): void {
@@ -646,7 +658,11 @@ export class AgentSessionRegistry {
 	private disposeNode(node: InternalNode): Promise<void> {
 		if (!node.disposing) {
 			node.disposing = (async () => {
-				try { await node.session.dispose(); } catch { /* removal remains best effort */ }
+				try {
+					await node.session.dispose();
+				} catch (error) {
+					console.error(`[subagents] Disposing ${JSON.stringify(node.snapshot.path)} failed:`, error);
+				}
 			})();
 		}
 		return node.disposing;
@@ -661,7 +677,11 @@ export class AgentSessionRegistry {
 
 	private emit(event: RegistryEvent): void {
 		for (const listener of this.listeners) {
-			try { listener(event); } catch { /* observers cannot interrupt lifecycle */ }
+			try {
+				listener(event);
+			} catch (error) {
+				console.error("[subagents] Registry listener failed:", error);
+			}
 		}
 	}
 }

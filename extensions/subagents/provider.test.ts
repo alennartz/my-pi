@@ -1,489 +1,195 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import type {
-  AgentNodeSnapshot,
-  AgentSessionRegistry,
-  AgentRegistryNode,
-  RegistryEvent,
-  RegisteredAgentNode,
-} from "./agent-session-registry.js";
+import type { SubagentLeaseEvent, SubagentPresenters, SubagentTopologyEvent } from "@pimote/sdk/subagents";
+import type { AgentNodeSnapshot, AgentOperationalSnapshot, AgentRegistryNode, AgentSessionRegistry, RegistryEvent, RegisteredAgentNode } from "./agent-session-registry.js";
 import type { AgentPath } from "./agent-path.js";
 import type { ManagedChildSession } from "./managed-child-session.js";
-import { createSubagentLifecycleReader } from "./lifecycle.js";
-import { createSubagentProvider } from './provider.js';
-import type { ReplayResult, SubagentEvent, SubagentLeaseEvent, SubagentOwnerControlPort, SubagentSemanticFact, SubagentProviderOptions } from './provider.js';
+import { createSubagentProvider } from "./provider.js";
 
-const workerPath: AgentPath = ["worker"];
-const scoutPath: AgentPath = ["worker", "scout"];
-const workerIncarnation = "incarnation-worker";
-const scoutIncarnation = "incarnation-scout";
+const operational: AgentOperationalSnapshot = {
+	state: "idle",
+	usage: { input: 10, output: 4, cacheRead: 0, cacheWrite: 0, cost: 0.01, turns: 1 },
+	lastTurnInput: 200,
+	contextWindow: 800,
+	hasSubgroup: false,
+	pendingCorrelations: [],
+	waitingFor: [],
+};
 
-function samePath(left: AgentPath, right: AgentPath): boolean {
-  return (
-    left.length === right.length &&
-    left.every((part, index) => part === right[index])
-  );
+function child(path: AgentPath, sessionId: string, incarnation: string, patch: Partial<AgentOperationalSnapshot> = {}): RegisteredAgentNode {
+	const snapshot: AgentNodeSnapshot = {
+		path,
+		parentPath: path.slice(0, -1),
+		localId: path.at(-1) ?? null,
+		ownership: "registry",
+		incarnation,
+		sessionId,
+		cwd: "/work",
+		task: `task of ${path.join("/")}`,
+		channels: ["parent"],
+		operational: { ...operational, ...patch },
+	};
+	const native = { sessionId, dispose: vi.fn(async () => undefined) } as unknown as AgentSession;
+	return { snapshot, session: { session: native, capabilities: { operations: ["prompt"] } } as unknown as ManagedChildSession } as RegisteredAgentNode;
 }
 
-function node(
-  path: AgentPath,
-  sessionId: string,
-  parentPath: AgentPath | null,
-  task: string,
-  sessionFile = `/tmp/${sessionId}.jsonl`,
-): RegisteredAgentNode {
-  const snapshot: AgentNodeSnapshot = {
-    path,
-    parentPath,
-    localId: path.at(-1) ?? null,
-    ownership: "registry",
-    sessionId,
-    sessionFile,
-    cwd: "/tmp",
-    task,
-    channels: ["parent"],
-    operational: {
-      state: "idle",
-      usage: {
-        input: 10,
-        output: 4,
-        cacheRead: 0,
-        cacheWrite: 0,
-        cost: 0.01,
-        turns: 1,
-      },
-      lastTurnInput: 200,
-      contextWindow: 800,
-      hasSubgroup: path.length === 1,
-      pendingCorrelations: [],
-      waitingFor: [],
-    },
-  };
-  const native = {
-    sessionId,
-    sessionFile: snapshot.sessionFile,
-    dispose: vi.fn(async () => undefined),
-  } as unknown as AgentSession;
-  const managed = { session: native } as unknown as ManagedChildSession;
-  return { snapshot, session: managed } as RegisteredAgentNode;
+function fixture() {
+	const nodes: AgentRegistryNode[] = [child(["worker"], "s-worker", "i-worker"), child(["worker", "scout"], "s-scout", "i-scout")];
+	const listeners = new Set<(event: RegistryEvent) => void>();
+	const find = (path: AgentPath) => nodes.find((item) => JSON.stringify(item.snapshot.path) === JSON.stringify(path));
+	const registry = {
+		get: find,
+		getSnapshot: (path: AgentPath) => path.length === 0 ? { cwd: "/root" } : find(path)?.snapshot,
+		listChildren: (parent: AgentPath) => nodes.flatMap((item) => JSON.stringify(item.snapshot.parentPath) === JSON.stringify(parent) ? [item.snapshot] : []),
+		listDescendants: () => nodes.map((item) => item.snapshot),
+		subscribe: (listener: (event: RegistryEvent) => void) => {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		},
+	} as unknown as AgentSessionRegistry;
+	const emit = (event: RegistryEvent) => {
+		for (const listener of listeners) {listener(event);}
+	};
+	const control = {
+		teardown: vi.fn(async (ref: { path: AgentPath; incarnation: string }) => ({ path: ref.path, removed: true })),
+		stop: vi.fn(async () => undefined),
+		setHold: vi.fn(async () => undefined),
+		resurrect: vi.fn(async (request: { parentPath: AgentPath; localId: string }) => ({ path: [...request.parentPath, request.localId] })),
+	};
+	const provider = createSubagentProvider({ registry, control, presenters: {} as SubagentPresenters });
+	const events: SubagentTopologyEvent[] = [];
+	provider.subscribe((event) => events.push(event));
+	return {
+		provider,
+		control,
+		events,
+		update(path: AgentPath, patch: Partial<AgentOperationalSnapshot>) {
+			const index = nodes.findIndex((item) => JSON.stringify(item.snapshot.path) === JSON.stringify(path));
+			const previous = nodes[index].snapshot;
+			nodes[index] = child(path, previous.sessionId, previous.incarnation, { ...previous.operational, ...patch });
+			emit({ type: "node_updated", previous, node: nodes[index].snapshot });
+		},
+		replaceRuntime(path: AgentPath, sessionId: string) {
+			const index = nodes.findIndex((item) => JSON.stringify(item.snapshot.path) === JSON.stringify(path));
+			const previous = nodes[index].snapshot;
+			nodes[index] = child(path, sessionId, previous.incarnation, previous.operational);
+			emit({ type: "runtime_replaced", previous, node: nodes[index].snapshot, oldSessionId: previous.sessionId, newSessionId: sessionId });
+		},
+		remove(path: AgentPath) {
+			for (const item of nodes.filter((candidate) => path.every((part, index) => candidate.snapshot.path[index] === part)).toReversed()) {
+				nodes.splice(nodes.indexOf(item), 1);
+				emit({ type: "node_removed", node: item.snapshot });
+			}
+		},
+	};
 }
 
-function registryFixture(workerSessionFile?: string) {
-  const worker = node(
-    workerPath,
-    "session-worker",
-    [],
-    "Review callback ownership.",
-    workerSessionFile,
-  );
-  const scout = node(
-    scoutPath,
-    "session-scout",
-    workerPath,
-    "Confirm session mutation.",
-  );
-  const rootSnapshot: AgentNodeSnapshot = {
-    path: [],
-    parentPath: null,
-    localId: null,
-    ownership: "external",
-    incarnation: "root",
-    sessionId: "root-session",
-    cwd: "/workspace",
-    channels: [],
-    operational: {
-      state: "idle",
-      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
-      lastTurnInput: 0,
-      hasSubgroup: true,
-      pendingCorrelations: [],
-      waitingFor: [],
-    },
-  };
-  const nodes: AgentRegistryNode[] = [worker, scout];
-  const listeners = new Set<(event: RegistryEvent) => void>();
-  const emit = (event: RegistryEvent) => {
-    for (const listener of listeners) {listener(event);}
-  };
-  const registry = {
-    get: vi.fn((path: AgentPath) =>
-      nodes.find((item) => samePath(item.snapshot.path, path)),
-    ),
-    getSnapshot: vi.fn((path: AgentPath) =>
-      path.length === 0 ? rootSnapshot : nodes.find((item) => samePath(item.snapshot.path, path))?.snapshot,
-    ),
-    listDescendants: vi.fn((parent: AgentPath) =>
-      nodes
-        .values()
-        .filter(
-          (item) =>
-            item.snapshot.path.length > parent.length &&
-            parent.every((part, index) => item.snapshot.path[index] === part),
-        )
-        .map((item) => item.snapshot),
-    ),
-    subscribe: vi.fn((next: (event: RegistryEvent) => void) => {
-      listeners.add(next);
-      return () => listeners.delete(next);
-    }),
-    remove: vi.fn(async (path: AgentPath) => {
-      // The loop splices this array, so it iterates a copy.
-      // oxlint-disable-next-line no-useless-spread
-      for (const item of [...nodes]) {
-        if (path.every((part, index) => item.snapshot.path[index] === part)) {
-          nodes.splice(nodes.indexOf(item), 1);
-          emit({ type: "node_removed", node: item.snapshot });
-        }
-      }
-    }),
-  } as unknown as AgentSessionRegistry;
-  const ownerControl: SubagentOwnerControlPort = {
-    teardown: vi.fn(async (path, incarnation) => {
-      const current = nodes.find((item) => samePath(item.snapshot.path, path));
-      if (!current) {return { path, removed: false, incarnation, reason: "not_found" as const };}
-      await registry.remove(path);
-      return { path, removed: true, incarnation, sessionId: current.snapshot.sessionId, reason: "removed" as const };
-    }),
-    stop: vi.fn(async () => undefined),
-    resurrect: vi.fn(async (request) => ({
-      path: [...request.parentPath, request.localId],
-      sessionId: request.sessionId,
-      incarnation: "resurrected-incarnation",
-    })),
-  };
-  return {
-    registry,
-    ownerControl,
-    emit,
-    worker,
-    scout,
-    replace(path, sessionId) {
-      const index = nodes.findIndex((item) => samePath(item.snapshot.path, path));
-      const previous = nodes[index].snapshot;
-      const next = node(path, sessionId, previous.parentPath, previous.task ?? "");
-      nodes[index] = next;
-      emit({ type: "node_updated", previous, node: next.snapshot });
-      return next;
-    },
-    add(next) {
-      nodes.push(next);
-      emit({ type: "node_added", node: next.snapshot });
-    },
-    unavailable(path) {
-      const index = nodes.findIndex((item) => samePath(item.snapshot.path, path));
-      const previous = nodes[index].snapshot;
-      const snapshot = { ...previous, sessionId: `${previous.sessionId}-unavailable` };
-      const managed = { get session() { throw new Error("runtime unavailable"); } } as unknown as ManagedChildSession;
-      nodes[index] = { snapshot, session: managed } as RegisteredAgentNode;
-      emit({ type: "node_updated", previous, node: snapshot });
-    },
-  };
-}
+describe("subagent provider topology", () => {
+	it("snapshots every live child with identity, usage, context fill, and hold state, not ready before restore", () => {
+		const { provider } = fixture();
+		const snapshot = provider.snapshot();
+		expect(snapshot.ready).toBe(false);
+		expect(snapshot.rootCwd).toBe("/root");
+		expect(snapshot.nodes.map((node) => [node.path, node.incarnation, node.sessionId, node.contextFill, node.held])).toEqual([
+			[["worker"], "i-worker", "s-worker", 25, false],
+			[["worker", "scout"], "i-scout", "s-scout", 25, false],
+		]);
+		expect(snapshot.nodes[0].hasSubgroup).toBe(true);
+	});
 
-function setup(overrides: Partial<SubagentProviderOptions> = {}) {
-  const fixture = registryFixture();
-  const provider = createSubagentProvider({
-    registry: fixture.registry,
-    ownerControl: fixture.ownerControl,
-    ...overrides,
-  });
-  return { provider, fixture };
-}
+	it("turns ready once the root and every tracked restore finished", async () => {
+		const { provider, events } = fixture();
+		let finish!: () => void;
+		provider.trackRestore(new Promise<void>((resolve) => { finish = resolve; }));
+		provider.markRootRestored();
+		expect(provider.snapshot().ready).toBe(false);
+		finish();
+		await vi.waitFor(() => expect(provider.snapshot().ready).toBe(true));
+		expect(events.at(-1)).toMatchObject({ kind: "ready" });
+	});
 
-describe("SubagentProvider snapshot and replay", () => {
-  it("publishes a root-relative snapshot with its provider cursor at the boundary", () => {
-    const { provider } = setup();
-    const snapshot = provider.snapshot();
+	it("numbers events after the snapshot and reports hold changes as node updates", () => {
+		const { provider, events, update } = fixture();
+		const base = provider.snapshot().sequence;
+		update(["worker"], { held: true, heldSettlement: "idle" });
+		update(["worker"], { held: true, heldSettlement: "idle" });
+		expect(events).toEqual([expect.objectContaining({ sequence: base + 1, kind: "node_updated" })]);
+		expect(provider.snapshot().nodes[0]).toMatchObject({ held: true, heldSettlement: "idle" });
+	});
 
-    expect(snapshot.cursor).toEqual({
-      epoch: expect.any(String),
-      sequence: expect.any(Number),
-    });
-    expect(snapshot.nodes.map((node) => node.path)).toEqual(
-      expect.arrayContaining([workerPath, scoutPath]),
-    );
-    expect(snapshot.rootCwd).toBe("/workspace");
-    expect(snapshot.nodes.find((node) => samePath(node.path, workerPath))).toMatchObject({ cwd: "/tmp", contextFill: 25 });
-  });
-
-  it("exposes context fill as an integer percentage within 0–100", () => {
-    const { provider, fixture } = setup();
-    const overfilled = node(["overfilled"], "overfilled-session", [], "Test context fill");
-    fixture.add({
-      ...overfilled,
-      snapshot: { ...overfilled.snapshot, operational: { ...overfilled.snapshot.operational, lastTurnInput: 1600 } },
-    });
-    const value = provider.snapshot().nodes.find((item) => samePath(item.path, ["overfilled"]))?.contextFill;
-    expect(Number.isInteger(value)).toBe(true);
-    expect(value).toBeGreaterThanOrEqual(0);
-    expect(value).toBeLessThanOrEqual(100);
-  });
-
-  it("replays ordered semantic events after an observed cursor", () => {
-    const { provider, fixture } = setup();
-    const boundary = provider.snapshot().cursor;
-    const observed: SubagentEvent[] = [];
-    const unsubscribe = provider.subscribe((event) => observed.push(event));
-    const first = { ...fixture.worker.snapshot, sessionId: "worker-v2" };
-    const second = { ...first, sessionId: "worker-v3" };
-    fixture.emit({ type: "node_updated", previous: fixture.worker.snapshot, node: first });
-    fixture.emit({ type: "node_updated", previous: first, node: second });
-    const replay: ReplayResult = provider.replay(boundary);
-
-    expect(observed).toHaveLength(2);
-    expect(replay.kind).toBe("events");
-    if (replay.kind === "events") {
-      expect(replay.events).toEqual(observed);
-      expect(replay.events[0].cursor.sequence).toBeGreaterThan(boundary.sequence);
-      expect(replay.events[1].cursor.sequence).toBeGreaterThan(replay.events[0].cursor.sequence);
-    }
-    unsubscribe();
-  });
-
-  it("does not replay legacy semantic lifecycle facts without a presentation source", () => {
-    const listeners = new Set<(fact: SubagentSemanticFact) => void>();
-    const { provider } = setup({
-      semanticEvents: { subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
-    });
-    const boundary = provider.snapshot().cursor;
-    const fact: SubagentSemanticFact = {
-      eventId: "async-completion", path: scoutPath, kind: "completion", relatedPiEvents: [],
-      data: { delivery: "asynchronous", status: "errored", error: "child unavailable" },
-    };
-    for (const listener of listeners) {listener(fact);}
-    expect(provider.replay(boundary)).toMatchObject({ kind: "events", events: [] });
-  });
-
-  it("keeps topology facts in the provider replay without accepting legacy payloads", () => {
-    const listeners = new Set<(fact: SubagentSemanticFact) => void>();
-    const { provider, fixture } = setup({
-      semanticEvents: { subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
-    });
-    const boundary = provider.snapshot().cursor;
-    const fact: SubagentSemanticFact = {
-      eventId: "positioned-completion", path: scoutPath, kind: "completion", relatedPiEvents: [],
-      data: { delivery: "asynchronous", status: "idle", output: "answer" },
-    };
-    for (const listener of listeners) {listener(fact);}
-    fixture.emit({ type: "node_updated", previous: fixture.worker.snapshot, node: { ...fixture.worker.snapshot, sessionId: "worker-v2" } });
-    const replay = provider.replay(boundary);
-    expect(replay.kind).toBe("events");
-    if (replay.kind !== "events") {return;}
-    expect(replay.events).toHaveLength(1);
-    expect(replay.events[0]).toMatchObject({ kind: "node_updated", data: { sessionId: "worker-v2" } });
-    expect(replay.events.find((event) => (event as any).eventId === fact.eventId)).toBeUndefined();
-  });
-
-  it("replays add, removal, and resurrection from existing lifecycle records", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-provider-test-"));
-    try {
-      const paths = {
-        rootDir: path.join(root, "parent.subagents"),
-        childSessionsDir: path.join(root, "parent.subagents", "sessions"),
-        logFile: path.join(root, "parent.subagents", "agents.jsonl"),
-      };
-      fs.mkdirSync(paths.childSessionsDir, { recursive: true });
-      const sessionFile = path.join(paths.childSessionsDir, "worker.jsonl");
-      const sessionId = "session-worker";
-      const added = {
-        type: "agent_added", version: 1, timestamp: "2026-01-01T00:00:01.000Z",
-        id: "worker", kind: "agent", task: "Review callback ownership.",
-        channels: ["parent"], sessionId, sessionFile,
-      };
-      const records = [
-        { type: "init", version: 1, timestamp: "2026-01-01T00:00:00.000Z", parentSessionFile: path.join(root, "parent.jsonl"), childSessionsDir: paths.childSessionsDir },
-        added,
-        { type: "agent_removed", version: 1, timestamp: "2026-01-01T00:00:02.000Z", id: "worker", sessionId, sessionFile },
-        { ...added, timestamp: "2026-01-01T00:00:03.000Z" },
-      ];
-      fs.writeFileSync(paths.logFile, records.map((record) => JSON.stringify(record)).join("\n") + "\n");
-      fs.writeFileSync(sessionFile, JSON.stringify({ type: "session", version: 3, id: sessionId, timestamp: "2026-01-01T00:00:00.000Z", cwd: root }) + "\n");
-      const fixture = registryFixture(sessionFile);
-      const provider = createSubagentProvider({
-        registry: fixture.registry,
-        ownerControl: fixture.ownerControl,
-        lifecycle: createSubagentLifecycleReader(paths),
-      });
-
-      const replay = provider.replay();
-      expect(replay.kind).toBe("events");
-      if (replay.kind === "events") {
-        const firstAdd = replay.events.findIndex((event) => event.kind === "node_added" && samePath(event.path, workerPath));
-        const removed = replay.events.findIndex((event) => event.kind === "node_removed" && samePath(event.path, workerPath));
-        const restored = replay.events.findIndex((event, index) => index > removed && (event.kind === "node_added" || event.kind === "resurrect") && samePath(event.path, workerPath));
-        expect(firstAdd).toBeGreaterThanOrEqual(0);
-        expect(removed).toBeGreaterThan(firstAdd);
-        expect(restored).toBeGreaterThan(removed);
-      }
-      expect(provider.snapshot().nodes.find((node) => samePath(node.path, workerPath))?.sessionId).toBe(sessionId);
-      const lease = await provider.acquire(workerPath);
-      expect(lease.session.sessionFile).toBe(sessionFile);
-      await lease.release();
-      expect(await provider.teardown(workerPath, workerIncarnation)).toMatchObject({ path: workerPath, removed: true, sessionId });
-      expect(fs.existsSync(sessionFile)).toBe(true);
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("requires a fresh snapshot when a provider restarts with a new epoch", () => {
-    const fixture = registryFixture();
-    const first = createSubagentProvider({ registry: fixture.registry, ownerControl: fixture.ownerControl });
-    const boundary = first.snapshot().cursor;
-    const restarted = createSubagentProvider({ registry: fixture.registry, ownerControl: fixture.ownerControl });
-    expect(restarted.snapshot().cursor.epoch).not.toBe(boundary.epoch);
-    const replay = restarted.replay(boundary);
-
-    expect(replay).toEqual({
-      kind: "snapshot_required",
-      reason: "epoch_changed",
-    });
-  });
-
-  it("requires a fresh snapshot when the requested history is no longer retained", () => {
-    const { provider, fixture } = setup({ historyLimit: 2 });
-    const boundary = provider.snapshot().cursor;
-    for (const id of ["worker-v2", "worker-v3", "worker-v4"]) {fixture.replace(workerPath, id);}
-    const replay = provider.replay(boundary);
-
-    expect(replay).toEqual({
-      kind: "snapshot_required",
-      reason: "history_unavailable",
-    });
-  });
+	it("reports a runtime replacement and keeps the incarnation", () => {
+		const { provider, events, replaceRuntime } = fixture();
+		replaceRuntime(["worker"], "s-worker-2");
+		expect(events).toEqual([expect.objectContaining({ kind: "runtime_replaced", path: ["worker"], incarnation: "i-worker", oldSessionId: "s-worker", newSessionId: "s-worker-2" })]);
+		expect(provider.snapshot().nodes[0]).toMatchObject({ sessionId: "s-worker-2", incarnation: "i-worker" });
+	});
 });
 
-describe("SubagentProvider path identity and leases", () => {
-  it("keeps the public path stable when the runtime session id changes", () => {
-    const { provider, fixture } = setup();
-    const initial = provider.snapshot();
-    const before = initial.nodes.find((item) =>
-      samePath(item.path, workerPath),
-    );
-    const events: SubagentEvent[] = [];
-    const unsubscribe = provider.subscribe((item) => events.push(item));
-    const replacement: AgentNodeSnapshot = {
-      ...fixture.worker.snapshot,
-      sessionId: "session-worker-replacement",
-    };
-    fixture.emit({
-      type: "node_updated",
-      previous: fixture.worker.snapshot,
-      node: replacement,
-    });
+describe("subagent provider leases", () => {
+	it("borrows the native child session and never touches orchestration", async () => {
+		const { provider, control } = fixture();
+		const lease = await provider.acquire({ path: ["worker"], incarnation: "i-worker" });
+		expect(lease.session.sessionId).toBe("s-worker");
+		expect(lease.capabilities.operations).toEqual(["prompt"]);
+		lease.release();
+		lease.release();
+		expect(() => lease.session).toThrow();
+		expect(Object.values(control).every((fn) => fn.mock.calls.length === 0)).toBe(true);
+	});
 
-    const replay = provider.replay(initial.cursor);
+	it("rejects an unknown path or a stale incarnation", async () => {
+		const { provider } = fixture();
+		await expect(provider.acquire({ path: ["nobody"], incarnation: "x" })).rejects.toThrow();
+		await expect(provider.acquire({ path: ["worker"], incarnation: "old" })).rejects.toThrow(/stale/i);
+	});
 
-    expect(before?.path).toEqual(workerPath);
-    expect(replay.kind).toBe("events");
-    if (replay.kind === "events") {
-      const update = replay.events.find((item) => item.kind === "node_updated");
-      expect(update?.path).toEqual(before?.path);
-      expect(update?.data).toEqual(
-        expect.objectContaining({ sessionId: "session-worker-replacement" }),
-      );
-    }
-    expect(events.every((item) => item.path.length > 0)).toBe(true);
-    unsubscribe();
-  });
+	it("rebinds leases to a replacement runtime and closes a removed subtree's leases", async () => {
+		const { provider, replaceRuntime, remove } = fixture();
+		const worker = await provider.acquire({ path: ["worker"], incarnation: "i-worker" });
+		const scout = await provider.acquire({ path: ["worker", "scout"], incarnation: "i-scout" });
+		const workerEvents: SubagentLeaseEvent[] = [];
+		const scoutEvents: SubagentLeaseEvent[] = [];
+		worker.subscribe((event) => workerEvents.push(event));
+		scout.subscribe((event) => scoutEvents.push(event));
+		replaceRuntime(["worker"], "s-worker-2");
+		expect(workerEvents[0]).toMatchObject({ kind: "rebound" });
+		expect(worker.session.sessionId).toBe("s-worker-2");
+		remove(["worker"]);
+		expect(workerEvents.at(-1)).toEqual({ kind: "closed", reason: "removed" });
+		expect(scoutEvents).toEqual([{ kind: "closed", reason: "removed" }]);
+	});
 
-  it("borrows the native child session and releases it without disposal", async () => {
-    const { provider, fixture } = setup();
-    const native = fixture.scout.session.session;
-    const lease = await provider.acquire(scoutPath);
+	it("closes leases as unavailable on shutdown and stops publishing", async () => {
+		const { provider, events, update } = fixture();
+		const lease = await provider.acquire({ path: ["worker"], incarnation: "i-worker" });
+		const seen: SubagentLeaseEvent[] = [];
+		lease.subscribe((event) => seen.push(event));
+		provider.shutdown();
+		expect(seen).toEqual([{ kind: "closed", reason: "unavailable" }]);
+		update(["worker"], { state: "running" });
+		expect(events).toEqual([]);
+		await expect(provider.acquire({ path: ["worker"], incarnation: "i-worker" })).rejects.toThrow();
+	});
+});
 
-    expect(lease.path).toEqual(scoutPath);
-    expect(lease.session).toBe(native);
-    await lease.release();
-    await lease.release();
-    expect(native.dispose).not.toHaveBeenCalled();
-  });
+describe("subagent provider controls", () => {
+	it("forwards the full path and incarnation of each guarded control", async () => {
+		const { provider, control } = fixture();
+		await provider.teardown({ path: ["worker", "scout"], incarnation: "i-scout" });
+		await provider.setHold({ path: ["worker"], incarnation: "i-worker", held: true });
+		await provider.stop({ path: ["worker"], incarnation: "i-worker", expectedSessionId: "s-worker" });
+		expect(control.teardown).toHaveBeenCalledWith({ path: ["worker", "scout"], incarnation: "i-scout" });
+		expect(control.setHold).toHaveBeenCalledWith({ path: ["worker"], incarnation: "i-worker", held: true });
+		expect(control.stop).toHaveBeenCalledWith({ path: ["worker"], incarnation: "i-worker", expectedSessionId: "s-worker" });
+	});
 
-  it("lets multiple clients borrow independently without disposing the child", async () => {
-    const { provider, fixture } = setup();
-    const first = await provider.acquire(scoutPath);
-    const second = await provider.acquire(scoutPath);
-    const native = fixture.scout.session.session;
-
-    await first.release();
-    expect(second.session).toBe(native);
-    expect(native.dispose).not.toHaveBeenCalled();
-    await second.release();
-    expect(native.dispose).not.toHaveBeenCalled();
-  });
-
-  it("rebinds existing leases to a replacement native runtime", async () => {
-    const { provider, fixture } = setup();
-    const lease = await provider.acquire(scoutPath);
-    let resolveRebound!: (event: SubagentLeaseEvent) => void;
-    const rebound = new Promise<SubagentLeaseEvent>((resolve) => { resolveRebound = resolve; });
-    const unsubscribe = lease.subscribe((event) => { if (event.kind === "rebound") {resolveRebound(event);} });
-    const replacement = fixture.replace(scoutPath, "session-scout-v2");
-
-    expect(await rebound).toEqual({ kind: "rebound", session: replacement.session.session });
-    expect(lease.session).toBe(replacement.session.session);
-    unsubscribe();
-    await lease.release();
-  });
-
-  it("invalidates old leases on teardown even when the path is reused", async () => {
-    const { provider, fixture } = setup();
-    const lease = await provider.acquire(scoutPath);
-    let resolveClosed!: (event: SubagentLeaseEvent) => void;
-    const closed = new Promise<SubagentLeaseEvent>((resolve) => { resolveClosed = resolve; });
-    lease.subscribe((event) => { if (event.kind === "closed") {resolveClosed(event);} });
-    await provider.teardown(scoutPath, scoutIncarnation);
-    const replacement = node(scoutPath, "session-scout-new", workerPath, "New task");
-    fixture.add(replacement);
-    const newLease = await provider.acquire(scoutPath);
-
-    expect(await closed).toEqual({ kind: "closed", reason: "removed" });
-    expect(() => lease.session).toThrow();
-    expect(newLease.session).toBe(replacement.session.session);
-    await lease.release();
-    await newLease.release();
-  });
-
-  it("closes a lease if the replacement runtime is unavailable", async () => {
-    const { provider, fixture } = setup();
-    const lease = await provider.acquire(scoutPath);
-    let resolveClosed!: (event: SubagentLeaseEvent) => void;
-    const closed = new Promise<SubagentLeaseEvent>((resolve) => { resolveClosed = resolve; });
-    lease.subscribe((event) => { if (event.kind === "closed") {resolveClosed(event);} });
-    fixture.unavailable(scoutPath);
-
-    expect(await closed).toEqual({ kind: "closed", reason: "unavailable" });
-    expect(() => lease.session).toThrow();
-    await lease.release();
-  });
-
-  it("rejects root and unknown paths and distinguishes path segments", async () => {
-    const { provider, fixture } = setup();
-    const flat = node(["worker/scout"], "flat-session", [], "Different child");
-    fixture.add(flat);
-
-    await expect(provider.acquire([])).rejects.toThrow();
-    await expect(provider.acquire(["missing"])).rejects.toThrow();
-    const nestedLease = await provider.acquire(scoutPath);
-    const flatLease = await provider.acquire(["worker/scout"]);
-    expect(nestedLease.session).toBe(fixture.scout.session.session);
-    expect(flatLease.session).toBe(flat.session.session);
-    await provider.teardown(["worker/scout"], "incarnation-flat");
-    expect(nestedLease.session).toBe(fixture.scout.session.session);
-    expect(() => flatLease.session).toThrow();
-    await nestedLease.release();
-    await flatLease.release();
-  });
-
-  it("reports teardown by public path without exposing runtime disposal", async () => {
-    const { provider } = setup();
-    const result = await provider.teardown(scoutPath, scoutIncarnation);
-
-    expect(result.path).toEqual(scoutPath);
-    expect(result.removed).toBe(true);
-    expect(result).toHaveProperty("sessionId");
-  });
+	it("rejects controls for a stale incarnation or another runtime", async () => {
+		const { provider, control } = fixture();
+		await expect(provider.teardown({ path: ["worker"], incarnation: "old" })).rejects.toThrow();
+		await expect(provider.stop({ path: ["worker"], incarnation: "i-worker", expectedSessionId: "s-other" })).rejects.toThrow();
+		await expect(provider.setHold({ path: ["gone"], incarnation: "x", held: true })).rejects.toThrow();
+		expect(control.teardown).not.toHaveBeenCalled();
+		expect(control.stop).not.toHaveBeenCalled();
+		expect(control.setHold).not.toHaveBeenCalled();
+	});
 });

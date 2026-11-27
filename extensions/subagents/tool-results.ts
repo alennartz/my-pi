@@ -61,10 +61,10 @@ export const SpawnResultSchema = Type.Object({
 	agents: Type.Array(AgentRefSchema),
 });
 
-export interface AwaitResultData extends SpawnResultData {
+export type AwaitResultData = SpawnResultData & {
 	interrupted?: boolean;
 	error?: string;
-}
+};
 
 export const AwaitResultSchema = Type.Object({
 	agents: Type.Array(AgentRefSchema),

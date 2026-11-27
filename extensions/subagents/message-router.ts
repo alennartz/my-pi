@@ -14,27 +14,12 @@ export type RoutedMessage = {
 	responseExpected: boolean;
 };
 
-/** A transport phase observed by the owning semantic fact bus. */
-export type RoutedMessagePhase = {
-	phase: "sent" | "response" | "failure";
-	from: string;
-	to: string;
-	message: string;
-	correlationId?: string;
-	responseExpected: boolean;
-	error?: string;
-	toolCallId?: string;
-};
-
-/** Router-local response body progress. Correlation IDs stop at this seam. */
-export type RoutedResponseProgress = {
-	from: string;
-	to: string;
-	correlationId: string;
-	delta: string;
-	/** Internal sender tool target. Never crosses the presentation provider seam. */
-	toolCallId?: string;
-};
+/** The responder's reply text so far. A new attempt replaces the text of the previous one. */
+export type ResponseProgress = Readonly<{
+	/** Tool call id of the responder's `respond` call. */
+	attempt: string;
+	text: string;
+}>;
 
 /** The response observed by the sender of a routed message. */
 export type RoutedResponse =
@@ -59,13 +44,13 @@ export interface MessagePort {
 		message: string;
 		expectResponse: boolean;
 		correlationId?: string;
+		/** Receives the responder's reply text while it streams. */
+		onProgress?: (progress: ResponseProgress) => void;
 	}): Promise<SendReceipt>;
-	/** Attach the next native tool call to one transport operation. */
-	setSemanticToolCall?(toolCallId: string | undefined, publishPhase?: (event: RoutedMessagePhase) => void): void;
 	/** Only the endpoint addressed by the correlation may respond. */
 	respond(correlationId: string, message: string): Promise<void>;
-	/** Forward response-body progress to the blocked sender without completing it. */
-	responseProgress(correlationId: string, delta: string): Promise<void>;
+	/** Forward the reply text so far to the blocked sender without completing it. */
+	responseProgress(correlationId: string, progress: ResponseProgress): void;
 	/** Reject a pending request from its addressed endpoint (optional adapter seam). */
 	reject?(correlationId: string, error: string): Promise<void>;
 	detach(correlationId: string): void;
@@ -79,19 +64,12 @@ export interface MessageRouterOptions {
 	onBlockingSendStart?: (from: string, to: string, correlationId: string) => void;
 	onBlockingSendEnd?: (from: string, correlationId: string) => void;
 	onMessageDelivery?: (to: string) => void;
-	/** Transport phases feed the owning semantic fact bus. */
-	onMessagePhase?: (event: RoutedMessagePhase) => void;
-	/** Router-local response-body progress; never part of the SDK presentation feed. */
-	onResponseProgress?: (event: RoutedResponseProgress) => void;
 }
 
 interface Endpoint {
 	readonly id: string;
 	readonly listeners: Set<(message: RoutedMessage) => void>;
 	active: boolean;
-	/** One-shot native invocation metadata supplied by the tool adapter. */
-	semanticToolCallId?: string;
-	semanticPublisher?: (event: RoutedMessagePhase) => void;
 }
 
 interface PendingCorrelation {
@@ -100,8 +78,7 @@ interface PendingCorrelation {
 	readonly to: string;
 	readonly message: string;
 	readonly responseExpected: boolean;
-	readonly toolCallId?: string;
-	readonly semanticPublisher?: (event: RoutedMessagePhase) => void;
+	readonly onProgress?: (progress: ResponseProgress) => void;
 	readonly resolve: (response: RoutedResponse) => void;
 	readonly reject: (error: Error) => void;
 	waitingEdgeAttached: boolean;
@@ -126,8 +103,6 @@ export class MessageRouter {
 	private readonly onBlockingSendStart?: MessageRouterOptions["onBlockingSendStart"];
 	private readonly onBlockingSendEnd?: MessageRouterOptions["onBlockingSendEnd"];
 	private readonly onMessageDelivery?: MessageRouterOptions["onMessageDelivery"];
-	private readonly onMessagePhase?: MessageRouterOptions["onMessagePhase"];
-	private readonly onResponseProgress?: MessageRouterOptions["onResponseProgress"];
 	private readonly correlationIdFactory: () => string;
 	private nextCorrelationSequence = 0;
 	private closed = false;
@@ -137,8 +112,6 @@ export class MessageRouter {
 		this.onBlockingSendStart = options.onBlockingSendStart;
 		this.onBlockingSendEnd = options.onBlockingSendEnd;
 		this.onMessageDelivery = options.onMessageDelivery;
-		this.onMessagePhase = options.onMessagePhase;
-		this.onResponseProgress = options.onResponseProgress;
 		const namespace = randomUUID().split("-").pop() ?? randomUUID();
 		this.correlationIdFactory = options.correlationIdFactory ?? (() => {
 			this.nextCorrelationSequence += 1;
@@ -195,9 +168,8 @@ export class MessageRouter {
 		if (this.closed) {return;}
 		const error =
 			`Agent "${agentId}" went idle without responding to your send. ` +
-			"It either forgot to call respond, or chose not to. Its final output " +
-			"was delivered via <agent_idle>; treat that as the answer, or send a " +
-			"new message to prompt it again.";
+			"It either forgot to call respond, or chose not to. Treat its idle " +
+			"result as the answer, or send a new message to prompt it again.";
 
 		for (const pending of Array.from(this.pendingCorrelations.values())) {
 			if (pending.to === agentId) {
@@ -251,17 +223,24 @@ export class MessageRouter {
 	}
 
 	/**
-	 * Endpoints currently blocked on a response from `targetId`. The router is the
-	 * only authority on this: a caller that waits on an endpoint blocked on it
-	 * would never be satisfied, because nothing but a response, a rejection, or
-	 * the sender's own death clears the correlation.
+	 * Endpoints that cannot settle until `targetId` answers: senders blocked on
+	 * it, and senders blocked on those, through live waiting edges only. A
+	 * sender that stopped waiting no longer blocks anything, even while its
+	 * correlation stays open for a late reply.
 	 */
-	pendingSendersTo(targetId: string): { from: string; correlationId: string }[] {
+	blockedOn(targetId: string): { from: string; correlationId: string }[] {
 		const blocked: { from: string; correlationId: string }[] = [];
-		for (const pending of this.pendingCorrelations.values()) {
-			if (pending.to === targetId) {
+		const reached = new Set([targetId]);
+		let frontier = [targetId];
+		while (frontier.length > 0) {
+			const next: string[] = [];
+			for (const pending of this.pendingCorrelations.values()) {
+				if (!pending.waitingEdgeAttached || !frontier.includes(pending.to) || reached.has(pending.from)) {continue;}
+				reached.add(pending.from);
+				next.push(pending.from);
 				blocked.push({ from: pending.from, correlationId: pending.correlationId });
 			}
+			frontier = next;
 		}
 		return blocked;
 	}
@@ -292,12 +271,8 @@ export class MessageRouter {
 		return {
 			id: endpoint.id,
 			send: (input) => this.sendFrom(endpoint, input),
-			setSemanticToolCall: (toolCallId, publishPhase) => {
-				endpoint.semanticToolCallId = toolCallId;
-				endpoint.semanticPublisher = publishPhase;
-			},
 			respond: (correlationId, message) => this.respondFrom(endpoint, correlationId, message),
-			responseProgress: (correlationId, delta) => this.responseProgressFrom(endpoint, correlationId, delta),
+			responseProgress: (correlationId, progress) => this.responseProgressFrom(endpoint, correlationId, progress),
 			reject: (correlationId, error) => this.rejectFrom(endpoint, correlationId, error),
 			detach: (correlationId) => this.detachFrom(endpoint, correlationId),
 			cancel: (correlationId) => this.cancelFrom(endpoint, correlationId),
@@ -312,6 +287,7 @@ export class MessageRouter {
 			message: string;
 			expectResponse: boolean;
 			correlationId?: string;
+			onProgress?: (progress: ResponseProgress) => void;
 		},
 	): Promise<SendReceipt> {
 		this.assertEndpointActive(endpoint);
@@ -322,20 +298,7 @@ export class MessageRouter {
 			throw new Error(`Agent "${input.to}" is not connected`);
 		}
 
-		const toolCallId = endpoint.semanticToolCallId;
-		const publishPhase = endpoint.semanticPublisher;
-		endpoint.semanticToolCallId = undefined;
-		endpoint.semanticPublisher = undefined;
 		if (!input.expectResponse) {
-			this.emitMessagePhase({
-				phase: "sent",
-				from: endpoint.id,
-				to: input.to,
-				message: input.message,
-				...(input.correlationId !== undefined ? { correlationId: input.correlationId } : undefined),
-				responseExpected: false,
-				...(toolCallId !== undefined ? { toolCallId } : undefined),
-			}, publishPhase);
 			this.deliverMessage(endpoint.id, target, input.message, input.correlationId, false);
 			return {};
 		}
@@ -362,8 +325,7 @@ export class MessageRouter {
 			to: input.to,
 			message: input.message,
 			responseExpected: true,
-			...(toolCallId !== undefined ? { toolCallId } : undefined),
-			...(publishPhase ? { semanticPublisher: publishPhase } : undefined),
+			...(input.onProgress ? { onProgress: input.onProgress } : undefined),
 			resolve: resolveResponse,
 			reject: rejectResponse,
 			waitingEdgeAttached: true,
@@ -375,15 +337,6 @@ export class MessageRouter {
 		this.pendingCorrelations.set(correlationId, pending);
 		this.addEdge(endpoint.id, input.to);
 		this.invokeBlockingSendStart(endpoint.id, input.to, correlationId);
-		this.emitMessagePhase({
-			phase: "sent",
-			from: endpoint.id,
-			to: input.to,
-			message: input.message,
-			correlationId,
-			responseExpected: true,
-			...(toolCallId !== undefined ? { toolCallId } : undefined),
-		}, publishPhase);
 		this.deliverMessage(endpoint.id, target, input.message, correlationId, true);
 
 		return { correlationId, response };
@@ -391,10 +344,6 @@ export class MessageRouter {
 
 	private async respondFrom(endpoint: Endpoint, correlationId: string, message: string): Promise<void> {
 		this.assertEndpointActive(endpoint);
-		const toolCallId = endpoint.semanticToolCallId;
-		const publishPhase = endpoint.semanticPublisher;
-		endpoint.semanticToolCallId = undefined;
-		endpoint.semanticPublisher = undefined;
 		const pending = this.pendingCorrelations.get(correlationId);
 		if (!pending) {
 			throw new Error(`No pending request for correlation ID "${correlationId}"`);
@@ -405,12 +354,11 @@ export class MessageRouter {
 			);
 		}
 
-		this.completePendingResponse(pending, message, toolCallId, publishPhase);
+		this.completePendingResponse(pending, message);
 	}
 
-	private async responseProgressFrom(endpoint: Endpoint, correlationId: string, delta: string): Promise<void> {
+	private responseProgressFrom(endpoint: Endpoint, correlationId: string, progress: ResponseProgress): void {
 		this.assertEndpointActive(endpoint);
-		if (typeof delta !== "string") {throw new Error("Response progress must be a string");}
 		const pending = this.pendingCorrelations.get(correlationId);
 		if (!pending) {
 			throw new Error(`No pending request for correlation ID "${correlationId}"`);
@@ -420,23 +368,11 @@ export class MessageRouter {
 				`Endpoint "${endpoint.id}" is not the target for correlation ID "${correlationId}"`,
 			);
 		}
-		try {
-			this.onResponseProgress?.({
-				from: endpoint.id,
-				to: pending.from,
-				correlationId,
-				delta,
-				...(pending.toolCallId !== undefined ? { toolCallId: pending.toolCallId } : undefined),
-			});
-		} catch (error) {
-			throw error instanceof Error ? error : new Error(String(error));
-		}
+		pending.onProgress?.({ attempt: progress.attempt, text: progress.text });
 	}
 
 	private async rejectFrom(endpoint: Endpoint, correlationId: string, error: string): Promise<void> {
 		this.assertEndpointActive(endpoint);
-		endpoint.semanticToolCallId = undefined;
-		endpoint.semanticPublisher = undefined;
 		const pending = this.pendingCorrelations.get(correlationId);
 		if (!pending) {
 			throw new Error(`No pending request for correlation ID "${correlationId}"`);
@@ -515,9 +451,8 @@ export class MessageRouter {
 		for (const listener of Array.from(target.listeners)) {
 			try {
 				listener(routed);
-			} catch {
-				// A subscriber is an extension boundary. One faulty listener must not
-				// prevent the router from delivering to the remaining subscribers.
+			} catch (error) {
+				console.error(`[subagents] Message listener for "${target.id}" failed:`, error);
 			}
 		}
 	}
@@ -568,19 +503,10 @@ export class MessageRouter {
 		this.invokeBlockingSendEnd(pending.from, pending.correlationId);
 	}
 
-	private completePendingResponse(pending: PendingCorrelation, message: string, responderToolCallId?: string, publishPhase?: (event: RoutedMessagePhase) => void): void {
+	private completePendingResponse(pending: PendingCorrelation, message: string): void {
 		if (this.pendingCorrelations.get(pending.correlationId) !== pending) {return;}
 		this.pendingCorrelations.delete(pending.correlationId);
 		this.endWaiting(pending);
-		this.emitMessagePhase({
-			phase: "response",
-			from: pending.to,
-			to: pending.from,
-			message,
-			correlationId: pending.correlationId,
-			responseExpected: false,
-			...((responderToolCallId ?? pending.toolCallId) !== undefined ? { toolCallId: responderToolCallId ?? pending.toolCallId } : undefined),
-		}, publishPhase ?? pending.semanticPublisher);
 		pending.resolve({ type: "response", message });
 	}
 
@@ -588,16 +514,6 @@ export class MessageRouter {
 		if (this.pendingCorrelations.get(pending.correlationId) !== pending) {return;}
 		this.pendingCorrelations.delete(pending.correlationId);
 		this.endWaiting(pending);
-		this.emitMessagePhase({
-			phase: "failure",
-			from: pending.to,
-			to: pending.from,
-			message: pending.message,
-			correlationId: pending.correlationId,
-			responseExpected: false,
-			error,
-			...(pending.toolCallId !== undefined ? { toolCallId: pending.toolCallId } : undefined),
-		}, pending.semanticPublisher);
 		pending.resolve({ type: "error", error });
 	}
 
@@ -642,26 +558,16 @@ export class MessageRouter {
 	private invokeBlockingSendStart(from: string, to: string, correlationId: string): void {
 		try {
 			this.onBlockingSendStart?.(from, to, correlationId);
-		} catch {
-			// Status projection is observational; a callback failure must not leave
-			// routing state half-installed or prevent message delivery.
+		} catch (error) {
+			console.error("[subagents] Blocking-send start projection failed:", error);
 		}
 	}
 
 	private invokeBlockingSendEnd(from: string, correlationId: string): void {
 		try {
 			this.onBlockingSendEnd?.(from, correlationId);
-		} catch {
-			// Keep terminal cleanup authoritative even when projection callbacks fail.
-		}
-	}
-
-	private emitMessagePhase(event: RoutedMessagePhase, publishPhase?: (event: RoutedMessagePhase) => void): void {
-		try {
-			if (publishPhase) {publishPhase(event);}
-			else {this.onMessagePhase?.(event);}
-		} catch {
-			// Semantic observers cannot interrupt an accepted transport operation.
+		} catch (error) {
+			console.error("[subagents] Blocking-send end projection failed:", error);
 		}
 	}
 }

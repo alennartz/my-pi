@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentSpec } from "./agents.js";
+import type { HoldRecord } from "./settlements.js";
 
 export interface PersistencePaths {
 	rootDir: string;
@@ -35,6 +36,8 @@ export interface PersistedAgentRecord {
 	 * agents and for legacy records.
 	 */
 	skillPaths?: string[];
+	/** The latest saved hold of this child, when one was ever set. */
+	hold?: HoldRecord;
 }
 
 export type AgentLifecycleEvent =
@@ -57,7 +60,14 @@ export type AgentLifecycleEvent =
 			id: string;
 			sessionFile?: string;
 			sessionId?: string;
-		};
+		}
+	| ({
+			type: "agent_hold";
+			version: 1;
+			timestamp: string;
+			id: string;
+			sessionId: string;
+		} & HoldRecord);
 
 function appendJsonl(file: string, data: unknown): void {
 	fs.appendFileSync(file, JSON.stringify(data) + "\n", "utf8");
@@ -136,6 +146,16 @@ export function ensurePersistence(parentSessionFile: string): PersistencePaths {
 export function appendAgentAdded(paths: PersistencePaths, data: PersistedAgentRecord): void {
 	appendJsonl(paths.logFile, {
 		type: "agent_added",
+		version: 1,
+		timestamp: new Date().toISOString(),
+		...data,
+	} satisfies AgentLifecycleEvent);
+}
+
+/** Record a child's hold and the settlements it keeps from the parent. */
+export function appendAgentHold(paths: PersistencePaths, data: { id: string; sessionId: string } & HoldRecord): void {
+	appendJsonl(paths.logFile, {
+		type: "agent_hold",
 		version: 1,
 		timestamp: new Date().toISOString(),
 		...data,
@@ -229,7 +249,12 @@ export function loadPersistedAgents(parentSessionFile: string): {
 
 	for (const event of readEvents(paths.logFile)) {
 		if (event.type === "agent_added") {
-			liveAgents.set(event.id, recordFromEvent(event));
+			const replaced = liveAgents.get(event.id)?.hold;
+			liveAgents.set(event.id, { ...recordFromEvent(event), ...(replaced ? { hold: replaced } : undefined) });
+		} else if (event.type === "agent_hold") {
+			const current = liveAgents.get(event.id);
+			if (!current) {continue;}
+			liveAgents.set(event.id, { ...current, hold: { held: event.held === true, pending: Array.isArray(event.pending) ? event.pending : [], replaced: event.replaced === true } });
 		} else if (event.type === "agent_removed") {
 			const current = liveAgents.get(event.id);
 			if (!current) {continue;}

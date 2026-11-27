@@ -1,228 +1,103 @@
 /**
- * Notification queue for the subagents extension.
+ * Parent notifications from child agents.
  *
- * Manages notification accumulation and delivery timing. The queue
- * stores XML notification strings and flushes them via a deliver
- * callback based on parent busy state, steer delivery mode, and
- * a waiting flag.
+ * Notices stay in this queue until the parent can take them. They never enter
+ * pi's steering queue, which a host can clear:
  *
- * Delivery modes:
- * - Idle: auto-flush on queue() (goes through prompt() path)
- * - Busy, steer off: accumulate, flush on agent_end
- * - Busy, steer on, tools running: accumulate, flush when last tool ends
- * - Busy, steer on, LLM streaming: auto-flush on queue()
- *
- * When waiting is set, all flush delivery is suppressed. External
- * callers drain the queue themselves via drainAll().
- *
- * An aborted run is the one case where a settled agent must not be woken:
- * the operator asked it to stop. deferAll() hands the accumulated
- * notifications over without starting a turn, so nothing is lost and
- * nothing restarts.
+ * - Parent idle: one message starts a turn.
+ * - Parent running: messages go out at the next turn boundary, as context
+ *   for the next model request in the same run.
+ * - Parent waiting in `await_agents`: the wait decides what it consumes.
+ * - Parent run aborted: messages are appended without starting a turn
+ *   (DR-047), so a stop stays a stop and nothing is lost.
  */
 
-import { truncateMiddle } from "../../lib/truncate.ts";
-import type { PersistedSubagentContent } from "./presentation-data.js";
-import type { AgentCompleteData } from "./messages.js";
+import type { SubagentCard } from "./presenters.js";
+import type { ChildRef } from "./settlements.js";
 
-export type NotificationSource = "local" | "uplink";
+export type NoticeKind = "message" | "completion" | "notice";
 
-export type NotificationQueueEntry<Semantic = unknown> = Readonly<{
-	xml: string;
-	source: NotificationSource;
-	data?: AgentCompleteData;
-	semanticEvents: readonly Semantic[];
-	subagentContent?: readonly PersistedSubagentContent[];
+export type Notice = Readonly<{
+	kind: NoticeKind;
+	content: string;
+	card?: SubagentCard;
+	/** The child whose settlement a completion notice carries. */
+	ref?: ChildRef;
 }>;
 
-export interface NotificationQueueConfig<Semantic = unknown> {
-	/**
-	 * Called to deliver accumulated notifications to the parent agent.
-	 * Receives the combined XML content of all queued notifications.
-	 */
-	deliver: (content: string, details?: { semanticEvents?: readonly Semantic[]; subagentContent?: readonly PersistedSubagentContent[] }) => void;
+/** `trigger` starts a turn, `context` joins the running turn, `park` appends without a turn. */
+export type NoticeDelivery = "trigger" | "context" | "park";
 
-	/**
-	 * Called to hand notifications to the agent without starting a turn.
-	 * Used after an aborted run, where waking the agent would defeat the
-	 * interrupt. Delivery happens whenever the agent is next prompted.
-	 */
-	deliverDeferred: (content: string, details?: { semanticEvents?: readonly Semantic[]; subagentContent?: readonly PersistedSubagentContent[] }) => void;
-	/** Optional ordered delivery seam for native messages and completion entries. */
-	deliverEntries?: (entries: readonly NotificationQueueEntry<Semantic>[], deferred: boolean) => void;
+export class NotificationQueue {
+	private entries: Notice[] = [];
+	private runActive = false;
+	private waiting = false;
+	private scheduled = false;
 
-	/**
-	 * Use steer delivery mode: flush between tool call rounds instead of
-	 * only on agent_end. When true, notifications flush when the last
-	 * in-flight tool call ends. When false, they accumulate until agent_end.
-	 */
-	steerDelivery: boolean;
-}
+	constructor(private readonly deliver: (notices: readonly Notice[], mode: NoticeDelivery) => void) {}
 
-export class NotificationQueue<Semantic = unknown> {
-	private entries: NotificationQueueEntry<Semantic>[] = [];
-	private parentBusy = false;
-	private pendingToolCalls = new Set<string>();
-	private _isWaiting = false;
+	queue(notice: Notice): void {
+		this.entries.push(notice);
+		this.schedule();
+	}
 
-	constructor(private config: NotificationQueueConfig<Semantic>) {}
+	/** True when a child message the parent has not seen is queued. */
+	hasMessages(): boolean {
+		return this.entries.some((entry) => entry.kind === "message");
+	}
 
-	queue(
-		xml: string,
-		source: NotificationSource,
-		data?: AgentCompleteData,
-		semantic?: Semantic | readonly Semantic[],
-		subagentContent?: readonly PersistedSubagentContent[],
-	): void {
-		const semanticEvents = semantic === undefined ? [] : Array.isArray(semantic) ? semantic : [semantic];
-		this.entries.push({ xml, source, data, semanticEvents: semanticEvents as readonly Semantic[], subagentContent });
+	/** Remove and return the queued notices a wait consumes. */
+	take(predicate: (notice: Notice) => boolean): Notice[] {
+		const taken = this.entries.filter(predicate);
+		this.entries = this.entries.filter((entry) => !predicate(entry));
+		return taken;
+	}
 
-		if (this._isWaiting) {
+	runStarted(): void {
+		this.runActive = true;
+	}
+
+	/** A turn boundary inside a run. Returns true when notices joined the run, so it must continue. */
+	boundary(): boolean {
+		if (this.waiting || this.entries.length === 0) {return false;}
+		this.flush("context");
+		return true;
+	}
+
+	runSettled(aborted: boolean): void {
+		this.runActive = false;
+		if (this.waiting || this.entries.length === 0) {return;}
+		if (aborted) {
+			this.flush("park");
 			return;
 		}
-
-		if (!this.parentBusy) {
-			this.doFlush();
-		} else if (this.config.steerDelivery && this.pendingToolCalls.size === 0) {
-			this.doFlush();
-		}
-	}
-
-	flush(): void {
-		if (this._isWaiting) {return;}
-		if (this.entries.length === 0) {return;}
-		if (this.parentBusy && !this.config.steerDelivery) {return;}
-		// In steer mode while busy, mirror queue()'s gating: hold until the last
-		// in-flight tool call ends so we don't deliver mid-tool-round.
-		if (this.parentBusy && this.pendingToolCalls.size > 0) {return;}
-
-		this.doFlush();
-	}
-
-	/**
-	 * Drain all entries and return the concatenated XML content.
-	 * Empties the queue.
-	 */
-	drainAll(): string {
-		const combined = this.entries.map((e) => e.xml).join("\n");
-		this.entries.length = 0;
-		return combined;
-	}
-
-	/** Drain all entries, keeping the structured per-agent payloads alongside the text. */
-	drainDetailed() {
-		const agents = this.entries.flatMap((e) => e.data ? [e.data] : []);
-		const semanticEvents = this.entries.flatMap((e) => e.semanticEvents);
-		const subagentContent = this.entries.flatMap((e) => e.subagentContent ?? []);
-		const text = this.drainAll();
-		return {
-			text,
-			agents,
-			...(semanticEvents.length > 0 ? { semanticEvents } : undefined),
-			...(subagentContent.length > 0 ? { subagentContent } : undefined),
-		};
-	}
-
-	drainLocal(): void {
-		this.entries = this.entries.filter((e) => e.source !== "local");
-	}
-
-	clear(): void {
-		this.entries.length = 0;
-	}
-
-	/**
-	 * @param options.flush Flush on the busy→idle edge. Default true. Pass
-	 * false when the caller settles the queue itself, as after an abort.
-	 */
-	setParentBusy(busy: boolean, options?: { flush?: boolean }): void {
-		this.parentBusy = busy;
-		if (!busy && options?.flush !== false) {
-			this.flush();
-		}
-	}
-
-	/**
-	 * Hand every queued notification to the agent without starting a turn.
-	 * Unlike flush(), this ignores busy state — the caller has already
-	 * established that no run should follow.
-	 */
-	deferAll(): void {
-		if (this._isWaiting) {return;}
-		if (this.entries.length === 0) {return;}
-		if (this.config.deliverEntries) {
-			const entries = this.entries.map((entry) => ({
-				...entry,
-				semanticEvents: [...entry.semanticEvents],
-				...(entry.subagentContent ? { subagentContent: [...entry.subagentContent] } : undefined),
-			}));
-			this.entries.length = 0;
-			this.config.deliverEntries(entries, true);
-			return;
-		}
-		const semanticEvents = this.entries.flatMap((e) => e.semanticEvents);
-		const subagentContent = this.entries.flatMap((e) => e.subagentContent ?? []);
-		const combined = this.drainAll();
-		this.config.deliverDeferred(
-			truncateMiddle(combined).content,
-			semanticEvents.length > 0 || subagentContent.length > 0
-				? { ...(semanticEvents.length > 0 ? { semanticEvents } : undefined), ...(subagentContent.length > 0 ? { subagentContent } : undefined) }
-				: undefined,
-		);
+		this.runActive = true;
+		this.flush("trigger");
 	}
 
 	setWaiting(waiting: boolean): void {
-		this._isWaiting = waiting;
+		this.waiting = waiting;
+		this.schedule();
 	}
 
-	trackToolStart(toolCallId: string): void {
-		this.pendingToolCalls.add(toolCallId);
+	clear(): void {
+		this.entries = [];
 	}
 
-	trackToolEnd(toolCallId: string): void {
-		this.pendingToolCalls.delete(toolCallId);
-		if (this.pendingToolCalls.size === 0) {
-			this.flush();
-		}
+	private schedule(): void {
+		if (this.scheduled || this.runActive || this.waiting) {return;}
+		this.scheduled = true;
+		queueMicrotask(() => {
+			this.scheduled = false;
+			if (this.runActive || this.waiting || this.entries.length === 0) {return;}
+			this.runActive = true;
+			this.flush("trigger");
+		});
 	}
 
-	clearPendingTools(): void {
-		this.pendingToolCalls.clear();
-	}
-
-	get isWaiting(): boolean {
-		return this._isWaiting;
-	}
-
-	get length(): number {
-		return this.entries.length;
-	}
-
-// Private
-
-	private doFlush(): void {
-		if (this.entries.length === 0) {return;}
-
-		this.parentBusy = true;
-		if (this.config.deliverEntries) {
-			const entries = this.entries.map((entry) => ({
-				...entry,
-				semanticEvents: [...entry.semanticEvents],
-				...(entry.subagentContent ? { subagentContent: [...entry.subagentContent] } : undefined),
-			}));
-			this.entries.length = 0;
-			this.config.deliverEntries(entries, false);
-			return;
-		}
-		const semanticEvents = this.entries.flatMap((e) => e.semanticEvents);
-		const subagentContent = this.entries.flatMap((e) => e.subagentContent ?? []);
-		const combined = this.entries.map((e) => e.xml).join("\n");
-		this.entries.length = 0;
-		this.config.deliver(
-			truncateMiddle(combined).content,
-			semanticEvents.length > 0 || subagentContent.length > 0
-				? { ...(semanticEvents.length > 0 ? { semanticEvents } : undefined), ...(subagentContent.length > 0 ? { subagentContent } : undefined) }
-				: undefined,
-		);
+	private flush(mode: NoticeDelivery): void {
+		const notices = this.entries;
+		this.entries = [];
+		this.deliver(notices, mode);
 	}
 }

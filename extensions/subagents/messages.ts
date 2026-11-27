@@ -30,7 +30,7 @@ export interface AgentCompleteData {
 const RETRY_HINT = "Its session is still alive: if you have cleared the cause, send it a message to retry. Use teardown + resurrect only if it cannot recover.";
 const RESURRECT_HINT_SINGLE = "Pass session_id to the resurrect tool to bring this agent back online with its prior conversation.";
 const RESURRECT_HINT_GROUP = "Pass any session_id above to the resurrect tool to bring an agent back online with its prior conversation.";
-const REPLACED_HINT = "This result may not be the one you are waiting for: the user talked to this agent while its earlier result was held, so that earlier result never arrived. Ask the agent to repeat what it meant to send you if you need it.";
+const REPLACED_HINT = "This result may not be the one you are waiting for: the agent started a new run while the user held its earlier result, so that earlier result never arrived. Ask the agent to repeat what it meant to send you if you need it.";
 
 export interface UsageData {
 	input: string;
@@ -81,9 +81,8 @@ export function serializeAgentComplete(agent: AgentCompleteData): string {
 
 /**
  * Teardown report for a single agent. Distinct element name from <agent_idle>
- * so the model recognizes the lifecycle event. The agent's last output is
- * never reported: the parent saw it via <agent_idle> when the agent settled,
- * and a still-running agent's partial output is not worth reporting.
+ * so the model recognizes the lifecycle event. Results the agent held back
+ * from the parent are reported separately by the caller.
  */
 export function serializeAgentTorndown(data: AgentCompleteData): string {
 	const sessionAttr = data.sessionId ? ` session_id="${data.sessionId}"` : "";
@@ -110,9 +109,49 @@ export function serializeAgentResurrected(data: AgentLifecycleNoticeData): strin
 }
 
 /** The user removed a live agent manually, outside of a tool call. */
-export function serializeAgentRemoved(data: AgentLifecycleNoticeData): string {
+export function serializeAgentRemoved(data: AgentLifecycleNoticeData & { heldOutput?: string }): string {
 	const sessionAttr = data.sessionId ? ` session_id="${data.sessionId}"` : "";
-	return `<agent_removed id="${data.id}"${sessionAttr}>\n<hint>The user removed this agent manually. Its saved session stays available through the resurrect tool.</hint>\n</agent_removed>`;
+	const held = data.heldOutput !== undefined ? `<held_result>\n${data.heldOutput}\n</held_result>\n` : "";
+	return `<agent_removed id="${data.id}"${sessionAttr}>\n${held}<hint>The user removed this agent manually. Its saved session stays available through the resurrect tool.</hint>\n</agent_removed>`;
+}
+
+/** One requested child as an `await_agents` result reports it. */
+export type AwaitStatusData = Readonly<{
+	id: string;
+	state: "running" | "waiting" | "idle" | "errored" | "dead" | "stopped" | "held" | "removed";
+	output?: string;
+	error?: string;
+	sessionId?: string;
+	replaced?: boolean;
+}>;
+
+/** The model-facing text for one requested child of an await. */
+export function serializeAwaitStatus(status: AwaitStatusData): string {
+	const sessionAttr = status.sessionId ? ` session_id="${status.sessionId}"` : "";
+	const replaced = status.replaced ? `<note>${REPLACED_HINT}</note>\n` : "";
+	switch (status.state) {
+		case "idle":
+		case "errored":
+		case "dead":
+			return serializeAgentComplete({
+				id: status.id,
+				status: status.state,
+				output: status.output,
+				error: status.error,
+				sessionId: status.sessionId,
+				...(status.replaced ? { replaced: true } : undefined),
+			});
+		case "stopped":
+			return `<agent_stopped id="${status.id}"${sessionAttr}>\n${replaced}<hint>The user stopped this agent before it finished. It produced no result. Its session is idle; send it a message to continue.</hint>\n</agent_stopped>`;
+		case "removed": {
+			const held = status.output !== undefined ? `<held_result>\n${status.output}\n</held_result>\n` : "";
+			return `<agent_removed id="${status.id}"${sessionAttr}>\n${held}<hint>This agent was removed while you waited. Its saved session stays available through the resurrect tool.</hint>\n</agent_removed>`;
+		}
+		case "held":
+			return `<agent_held id="${status.id}">\n<hint>The user holds this agent's result. It reaches you when the user releases the hold.</hint>\n</agent_held>`;
+		default:
+			return `<agent_pending id="${status.id}" status="${status.state}" />`;
+	}
 }
 
 /**

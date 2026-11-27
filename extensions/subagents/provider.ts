@@ -1,1617 +1,344 @@
-import { randomUUID } from "node:crypto";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import type { AgentPath } from "./agent-path.js";
-export type { AgentPath } from "./agent-path.js";
 import type {
-	AgentNodeSnapshot,
-	AgentSessionRegistry,
-	AgentUsage,
-	RegisteredAgentNode,
-	RegistryEvent,
-} from "./agent-session-registry.js";
-import { getPersistencePaths } from "./persistence.js";
-import { createSemanticEvent } from "./semantic-events.js";
-import { createSubagentLifecycleReader } from './lifecycle.js';
-import type { SubagentLifecycleRecord, SubagentLifecycleReader } from './lifecycle.js';
-import type { ManagedChildSession } from "./managed-child-session.js";
-import type {
-	ActiveSubagentOperation,
-	SubagentAwaitStatus,
-	SubagentCapabilities as SdkSubagentCapabilities,
-	SubagentDeltaData,
-	SubagentPresentationManifest,
-	SubagentProviderEvent,
-	SubagentProviderSnapshot,
-	SubagentStartData,
-	SubagentStartEvent,
-	SubagentDeltaEvent,
-	SubagentEndEvent,
-	SubagentFiniteEvent,
+	AgentPath,
+	BorrowedAgentSession,
+	SubagentCapabilities,
+	SubagentHoldRequest,
+	SubagentLease,
+	SubagentLeaseEvent,
+	SubagentNodeSnapshot,
+	SubagentPresentationProvider,
+	SubagentPresenters,
+	SubagentResurrectRequest,
+	SubagentResurrectResult,
+	SubagentRuntimeRef,
+	SubagentStopRequest,
+	SubagentTeardownResult,
+	SubagentTopologyEvent,
+	SubagentTopologySnapshot,
+	SubagentUsage,
 } from "@pimote/sdk/subagents";
-import type { SemanticAdapterEvent } from "./semantic-adapter.js";
-import { finalDataJson, normalizeSavedPresentationData, persistedContentJson, savedPresentationKind } from './presentation-data.js';
-import type { JsonObject } from './narrow.js';
-import type { PersistedSubagentContent, PresentationKind } from './presentation-data.js';
-import { required } from "../../lib/required.ts";
-
-/** Opaque provider epoch plus the last ordered event sequence observed in it. */
-export type FeedCursor = Readonly<{
-	epoch: string;
-	sequence: number;
-}>;
-
-/** Native Pi transcript/session provenance for one semantic event. */
-export type PiEventRef = Readonly<{
-	sessionId: string;
-	entryId?: string;
-	toolCallId?: string;
-	kind: "message" | "tool_call" | "custom_message" | "lifecycle";
-}>;
-
-export type SubagentEventKind =
-	| "node_added"
-	| "node_updated"
-	| "node_removed"
-	| "runtime_replaced"
-	| "delegation"
-	| "message_thread"
-	| "await_started"
-	| "child_settled"
-	| "await_interrupted"
-	| "await_released"
-	| "completion"
-	| "interrupt"
-	| "teardown"
-	| "resurrect";
-
-export type SubagentDelegationData = Readonly<{
-	invocationId: string;
-	awaitsResult: boolean;
-	children: readonly Readonly<{ path: AgentPath; task: string; persona?: string }>[];
-}>;
-
-/** Alias used by the my-pi provider implementation. */
-export type DelegationData = SubagentDelegationData;
-
-export type SubagentCompletionData = Readonly<{
-	status: "idle" | "errored" | "dead" | "stopped";
-	output?: string;
-	error?: string;
-	usage?: SubagentUsage;
-}> &
-	(
-		| Readonly<{ delivery: "awaited"; invocationId: string }>
-		| Readonly<{ delivery: "asynchronous"; invocationId?: string }>
-	);
-
-/** Alias used by the my-pi provider implementation. */
-export type CompletionData = SubagentCompletionData;
-
-export type SubagentMessageData = Readonly<{
-	from: AgentPath;
-	to: AgentPath;
-	text: string;
-	correlationId?: string;
-	responseExpected: boolean;
-}> &
-	(
-		| Readonly<{ phase: "sent" | "received" | "response" }>
-		| Readonly<{ phase: "failure"; error: string }>
-	);
-
-/** Alias used by the my-pi provider implementation. */
-export type CommunicationData = SubagentMessageData;
-
-/** One child state included in await progress and settlement facts. */
-export type SubagentAwaitState = SubagentState | "stopped";
-
-export type SubagentAwaitChildStatus = Readonly<{
-	path: AgentPath;
-	state: SubagentAwaitState;
-	output?: string;
-	error?: string;
-	sessionId?: string;
-}>;
-
-/** Await progress, interruption, and release details. */
-export type SubagentAwaitData = Readonly<{
-	invocationId?: string;
-	requested?: readonly AgentPath[];
-	statuses?: readonly SubagentAwaitChildStatus[];
-	path?: AgentPath;
-	output?: string;
-	error?: string;
-	reason?: "settled" | "detach" | "stop" | "message";
-	message?: CommunicationData;
-}>;
-
-/** Lifecycle operation details carried by interrupt, teardown, and resurrection facts. */
-export type SubagentLifecycleData = Readonly<{
-	operation?: "interrupt" | "teardown" | "resurrect";
-	outcome?: string;
-	path?: AgentPath;
-	output?: string;
-	error?: string;
-	sessionId?: string;
-	recovery?: JsonObject;
-	[key: string]: unknown;
-}>;
-
-/**
- * A public node projection carried by topology events and snapshots.
- * `incarnation` changes when a path is removed or reused, but survives runtime
- * replacement at the same path.
- */
-export type SubagentNodeSnapshot = Readonly<{
-	path: AgentPath;
-	incarnation: string;
-	sessionId: string;
-	task?: string;
-	persona?: string;
-	personaIcon?: string;
-	model?: string;
-	thinkingLevel?: string;
-	state: SubagentState;
-	activity?: string;
-	usage: SubagentUsage;
-	/** Context fill as an integer percentage from 0 through 100. */
-	contextFill?: number;
-	channels: readonly string[];
-	waitingFor: readonly AgentPath[];
-	hasSubgroup: boolean;
-	lastError?: string;
-}>;
-
-/**
- * Topology events use complete node snapshots. The small session-id form stays
- * accepted for old persisted semantic facts that predate complete snapshots.
- */
-/** Compatibility alias for consumers that call hierarchy rows nodes. */
-export type SubagentNode = SubagentNodeSnapshot;
-
-/** Topology events accept the complete projection and old session-id facts. */
-export type SubagentNodeEventData =
-	| SubagentNodeSnapshot
-	| Readonly<{ sessionId: string }>;
-
-export type SubagentRuntimeReplacedData = Readonly<{
-	oldSessionId: string;
-	newSessionId: string;
-}>;
-
-export type SubagentUsageSnapshot = SubagentUsage;
-
-export type SubagentEventData =
-	| Readonly<{ kind: "node_added" | "node_updated"; data: SubagentNodeEventData }>
-	| Readonly<{
-			kind: "node_removed";
-			data: Readonly<{ node: SubagentNodeSnapshot; reason: string }>;
-	  }>
-	| Readonly<{ kind: "runtime_replaced"; data: SubagentRuntimeReplacedData }>
-	| Readonly<{ kind: "delegation"; data: DelegationData }>
-	| Readonly<{ kind: "message_thread"; data: CommunicationData }>
-	| Readonly<{
-			kind: "await_started" | "child_settled" | "await_interrupted" | "await_released";
-			data: SubagentAwaitData;
-	  }>
-	| Readonly<{
-			kind: "completion";
-			data: CompletionData;
-	  }>
-	| Readonly<{
-			kind: "interrupt" | "teardown" | "resurrect";
-			data: SubagentLifecycleData;
-	  }>;
-
-/** Private semantic facts used to derive the presentation stream. */
-export type SubagentSemanticFact = Readonly<{
-	eventId: string;
-	path: AgentPath;
-	relatedPiEvents: readonly PiEventRef[];
-}> &
-	SubagentEventData;
-
-/** Internal semantic fact event retained for lifecycle replay. */
-export type SubagentEvent = SubagentSemanticFact & Readonly<{ cursor: FeedCursor }>;
-
-export type SubagentState = "running" | "waiting" | "idle" | "errored" | "dead";
-export type SubagentNodeState = SubagentState;
-
-export type SubagentCostBreakdown = Readonly<{
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-}>;
-
-/** Public usage projection carried by provider snapshots. */
-export type SubagentUsage = Readonly<AgentUsage>;
-
-type HierarchySnapshot = Readonly<{
-	cursor: FeedCursor;
-	nodes: readonly ProviderNode[];
-}>;
-
-export type SubagentTeardownReason = "not_found" | "already_removed" | "removed";
-
-export type SubagentTeardownResult = Readonly<{
-	path: AgentPath;
-	removed: boolean;
-	sessionId?: string;
-	incarnation?: string;
-	reason?: SubagentTeardownReason;
-}>;
-
-/** Guarded request to stop the child that owns one public path incarnation. */
-export type SubagentStopRequest = Readonly<{
-	path: AgentPath;
-	incarnation: string;
-	/** The host must reject a request for a replacement runtime at this path. */
-	expectedSessionId: string;
-}>;
-
-/** Input to the normal my-pi resurrection path. */
-export type SubagentResurrectRequest = Readonly<{
-	/** Saved child session id returned by teardown. */
-	sessionId: string;
-	/** Owning root-relative parent path. */
-	parentPath: AgentPath;
-	/** New local id under `parentPath`. */
-	localId: string;
-	task: string;
-	channels: readonly string[];
-	model?: string;
-}>;
-
-/** Result of a normal resurrection operation. */
-export type SubagentResurrectResult = Readonly<{
-	path: AgentPath;
-	node?: SubagentNodeSnapshot;
-	sessionId?: string;
-	incarnation?: string;
-}>;
-
-/**
- * Provider-owned child capabilities. The projection is intentionally separate
- * from the borrowed AgentSession so Pimote never receives extension machinery.
- */
-export type SubagentOperation =
-	| "prompt"
-	| "steer"
-	| "follow_up"
-	| "stop"
-	| "bash"
-	| "abort_bash"
-	| "set_model"
-	| "cycle_model"
-	| "set_thinking_level"
-	| "cycle_thinking_level"
-	| "set_auto_compaction"
-	| "compact"
-	| "tree"
-	| "completion"
-	| "state"
-	| "meta";
-
-/** Capability fields a child session exposes (owned by the SDK). */
-export type SubagentCapabilities = SdkSubagentCapabilities;
-
-/** Minimal session-manager projection exposed beside a borrowed native session. */
-export type BorrowedSessionManager = Pick<
-	AgentSession["sessionManager"],
-	"getEntries" | "getBranch" | "buildContextEntries" | "getTree" | "getLeafId" | "getCwd" | "getLabel" | "appendLabelChange"
->;
-
-/** Structural projection of the native child runtime borrowed by a view. */
-export type BorrowedAgentSession =
-	Pick<
-		AgentSession,
-		| "sessionId"
-		| "sessionFile"
-		| "messages"
-		| "model"
-		| "thinkingLevel"
-		| "isStreaming"
-		| "isIdle"
-		| "isCompacting"
-		| "isBashRunning"
-		| "clearQueue"
-		| "subscribe"
-		| "prompt"
-		| "steer"
-		| "followUp"
-		| "abort"
-		| "executeBash"
-		| "abortBash"
-		| "setModel"
-		| "cycleModel"
-		| "setThinkingLevel"
-		| "cycleThinkingLevel"
-		| "setAutoCompactionEnabled"
-		| "compact"
-		| "navigateTree"
-		| "getContextUsage"
-		| "getSessionStats"
-	> & {
-		readonly sessionManager: BorrowedSessionManager;
-		readonly state: Pick<AgentSession["state"], "streamingMessage" | "pendingToolCalls" | "errorMessage">;
-	};
-
-export type SubagentLeaseEvent =
-	| Readonly<{ kind: "rebound"; session: BorrowedAgentSession; capabilities?: SubagentCapabilities }>
-	| Readonly<{ kind: "closed"; reason: "removed" | "unavailable" }>;
-
-export interface SubagentLease {
-	readonly path: AgentPath;
-	/** Current native session; access throws after the lease closes or releases. */
-	readonly session: BorrowedAgentSession;
-	readonly capabilities: SubagentCapabilities;
-	subscribe(listener: (event: SubagentLeaseEvent) => void): () => void;
-	/** Idempotent. Never disposes the borrowed child runtime. */
-	release(): Promise<void>;
-}
-
-/** Root-scoped semantic facts shared by every nested manager. */
-export interface SubagentSemanticFactBus {
-	publish(fact: SubagentSemanticFact): void;
-	subscribe(listener: (fact: SubagentSemanticFact) => void): () => void;
-}
-
-/** Root-scoped lifecycle authority used by the provider. */
-/** Operations a manager exposes to the root-scoped control registry.
- *
- * The control registry supplies the owning manager's local id after resolving
- * the public root-relative path. These methods run through the manager's own
- * mutation queue; callers never remove registry nodes directly.
- */
-export interface SubagentManagerControl {
-	teardown(localId: string, incarnation: string): Promise<SubagentTeardownResult>;
-	stop(request: SubagentStopRequest): Promise<void>;
-	resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult>;
-}
-
-export interface SubagentLeaseCoordinator {
-	attachLease(path: AgentPath): void;
-	detachLease(path: AgentPath): void;
-	discardLease(path: AgentPath): void;
-}
-
-export interface SubagentOwnerControlPort {
-	teardown(path: AgentPath, incarnation: string): Promise<SubagentTeardownResult>;
-	stop(request: SubagentStopRequest): Promise<void>;
-	resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult>;
-	/** Register one immediate-child owner at its canonical root-relative path. */
-	registerManager?(ownerPath: AgentPath, manager: SubagentManagerControl): void;
-	/** Remove a manager registration during scope shutdown. */
-	unregisterManager?(ownerPath: AgentPath, manager: SubagentManagerControl): void;
-	/** Register the coordinator that owns leases for this manager's children. */
-	registerLeaseCoordinator?(ownerPath: AgentPath, coordinator: SubagentLeaseCoordinator): void;
-	/** Remove a coordinator registration during scope shutdown. */
-	unregisterLeaseCoordinator?(ownerPath: AgentPath, coordinator: SubagentLeaseCoordinator): void;
-	/** Route a lease callback to the coordinator of the child path's owner. */
-	routeLeaseAttached?(path: AgentPath): void;
-	routeLeaseDetached?(path: AgentPath, reason: "released" | "removed" | "unavailable"): void;
-}
-
-export type ProviderFeedEvent = SubagentEvent | SubagentProviderEvent;
-
-/** Replay includes retained semantic fact events alongside SDK presentation events. */
-export type ReplayResult =
-	| Readonly<{ kind: "events"; cursor: FeedCursor; events: readonly ProviderFeedEvent[] }>
-	| Readonly<{ kind: "snapshot_required"; reason: "epoch_changed" | "history_unavailable" }>;
-
-export interface SubagentProvider {
-	subscribe(listener: (event: SubagentProviderEvent) => void): () => void;
-	snapshot(): SubagentProviderSnapshot;
-	/** Without a cursor, replay all retained events. */
-	replay(after?: FeedCursor): ReplayResult;
-	rehydrate(input: { session: BorrowedAgentSession; path: AgentPath }): Promise<void>;
-	acquire(path: AgentPath): Promise<SubagentLease>;
-	teardown(path: AgentPath, incarnation: string): Promise<SubagentTeardownResult>;
-	stop(request: SubagentStopRequest): Promise<void>;
-	resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult>;
-}
+import type { AgentNodeSnapshot, AgentSessionRegistry, RegistryEvent } from "./agent-session-registry.js";
+import { isRegisteredAgentNode } from "./agent-session-registry.js";
+import type { SubagentControlPort } from "./control-port.js";
 
 export interface SubagentProviderOptions {
-	/** Canonical root-relative tree and live child runtime owner. */
 	registry: AgentSessionRegistry;
-	/** Optional shared registry event source. Standalone providers subscribe to the registry directly. */
-	registryEvents?: { subscribe(listener: (event: RegistryEvent) => void): () => void };
-	/** Root-scoped lifecycle authority. Provider delegates guarded mutations here. */
-	ownerControl: SubagentOwnerControlPort;
-	/** Existing append-only lifecycle projection used for replay restoration. */
-	lifecycle?: SubagentLifecycleReader;
-	/** Parent session file used to locate persisted child sessions. */
-	parentSessionFile?: string;
-	/** Live semantic facts, independent of child view leases. */
-	semanticEvents?: { subscribe(listener: (fact: SubagentSemanticFact) => void): () => void };
-	/** Private typed presentation facts from the Pi stream adapter. */
-	presentationEvents?: { subscribePresentation?: (listener: (event: SemanticAdapterEvent) => void) => () => void };
-	/** Notify the session turn owner when a child view acquires a lease. */
-	onLeaseAttached?: (path: AgentPath) => void;
-	/** Notify the session turn owner when a child view releases or loses a lease. */
-	onLeaseDetached?: (path: AgentPath, reason: "released" | "removed" | "unavailable") => void;
-	/** Maximum retained feed events, a positive integer. Older cursors require a snapshot. */
-	historyLimit?: number;
+	control: Pick<SubagentControlPort, "teardown" | "stop" | "setHold" | "resurrect">;
+	presenters: SubagentPresenters;
 }
 
-type ProviderNode = SubagentNodeSnapshot;
-type NodeIdentity = Readonly<{ incarnation: string; explicit: boolean }>;
+/** The root provider plus the owner-side lifecycle calls it does not expose. */
+export type OwnedSubagentProvider = SubagentPresentationProvider & {
+	/** Report a restore that must end before the provider is ready. */
+	trackRestore(restore: Promise<unknown>): void;
+	/** The root restore ended. The provider turns ready once tracked restores end too. */
+	markRootRestored(): void;
+	/** Close every lease and stop publishing. */
+	shutdown(): void;
+};
+
 type LeaseRecord = {
-	readonly path: AgentPath;
-	readonly key: string;
-	readonly generation: number;
-	readonly incarnation: string;
-	currentSession?: BorrowedAgentSession;
-	currentCapabilities: SubagentCapabilities;
-	active: boolean;
+	readonly ref: SubagentRuntimeRef;
+	session: BorrowedAgentSession | undefined;
+	capabilities: SubagentCapabilities;
 	readonly listeners: Set<(event: SubagentLeaseEvent) => void>;
 };
 
-type UnknownRecord = JsonObject;
-
-const EMPTY_CAPABILITIES: SubagentCapabilities = Object.freeze({});
-const DEFAULT_HISTORY_LIMIT = 256;
-
-function isRecord(value: unknown): value is UnknownRecord {
-	return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function stripPrivatePresentation<T>(value: T): T {
-	if (Array.isArray(value)) {return value.map((child) => stripPrivatePresentation(child)) as T;}
-	if (typeof value !== "object" || value === null) {return value;}
-	const entries = Object.entries(value)
-		.filter(([key]) => key !== "correlationId" && key !== "correlation_id")
-		.map(([key, child]) => [key, stripPrivatePresentation(child)] as [string, unknown]);
-	return Object.fromEntries(entries) as T;
-}
-
-function freezePresentationValue<T>(value: T): T {
-	if (Array.isArray(value)) {
-		for (const child of value) {freezePresentationValue(child);}
-		return Object.freeze(value) as T;
-	}
-	if (typeof value === "object" && value !== null) {
-		for (const child of Object.values(value)) {freezePresentationValue(child);}
-		return Object.freeze(value) as T;
-	}
-	return value;
-}
-
-function pathKey(path: AgentPath): string {
-	return JSON.stringify(path);
-}
-
-function copyPath(path: AgentPath): AgentPath {
-	return Object.freeze([...path]);
-}
-
-function isPathPrefix(prefix: AgentPath, path: AgentPath): boolean {
-	return prefix.length <= path.length && prefix.every((part, index) => part === path[index]);
-}
-
-function asString(value: unknown): string | undefined {
-	return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function optionalString(value: unknown): string | undefined {
-	return typeof value === "string" ? value : undefined;
-}
-
-function finiteNumber(value: unknown, fallback = 0): number {
-	return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function cloneUsage(value: AgentUsage | undefined): SubagentUsage {
-	const usage = value ?? {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-		cost: 0,
-		turns: 0,
-	};
-	const costBreakdown = usage.costBreakdown;
-	return Object.freeze({
-		input: finiteNumber(usage.input),
-		output: finiteNumber(usage.output),
-		cacheRead: finiteNumber(usage.cacheRead),
-		cacheWrite: finiteNumber(usage.cacheWrite),
-		cost: finiteNumber(usage.cost),
-		turns: finiteNumber(usage.turns),
-		...(costBreakdown
-			? {
-					costBreakdown: Object.freeze({
-						input: finiteNumber(costBreakdown.input),
-						output: finiteNumber(costBreakdown.output),
-						cacheRead: finiteNumber(costBreakdown.cacheRead),
-						cacheWrite: finiteNumber(costBreakdown.cacheWrite),
-					}),
-				}
-			: undefined),
-	});
-}
-
-function contextFill(lastTurnInput: unknown, contextWindow: unknown): number | undefined {
-	const input = finiteNumber(lastTurnInput);
-	const window = finiteNumber(contextWindow);
-	if (window <= 0) {return undefined;}
-	return Math.max(0, Math.min(100, Math.round((input / window) * 100)));
-}
-
-function validPath(value: unknown): value is AgentPath {
-	return Array.isArray(value)
-		&& value.every((part) => typeof part === "string" && part.length > 0);
-}
-
-function cloneRefs(refs: readonly PiEventRef[] | undefined): readonly PiEventRef[] {
-	return Object.freeze((refs ?? []).map((ref) => Object.freeze({ ...ref })));
-}
-
-function cloneNode(node: ProviderNode): ProviderNode {
-	return Object.freeze({
-		...node,
-		path: copyPath(node.path),
-		channels: Object.freeze([...node.channels]),
-		waitingFor: Object.freeze(node.waitingFor.map((target) => copyPath(target))),
-		usage: cloneUsage(node.usage),
-	});
-}
-
-function publicNode(node: ProviderNode): ProviderNode {
-	return Object.freeze({
-		...node,
-		path: copyPath(node.path),
-		channels: Object.freeze([...(node.channels ?? [])]),
-		waitingFor: Object.freeze((node.waitingFor ?? []).map((target) => copyPath(target))),
-		usage: cloneUsage(node.usage),
-	});
-}
-
-function cloneSnapshot(snapshot: HierarchySnapshot): HierarchySnapshot {
-	return Object.freeze({
-		cursor: Object.freeze({ ...snapshot.cursor }),
-		nodes: Object.freeze(snapshot.nodes.map((node) => cloneNode(node))),
-	});
-}
-
-function sourceRecord(record: SubagentLifecycleRecord): UnknownRecord {
-	const data = isRecord(record.data) ? record.data : {};
-	return isRecord(data.source) ? data.source : {};
-}
-
-function statusRecord(record: SubagentLifecycleRecord): UnknownRecord {
-	const data = isRecord(record.data) ? record.data : {};
-	if (isRecord(data.status)) {return data.status;}
-	return isRecord(data.snapshot) ? data.snapshot : {};
-}
-
-function sourceChannels(source: UnknownRecord): readonly string[] {
-	return Array.isArray(source.channels)
-		? Object.freeze(source.channels.filter((channel): channel is string => typeof channel === "string"))
-		: Object.freeze([]);
-}
-
-function sourceUsage(status: UnknownRecord): SubagentUsage {
-	return cloneUsage(isRecord(status.usage) ? status.usage as AgentUsage : undefined);
-}
-
-function nodeFromLifecycle(
-	record: SubagentLifecycleRecord,
-	incarnation: string,
-): ProviderNode {
-	const source = sourceRecord(record);
-	const status = statusRecord(record);
-	const sessionId = record.sessionId ?? asString(source.sessionId) ?? "unknown";
-	const task = asString(source.task);
-	const persona = asString(source.personaName) ?? asString(source.agent);
-	const personaIcon = asString(source.personaIcon);
-	const model = asString(status.model);
-	const activity = optionalString(status.lastActivity);
-	return cloneNode({
-		path: copyPath(record.path),
-		incarnation,
-		sessionId,
-		...(task !== undefined ? { task } : undefined),
-		...(persona !== undefined ? { persona } : undefined),
-		...(personaIcon !== undefined ? { personaIcon } : undefined),
-		...(model !== undefined ? { model } : undefined),
-		state: "idle",
-		usage: sourceUsage(status),
-		...(contextFill(status.lastTurnInput, undefined) !== undefined
-			? { contextFill: contextFill(status.lastTurnInput, undefined) }
-			: undefined),
-		channels: sourceChannels(source),
-		waitingFor: Object.freeze([]),
-		hasSubgroup: false,
-		...(activity !== undefined ? { activity } : undefined),
-	});
-}
-
-
-function eventCursor(epoch: string, sequence: number): FeedCursor {
-	return Object.freeze({ epoch, sequence });
-}
-
-function isPresentationKind(value: unknown): value is PresentationKind {
-	return value === "message_received" || value === "send" || value === "respond" || value === "await" || value === "delegation"
-		|| value === "completion" || value === "interrupt" || value === "teardown" || value === "resurrect";
-}
-
-function isTopologyKind(value: unknown): value is "node_added" | "node_updated" | "node_removed" | "runtime_replaced" {
-	return value === "node_added" || value === "node_updated" || value === "node_removed" || value === "runtime_replaced";
-}
-
-function isPresentationState(value: unknown): value is PersistedSubagentContent["state"] {
-	return value === "complete" || value === "error" || value === "aborted";
-}
-
-function isPersistedPresentationContent(value: unknown): value is PersistedSubagentContent {
-	if (!isRecord(value) || typeof value.operationId !== "string" || !isPresentationKind(value.kind) || !isPresentationState(value.state)) {return false;}
-	if (value.source !== "tool" && value.source !== "custom_entry") {return false;}
-	if (!isRecord(value.data)) {return false;}
-	if (value.kind === "message_received" && value.source !== "custom_entry") {return false;}
-	if (value.data.operation !== (value.kind === "message_received" ? "send" : value.kind) && value.data.operation !== "protocol_error") {return false;}
-	if (value.source === "tool") {
-		const placement = value.placement;
-		return isRecord(placement)
-			&& typeof placement.toolCallId === "string"
-			&& typeof placement.contentIndex === "number"
-			&& (placement.entryId === undefined || typeof placement.entryId === "string");
-	}
-	if (value.placement === undefined) {return true;}
-	return isRecord(value.placement) && typeof value.placement.entryId === "string";
-}
-
-function restoreAwaitResult(payload: PersistedSubagentContent, semantic: unknown): PersistedSubagentContent {
-	if (payload.source !== "tool" || payload.kind !== "await" || payload.data.operation !== "await") {return payload;}
-	const result = payload.data.result;
-	if (!isRecord(result) || !Array.isArray(result.statuses)) {return payload;}
-	if (result.statuses.some((status) => !isRecord(status) || !validPath(status.path))) {return payload;}
-	const paths = new Set<string>();
-	for (const status of result.statuses) {
-		if (isRecord(status) && validPath(status.path)) {paths.add(pathKey(status.path));}
-	}
-	const restored: SubagentAwaitStatus[] = [];
-	const facts = Array.isArray(semantic) ? semantic : [semantic];
-	const authoritative = new Set<string>();
-	for (const fact of facts) {
-		if (!isRecord(fact) || !isRecord(fact.data) || (fact.kind !== "await_interrupted" && fact.kind !== "await_released")) {continue;}
-		if (fact.data.invocationId !== payload.operationId && fact.data.invocationId !== payload.placement.toolCallId) {continue;}
-		if (!Array.isArray(fact.data.statuses) || !Array.isArray(fact.data.requested)) {continue;}
-		for (const path of fact.data.requested) {
-			if (validPath(path)) {
-				authoritative.add(pathKey(path));
-			}
-		}
-	}
-	let interrupted = result.interrupted;
-	let error = result.error;
-	for (const fact of facts) {
-		if (!isRecord(fact) || !isRecord(fact.data)) {continue;}
-		if (fact.data.invocationId === payload.operationId || fact.data.invocationId === payload.placement.toolCallId) {
-			if (fact.kind === "await_interrupted" && interrupted === undefined) {interrupted = true;}
-			if (fact.kind === "await_released" && fact.data.reason === "message") {
-				interrupted ??= true;
-				error ??= "Cannot wait: requested agents must receive your response before settling.";
-			}
-		}
-		if (fact.kind !== "child_settled" || !Array.isArray(fact.data.statuses)) {continue;}
-		for (const status of fact.data.statuses) {
-			if (!isRecord(status) || !validPath(status.path) || status.path.length === 0) {continue;}
-			const state = status.state;
-			if (state !== "idle" && state !== "errored" && state !== "dead" && state !== "stopped") {continue;}
-			const key = pathKey(status.path);
-			if (paths.has(key) || authoritative.has(key)) {continue;}
-			paths.add(key);
-			restored.push({
-				path: copyPath(status.path),
-				state,
-				...(typeof status.output === "string" ? { output: status.output } : undefined),
-				...(typeof status.error === "string" ? { error: status.error } : undefined),
-				...(typeof status.sessionId === "string" ? { sessionId: status.sessionId } : undefined),
-			});
-		}
-	}
-	if (restored.length === 0 && interrupted === result.interrupted && error === result.error) {return payload;}
-	return { ...payload, data: { ...payload.data, result: {
-		...result,
-		statuses: [...result.statuses, ...restored],
-		...(interrupted !== undefined ? { interrupted } : undefined),
-		...(error !== undefined ? { error } : undefined),
-	} } };
-}
-
-function projectWaiting(path: AgentPath, operational: AgentNodeSnapshot["operational"]): readonly AgentPath[] {
-	const resolved: AgentPath[] = [];
-	for (const target of operational.waitingForPaths ?? []) {
-		if (validPath(target)) {resolved.push(copyPath(target));}
-	}
-	const waitingIds = Array.isArray(operational.waitingFor) ? operational.waitingFor : [];
-	const known = resolved.length;
-	for (let index = known; index < waitingIds.length; index++) {
-		const localId = waitingIds[index];
-		if (typeof localId !== "string" || localId.length === 0) {continue;}
-		const target = localId === "parent"
-			? path.slice(0, -1)
-			: [...path.slice(0, -1), localId];
-		resolved.push(copyPath(target));
-	}
-	return Object.freeze(resolved);
-}
-
-function presentationTarget(event: SemanticAdapterEvent): Readonly<{ operationId: string; kind: PresentationKind; path: AgentPath; placement?: SemanticAdapterEvent["placement"] }> {
-	return Object.freeze({
-		operationId: event.operationId,
-		kind: event.kind,
-		path: copyPath(event.path),
-		...(event.placement !== undefined ? { placement: Object.freeze({ ...event.placement }) } : undefined),
-	});
-}
-
-function mergeActiveData(prior: SubagentStartData, delta: SubagentDeltaData): SubagentStartData {
-	if (prior.operation === "delegation" && delta.operation === "delegation") {return { ...prior, result: { children: delta.children } };}
-	if (prior.operation === "send" && delta.operation === "send") {
-		if ("delta" in delta) {
-			return {
-				...prior,
-				...(delta.field === "request"
-					? { parameters: { ...prior.parameters, message: String(prior.parameters.message ?? "") + delta.delta } }
-					: { result: { ...prior.result, response: prior.result.response + delta.delta } }),
-			};
-		}
-		return { ...prior, result: { ...prior.result, phase: delta.phase } };
-	}
-	if (prior.operation === "respond" && delta.operation === "respond") {return { ...prior, parameters: { ...prior.parameters, message: String(prior.parameters.message ?? "") + delta.delta } };}
-	if (prior.operation === "await" && delta.operation === "await") {return { ...prior, result: { ...prior.result, statuses: delta.statuses } };}
-	return prior;
-}
-
-function presentationOperationKey(event: Pick<SemanticAdapterEvent, "path" | "operationId">): string {
-	return `${pathKey(event.path)}:${event.operationId}`;
-}
-
-function borrow(node: RegisteredAgentNode) {
-	let session: AgentSession;
-	try {
-		session = node.session.session;
-	} catch (error) {
-		throw new Error(`Subagent runtime is unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-	}
-	if (!session) {throw new Error("Subagent runtime is unavailable");}
-	let capabilities: SubagentCapabilities = EMPTY_CAPABILITIES;
-	try {
-		const candidate = (node.session as ManagedChildSession & { capabilities?: SubagentCapabilities }).capabilities;
-		if (candidate) {capabilities = candidate;}
-	} catch (error) {
-		throw new Error(`Subagent capabilities are unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-	}
-	return {
-		session,
-		capabilities,
-	};
-}
-
-/** Provider feed, hierarchy projection, and borrowed runtime lease owner. */
-export function createSubagentProvider(options: SubagentProviderOptions): SubagentProvider & {
-	/** Stop accepting facts and release provider subscriptions. */
-	shutdown(): void;
-} {
-	const epoch = randomUUID();
-	const historyLimit = Number.isInteger(options.historyLimit) && (options.historyLimit ?? 0) > 0
-		? required(options.historyLimit, "history limit")
-		: DEFAULT_HISTORY_LIMIT;
+/**
+ * Topology, guarded controls, and presenters for one root session. Leases
+ * borrow child runtimes for views. They never change what the parent agent
+ * receives; only the explicit hold does.
+ */
+export function createSubagentProvider(options: SubagentProviderOptions): OwnedSubagentProvider {
+	const { registry, control, presenters } = options;
+	const nodes = new Map<string, SubagentNodeSnapshot>();
+	const listeners = new Set<(event: SubagentTopologyEvent) => void>();
+	const leases = new Set<LeaseRecord>();
 	let sequence = 0;
-	let eventCounter = 0;
-	let leaseGeneration = 0;
-	let incarnationCounter = 0;
 	let closed = false;
-	const history: ProviderFeedEvent[] = [];
-	const listeners = new Set<(event: ProviderFeedEvent) => void>();
-	const activeOperations = new Map<string, ActiveSubagentOperation>();
-	const presentationOperations = new Set<string>();
-	const hydratedSessions = new Set<string>();
-	const manifest: SubagentPresentationManifest = Object.freeze({
-		hiddenToolNames: Object.freeze(["send", "respond", "subagent", "fork", "await_agents", "interrupt", "teardown", "resurrect"]),
-		hiddenCustomTypes: Object.freeze(["subagents"]),
-	});
-	const liveNodes = new Map<string, ProviderNode>();
-	const liveIdentity = new Map<string, NodeIdentity>();
-	const retiredIncarnations = new Map<string, Set<string>>();
-	const leases = new Map<string, Set<LeaseRecord>>();
-	const implicitRebinds = new Map<string, BorrowedAgentSession>();
-	const removingPaths = new Set<string>();
-	const historicalNodes = new Map<string, ProviderNode>();
-	const historicalIdentity = new Map<string, NodeIdentity>();
-	const historicalRetired = new Map<string, Set<string>>();
-	let registryUnsubscribe: (() => void) | undefined;
-	let semanticUnsubscribe: (() => void) | undefined;
-	let presentationUnsubscribe: (() => void) | undefined;
+	let rootRestored = false;
+	let pendingRestores = 0;
+	let ready = false;
 
-	function currentCursor(): FeedCursor {
-		return eventCursor(epoch, sequence);
+	for (const snapshot of registry.listDescendants([])) {
+		if (snapshot.ownership === "registry") {nodes.set(pathKey(snapshot.path), project(snapshot));}
 	}
+	const unsubscribe = registry.subscribe(onRegistryEvent);
 
-	function nextIncarnation(
-		path: AgentPath,
-		candidate: string | undefined,
-		identities: Map<string, NodeIdentity>,
-		retired: Map<string, Set<string>>,
-	): NodeIdentity {
-		const key = pathKey(path);
-		const prior = identities.get(key);
-		if (prior && (candidate === undefined || candidate === prior.incarnation)) {return prior;}
-		const retiredForPath = retired.get(key) ?? new Set<string>();
-		let incarnation = candidate;
-		if (incarnation === undefined || retiredForPath.has(incarnation)) {
-			incarnation = candidate ?? `incarnation-${++incarnationCounter}`;
-			while (retiredForPath.has(incarnation)) {incarnation = `${incarnation}-${++incarnationCounter}`;}
-		}
-		const identity = Object.freeze({ incarnation, explicit: candidate !== undefined });
-		identities.set(key, identity);
-		return identity;
-	}
-
-	function retireIdentity(path: AgentPath, identity: NodeIdentity | undefined): void {
-		if (!identity) {return;}
-		const key = pathKey(path);
-		const retired = retiredIncarnations.get(key) ?? new Set<string>();
-		retired.add(identity.incarnation);
-		retiredIncarnations.set(key, retired);
-		const prefix = `${key}:`;
-		for (const operationKey of presentationOperations) {
-			if (operationKey.startsWith(prefix)) {presentationOperations.delete(operationKey);}
-		}
-		for (const operationKey of activeOperations.keys()) {
-			if (operationKey.startsWith(prefix)) {activeOperations.delete(operationKey);}
-		}
-	}
-
-	function projectNode(snapshot: AgentNodeSnapshot, identity: NodeIdentity): ProviderNode {
+	function project(snapshot: AgentNodeSnapshot): SubagentNodeSnapshot {
 		const operational = snapshot.operational;
-		const descendants = (() => {
-			try {
-				return options.registry.listDescendants(snapshot.path).length > 0;
-			} catch {
-				return false;
-			}
-		})();
-		const cwd = asString(snapshot.cwd);
-		const persona = asString(snapshot.persona);
-		const personaIcon = asString(snapshot.personaIcon);
-		const model = asString(operational.model);
-		const thinkingLevel = asString(operational.thinkingLevel);
-		const activity = asString(operational.lastActivity);
-		const lastError = optionalString(operational.lastError);
 		const fill = contextFill(operational.lastTurnInput, operational.contextWindow);
-		return cloneNode({
-			path: copyPath(snapshot.path),
-			incarnation: identity.incarnation,
+		return Object.freeze({
+			path: [...snapshot.path],
+			incarnation: snapshot.incarnation,
 			sessionId: snapshot.sessionId,
-			...(cwd !== undefined ? { cwd } : undefined),
+			...(snapshot.cwd ? { cwd: snapshot.cwd } : undefined),
 			...(snapshot.task !== undefined ? { task: snapshot.task } : undefined),
-			...(persona !== undefined ? { persona } : undefined),
-			...(personaIcon !== undefined ? { personaIcon } : undefined),
-			...(model !== undefined ? { model } : undefined),
-			...(thinkingLevel !== undefined ? { thinkingLevel } : undefined),
+			...(snapshot.persona !== undefined ? { persona: snapshot.persona } : undefined),
+			...(snapshot.personaIcon !== undefined ? { personaIcon: snapshot.personaIcon } : undefined),
+			...(operational.model !== undefined ? { model: operational.model } : undefined),
+			...(operational.thinkingLevel !== undefined ? { thinkingLevel: operational.thinkingLevel } : undefined),
 			state: operational.state,
-			...(activity !== undefined ? { activity } : undefined),
-			usage: cloneUsage(operational.usage),
+			...(operational.lastActivity ? { activity: operational.lastActivity } : undefined),
+			usage: usageOf(operational.usage),
 			...(fill !== undefined ? { contextFill: fill } : undefined),
-			channels: Object.freeze(Array.isArray(snapshot.channels) ? [...snapshot.channels] : []),
-			waitingFor: projectWaiting(snapshot.path, operational),
-			hasSubgroup: Boolean(operational.hasSubgroup || descendants),
-			...(lastError !== undefined ? { lastError } : undefined),
+			channels: [...snapshot.channels],
+			waitingFor: (operational.waitingForPaths ?? []).map((path) => [...path]),
+			hasSubgroup: operational.hasSubgroup || registry.listChildren(snapshot.path).length > 0,
+			...(operational.lastError ? { lastError: operational.lastError } : undefined),
+			held: operational.held === true,
+			...(operational.heldSettlement !== undefined ? { heldSettlement: operational.heldSettlement } : undefined),
 		});
 	}
 
-	function setInitialNode(snapshot: AgentNodeSnapshot): void {
-		if (snapshot.path.length === 0 || snapshot.ownership !== "registry") {return;}
+	function publish(event: SubagentTopologyEvent): void {
+		for (const listener of Array.from(listeners)) {
+			try {
+				listener(event);
+			} catch (error) {
+				console.error("[subagents] Topology listener failed:", error);
+			}
+		}
+	}
+
+	function setNode(snapshot: AgentNodeSnapshot): void {
 		const key = pathKey(snapshot.path);
-		const identity = nextIncarnation(
-			snapshot.path,
-			asString(snapshot.incarnation),
-			liveIdentity,
-			retiredIncarnations,
-		);
-		liveNodes.set(key, projectNode(snapshot, identity));
+		const previous = nodes.get(key);
+		const node = project(snapshot);
+		if (previous && JSON.stringify(previous) === JSON.stringify(node)) {return;}
+		nodes.set(key, node);
+		if (previous && previous.incarnation !== node.incarnation) {closeLeases(previous.path, "removed");}
+		const kind = previous && previous.incarnation === node.incarnation ? "node_updated" : "node_added";
+		publish({ sequence: ++sequence, kind, node });
 	}
 
-	function refreshInitialNodes(): void {
-		let nodes: readonly AgentNodeSnapshot[];
-		try {
-			nodes = options.registry.listDescendants([]);
-		} catch {
-			nodes = [];
-		}
-		for (const snapshot of nodes) {setInitialNode(snapshot);}
+	function refreshParent(path: AgentPath): void {
+		if (path.length < 2) {return;}
+		const parent = registry.getSnapshot(path.slice(0, -1));
+		if (parent && parent.ownership === "registry") {setNode(parent);}
 	}
 
-	function appendEvent(
-		base: Omit<SubagentEvent, "cursor">,
-		deliver = true,
-	): SubagentEvent {
-		const safeBase = base;
-		const publicData = safeBase.kind === "node_added" || safeBase.kind === "node_updated"
-			? publicNode(safeBase.data as ProviderNode)
-			: safeBase.kind === "node_removed"
-				? { ...(safeBase.data as { node: ProviderNode; reason: string }), node: publicNode((safeBase.data as { node: ProviderNode }).node) }
-			: safeBase.data;
-		const event = Object.freeze({
-			...safeBase,
-			data: publicData,
-			path: copyPath(safeBase.path),
-			relatedPiEvents: cloneRefs(safeBase.relatedPiEvents),
-			cursor: eventCursor(epoch, ++sequence),
-		}) as SubagentEvent;
-		history.push(event);
-		while (history.length > historyLimit) {history.shift();}
-		if (deliver && !closed) {
-			for (const listener of Array.from(listeners)) {
-				try {
-					listener(event);
-				} catch {
-					// One observer cannot interrupt provider delivery.
-				}
-			}
-		}
-		return event;
-	}
-
-	function generatedEventId(kind: SubagentEventKind, path: AgentPath): string {
-		return `provider:${kind}:${pathKey(path)}:${++eventCounter}`;
-	}
-
-	function appendPresentationEvent(event: SemanticAdapterEvent, deliver = true): ProviderFeedEvent | undefined {
-		const target = presentationTarget(event);
-		const operationKey = presentationOperationKey(event);
-		if ((event.type === "end" || event.type === "snapshot") && presentationOperations.has(operationKey)) {return undefined;}
-		if (event.type === "start" && presentationOperations.has(operationKey)) {return undefined;}
-		if (event.type === "end" || event.type === "snapshot") {
-			presentationOperations.add(operationKey);
-		}
-		if (event.type === "start") {
-			const safeData = freezePresentationValue(stripPrivatePresentation(event.data));
-			activeOperations.set(operationKey, Object.freeze({ target, data: safeData }));
-			const output = Object.freeze({
-				type: "subagent_start",
-				eventId: `provider:subagent_start:${event.operationId}:${++eventCounter}`,
-				target,
-				data: safeData,
-				cursor: eventCursor(epoch, ++sequence),
-			}) as unknown as SubagentStartEvent;
-			history.push(output);
-			while (history.length > historyLimit) {history.shift();}
-			if (deliver && !closed) {for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }}
-			return output;
-		}
-		if (event.type === "delta") {
-			const active = activeOperations.get(operationKey);
-			const safeData = freezePresentationValue(stripPrivatePresentation(event.data));
-			if (active) {activeOperations.set(operationKey, Object.freeze({ ...active, data: freezePresentationValue(mergeActiveData(active.data, safeData)) }));}
-			const output = Object.freeze({
-				type: "subagent_delta",
-				eventId: `provider:subagent_delta:${event.operationId}:${++eventCounter}`,
-				target,
-				data: safeData,
-				cursor: eventCursor(epoch, ++sequence),
-			}) as unknown as SubagentDeltaEvent;
-			history.push(output);
-			while (history.length > historyLimit) {history.shift();}
-			if (deliver && !closed) {for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }}
-			return output;
-		}
-		if (event.type === "end") {
-			activeOperations.delete(operationKey);
-			const output = Object.freeze({
-				type: "subagent_end",
-				eventId: `provider:subagent_end:${event.operationId}:${++eventCounter}`,
-				target,
-				state: event.state,
-				data: freezePresentationValue(stripPrivatePresentation(event.data)),
-				cursor: eventCursor(epoch, ++sequence),
-			}) as unknown as SubagentEndEvent;
-			history.push(output);
-			while (history.length > historyLimit) {history.shift();}
-			if (deliver && !closed) {for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }}
-			return output;
-		}
-		if (event.type === "protocol_error") {return undefined;}
-		activeOperations.delete(operationKey);
-		const output = Object.freeze({
-			type: "subagent_snapshot_event",
-			eventId: `provider:subagent_snapshot_event:${event.operationId}:${++eventCounter}`,
-			target,
-			state: event.state,
-			data: freezePresentationValue(stripPrivatePresentation(event.data)),
-			cursor: eventCursor(epoch, ++sequence),
-		}) as unknown as SubagentFiniteEvent;
-		history.push(output);
-		while (history.length > historyLimit) {history.shift();}
-		if (deliver && !closed) {for (const listener of Array.from(listeners)) { try { listener(output); } catch {} }}
-		return output;
-	}
-
-	function appendRegistryEvent(event: RegistryEvent): void {
-		if (closed) {return;}
-		if (event.node.path.length === 0) {return;}
-		const key = pathKey(event.node.path);
-		if (event.type === "node_added") {
-			const previous = liveNodes.get(key);
-			const previousIdentity = liveIdentity.get(key);
-			const identity = nextIncarnation(
-				event.node.path,
-				asString(event.node.incarnation),
-				liveIdentity,
-				retiredIncarnations,
-			);
-			if (previousIdentity && identity.incarnation !== previousIdentity.incarnation) {
-				closeLeases(event.node.path, "removed");
-				retireIdentity(event.node.path, previousIdentity);
-			}
-			const next = projectNode(event.node, identity);
-			liveNodes.set(key, next);
-			const kind = previous && identity.incarnation === previousIdentity?.incarnation
-				? "node_updated"
-				: "node_added";
-			appendEvent({
-				eventId: generatedEventId(kind, next.path),
-				path: next.path,
-				relatedPiEvents: [],
-				kind,
-				data: next,
-			});
+	function onRegistryEvent(event: RegistryEvent): void {
+		if (closed || event.node.path.length === 0 || event.node.ownership !== "registry") {return;}
+		if (event.type === "node_removed") {
+			const key = pathKey(event.node.path);
+			const node = nodes.get(key) ?? project(event.node);
+			nodes.delete(key);
+			closeLeases(event.node.path, "removed");
+			publish({ sequence: ++sequence, kind: "node_removed", node, reason: "removed" });
+			refreshParent(event.node.path);
 			return;
 		}
-
-		if (event.type === "node_updated") {
-			const prior = liveNodes.get(key);
-			const priorIdentity = liveIdentity.get(key);
-			const incomingIncarnation = asString(event.node.incarnation);
-			const identity = priorIdentity && incomingIncarnation === undefined
-				? priorIdentity
-				: nextIncarnation(event.node.path, incomingIncarnation, liveIdentity, retiredIncarnations);
-			if (priorIdentity && identity.incarnation !== priorIdentity.incarnation) {
-				closeLeases(event.node.path, "removed");
-				retireIdentity(event.node.path, priorIdentity);
-			}
-			const next = projectNode(event.node, identity);
-			liveNodes.set(key, next);
-			const runtimeChanged = prior?.sessionId !== next.sessionId;
-			const reboundSession = rebindLeases(next.path, false);
-			if (runtimeChanged && reboundSession !== undefined) {
-				const reboundKey = pathKey(next.path);
-				implicitRebinds.set(reboundKey, reboundSession);
-				queueMicrotask(() => {
-					if (implicitRebinds.get(reboundKey) === reboundSession) {implicitRebinds.delete(reboundKey);}
-				});
-			}
-			appendEvent({
-				eventId: generatedEventId("node_updated", next.path),
-				path: next.path,
-				relatedPiEvents: [],
-				kind: "node_updated",
-				data: next,
-			});
-			return;
-		}
-
 		if (event.type === "runtime_replaced") {
-			const priorIdentity = liveIdentity.get(key)
-				?? nextIncarnation(event.node.path, asString(event.node.incarnation), liveIdentity, retiredIncarnations);
-			const next = projectNode(event.node, priorIdentity);
-			liveNodes.set(key, next);
-			const implicit = implicitRebinds.get(key);
-			implicitRebinds.delete(key);
-			rebindLeases(next.path, implicit === undefined);
-			appendEvent({
-				eventId: generatedEventId("runtime_replaced", next.path),
-				path: next.path,
-				relatedPiEvents: [],
+			nodes.set(pathKey(event.node.path), project(event.node));
+			publish({
+				sequence: ++sequence,
 				kind: "runtime_replaced",
-				data: { oldSessionId: event.oldSessionId, newSessionId: event.newSessionId },
+				path: [...event.node.path],
+				incarnation: event.node.incarnation,
+				oldSessionId: event.oldSessionId,
+				newSessionId: event.newSessionId,
 			});
+			rebindLeases(event.node.path);
 			return;
 		}
-
-		if (event.type !== "node_removed") {return;}
-		const identity = liveIdentity.get(key);
-		const node = liveNodes.get(key) ?? projectNode(event.node, identity ?? nextIncarnation(event.node.path, asString(event.node.incarnation), liveIdentity, retiredIncarnations));
-		for (const [candidateKey, candidate] of Array.from(liveNodes.entries())) {
-			if (!isPathPrefix(node.path, candidate.path)) {continue;}
-			const candidateIdentity = liveIdentity.get(candidateKey);
-			closeLeases(candidate.path, "removed");
-			retireIdentity(candidate.path, candidateIdentity);
-			liveNodes.delete(candidateKey);
-			liveIdentity.delete(candidateKey);
-		}
-		appendEvent({
-			eventId: generatedEventId("node_removed", node.path),
-			path: node.path,
-			relatedPiEvents: [],
-			kind: "node_removed",
-			data: { node, reason: "removed" },
-		});
+		setNode(event.node);
+		if (event.type === "node_added") {refreshParent(event.node.path);}
 	}
 
-	function historicalIdentityFor(record: SubagentLifecycleRecord, add: boolean): NodeIdentity {
-		const key = pathKey(record.path);
-		const prior = historicalIdentity.get(key);
-		if (prior && !add) {return prior;}
-		if (prior && add && historicalNodes.has(key)) {return prior;}
-		const source = sourceRecord(record);
-		const candidate = asString(source.incarnation);
-		const retired = historicalRetired.get(key) ?? new Set<string>();
-		let incarnation = candidate ?? `lifecycle-${historicalIdentity.size + 1}`;
-		if (retired.has(incarnation)) {incarnation = `${incarnation}-${historicalIdentity.size + 1}`;}
-		const identity = Object.freeze({ incarnation, explicit: candidate !== undefined });
-		historicalIdentity.set(key, identity);
-		return identity;
-	}
-
-	function appendLifecycleRecord(record: SubagentLifecycleRecord): void {
-		if (!validPath(record.path) || record.path.length === 0) {return;}
-		const key = pathKey(record.path);
-		if (record.kind === "node_added" || record.kind === "node_updated" || record.kind === "resurrect") {
-			const add = record.kind !== "node_updated";
-			const identity = historicalIdentityFor(record, add);
-			const node = nodeFromLifecycle(record, identity.incarnation);
-			historicalNodes.set(key, node);
-			// Resurrection is a persistence interpretation, not a provider
-			// lifecycle event. Replay exposes the resulting topology only.
-			appendEvent({
-				eventId: record.recordId,
-				path: node.path,
-				relatedPiEvents: [],
-				kind: record.kind === "node_updated" ? "node_updated" : "node_added",
-				data: node,
-			});
-			return;
-		}
-		if (record.kind === "node_removed") {
-			const identity = historicalIdentity.get(key) ?? historicalIdentityFor(record, false);
-			const node = historicalNodes.get(key) ?? nodeFromLifecycle(record, identity.incarnation);
-			const data = isRecord(record.data) ? record.data : {};
-			appendEvent({
-				eventId: record.recordId,
-				path: node.path,
-				relatedPiEvents: [],
-				kind: "node_removed",
-				data: { node, reason: data.stale === true ? "stale" : "removed" },
-			});
-			if (data.stale !== true) {
-				historicalNodes.delete(key);
-				historicalIdentity.delete(key);
-				const retired = historicalRetired.get(key) ?? new Set<string>();
-				retired.add(identity.incarnation);
-				historicalRetired.set(key, retired);
-			}
-			return;
-		}
-		// Completion and control records belong to the native transcript or
-		// presentation stream. They must not cross the provider topology replay.
-	}
-
-	function findRegistered(path: AgentPath): RegisteredAgentNode {
-		if (!Array.isArray(path) || !path.every((part) => typeof part === "string")) {throw new Error(`Invalid subagent path ${JSON.stringify(path)}`);}
-		if (path.length === 0) {throw new Error("The root session is not a child view");}
-		let node: ReturnType<AgentSessionRegistry["get"]>;
-		try {
-			node = options.registry.get(path);
-		} catch {
-			node = undefined;
-		}
-		if (!node || node.snapshot.path.length === 0 || node.snapshot.ownership !== "registry" || !("session" in node)) {
-			throw new Error(`Unknown subagent path ${JSON.stringify(path)}`);
-		}
+	function matchingNode(ref: SubagentRuntimeRef): SubagentNodeSnapshot {
+		if (closed) {throw new Error("Subagent provider is shut down");}
+		const node = nodes.get(pathKey(ref.path));
+		if (!node) {throw new Error(`Unknown subagent path ${JSON.stringify(ref.path)}`);}
+		if (node.incarnation !== ref.incarnation) {throw new Error(`Stale subagent incarnation for ${JSON.stringify(ref.path)}`);}
 		return node;
+	}
+
+	type Borrowed = Readonly<{ session: BorrowedAgentSession; capabilities: SubagentCapabilities }>;
+
+	function borrow(ref: SubagentRuntimeRef): Borrowed {
+		const node = registry.get(ref.path);
+		if (!node || !isRegisteredAgentNode(node) || node.snapshot.incarnation !== ref.incarnation) {
+			throw new Error(`Subagent runtime is unavailable for ${JSON.stringify(ref.path)}`);
+		}
+		return { session: node.session.session, capabilities: node.session.capabilities ?? {} };
 	}
 
 	function notifyLease(record: LeaseRecord, event: SubagentLeaseEvent): void {
 		for (const listener of Array.from(record.listeners)) {
 			try {
 				listener(event);
-			} catch {
-				// One view observer cannot interrupt provider lifecycle.
+			} catch (error) {
+				console.error("[subagents] Lease listener failed:", error);
 			}
 		}
 	}
 
-	function notifyLeaseAttached(path: AgentPath): void {
-		try {
-			options.onLeaseAttached?.(copyPath(path));
-		} catch {
-			// The turn owner cannot invalidate an already-issued lease.
-		}
-	}
-
-	function notifyLeaseDetached(path: AgentPath, reason: "released" | "removed" | "unavailable"): void {
-		try {
-			options.onLeaseDetached?.(copyPath(path), reason);
-		} catch {
-			// Lease cleanup must finish even if the turn owner is shutting down.
-		}
-	}
-
-	function deactivateLease(record: LeaseRecord): boolean {
-		if (!record.active) {return false;}
-		record.active = false;
-		record.currentSession = undefined;
-		const pathLeases = leases.get(record.key);
-		pathLeases?.delete(record);
-		if (pathLeases && pathLeases.size === 0) {leases.delete(record.key);}
-		return true;
-	}
-
 	function closeLease(record: LeaseRecord, reason: "removed" | "unavailable"): void {
-		if (!deactivateLease(record)) {return;}
-		notifyLeaseDetached(record.path, reason);
+		if (!leases.delete(record)) {return;}
+		record.session = undefined;
 		notifyLease(record, { kind: "closed", reason });
 		record.listeners.clear();
 	}
 
 	function closeLeases(path: AgentPath, reason: "removed" | "unavailable"): void {
-		for (const [implicitKey] of Array.from(implicitRebinds.entries())) {
-			const implicitPath = JSON.parse(implicitKey) as AgentPath;
-			if (isPathPrefix(path, implicitPath)) {implicitRebinds.delete(implicitKey);}
-		}
-		for (const [key, records] of Array.from(leases.entries())) {
-			const candidate = JSON.parse(key) as AgentPath;
-			if (!isPathPrefix(path, candidate)) {continue;}
-			for (const record of Array.from(records)) {closeLease(record, reason);}
+		for (const record of Array.from(leases)) {
+			if (isPrefix(path, record.ref.path)) {closeLease(record, reason);}
 		}
 	}
 
-	function rebindLeases(path: AgentPath, force: boolean): BorrowedAgentSession | undefined {
-		const key = pathKey(path);
-		const records = leases.get(key);
-		if (!records || records.size === 0) {return undefined;}
-		let registered: RegisteredAgentNode;
-		try {
-			registered = findRegistered(path);
-		} catch {
-			for (const record of Array.from(records)) {closeLease(record, "unavailable");}
-			return undefined;
-		}
-		let borrowed: { session: BorrowedAgentSession; capabilities: SubagentCapabilities };
-		try {
-			borrowed = borrow(registered);
-		} catch {
-			for (const record of Array.from(records)) {closeLease(record, "unavailable");}
-			return undefined;
-		}
-		for (const record of Array.from(records)) {
-			if (!record.active) {continue;}
-			if (!force && record.currentSession === borrowed.session) {continue;}
-			record.currentSession = borrowed.session;
-			record.currentCapabilities = borrowed.capabilities;
-			const event: SubagentLeaseEvent = borrowed.capabilities === EMPTY_CAPABILITIES
-				? { kind: "rebound", session: borrowed.session }
-				: { kind: "rebound", session: borrowed.session, capabilities: borrowed.capabilities };
-			notifyLease(record, event);
-		}
-		return borrowed.session;
-	}
-
-	function controlIdentity(path: AgentPath) {
-		if (path.length === 0) {throw new Error("The root session is not a child view");}
-		const node = liveNodes.get(pathKey(path));
-		if (!node) {throw new Error(`Unknown subagent path ${JSON.stringify(path)}`);}
-		return { node, explicit: liveIdentity.get(pathKey(path))?.explicit === true };
-	}
-
-	function assertIncarnation(path: AgentPath, incarnation: string): ProviderNode {
-		const { node, explicit } = controlIdentity(path);
-		if (explicit && node.incarnation !== incarnation) {
-			throw new Error(`Stale subagent incarnation for ${JSON.stringify(path)}`);
-		}
-		return node;
-	}
-
-	function subscribe(listener: (event: SubagentProviderEvent) => void): () => void {
-		if (closed) {return () => {};}
-		listeners.add(listener as unknown as (event: ProviderFeedEvent) => void);
-		return () => listeners.delete(listener as unknown as (event: ProviderFeedEvent) => void);
-	}
-
-	function snapshot(): SubagentProviderSnapshot {
-		const base = cloneSnapshot({
-			cursor: currentCursor(),
-			nodes: Object.freeze(Array.from(liveNodes.values()).map((node) => cloneNode(node))),
-		});
-		const rootCwd = asString(options.registry.getSnapshot?.([])?.cwd);
-		return Object.freeze({
-			...base,
-			...(rootCwd !== undefined ? { rootCwd } : undefined),
-			nodes: Object.freeze(base.nodes.map((node) => publicNode(node))),
-			manifest,
-			activeOperations: Object.freeze(Array.from(activeOperations.values()).map((operation) => Object.freeze({
-				target: Object.freeze({ ...operation.target, path: copyPath(operation.target.path) }),
-				data: operation.data,
-			}))),
-		});
-	}
-
-	function replay(after?: FeedCursor): ReplayResult {
-		const cursor = currentCursor();
-		if (after === undefined) {
-			return Object.freeze({ kind: "events", cursor, events: Object.freeze([...history]) });
-		}
-		if (after.epoch !== epoch) {return { kind: "snapshot_required", reason: "epoch_changed" };}
-		if (!Number.isInteger(after.sequence) || after.sequence < 0 || after.sequence > sequence) {
-			return { kind: "snapshot_required", reason: "history_unavailable" };
-		}
-		if (after.sequence === sequence) {
-			return Object.freeze({ kind: "events", cursor, events: Object.freeze([]) });
-		}
-		const first = history[0]?.cursor.sequence;
-		if (first === undefined || after.sequence < first - 1) {
-			return { kind: "snapshot_required", reason: "history_unavailable" };
-		}
-		const events = history.filter((event) => event.cursor.sequence > after.sequence);
-		const expected = sequence - after.sequence;
-		if (events.length !== expected || (events[0]?.cursor.sequence ?? after.sequence + 1) !== after.sequence + 1) {
-			return { kind: "snapshot_required", reason: "history_unavailable" };
-		}
-		return Object.freeze({ kind: "events", cursor, events: Object.freeze(events) });
-	}
-
-	async function acquire(path: AgentPath): Promise<SubagentLease> {
-		if (closed) {throw new Error("Subagent provider is shut down");}
-		if ([...removingPaths].some((removing) => isPathPrefix(JSON.parse(removing) as AgentPath, path))) {
-			throw new Error(`Subagent path is being removed ${JSON.stringify(path)}`);
-		}
-		const registered = findRegistered(path);
-		const key = pathKey(path);
-		const identity = liveIdentity.get(key) ?? nextIncarnation(path, asString(registered.snapshot.incarnation), liveIdentity, retiredIncarnations);
-		const node = projectNode(registered.snapshot, identity);
-		liveNodes.set(key, node);
-		const borrowed = borrow(registered);
-		const record: LeaseRecord = {
-			path: copyPath(path),
-			key,
-			generation: ++leaseGeneration,
-			incarnation: identity.incarnation,
-			currentSession: borrowed.session,
-			currentCapabilities: borrowed.capabilities,
-			active: true,
-			listeners: new Set(),
-		};
-		const pathLeases = leases.get(key) ?? new Set<LeaseRecord>();
-		pathLeases.add(record);
-		leases.set(key, pathLeases);
-		notifyLeaseAttached(record.path);
-		const lease: SubagentLease = {
-			path: record.path,
-			get session(): BorrowedAgentSession {
-				if (!record.active || record.currentSession === undefined) {throw new Error("Subagent lease is closed");}
-				return record.currentSession;
-			},
-			get capabilities(): SubagentCapabilities {
-				return record.currentCapabilities;
-			},
-			subscribe(listener) {
-				if (!record.active) {return () => {};}
-				record.listeners.add(listener);
-				return () => record.listeners.delete(listener);
-			},
-			release: async () => {
-				if (!deactivateLease(record)) {return;}
-				notifyLeaseDetached(record.path, "released");
-				record.listeners.clear();
-			},
-		};
-		return lease;
-	}
-
-	async function teardown(path: AgentPath, incarnation: string): Promise<SubagentTeardownResult> {
-		assertIncarnation(path, incarnation);
-		if (closed) {throw new Error("Subagent provider is shut down");}
-		const removalKey = pathKey(path);
-		if (removingPaths.has(removalKey)) {throw new Error(`Subagent path is already being removed ${JSON.stringify(path)}`);}
-		removingPaths.add(removalKey);
-		try {
-			const result = await options.ownerControl.teardown(copyPath(path), incarnation);
-			return {
-				...result,
-				path: copyPath(result.path ?? path),
-				...(result.incarnation === undefined ? { incarnation } : undefined),
-			};
-		} finally {
-			removingPaths.delete(removalKey);
-		}
-	}
-
-	async function stop(request: SubagentStopRequest): Promise<void> {
-		const node = assertIncarnation(request.path, request.incarnation);
-		if (closed) {throw new Error("Subagent provider is shut down");}
-		if (node.sessionId !== request.expectedSessionId) {
-			throw new Error(`Stale subagent runtime for ${JSON.stringify(request.path)}`);
-		}
-		await options.ownerControl.stop({
-			...request,
-			path: copyPath(request.path),
-		});
-	}
-
-	async function resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult> {
-		if (closed) {throw new Error("Subagent provider is shut down");}
-		if (request.parentPath.length !== 0 && !validPath(request.parentPath)) {
-			throw new Error("Invalid resurrection parent path");
-		}
-		if (request.parentPath.length > 0) {
-			const parent = options.registry.get(request.parentPath);
-			if (!parent || parent.snapshot.ownership !== "registry") {
-				throw new Error(`Unknown resurrection parent path ${JSON.stringify(request.parentPath)}`);
+	function rebindLeases(path: AgentPath): void {
+		for (const record of Array.from(leases)) {
+			if (pathKey(record.ref.path) !== pathKey(path)) {continue;}
+			let borrowed: Borrowed;
+			try {
+				borrowed = borrow(record.ref);
+			} catch (error) {
+				console.error("[subagents] Lease rebind failed:", error);
+				closeLease(record, "unavailable");
+				continue;
 			}
+			record.session = borrowed.session;
+			record.capabilities = borrowed.capabilities;
+			notifyLease(record, { kind: "rebound", session: borrowed.session, capabilities: borrowed.capabilities });
 		}
-		if (typeof request.localId !== "string" || request.localId.length === 0 || request.localId === "parent") {
-			throw new Error("Invalid resurrection local id");
-		}
-		return options.ownerControl.resurrect({
-			...request,
-			parentPath: copyPath(request.parentPath),
-			channels: Object.freeze([...request.channels]),
-		});
 	}
 
-	function hasRetainedPersistedOperation(path: AgentPath, operationId: string): boolean {
-		return history.some((event) => {
-			if (!("type" in event) || event.type !== "subagent_snapshot_event") {return false;}
-			const target = event.target;
-			if (!isRecord(target)) {return false;}
-			return target.operationId === operationId && Array.isArray(target.path) && pathKey([...target.path]) === pathKey(path);
-		});
-	}
-
-	function appendPersistedPayload(payload: PersistedSubagentContent, path: AgentPath, entryId: string | undefined, force = false): void {
-		const operationKey = `${pathKey(path)}:${payload.operationId}`;
-		if (presentationOperations.has(operationKey) && !force) {return;}
-		presentationOperations.add(operationKey);
-		const placement = payload.source === "tool"
-			? Object.freeze({
-				...payload.placement,
-				...(payload.placement.entryId === undefined && entryId !== undefined ? { entryId } : undefined),
-			})
-			: (payload.placement?.entryId !== undefined ? Object.freeze({ entryId: payload.placement.entryId }) : entryId !== undefined ? Object.freeze({ entryId }) : undefined);
-		const target = Object.freeze({
-			operationId: payload.operationId,
-			kind: payload.kind,
-			path: copyPath(path),
-			...(placement !== undefined ? { placement } : undefined),
-		});
-		const event = Object.freeze({
-			type: "subagent_snapshot_event",
-			eventId: `provider:rehydrate:${payload.operationId}:${++eventCounter}`,
-			target,
-			state: payload.state,
-			data: freezePresentationValue(stripPrivatePresentation(payload.data)),
-			cursor: eventCursor(epoch, ++sequence),
-		}) as unknown as SubagentFiniteEvent;
-		history.push(event);
-		while (history.length > historyLimit) {history.shift();}
-		if (!closed) {for (const listener of Array.from(listeners)) { try { listener(event); } catch {} }}
-	}
-
-	async function rehydrate(input: { session: BorrowedAgentSession; path: AgentPath }): Promise<void> {
-		if (closed) {return;}
-		const identity = `${input.session.sessionId}:${pathKey(input.path)}`;
-		const alreadyHydrated = hydratedSessions.has(identity);
-		const manager = input.session.sessionManager;
-		let entries: readonly unknown[];
-		try {
-			entries = manager.getBranch?.() ?? manager.getEntries?.() ?? [];
-		} catch {
-			entries = [];
-		}
-		const toolArguments = new Map<string, unknown>();
-		for (const entry of entries) {
-			if (!isRecord(entry) || !isRecord(entry.message) || !Array.isArray(entry.message.content)) {continue;}
-			for (const part of entry.message.content) {
-				if (isRecord(part) && part.type === "toolCall" && typeof part.id === "string") {toolArguments.set(part.id, part.arguments);}
-			}
-		}
-		const saved: { payload: PersistedSubagentContent; entryId?: string }[] = [];
-		for (const entry of entries) {
-			const candidateEntry = isRecord(entry) ? entry : {};
-			const message = isRecord(candidateEntry.message) ? candidateEntry.message : candidateEntry;
-			const messageRecord = isRecord(message) ? message : {};
-			const details = messageRecord.details ?? candidateEntry.details ?? candidateEntry.data;
-			if (!isRecord(details) || !Array.isArray(details.subagentContent)) {continue;}
-			const entryId = typeof candidateEntry.id === "string" ? candidateEntry.id : undefined;
-			const customMessage = (candidateEntry.type === "custom_message" && candidateEntry.customType === "subagents")
-				|| (messageRecord.role === "custom" && messageRecord.customType === "subagents");
-			const awaitResult = messageRecord.role === "toolResult" && messageRecord.toolName === "await_agents";
-			for (const candidate of details.subagentContent) {
-				if (!isPersistedPresentationContent(candidate)) {continue;}
-				if (candidate.kind === "completion" && (candidate.source !== "custom_entry" || !customMessage)) {continue;}
-				const repaired = awaitResult ? restoreAwaitResult(candidate, details.semantic) : candidate;
-				const repairedJson = persistedContentJson(repaired);
-				const kind = savedPresentationKind(repairedJson) as PresentationKind;
-				const argumentsValue = toolArguments.get(candidate.source === "tool" ? candidate.placement.toolCallId : candidate.operationId);
-				const toolBacked = kind !== "message_received" && (candidate.source === "tool" || ("parameters" in repaired.data && isRecord(repaired.data.parameters)) || argumentsValue !== undefined
-					|| (kind !== "send" && kind !== "respond" && kind !== "completion"));
-				const data = normalizeSavedPresentationData({
-					data: finalDataJson(repaired.data),
-					operation: kind === "message_received" ? "send" : kind,
-					path: input.path,
-					toolBacked,
-					arguments: argumentsValue,
-					...(candidate.source === "tool" ? { nativeResult: messageRecord } : undefined),
-				});
-				const payload = { ...repaired, kind, data } as PersistedSubagentContent;
-				saved.push({ payload, ...(entryId !== undefined ? { entryId } : undefined) });
-			}
-		}
-		for (const item of saved) {
-			const force = alreadyHydrated && !hasRetainedPersistedOperation(input.path, item.payload.operationId);
-			appendPersistedPayload(item.payload, input.path, item.entryId, force);
-		}
-		hydratedSessions.add(identity);
-	}
-
-	function shutdown(): void {
-		if (closed) {return;}
-		closed = true;
-		registryUnsubscribe?.();
-		semanticUnsubscribe?.();
-		presentationUnsubscribe?.();
-		registryUnsubscribe = undefined;
-		semanticUnsubscribe = undefined;
-		presentationUnsubscribe = undefined;
-		for (const records of Array.from(leases.values())) {
-			for (const record of Array.from(records)) {closeLease(record, "unavailable");}
-		}
-		leases.clear();
-		implicitRebinds.clear();
-		removingPaths.clear();
-		listeners.clear();
-	}
-
-	refreshInitialNodes();
-	let lifecycleReader = options.lifecycle;
-	if (!lifecycleReader && options.parentSessionFile) {
-		lifecycleReader = createSubagentLifecycleReader(getPersistencePaths(options.parentSessionFile));
-	}
-	if (lifecycleReader) {
-		let records: readonly SubagentLifecycleRecord[];
-		try {
-			records = lifecycleReader.read();
-		} catch {
-			records = [];
-		}
-		for (const record of records) {appendLifecycleRecord(record);}
-	}
-
-	registryUnsubscribe = options.registryEvents
-		? options.registryEvents.subscribe(appendRegistryEvent)
-		: options.registry.subscribe(appendRegistryEvent);
-	if (options.semanticEvents) {semanticUnsubscribe = options.semanticEvents.subscribe((fact) => {
-		if (closed || options.presentationEvents || !isTopologyKind(fact.kind)) {return;}
-		const semantic = createSemanticEvent({
-			...fact,
-			path: copyPath(fact.path),
-			relatedPiEvents: cloneRefs(fact.relatedPiEvents),
-		});
-		appendEvent(semantic);
-	});}
-	const presentationSource = options.presentationEvents?.subscribePresentation;
-	if (presentationSource) {
-		presentationUnsubscribe = presentationSource((event) => {
-			if (closed) {return;}
-			appendPresentationEvent(event);
-		});
+	function updateReady(): void {
+		if (ready || closed || !rootRestored || pendingRestores > 0) {return;}
+		ready = true;
+		publish({ sequence: ++sequence, kind: "ready" });
 	}
 
 	return {
-		subscribe,
-		snapshot,
-		replay,
-		rehydrate,
-		acquire,
-		teardown,
-		stop,
-		resurrect,
-		shutdown,
+		presenters,
+
+		snapshot(): SubagentTopologySnapshot {
+			const rootCwd = registry.getSnapshot([])?.cwd;
+			return Object.freeze({
+				sequence,
+				ready,
+				...(rootCwd ? { rootCwd } : undefined),
+				nodes: Object.freeze([...nodes.values()]),
+			});
+		},
+
+		subscribe(listener) {
+			if (closed) {return () => undefined;}
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+
+		async acquire(ref) {
+			matchingNode(ref);
+			const borrowed = borrow(ref);
+			const record: LeaseRecord = {
+				ref: { path: [...ref.path], incarnation: ref.incarnation },
+				session: borrowed.session,
+				capabilities: borrowed.capabilities,
+				listeners: new Set(),
+			};
+			leases.add(record);
+			const lease: SubagentLease = {
+				path: record.ref.path,
+				incarnation: record.ref.incarnation,
+				get session(): BorrowedAgentSession {
+					if (!record.session) {throw new Error("Subagent lease is closed");}
+					return record.session;
+				},
+				get capabilities(): SubagentCapabilities {
+					return record.capabilities;
+				},
+				subscribe(listener) {
+					if (!leases.has(record)) {return () => undefined;}
+					record.listeners.add(listener);
+					return () => {
+						record.listeners.delete(listener);
+					};
+				},
+				release() {
+					if (!leases.delete(record)) {return;}
+					record.session = undefined;
+					record.listeners.clear();
+				},
+			};
+			return lease;
+		},
+
+		async teardown(ref): Promise<SubagentTeardownResult> {
+			matchingNode(ref);
+			return control.teardown({ path: [...ref.path], incarnation: ref.incarnation });
+		},
+
+		async stop(request: SubagentStopRequest): Promise<void> {
+			const node = matchingNode(request);
+			if (node.sessionId !== request.expectedSessionId) {throw new Error(`Stale subagent runtime for ${JSON.stringify(request.path)}`);}
+			await control.stop({ ...request, path: [...request.path] });
+		},
+
+		async setHold(request: SubagentHoldRequest): Promise<void> {
+			matchingNode(request);
+			await control.setHold({ ...request, path: [...request.path] });
+		},
+
+		async resurrect(request: SubagentResurrectRequest): Promise<SubagentResurrectResult> {
+			if (closed) {throw new Error("Subagent provider is shut down");}
+			if (request.localId.length === 0 || request.localId === "parent" || request.localId.includes("/")) {
+				throw new Error("Invalid resurrection local id");
+			}
+			return control.resurrect({ ...request, parentPath: [...request.parentPath], channels: [...request.channels] });
+		},
+
+		trackRestore(restore) {
+			pendingRestores += 1;
+			void restore.then(
+				() => undefined,
+				(error: unknown) => console.error("[subagents] Restore failed:", error),
+			).finally(() => {
+				pendingRestores -= 1;
+				updateReady();
+			});
+		},
+
+		markRootRestored() {
+			rootRestored = true;
+			updateReady();
+		},
+
+		shutdown() {
+			if (closed) {return;}
+			for (const record of Array.from(leases)) {closeLease(record, "unavailable");}
+			closed = true;
+			unsubscribe();
+			listeners.clear();
+			nodes.clear();
+		},
+	};
+}
+
+function pathKey(path: AgentPath): string {
+	return JSON.stringify(path);
+}
+
+function isPrefix(prefix: AgentPath, path: AgentPath): boolean {
+	return prefix.length <= path.length && prefix.every((part, index) => part === path[index]);
+}
+
+function contextFill(lastTurnInput: number, contextWindow: number | undefined): number | undefined {
+	if (!contextWindow || contextWindow <= 0) {return undefined;}
+	return Math.max(0, Math.min(100, Math.round((lastTurnInput / contextWindow) * 100)));
+}
+
+function usageOf(usage: SubagentUsage): SubagentUsage {
+	return {
+		input: usage.input,
+		output: usage.output,
+		cacheRead: usage.cacheRead,
+		cacheWrite: usage.cacheWrite,
+		cost: usage.cost,
+		...(usage.costBreakdown ? { costBreakdown: { ...usage.costBreakdown } } : undefined),
+		turns: usage.turns,
 	};
 }

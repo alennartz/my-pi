@@ -1,337 +1,65 @@
-import { describe, it, expect } from "vitest";
-import { NotificationQueue } from './notification-queue.js';
-import type { NotificationQueueConfig } from './notification-queue.js';
+import { describe, expect, it } from "vitest";
+import { NotificationQueue } from "./notification-queue.js";
+import type { Notice, NoticeDelivery } from "./notification-queue.js";
 
-function createQueue(overrides?: Partial<NotificationQueueConfig>) {
-	const delivered: string[] = [];
-	const deferred: string[] = [];
-	const deliveredDetails: ({ semanticEvents: readonly unknown[] } | undefined)[] = [];
-	const deferredDetails: ({ semanticEvents: readonly unknown[] } | undefined)[] = [];
-	const queue = new NotificationQueue({
-		deliver: (content, details) => {
-			delivered.push(content);
-			deliveredDetails.push(details);
-		},
-		deliverDeferred: (content, details) => {
-			deferred.push(content);
-			deferredDetails.push(details);
-		},
-		steerDelivery: false,
-		...overrides,
-	});
-	return { queue, delivered, deferred, deliveredDetails, deferredDetails };
+function harness() {
+	const deliveries: { contents: string[]; mode: NoticeDelivery }[] = [];
+	const queue = new NotificationQueue((notices, mode) => deliveries.push({ contents: notices.map((notice) => notice.content), mode }));
+	return { queue, deliveries };
 }
 
-// Normal delivery
-
-describe("NotificationQueue — normal delivery", () => {
-	it("auto-flushes when parent is not busy", () => {
-		const { queue, delivered } = createQueue();
-		queue.queue("<event>a</event>", "local");
-		expect(delivered).toEqual(["<event>a</event>"]);
-	});
-
-	it("combines multiple queued notifications into a single delivery", () => {
-		const { queue, delivered } = createQueue();
-		queue.setParentBusy(true);
-		queue.queue("<event>a</event>", "local");
-		queue.queue("<event>b</event>", "local");
-		queue.setParentBusy(false);
-		expect(delivered).toEqual(["<event>a</event>\n<event>b</event>"]);
-	});
-
-	it("flush is a no-op when queue is empty", () => {
-		const { queue, delivered } = createQueue();
-		queue.flush();
-		expect(delivered).toEqual([]);
-	});
-
-	it("flush empties the queue after delivery", () => {
-		const { queue } = createQueue();
-		queue.setParentBusy(true);
-		queue.queue("<event>a</event>", "local");
-		expect(queue.length).toBe(1);
-		queue.setParentBusy(false); // triggers flush
-		expect(queue.length).toBe(0);
-	});
-
-	it("suppresses flush when parent is busy and steer delivery is off", () => {
-		const { queue, delivered } = createQueue({ steerDelivery: false });
-		queue.setParentBusy(true);
-		queue.queue("<event>a</event>", "local");
-		queue.flush(); // explicit call — suppressed
-		expect(delivered).toEqual([]);
-		expect(queue.length).toBe(1);
-	});
-
-	it("sets parentBusy before delivering to prevent double-flush race", () => {
-		const { queue, delivered } = createQueue();
-		// parentBusy starts false
-		queue.queue("<event>a</event>", "local"); // auto-flushes, sets parentBusy=true
-		queue.queue("<event>b</event>", "local"); // should accumulate (parentBusy now true)
-		expect(delivered).toEqual(["<event>a</event>"]);
-		expect(queue.length).toBe(1);
-	});
+const message = (content: string): Notice => ({ kind: "message", content });
+const completion = (content: string): Notice => ({ kind: "completion", content });
+const settle = () => new Promise<void>((resolve) => {
+	queueMicrotask(resolve);
 });
 
-// Steer delivery
-
-describe("NotificationQueue — steer delivery", () => {
-	it("auto-flushes when busy with no pending tool calls", () => {
-		const { queue, delivered } = createQueue({ steerDelivery: true });
-		queue.setParentBusy(true);
-		queue.queue("<event>a</event>", "local");
-		expect(delivered).toEqual(["<event>a</event>"]);
+describe("NotificationQueue", () => {
+	it("starts one turn for notices that arrive together while the parent is idle", async () => {
+		const { queue, deliveries } = harness();
+		queue.queue(completion("a"));
+		queue.queue(message("b"));
+		await settle();
+		expect(deliveries).toEqual([{ contents: ["a", "b"], mode: "trigger" }]);
 	});
 
-	it("accumulates when tool calls are pending", () => {
-		const { queue, delivered } = createQueue({ steerDelivery: true });
-		queue.setParentBusy(true);
-		queue.trackToolStart("tool1");
-		queue.queue("<event>a</event>", "local");
-		expect(delivered).toEqual([]);
-		expect(queue.length).toBe(1);
+	it("holds notices during a run and hands them to the next turn boundary", async () => {
+		const { queue, deliveries } = harness();
+		queue.runStarted();
+		queue.queue(completion("a"));
+		await settle();
+		expect(deliveries).toEqual([]);
+		expect(queue.boundary()).toBe(true);
+		expect(deliveries).toEqual([{ contents: ["a"], mode: "context" }]);
+		expect(queue.boundary()).toBe(false);
 	});
 
-	it("flushes when the last tool call completes", () => {
-		const { queue, delivered } = createQueue({ steerDelivery: true });
-		queue.setParentBusy(true);
-		queue.trackToolStart("tool1");
-		queue.queue("<event>a</event>", "local");
-		queue.trackToolEnd("tool1");
-		expect(delivered).toEqual(["<event>a</event>"]);
+	it("parks notices without a turn when the run was aborted", () => {
+		const { queue, deliveries } = harness();
+		queue.runStarted();
+		queue.queue(completion("a"));
+		queue.runSettled(true);
+		expect(deliveries).toEqual([{ contents: ["a"], mode: "park" }]);
 	});
 
-	it("does not flush when other tool calls are still pending", () => {
-		const { queue, delivered } = createQueue({ steerDelivery: true });
-		queue.setParentBusy(true);
-		queue.trackToolStart("tool1");
-		queue.trackToolStart("tool2");
-		queue.queue("<event>a</event>", "local");
-		queue.trackToolEnd("tool1");
-		expect(delivered).toEqual([]);
-		expect(queue.length).toBe(1);
+	it("starts a turn for notices left after a normal run", () => {
+		const { queue, deliveries } = harness();
+		queue.runStarted();
+		queue.queue(completion("a"));
+		queue.runSettled(false);
+		expect(deliveries).toEqual([{ contents: ["a"], mode: "trigger" }]);
 	});
 
-	it("flushes when all concurrent tool calls have completed", () => {
-		const { queue, delivered } = createQueue({ steerDelivery: true });
-		queue.setParentBusy(true);
-		queue.trackToolStart("tool1");
-		queue.trackToolStart("tool2");
-		queue.queue("<event>a</event>", "local");
-		queue.trackToolEnd("tool1");
-		queue.trackToolEnd("tool2");
-		expect(delivered).toEqual(["<event>a</event>"]);
-	});
-
-	it("clearPendingTools does not trigger a flush", () => {
-		const { queue, delivered } = createQueue({ steerDelivery: true });
-		queue.setParentBusy(true);
-		queue.trackToolStart("tool1");
-		queue.queue("<event>a</event>", "local");
-		queue.clearPendingTools();
-		expect(delivered).toEqual([]);
-		expect(queue.length).toBe(1);
-	});
-});
-
-// Waiting flag suppresses delivery
-
-describe("NotificationQueue — waiting suppresses delivery", () => {
-	it("accumulates without flushing when waiting is set", () => {
-		const { queue, delivered } = createQueue();
+	it("keeps notices while a wait is active and lets the wait take what it consumes", async () => {
+		const { queue, deliveries } = harness();
 		queue.setWaiting(true);
-		queue.queue("<event>a</event>", "local");
-		expect(delivered).toEqual([]);
-		expect(queue.length).toBe(1);
-	});
-
-	it("suppresses explicit flush() while waiting", () => {
-		const { queue, delivered } = createQueue();
-		queue.queue("<event>a</event>", "local"); // auto-flushes (not waiting yet)
-		queue.setParentBusy(true); // now busy from the flush
-		queue.setWaiting(true);
-		queue.queue("<event>b</event>", "local");
-		queue.flush();
-		expect(delivered).toEqual(["<event>a</event>"]); // only the pre-wait one
-		expect(queue.length).toBe(1);
-	});
-
-	it("suppresses steer delivery auto-flush while waiting", () => {
-		const { queue, delivered } = createQueue({ steerDelivery: true });
-		queue.setParentBusy(true);
-		queue.setWaiting(true);
-		// Steer + no pending tools would normally auto-flush
-		queue.queue("<event>a</event>", "local");
-		expect(delivered).toEqual([]);
-		expect(queue.length).toBe(1);
-	});
-
-	it("suppresses trackToolEnd flush while waiting", () => {
-		const { queue, delivered } = createQueue({ steerDelivery: true });
-		queue.setParentBusy(true);
-		queue.trackToolStart("tool1");
-		queue.setWaiting(true);
-		queue.queue("<event>a</event>", "local");
-		queue.trackToolEnd("tool1");
-		expect(delivered).toEqual([]);
-		expect(queue.length).toBe(1);
-	});
-
-	it("resumes normal delivery after waiting is cleared", () => {
-		const { queue, delivered } = createQueue();
-		queue.setWaiting(true);
-		queue.queue("<event>a</event>", "local");
+		queue.queue(completion("consumed"));
+		queue.queue(message("kept"));
+		expect(queue.hasMessages()).toBe(true);
+		expect(queue.boundary()).toBe(false);
+		expect(queue.take((notice) => notice.kind === "completion").map((notice) => notice.content)).toEqual(["consumed"]);
 		queue.setWaiting(false);
-		// Queue doesn't auto-flush on setWaiting(false) — needs a trigger
-		queue.queue("<event>b</event>", "local");
-		expect(delivered).toEqual(["<event>a</event>\n<event>b</event>"]);
-	});
-});
-
-// drainAll
-
-describe("NotificationQueue — drainAll", () => {
-	it("returns concatenated content and empties the queue", () => {
-		const { queue } = createQueue();
-		queue.setParentBusy(true);
-		queue.queue("<event>a</event>", "local");
-		queue.queue("<event>b</event>", "local");
-		const result = queue.drainAll();
-		expect(result).toBe("<event>a</event>\n<event>b</event>");
-		expect(queue.length).toBe(0);
-	});
-
-	it("returns empty string when queue is empty", () => {
-		const { queue } = createQueue();
-		expect(queue.drainAll()).toBe("");
-	});
-});
-
-// drainLocal
-
-describe("NotificationQueue — drainLocal", () => {
-	it("removes local-source notifications and preserves uplink entries", () => {
-		const { queue } = createQueue({ steerDelivery: false });
-		queue.setParentBusy(true);
-		queue.queue("<local>a</local>", "local");
-		queue.queue("<uplink>b</uplink>", "uplink");
-		queue.queue("<local>c</local>", "local");
-		queue.drainLocal();
-		expect(queue.length).toBe(1);
-	});
-});
-
-// Deferred delivery (aborted run)
-
-describe("NotificationQueue — deferred delivery", () => {
-	it("setParentBusy(false, { flush: false }) clears busy without delivering", () => {
-		const { queue, delivered, deferred } = createQueue();
-		queue.setParentBusy(true);
-		queue.queue("<event>a</event>", "local");
-		queue.setParentBusy(false, { flush: false });
-		expect(delivered).toEqual([]);
-		expect(deferred).toEqual([]);
-		expect(queue.length).toBe(1);
-	});
-
-	it("deferAll hands queued notifications to the deferred sink and empties the queue", () => {
-		const { queue, delivered, deferred } = createQueue();
-		queue.setParentBusy(true);
-		queue.queue("<event>a</event>", "local");
-		queue.queue("<event>b</event>", "uplink");
-		queue.setParentBusy(false, { flush: false });
-		queue.deferAll();
-		expect(deferred).toEqual(["<event>a</event>\n<event>b</event>"]);
-		expect(delivered).toEqual([]);
-		expect(queue.length).toBe(0);
-	});
-
-	it("deferAll is a no-op on an empty queue", () => {
-		const { queue, deferred } = createQueue();
-		queue.deferAll();
-		expect(deferred).toEqual([]);
-	});
-
-	it("deferAll respects the waiting flag", () => {
-		const { queue, deferred } = createQueue();
-		queue.setParentBusy(true);
-		queue.queue("<event>a</event>", "local");
-		queue.setWaiting(true);
-		queue.deferAll();
-		expect(deferred).toEqual([]);
-		expect(queue.length).toBe(1);
-	});
-});
-
-// clear
-
-describe("NotificationQueue — clear", () => {
-	it("removes all notifications regardless of source", () => {
-		const { queue } = createQueue({ steerDelivery: false });
-		queue.setParentBusy(true);
-		queue.queue("<event>a</event>", "local");
-		queue.queue("<event>b</event>", "uplink");
-		queue.clear();
-		expect(queue.length).toBe(0);
-	});
-});
-
-// structured payloads and truncation
-
-describe("NotificationQueue — structured payloads", () => {
-	it("drainDetailed returns per-agent data alongside the text", () => {
-		const { queue } = createQueue({ steerDelivery: false });
-		queue.setParentBusy(true);
-		const a = { id: "a", status: "idle" as const, output: "done" };
-		queue.queue("<agent_idle id=\"a\"/>", "local", a);
-		queue.queue("<agent_message from=\"b\"/>", "local");
-		const drained = queue.drainDetailed();
-		expect(drained.text).toBe("<agent_idle id=\"a\"/>\n<agent_message from=\"b\"/>");
-		expect(drained.agents).toEqual([a]);
-		expect(queue.length).toBe(0);
-	});
-
-	it("drainAll still returns only text", () => {
-		const { queue } = createQueue({ steerDelivery: false });
-		queue.setParentBusy(true);
-		queue.queue("<agent_idle id=\"a\"/>", "local", { id: "a", status: "idle" as const });
-		expect(queue.drainAll()).toBe("<agent_idle id=\"a\"/>");
-	});
-
-	it("persists semantic event IDs and details with custom-message delivery", () => {
-		const { queue, deliveredDetails } = createQueue();
-		const semantic = { eventId: "semantic-1", kind: "completion", relatedPiEvents: [] };
-
-		queue.queue("<agent_idle id=\"a\"/>", "local", undefined, semantic);
-
-		expect(deliveredDetails).toEqual([{ semanticEvents: [semantic] }]);
-	});
-});
-
-describe("NotificationQueue — flush truncation", () => {
-	const big = "x".repeat(30 * 1024);
-
-	it("middle-truncates oversized deliveries", () => {
-		const { queue, delivered } = createQueue();
-		queue.queue(big, "local");
-		expect(delivered).toHaveLength(1);
-		expect(delivered[0]).toContain("chars truncated…");
-		expect(delivered[0].length).toBeLessThan(big.length);
-	});
-
-	it("middle-truncates deferred deliveries", () => {
-		const { queue, deferred } = createQueue();
-		queue.setParentBusy(true);
-		queue.queue(big, "local");
-		queue.deferAll();
-		expect(deferred).toHaveLength(1);
-		expect(deferred[0]).toContain("chars truncated…");
-	});
-
-	it("leaves small deliveries untouched", () => {
-		const { queue, delivered } = createQueue();
-		queue.queue("<event>a</event>", "local");
-		expect(delivered).toEqual(["<event>a</event>"]);
+		await settle();
+		expect(deliveries).toEqual([{ contents: ["kept"], mode: "trigger" }]);
 	});
 });

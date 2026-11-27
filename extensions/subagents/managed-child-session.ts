@@ -2,18 +2,16 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionRuntime, createAgentSessionServices, createEventBus, resolveCliModel, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { AgentSession, AgentSessionEvent, AgentSessionRuntime, EventBusController, PromptOptions, ExtensionCommandContextActions, ExtensionError, LoadExtensionsResult, SessionStartEvent } from '@earendil-works/pi-coding-agent';
 import { formatAgentPath } from './agent-path.js';
-import { toJsonProjection } from './narrow.js';
 import type { AgentPath } from './agent-path.js';
 import type { ChildToolPolicy } from "./child-tool-policy.js";
 import { markSubagentChildSession } from './child-session-marker.js';
 import type { PersonaPayload } from './child-session-marker.js';
-import type { SubagentCapabilities } from "./provider.js";
+import type { SubagentCapabilities } from "@pimote/sdk/subagents";
 import { stripThinkingSuffix } from "./model-tiers.js";
 import { createSubagentsExtension } from './scoped-extension.js';
 import type { SubagentScope } from './scoped-extension.js';
 import { registerSessionTreeStore } from "./scoped-store.js";
 import { rootExtensionPath } from "./root-extension-path.mts";
-import type { JsonValue } from "@earendil-works/pi-ai";
 
 export type ChildSessionTarget =
 	| { kind: "new"; cwd: string; sessionDir: string }
@@ -114,10 +112,7 @@ const CHILD_CAPABILITY_OPERATIONS = Object.freeze([
  * operations. Owners can provide a stricter projection through getCapabilities.
  */
 function createDefaultCapabilities(session: AgentSession): SubagentCapabilities {
-	const executeBash = (command: unknown): Promise<JsonValue> => {
-		if (typeof command !== "string") {throw new TypeError("Child bash command must be a string");}
-		return session.executeBash(command, undefined).then((result) => toJsonProjection(result));
-	};
+	const executeBash = (command: string) => session.executeBash(command, undefined);
 	const abortBash = (): void => {
 		session.abortBash();
 	};

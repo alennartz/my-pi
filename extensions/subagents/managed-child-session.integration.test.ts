@@ -8,6 +8,8 @@ import type { AgentPath } from './agent-path.js';
 import { createManagedChildSession } from './managed-child-session.js';
 import type { ChildSessionConfig } from './managed-child-session.js';
 import type { MessagePort } from "./message-router.js";
+import { SubagentControlPort } from "./control-port.js";
+import { RunningToolProgress } from "./tool-progress.js";
 
 const registry = {
 	waitForLiveNode: async () => false,
@@ -33,7 +35,8 @@ function childConfig(sessionFile: string, sessionDir: string, agentPath: AgentPa
 				task: "resume the prior task",
 				channels: ["parent"],
 			},
-			uplink: {} as MessagePort,
+			uplink: { subscribe: () => () => undefined } as unknown as MessagePort,
+			services: { control: new SubagentControlPort(), toolProgress: new RunningToolProgress(), trackRestore: () => undefined },
 		},
 		toolPolicy: { allowedTools: undefined, excludeTools: ["ask_user"] },
 		skillPaths: [],
