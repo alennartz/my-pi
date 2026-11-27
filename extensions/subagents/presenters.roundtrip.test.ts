@@ -1009,7 +1009,7 @@ async function captureDelivery(channel: "notice" | "await") {
 function committedAnswers(entries: readonly SessionEntry[]): string[] {
 	return entries.flatMap((entry) => {
 		if (entry.type === "custom_message" && entry.customType === "subagents" && hasReceipt(entry.details)) {return [textOf(entry.content)];}
-		if (entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "await_agents" && !entry.message.isError && hasReceipt(entry.message.details)) {
+		if (entry.type === "message" && entry.message.role === "toolResult" && (entry.message.toolName === "await_agents" || entry.message.toolName === "teardown") && !entry.message.isError && hasReceipt(entry.message.details)) {
 			return [textOf(entry.message.content)];
 		}
 		return [];
@@ -1043,6 +1043,87 @@ describe("settlement receipt recovery", () => {
 			expect(answers[0], point).toContain("recoverable answer");
 			expect(loadPersistedAgents(parentFile)?.agents[0]?.hold?.pending, point).toEqual([]);
 			await fresh.dispose();
+			harness = undefined;
+		}
+	});
+
+	it.each(["user", "model"] as const)("recovers the answer of a child removed by the %s", async (source) => {
+		const root = await start();
+		const childGate = deferred();
+		model.gates.set("worker", childGate.promise);
+		model.childScripts.set("worker", () => fauxAssistantMessage("removed answer"));
+		model.steps.set("spawn", SPAWN_WORKER);
+		await root.step("spawn");
+		const worker = root.provider.snapshot().nodes[0];
+		await root.provider.setHold({ ...worker, held: true });
+		childGate.resolve();
+		await waitFor(() => root.provider.snapshot().nodes[0]?.heldSettlement === "idle");
+
+		const sessionManager = root.session.sessionManager;
+		const parentFile = root.session.sessionFile!;
+		const log = getPersistencePaths(parentFile).logFile;
+		const images = new Map<"before" | "after", CrashImage>();
+		const capture = (point: "before" | "after"): void => {
+			images.set(point, { transcript: fs.readFileSync(parentFile), outbox: fs.readFileSync(log) });
+		};
+		const appendCustom = sessionManager.appendCustomMessageEntry.bind(sessionManager);
+		const customSpy = vi.spyOn(sessionManager, "appendCustomMessageEntry").mockImplementation((...args) => {
+			const removal = hasReceipt(args[3]);
+			if (removal) {capture("before");}
+			const id = appendCustom(...args);
+			if (removal) {capture("after");}
+			return id;
+		});
+		const appendMessage = sessionManager.appendMessage.bind(sessionManager);
+		const messageSpy = vi.spyOn(sessionManager, "appendMessage").mockImplementation((message) => {
+			const removal = message.role === "toolResult" && message.toolName === "teardown" && hasReceipt(message.details);
+			if (removal) {capture("before");}
+			const id = appendMessage(message);
+			if (removal) {capture("after");}
+			return id;
+		});
+		try {
+			if (source === "model") {
+				model.steps.set("remove", () => calls(["teardown", { agent: "worker" }]));
+				await root.step("remove");
+			} else {
+				const parentGate = deferred();
+				const reached = deferred();
+				model.steps.set("stream", () => { reached.resolve(); return parentGate.promise.then(() => fauxAssistantMessage("ack")); });
+				const run = root.step("stream");
+				try {
+					await reached.promise;
+					await root.provider.teardown(worker);
+					expect(root.provider.snapshot().nodes).toEqual([]);
+					expect(committedAnswers(sessionManager.getBranch())).toEqual([]);
+				} finally {
+					parentGate.resolve();
+					await run;
+				}
+			}
+			await root.quiesce();
+			expect(committedAnswers(sessionManager.getBranch())).toEqual([expect.stringContaining("removed answer")]);
+			expect(loadPersistedAgents(parentFile)?.removals).toEqual([]);
+		} finally {
+			customSpy.mockRestore();
+			messageSpy.mockRestore();
+			await root.dispose();
+			harness = undefined;
+		}
+		for (const point of ["before", "after"] as const) {
+			const image = images.get(point)!;
+			fs.writeFileSync(parentFile, image.transcript);
+			fs.writeFileSync(log, image.outbox);
+			const manager = SessionManager.open(parentFile, workspace.sessionDir);
+			expect(loadPersistedAgents(parentFile)?.agents, point).toEqual([]);
+			expect(committedAnswers(manager.getBranch()), point).toHaveLength(point === "before" ? 0 : 1);
+			const restored = await RootHarness.open(workspace, model, manager, "resume");
+			harness = restored;
+			await restored.quiesce();
+			expect(restored.provider.snapshot().nodes, point).toEqual([]);
+			expect(committedAnswers(manager.getBranch()), point).toEqual([expect.stringContaining("removed answer")]);
+			expect(loadPersistedAgents(parentFile)?.removals, point).toEqual([]);
+			await restored.dispose();
 			harness = undefined;
 		}
 	});

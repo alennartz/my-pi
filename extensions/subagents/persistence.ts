@@ -42,6 +42,8 @@ export interface PersistedAgentRecord {
 	hold?: HoldRecord;
 }
 
+export type PersistedRemoval = Readonly<{ id: string; incarnation: string; pending: readonly PendingSettlement[] }>;
+
 export type AgentLifecycleEvent =
 	| {
 			type: "init";
@@ -62,7 +64,10 @@ export type AgentLifecycleEvent =
 			id: string;
 			sessionFile?: string;
 			sessionId?: string;
+			incarnation?: string;
+			pending?: readonly PendingSettlement[];
 		}
+	| { type: "removed_settlements_committed"; version: 1; timestamp: string; ids: readonly string[] }
 	| ({
 			type: "agent_hold";
 			version: 1;
@@ -166,13 +171,22 @@ export function appendAgentHold(paths: PersistencePaths, data: { id: string; ses
 
 export function appendAgentRemoved(
 	paths: PersistencePaths,
-	data: { id: string; sessionFile?: string; sessionId?: string },
+	data: { id: string; sessionFile?: string; sessionId?: string; incarnation?: string; pending?: readonly PendingSettlement[] },
 ): void {
 	appendJsonl(paths.logFile, {
 		type: "agent_removed",
 		version: 1,
 		timestamp: new Date().toISOString(),
 		...data,
+	} satisfies AgentLifecycleEvent);
+}
+
+export function appendRemovedSettlementsCommitted(paths: PersistencePaths, ids: readonly string[]): void {
+	appendJsonl(paths.logFile, {
+		type: "removed_settlements_committed",
+		version: 1,
+		timestamp: new Date().toISOString(),
+		ids,
 	} satisfies AgentLifecycleEvent);
 }
 
@@ -243,11 +257,14 @@ export function pruneInvalidPersistedAgents(
 export function loadPersistedAgents(parentSessionFile: string): {
 	paths: PersistencePaths;
 	agents: PersistedAgentRecord[];
+	removals: PersistedRemoval[];
 } | null {
 	const paths = getPersistencePaths(parentSessionFile);
 	if (!fs.existsSync(paths.logFile)) {return null;}
 
 	const liveAgents = new Map<string, PersistedAgentRecord>();
+	const removals: PersistedRemoval[] = [];
+	const committed = new Set<string>();
 
 	for (const event of readEvents(paths.logFile)) {
 		if (event.type === "agent_added") {
@@ -263,12 +280,21 @@ export function loadPersistedAgents(parentSessionFile: string): {
 			if (event.sessionId && current.sessionId && event.sessionId !== current.sessionId) {continue;}
 			if (event.sessionFile && current.sessionFile !== event.sessionFile) {continue;}
 			liveAgents.delete(event.id);
+			if (event.incarnation && event.pending?.length) {
+				removals.push({ id: event.id, incarnation: event.incarnation, pending: readPending(event.pending, false) });
+			}
+		} else if (event.type === "removed_settlements_committed") {
+			for (const id of event.ids) {committed.add(id);}
 		}
 	}
 
 	return {
 		paths,
 		agents: Array.from(liveAgents.values()),
+		removals: removals.flatMap((removal) => {
+			const pending = removal.pending.filter((entry) => !committed.has(entry.id));
+			return pending.length > 0 ? [{ ...removal, pending }] : [];
+		}),
 	};
 }
 

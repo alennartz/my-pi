@@ -18,7 +18,7 @@ export function settlementReceipts(branch: readonly SessionEntry[]) {
 	for (const entry of branch) {
 		const message = entry.type === "custom_message" && entry.customType === "subagents"
 			? entry
-			: entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "await_agents" && !entry.message.isError
+			: entry.type === "message" && entry.message.role === "toolResult" && (entry.message.toolName === "await_agents" || entry.message.toolName === "teardown") && !entry.message.isError
 				? entry.message
 				: undefined;
 		const record = asRecord(message?.details);

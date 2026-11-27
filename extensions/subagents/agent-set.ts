@@ -27,10 +27,10 @@ import type {
 	SubagentTeardownResult,
 } from "@pimote/sdk/subagents";
 import type { SubagentManagerControl } from "./control-port.js";
-import type { ChildRef, HoldRecord, Settlement } from "./settlements.js";
+import type { ChildRef, HoldRecord, PendingSettlement, RemovalAnswers, Settlement } from "./settlements.js";
 import { loadWorkspacePersona } from '../persona-workspaces/declaration.ts';
 import type { PersonaDeclaration } from '../persona-workspaces/declaration.ts';
-import { appendAgentAdded, appendAgentHold, appendAgentRemoved, ensurePersistence, findAgentRecordBySessionId, getPersistencePaths, loadPersistedAgents, pruneInvalidPersistedAgents } from './persistence.js';
+import { appendAgentAdded, appendAgentHold, appendAgentRemoved, appendRemovedSettlementsCommitted, ensurePersistence, findAgentRecordBySessionId, getPersistencePaths, loadPersistedAgents, pruneInvalidPersistedAgents } from './persistence.js';
 import type { PersistedAgentRecord, PersistencePaths } from './persistence.js';
 import type { AgentChannelSpec } from './channels.js';
 import { MessageRouter } from './message-router.js';
@@ -242,8 +242,9 @@ export interface SubagentManagerOptions {
 	) => void;
 	/** Preview descendant answers without acknowledging them to their original parent. */
 	previewDescendantAnswers?: (ref: ChildRef) => readonly Settlement[];
-	/** A child leaves this manager. Returns the answers it held back. */
-	onAgentRemoved?: (ref: ChildRef) => readonly Settlement[];
+	/** Transfer direct answers to the durable removal record. */
+	onAgentRemoved?: (ref: ChildRef, source: "model" | "user", persist: (pending: readonly PendingSettlement[]) => void) => RemovalAnswers;
+	onRemovalRestored?: (ref: ChildRef, pending: readonly PendingSettlement[]) => void;
 	/** A child restored from persistence carries this saved hold. */
 	onAgentRestored?: (ref: ChildRef, hold: HoldRecord) => void;
 	/** The user sets or clears the hold on a validated child. */
@@ -256,7 +257,7 @@ type AggregateUsage = { input: number; output: number; cost: number };
 type RemovedCorrelationTarget = { local: string[]; paths: AgentPath[] };
 
 type TeardownNode = { snapshot: AgentNodeSnapshot; answers: readonly Settlement[] };
-type TeardownReport = { text: string; nodes: readonly TeardownNode[]; agents: TeardownAgentData[]; empty: boolean };
+type TeardownReport = { text: string; nodes: readonly TeardownNode[]; agents: TeardownAgentData[]; empty: boolean; receipts: readonly string[] };
 type GuardedTeardown = { result: SubagentTeardownResult; report?: TeardownReport };
 
 export class SubagentManager {
@@ -443,7 +444,7 @@ export class SubagentManager {
 			if (!entry || !samePath(path, entry.path) || snapshot?.incarnation !== ref.incarnation) {
 				return { result: { path, removed: false, reason: "not_found" as const } };
 			}
-			const report = await this.removeEntries([entry], false);
+			const report = await this.removeEntries([entry], false, "user");
 			return {
 				result: { path, removed: true, sessionId: snapshot.sessionId, incarnation: snapshot.incarnation, reason: "removed" as const },
 				report,
@@ -457,6 +458,10 @@ export class SubagentManager {
 		const snapshot = this.opts.registry.getSnapshot(ref.path);
 		if (!localId || !snapshot || snapshot.incarnation !== ref.incarnation) {return;}
 		appendAgentHold(this.ensurePersistence(), { id: localId, sessionId: snapshot.sessionId, ...hold });
+	}
+
+	commitRemovedSettlements(ids: readonly string[]): void {
+		appendRemovedSettlementsCommitted(this.ensurePersistence(), ids);
 	}
 
 	private guardedChild(ref: SubagentRuntimeRef): AgentNodeSnapshot {
@@ -592,13 +597,16 @@ export class SubagentManager {
 		if (!parentSessionFile) {return;}
 
 		const persisted = loadPersistedAgents(parentSessionFile);
-		if (!persisted || persisted.agents.length === 0) {return;}
-
-		const survivors = pruneInvalidPersistedAgents(persisted.paths, persisted.agents, isValidCwd);
-		if (survivors.length === 0) {return;}
+		if (!persisted) {return;}
 
 		this.persistence = persisted.paths;
 		this.sessionDir = persisted.paths.childSessionsDir;
+		for (const removal of persisted.removals) {
+			const path = childAgentPath(this.opts.ownerPath, removal.id);
+			this.opts.onRemovalRestored?.({ path, incarnation: removal.incarnation }, removal.pending);
+		}
+		const survivors = pruneInvalidPersistedAgents(persisted.paths, persisted.agents, isValidCwd);
+		if (survivors.length === 0) {return;}
 		this.restoring = true;
 		for (const agent of survivors) {
 			if (agent.hold) {this.restoredHolds.set(agent.id, agent.hold);}
@@ -613,10 +621,10 @@ export class SubagentManager {
 	async teardown(agentId?: string): Promise<TeardownReport> {
 		return this.serializeMutation(() => {
 			if (this.entries.length === 0) {throw new Error("No agents to teardown.");}
-			if (agentId === undefined) {return this.removeEntries(this.entries, true);}
+			if (agentId === undefined) {return this.removeEntries(this.entries, true, "model");}
 			const entry = this.findEntry(agentId);
 			if (!entry) {throw new Error(`Unknown agent: "${agentId}"`);}
-			return this.removeEntries([entry], false);
+			return this.removeEntries([entry], false, "model");
 		});
 	}
 
@@ -1308,7 +1316,7 @@ export class SubagentManager {
 		return { input, output, cost };
 	}
 
-	private async removeEntries(entries: readonly AgentEntry[], all: boolean): Promise<TeardownReport> {
+	private async removeEntries(entries: readonly AgentEntry[], all: boolean, source: "model" | "user"): Promise<TeardownReport> {
 		const registry = this.opts.registry;
 		const roots = entries.map((entry) => ({ entry, snapshot: required(registry.getSnapshot(entry.path), "live child snapshot") }));
 		const agents = roots.map(({ entry, snapshot }) => {
@@ -1322,10 +1330,14 @@ export class SubagentManager {
 			};
 		});
 		const text = all ? serializeGroupTorndown(this.getCompletionReport()) : serializeAgentTorndown(required(agents[0], "removed child"));
-		this.entries = this.entries.filter((entry) => !entries.includes(entry));
+		const receipts: string[] = [];
 		const nodes = roots.flatMap(({ entry, snapshot }) => {
-			const answers = this.opts.onAgentRemoved?.(snapshot) ?? [];
-			this.appendRemovalRecord(entry);
+			const persist = (pending: readonly PendingSettlement[]): void => this.appendRemovalRecord(entry, pending);
+			const removal = this.opts.onAgentRemoved?.(snapshot, source, persist);
+			if (!removal) {persist([]);}
+			else {receipts.push(...removal.receipts);}
+			const answers = removal?.answers ?? [];
+			this.entries = this.entries.filter((candidate) => candidate !== entry);
 			this.router.removeAgent(entry.id);
 			this.dropTargetCorrelations(entry.id);
 			return [{ snapshot, answers }, ...registry.listDescendants(entry.path).map((descendant) => ({
@@ -1334,16 +1346,17 @@ export class SubagentManager {
 			}))];
 		});
 		await Promise.all(entries.map((entry) => registry.remove(entry.path)));
-		return { text, nodes, agents, empty: this.entries.length === 0 };
+		return { text, nodes, agents, empty: this.entries.length === 0, receipts };
 	}
 
-	private appendRemovalRecord(entry: AgentEntry): void {
+	private appendRemovalRecord(entry: AgentEntry, pending: readonly PendingSettlement[]): void {
 		if (!this.persistence) {return;}
 		const snapshot = this.opts.registry.getSnapshot(entry.path);
 		appendAgentRemoved(this.persistence, {
 			id: entry.id,
 			sessionFile: snapshot?.sessionFile,
 			sessionId: snapshot?.sessionId,
+			...(pending.length > 0 ? { incarnation: snapshot?.incarnation, pending } : undefined),
 		});
 	}
 

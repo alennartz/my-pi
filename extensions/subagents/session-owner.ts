@@ -638,7 +638,8 @@ class SubagentSessionOwner {
 				onAgentStart: (_current, agentId) => turns.childStarted(agentId),
 				onAgentComplete: (_current, agentId, _allDone, outcome) => turns.childSettled(agentId, outcome),
 				previewDescendantAnswers: (ref) => services.control.pendingAnswers(ref),
-				onAgentRemoved: (ref) => turns.childRemoved(ref),
+				onAgentRemoved: (ref, source, persist) => turns.childRemoved(ref, source, persist),
+				onRemovalRestored: (ref, pending) => turns.removalRestored(ref, pending),
 				onAgentRestored: (ref, hold) => turns.childRestored(ref, hold),
 				onSetHold: (ref, held) => turns.setHold(ref, held),
 				onParentMessage: (port, _content, message) => this.incoming.receive(port, message, "local"),
@@ -1503,7 +1504,7 @@ class SubagentSessionOwner {
 
 	private async teardownAgents(params: TeardownToolParams, ctx: ExtensionContext): Promise<ToolReply> {
 		const session = this.requireActiveSession();
-		const { text, nodes, agents, empty } = await session.manager.teardown(params.agent || undefined);
+		const { text, nodes, agents, empty, receipts } = await session.manager.teardown(params.agent || undefined);
 		if (empty) {session.dashboard.clear(ctx);}
 		else {session.dashboard.refresh(session.manager);}
 		const affectedAgents = nodes.map(({ snapshot, answers }) => affectedAgent(snapshot, answers.at(-1)));
@@ -1512,7 +1513,9 @@ class SubagentSessionOwner {
 		const label = params.agent ? `Agent "${params.agent}" removed.` : "All agents terminated.";
 		const single = agents.length === 1 ? agents[0] : undefined;
 		const usageLine = single ? `\n\n${formatUsageLine(single.usage, single.usageBaseline)}` : "";
-		const bounded = await truncateForModel([`${label}\n\n${text}${usageLine}`, ...heldText].join("\n\n"));
+		const fullText = [`${label}\n\n${text}${usageLine}`, ...heldText].join("\n\n");
+		const bounded = await truncateForModel(fullText);
+		const offered = receipts.length > 0 && bounded.truncated && !bounded.fullOutputPath ? fullText : bounded.text;
 		const data: TeardownResultData = { agents, affectedAgents };
 		const card: SubagentCard = {
 			kind: "teardown",
@@ -1522,7 +1525,8 @@ class SubagentSessionOwner {
 		// `usage` is pi's ToolResultMessage accounting seam. `details` does not
 		// contribute to the root session total.
 		const usage = toPiUsage(sumAgentUsage(agents.map((agent) => agent.usage)));
-		return { ...cardResult(bounded.text, card, data), usage };
+		const result = cardResult(offered, card, data);
+		return { ...result, usage, details: { ...result.details, ...settlementReceiptDetails(offered, receipts) } };
 	}
 
 	/** User resurrection: the parent learns of it as context, without a turn. */
@@ -1566,15 +1570,8 @@ class SubagentSessionOwner {
 			state: "complete",
 			data: { operation: "teardown", parameters: { agent: localId, source: "user" }, result: { affectedAgents } },
 		};
-		this.pi.sendMessage(
-			{
-				customType: "subagents",
-				content: [serializeAgentRemoved({ id: localId, sessionId: result.sessionId }), ...heldText].join("\n\n"),
-				display: true,
-				details: messageCardDetails([card]),
-			},
-			{ triggerTurn: false },
-		);
+		const content = [serializeAgentRemoved({ id: localId, sessionId: result.sessionId }), ...heldText].join("\n\n");
+		this.turns.deliverRemoval(ref, content, card, report.receipts);
 		session.dashboard.refresh(session.manager);
 		return result;
 	}

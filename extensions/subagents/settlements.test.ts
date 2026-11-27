@@ -20,6 +20,7 @@ function harness() {
 			return true;
 		},
 		persistHold: (ref, hold) => persisted.set(ref.incarnation, hold),
+		commitRemoved: () => undefined,
 		publishHold: () => undefined,
 		live: (ref) => live.get(ref.incarnation),
 	});
@@ -38,7 +39,7 @@ function harness() {
 	};
 	const remove = (ref: ChildRef) => {
 		live.delete(ref.incarnation);
-		return ledger.removed(ref);
+		return ledger.removed(ref, "model", () => undefined);
 	};
 	/** The parent's session commits every queued notice. */
 	const commit = (): Notice[] => {
@@ -228,7 +229,7 @@ describe("SettlementLedger", () => {
 			expect(commit()).toEqual([]);
 		});
 
-		it("settles a removed child as removed, with its held output", async () => {
+		it("reports a removed child in the wait and reserves its held answer for teardown",  async () => {
 			const { ledger, child, run, settle, remove } = harness();
 			const worker = child("worker");
 			const scout = child("scout");
@@ -237,10 +238,10 @@ describe("SettlementLedger", () => {
 			ledger.setHold(worker, true);
 			settle(worker, idle("held answer"));
 			const wait = ledger.wait([worker, scout]);
-			expect(remove(worker).map((settlement) => settlement.output)).toEqual(["held answer"]);
+			expect(remove(worker).answers.map((settlement) => settlement.output)).toEqual(["held answer"]);
 			settle(scout, idle("s"));
 			const result = await wait.result;
-			expect(result.statuses[0]).toEqual({ path: ["worker"], state: "removed", output: "held answer" });
+			expect(result.statuses[0]).toEqual({ path: ["worker"], state: "removed" });
 		});
 
 		it("reports a held child as held and does not count it as settled", () => {

@@ -18,10 +18,11 @@ export type HoldRecord = Readonly<{ held: boolean; pending: readonly PendingSett
 export type LiveChild = Readonly<{ state: SubagentState; settlement?: Settlement }>;
 
 export interface SettlementLedgerHost {
-	offer(ref: ChildRef, report: Settlement, replaced: boolean, ids: readonly string[]): void;
+	offer(ref: ChildRef, report: Settlement, replaced: boolean, ids: readonly string[], removed: boolean): void;
 	/** Take back a notice that has not left the queue. */
 	withdraw(ref: ChildRef): boolean;
 	persistHold(ref: ChildRef, hold: HoldRecord): void;
+	commitRemoved(ids: readonly string[]): void;
 	publishHold(ref: ChildRef, hold: HoldRecord): void;
 	live(ref: ChildRef): LiveChild | undefined;
 }
@@ -32,6 +33,8 @@ export type WaitResult = Readonly<{
 	/** Pending settlements this result reports in model-facing text. */
 	receipts: readonly string[];
 }>;
+
+export type RemovalAnswers = Readonly<{ answers: readonly Settlement[]; receipts: readonly string[] }>;
 
 export interface ChildWait {
 	readonly result: Promise<WaitResult>;
@@ -44,6 +47,7 @@ export interface ChildWait {
 type ChildRecord = {
 	readonly ref: ChildRef;
 	held: boolean;
+	removed: boolean;
 	running: boolean;
 	runId: number;
 	run: Settlement[];
@@ -74,6 +78,17 @@ export class SettlementLedger {
 		record.run = hold.pending.flatMap((entry) => entry.run === record.runId ? [entry.settlement] : []);
 		record.replaced = hold.replaced && !hold.pending.some((entry) => entry.replaces && receipts.has(entry.id));
 		this.sync(record, true);
+		this.route(record);
+	}
+
+	restoreRemoved(ref: ChildRef, pending: readonly PendingSettlement[], receipts: ReadonlySet<string>): void {
+		const committed = pending.flatMap((entry) => receipts.has(entry.id) ? [entry.id] : []);
+		if (committed.length > 0) {this.host.commitRemoved(committed);}
+		const remaining = pending.filter((entry) => !receipts.has(entry.id));
+		if (remaining.length === 0) {return;}
+		const record = this.record(ref);
+		record.removed = true;
+		record.pending = remaining;
 		this.route(record);
 	}
 
@@ -108,8 +123,10 @@ export class SettlementLedger {
 	/** Consume only settlements named by a native transcript entry. */
 	delivered(ids: ReadonlySet<string>): void {
 		for (const record of this.records.values()) {
-			if (!record.pending.some((entry) => ids.has(entry.id))) {continue;}
-			if (record.pending.some((entry) => entry.replaces && ids.has(entry.id))) {record.replaced = false;}
+			const committed = record.pending.filter((entry) => ids.has(entry.id));
+			if (committed.length === 0) {continue;}
+			if (record.removed) {this.host.commitRemoved(committed.map((entry) => entry.id));}
+			if (committed.some((entry) => entry.replaces)) {record.replaced = false;}
 			record.pending = record.pending.filter((entry) => !ids.has(entry.id));
 			record.offered = record.offered.filter((id) => !ids.has(id));
 			record.waitingReceipt = record.waitingReceipt.filter((id) => !ids.has(id));
@@ -149,14 +166,25 @@ export class SettlementLedger {
 		return record ? answerReports(record.pending) : [];
 	}
 
-	/** Return undelivered answers for a teardown report and settle any active wait. */
-	removed(ref: ChildRef): readonly Settlement[] {
+	/** Persist the removal and give its report the unclaimed answers. */
+	removed(ref: ChildRef, source: "model" | "user", persist: (pending: readonly PendingSettlement[]) => void): RemovalAnswers {
 		const record = this.records.get(refKey(ref));
 		if (record) {this.withdraw(record);}
-		const held = record ? answerReports(unclaimed(record)) : [];
-		this.records.delete(refKey(ref));
-		this.active?.remove(ref, held.at(-1));
-		return held;
+		const pending = record?.pending ?? [];
+		persist(pending);
+		const report = record ? unclaimed(record) : [];
+		const receipts = [...Map.groupBy(report, (entry) => entry.run).values()].flatMap((group) =>
+			group.some((entry) => isAnswer(entry.settlement)) ? group.map((entry) => entry.id) : []);
+		if (record) {
+			record.removed = true;
+			record.held = false;
+			if (source === "model") {record.waitingReceipt = [...record.waitingReceipt, ...receipts];}
+			else {record.offered = [...record.offered, ...receipts];}
+			this.sync(record);
+			this.route(record);
+		}
+		this.active?.remove(ref);
+		return { answers: answerReports(report), receipts };
 	}
 
 	wait(refs: readonly ChildRef[]): ChildWait {
@@ -187,6 +215,7 @@ export class SettlementLedger {
 			record = {
 				ref: { path: [...ref.path], incarnation: ref.incarnation },
 				held: false,
+				removed: false,
 				running: false,
 				runId: 0,
 				run: [],
@@ -206,6 +235,10 @@ export class SettlementLedger {
 	}
 
 	private sync(record: ChildRecord, force = false): void {
+		if (record.removed) {
+			if (record.pending.length === 0) {this.records.delete(refKey(record.ref));}
+			return;
+		}
 		const hold = this.holdOf(record);
 		const serialized = JSON.stringify(hold);
 		if (force || serialized !== record.saved) {
@@ -224,14 +257,15 @@ export class SettlementLedger {
 		if (record.held || record.offered.length > 0 || record.waitingReceipt.length > 0) {return;}
 		while (record.pending.length > 0) {
 			const first = record.pending[0];
-			if (!previousRun && first.run === record.runId && this.active?.covers(record.ref)) {return;}
+			if (!record.removed && !previousRun && first.run === record.runId && this.active?.covers(record.ref)) {return;}
 			const group = record.pending.filter((entry) => entry.run === first.run);
 			const answer = report(group.map((entry) => entry.settlement));
 			if (isAnswer(answer)) {
 				record.offered = group.map((entry) => entry.id);
-				this.host.offer(record.ref, answer, group.some((entry) => entry.replaces), record.offered);
+				this.host.offer(record.ref, answer, group.some((entry) => entry.replaces), record.offered, record.removed);
 				return;
 			}
+			if (record.removed) {this.host.commitRemoved(group.map((entry) => entry.id));}
 			record.pending.splice(0, group.length);
 			this.sync(record);
 		}
@@ -339,14 +373,11 @@ class ActiveWait implements ChildWait {
 		return () => this.listeners.delete(listener);
 	}
 
-	remove(ref: ChildRef, held: Settlement | undefined): void {
+	remove(ref: ChildRef): void {
 		if (!this.covers(ref)) {return;}
 		this.removedRefs.set(refKey(ref), {
 			path: [...ref.path],
 			state: "removed",
-			...(held?.output !== undefined ? { output: held.output } : undefined),
-			...(held?.error !== undefined ? { error: held.error } : undefined),
-			...(held?.sessionId !== undefined ? { sessionId: held.sessionId } : undefined),
 		});
 		this.evaluate();
 	}

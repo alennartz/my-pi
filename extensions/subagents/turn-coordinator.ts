@@ -10,7 +10,7 @@ import type { Notice, NoticeDelivery } from "./notification-queue.js";
 import { messageCardDetails } from "./presenters.js";
 import type { SubagentCard } from "./presenters.js";
 import { SettlementLedger } from "./settlements.js";
-import type { ChildRef, HoldRecord, LiveChild, Settlement } from "./settlements.js";
+import type { ChildRef, HoldRecord, LiveChild, PendingSettlement, RemovalAnswers, Settlement } from "./settlements.js";
 import { createStopSequenceManager } from "./stop-sequences.js";
 import type { StopSequenceManager } from "./stop-sequences.js";
 import { randomUUID } from "node:crypto";
@@ -56,9 +56,10 @@ export class TurnCoordinator {
 			? createStopSequenceManager(pi)
 			: { add() {}, remove() {}, addOnce() {}, clear() {} };
 		this.ledger = new SettlementLedger({
-			offer: (ref, settlement, replaced, ids) => this.offerCompletion(ref, settlement, replaced, ids),
+			offer: (ref, settlement, replaced, ids, removed) => this.offerCompletion(ref, settlement, replaced, ids, removed),
 			withdraw: (ref) => this.queue.take((notice) => notice.settles !== undefined && sameRef(notice.settles.ref, ref)).length > 0,
 			persistHold: (ref, hold) => this.manager().persistHold(ref, hold),
+			commitRemoved: (ids) => this.manager().commitRemovedSettlements(ids),
 			publishHold: (ref, hold) => this.publishHold(ref, hold),
 			live: (ref) => this.live(ref),
 		});
@@ -95,9 +96,16 @@ export class TurnCoordinator {
 		return this.ledger.pendingAnswers(ref);
 	}
 
-	childRemoved(ref: ChildRef): readonly Settlement[] {
+	childRemoved(ref: ChildRef, source: "model" | "user", persist: (pending: readonly PendingSettlement[]) => void): RemovalAnswers {
 		this.reconcile();
-		return this.ledger.removed(ref);
+		const result = this.ledger.removed(ref, source, persist);
+		if (source === "model" && result.receipts.length > 0) {this.awaitingReceipt = true;}
+		return result;
+	}
+
+	removalRestored(ref: ChildRef, pending: readonly PendingSettlement[]): void {
+		this.restoredReceipts ??= settlementReceipts(this.parent.entries()).settlements;
+		this.ledger.restoreRemoved(ref, pending, this.restoredReceipts);
 	}
 
 	childRestored(ref: ChildRef, hold: HoldRecord): void {
@@ -114,6 +122,10 @@ export class TurnCoordinator {
 	queueMessage(content: string, card: SubagentCard): void {
 		this.queue.queue({ kind: "message", content, card });
 		this.interruptWait?.();
+	}
+
+	deliverRemoval(ref: ChildRef, content: string, card: SubagentCard, ids: readonly string[]): void {
+		this.deliver([{ kind: "notice", content, card, ...(ids.length > 0 ? { settles: { ref, ids } } : undefined) }], "park");
 	}
 
 	// Parent run boundaries.
@@ -308,7 +320,7 @@ export class TurnCoordinator {
 		});
 	}
 
-	private offerCompletion(ref: ChildRef, settlement: Settlement, replaced: boolean, ids: readonly string[]): void {
+	private offerCompletion(ref: ChildRef, settlement: Settlement, replaced: boolean, ids: readonly string[], removed: boolean): void {
 		const manager = this.manager();
 		const id = ref.path.at(-1) ?? "";
 		const state = settlement.state === "stopped" ? "idle" : settlement.state;
@@ -320,7 +332,8 @@ export class TurnCoordinator {
 			sessionId: settlement.sessionId,
 			...(replaced ? { replaced: true } : undefined),
 		});
-		if (manager.allDone() && !manager.getAgentStatuses().some((status) => {
+		if (removed) {content = `Agent "${id}" was removed. Its undelivered result follows.\n\n${content}`;}
+		else if (manager.allDone() && !manager.getAgentStatuses().some((status) => {
 			const child = manager.getAgentRef(status.id);
 			return child !== undefined && this.ledger.hold(child).held;
 		})) {
