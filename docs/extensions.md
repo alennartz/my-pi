@@ -353,8 +353,8 @@ than files:
   the hierarchy, controls, and views that borrow existing child sessions.
   Opening, closing, or reconnecting a view does not affect `await_agents`.
   Use the child's Hold control to keep its result from the parent. The hold
-  survives a restart. Release it to deliver the result. Messages from the child
-  still reach the parent while the result is held.
+  survives a restart. Release it to deliver the result. A hold cannot withdraw a
+  result already offered to Pi. Messages from the child still reach the parent.
 
   Pending results also survive a restart. Delivery commits when a notice or
   successful `await_agents` result reaches the parent's transcript branch.

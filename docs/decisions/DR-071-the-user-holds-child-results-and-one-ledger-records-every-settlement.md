@@ -14,7 +14,7 @@ Four copies of each settlement existed: the await gate, the registry, the queue 
 A hold is a per-child flag that only the user sets, through the provider's `setHold({ path, incarnation, held })`. Views and leases never affect orchestration. The flag and the undelivered settlements persist in the manager's lifecycle log, so a release after restore delivers what the parent has not received and nothing it already has.
 
 Each manager owns one settlement ledger, keyed by path and incarnation. Every child run start, settlement, hold change, removal, and wait goes through it:
-- A held child's settlements reach no one. The await card shows it as `held` and the wait does not count it as settled. Explicit messages still flow.
+- A hold blocks offers of that child's results. It cannot withdraw a result already offered to Pi. The await card shows the hold and the wait does not count held results as settled. Explicit messages still flow.
 - A release delivers through the active wait or a notice.
 - A new run discards undelivered answers and marks the next delivery as a replacement. Stops keep the mark. A `dead` settlement without a new run does not displace an answer; both are delivered.
 - A removal settles the child as `removed` in the active wait, with or without a view, and the removal result carries any held output.
