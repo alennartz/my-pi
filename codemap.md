@@ -140,7 +140,7 @@ Long-lived in-process subagent orchestration extension — creates and manages S
 **Files:**
 - `extensions/subagents/session-owner.ts`, `extensions/subagents/agent-set.ts`, and `extensions/subagents/managed-child-session.ts`: tool bindings, manager operations, and child runtime ownership.
 - `extensions/subagents/agent-session-registry.ts`, `extensions/subagents/control-port.ts`, `extensions/subagents/persistence.ts`, and `extensions/subagents/session-snapshot.ts`: tree identity, guarded mutations, lifecycle records, and restore.
-- `extensions/subagents/settlements.ts`, `extensions/subagents/settlement-receipts.ts`, and `extensions/subagents/turn-coordinator.ts`: waits, result delivery, and delivery receipts from the parent's saved branch.
+- `extensions/subagents/settlements.ts`, `extensions/subagents/settlement-receipts.ts`, and `extensions/subagents/turn-coordinator.ts`: waits and result delivery. Receipts verify the parent branch's model-facing text. Direct removal retains uncommitted answers.
 - `extensions/subagents/notification-queue.ts` and `extensions/subagents/message-router.ts`: parent notices and agent messaging.
 - `extensions/subagents/provider.ts`, `extensions/subagents/presenters.ts`, `extensions/subagents/presenters-legacy.ts`, and `extensions/subagents/tool-progress.ts`: SDK integration and card data from native Pi events and sessions.
 - `extensions/subagents/tool-results.ts`, `extensions/subagents/child-tool-policy.ts`, and `extensions/subagents/child-session-marker.ts`: model-facing results, tool policy, and persona binding.

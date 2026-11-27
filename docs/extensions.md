@@ -360,7 +360,8 @@ than files:
   successful `await_agents` result reaches the parent's transcript branch.
   Restore keeps each child's result order, not an order across children. A
   teardown report can preview nested results without delivering them to their
-  original parents.
+  original parents. If a direct teardown report does not reach the transcript
+  before restart, the owning parent receives its pending results as a notice.
 
   Pimote displays cards from native Pi tool calls, results, and custom messages.
   Live and saved transcripts use the same presenters. The presenters read
